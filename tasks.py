@@ -135,14 +135,12 @@ zswatch_build = Task(
 		"west",
 		"build",
 		"-b",
-		"native_sim/native/64",
+		"zswatch_legacy/nrf5340/cpuapp",
 		"-d",
 		"../../.camas/build/zswatch",
 		"-s",
 		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
 		"--",
-		"-DEXTRA_CONF_FILE=boards/debug.conf;boards/log_on_rtt.conf",
-		"-DSB_CONFIG_BOOTLOADER_MCUBOOT=n",
 		"-DBOARD_ROOT=/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
 	),
 	cwd=Path("testbeds/zswatch-workspace"),
@@ -151,7 +149,7 @@ zswatch_build = Task(
 		"ZEPHYR_TOOLCHAIN_VARIANT": "zephyr",
 		"DTC": str(zephyr_sdk_legacy / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
 	},
-	help="build the ZSWatch testbed for zswatch/nrf5340/cpuapp",
+	help="build the ZSWatch testbed (produces ipc_radio netcore ELF; app image blocked upstream)",
 )
 zswatch = Sequential(zswatch_patch, zswatch_build)
 
