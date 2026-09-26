@@ -11,7 +11,7 @@ import msgspec
 import pytest
 
 from dynamic_call_tree_resolution import AnalysisReport
-from dynamic_call_tree_resolution.cli import analyze, main
+from dynamic_call_tree_resolution.cli import analyze, main, stack
 
 EXPECTED_PATHS = {
 	"ops_a.open",
@@ -67,3 +67,16 @@ def test_cli_main_entry(
 		main()
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisReport)
 	assert report.resolved_slots == 19
+
+
+def test_cli_stack_plain_text(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+	build_directory = tmp_path / "build"
+	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"
+	nested.mkdir(parents=True)
+	(nested / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "worker" } }\n'
+	)
+	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	(nested / "worker.c.su").write_text("worker.c:2:1:worker\t32\tstatic\n")
+	stack(build_directory)
+	assert "main: 48 bytes" in capsys.readouterr().out

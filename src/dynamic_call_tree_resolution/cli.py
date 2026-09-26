@@ -9,9 +9,12 @@ from typing import Annotated
 import msgspec
 from cyclopts import App, Parameter
 
+from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.loader import load
 from dynamic_call_tree_resolution.points_to import assignments
 from dynamic_call_tree_resolution.report import build_report
+from dynamic_call_tree_resolution.stack_analysis import worst_case_depths
+from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 
 app = App(name="dctr")
 
@@ -31,6 +34,17 @@ def analyze(
 	for assignment in report.assignments:
 		label = assignment.member_path or hex(assignment.slot_address)
 		print(f"{label}: {', '.join(candidate.name for candidate in assignment.candidates)}")
+
+
+@app.command
+def stack(build_directory: Path) -> None:
+	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
+	reports = worst_case_depths(load_callgraph(build_directory), load_stack_usages(build_directory))
+	for report in reports:
+		flags = (" recursive" if report.recursive else "") + (
+			" dynamic" if report.has_dynamic else ""
+		)
+		print(f"{report.entry}: {report.depth} bytes{flags}")
 
 
 def main() -> None:
