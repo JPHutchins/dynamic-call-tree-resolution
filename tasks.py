@@ -125,6 +125,8 @@ zswatch = Task(
 		"../../.camas/build/zswatch",
 		"-s",
 		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
+		"--",
+		"-DEXTRA_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app/boards/no_touch.conf",
 	),
 	cwd=Path("testbeds/zswatch-workspace"),
 	env={
