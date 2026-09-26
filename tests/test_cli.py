@@ -10,8 +10,8 @@ from pathlib import Path
 import msgspec
 import pytest
 
-from dynamic_call_tree_resolution import AnalysisReport, AnalysisSummary
-from dynamic_call_tree_resolution.cli import analyze, main, stack, summary
+from dynamic_call_tree_resolution import AnalysisReport, AnalysisSummary, ComparisonReport
+from dynamic_call_tree_resolution.cli import analyze, compare, main, stack, summary
 
 EXPECTED_PATHS = {
 	"ops_a.open",
@@ -58,6 +58,44 @@ def test_cli_analyze_plain_text(
 	assert "dev_a.api.open: driver_a_open" in output
 	assert "bss_cb: <unresolved>" in output
 	assert "main@0x" in output
+
+
+def test_cli_compare_json(fixture_elfs: dict[str, Path]) -> None:
+	executable = Path(sys.executable).with_name("dctr")
+	result = subprocess.run(
+		[str(executable), "compare", "--json", str(fixture_elfs["nopie"])],
+		check=True,
+		capture_output=True,
+		text=True,
+	)
+	comparisons = msgspec.json.decode(result.stdout, type=list[ComparisonReport])
+	assert [comparison.elf for comparison in comparisons] == ["device_model.nopie.elf"]
+	assert comparisons[0].call_sites == 7
+
+
+def test_cli_compare_json_in_process(
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	compare([fixture_elfs["nopie"]], json=True)
+	comparisons = msgspec.json.decode(capsys.readouterr().out, type=list[ComparisonReport])
+	assert comparisons[0].call_sites == 7
+
+
+def test_cli_compare_plain_text_and_directories(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	directory = tmp_path / "elfs"
+	directory.mkdir()
+	(directory / "a.elf").write_bytes(fixture_elfs["nopie"].read_bytes())
+	(directory / "b.elf").write_bytes(fixture_elfs["nopie"].read_bytes())
+	compare([directory])
+	output = capsys.readouterr().out
+	assert output.count("EM_X86_64") == 2
+	assert "19/2/13" in output
+	assert "5/5/7" in output
 
 
 def test_cli_main_entry(

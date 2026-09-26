@@ -13,7 +13,7 @@ from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_call
 from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.loader import load
 from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
-from dynamic_call_tree_resolution.report import AnalysisSummary, build_report
+from dynamic_call_tree_resolution.report import AnalysisSummary, build_comparison, build_report
 from dynamic_call_tree_resolution.stack_analysis import expand_indirect_calls, worst_case_depths
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 
@@ -41,6 +41,31 @@ def analyze(
 		label = f"{site.caller}@{site.site_address:#x}"
 		targets = ", ".join(candidate.name for candidate in site.candidates)
 		print(f"{label}: {targets or '<unresolved>'}")
+
+
+@app.command
+def compare(
+	elfs: Annotated[
+		list[Path], Parameter(help="ELF images or directories of ELF images to compare")
+	],
+	*,
+	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
+) -> None:
+	"""Print a resolution rollup per ELF for cross-tool comparison."""
+	paths = [
+		path for elf in elfs for path in (sorted(elf.glob("*.elf")) if elf.is_dir() else (elf,))
+	]
+	comparisons = [build_comparison(elf.name, load(elf)) for elf in paths]
+	if json:
+		print(msgspec.json.format(msgspec.json.encode(comparisons).decode()))
+		return
+	print(f"{'elf':<46} {'machine':<10} {'functions':>9} {'slots r/u/t':>11} {'sites r/e/t':>12}")
+	for comparison in comparisons:
+		print(
+			f"{comparison.elf:<46} {comparison.machine:<10} {comparison.functions:>9} "
+			f"{f'{comparison.resolved_slots}/{comparison.unresolved_slots}/{comparison.total_slots}':>11} "
+			f"{f'{comparison.resolved_call_sites}/{comparison.exact_call_sites}/{comparison.call_sites}':>12}"
+		)
 
 
 @app.command

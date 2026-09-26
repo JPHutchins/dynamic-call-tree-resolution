@@ -11,7 +11,9 @@ import msgspec
 
 from dynamic_call_tree_resolution import (
 	AnalysisReport,
+	ComparisonReport,
 	assignments,
+	build_comparison,
 	build_report,
 	extract_call_sites,
 	load,
@@ -51,3 +53,21 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 	assert {slot.member_path for slot in report.unresolved_slots} == {"bss_cb", "bss_holder.run"}
 	assert report.total_slots == 13  # 11 distinct resolved slots + 2 unresolved
 	assert msgspec.json.decode(msgspec.json.encode(report), type=AnalysisReport) == report
+
+
+def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["nopie"])
+	comparison = build_comparison("nopie.elf", program)
+	assert comparison == ComparisonReport(
+		elf="nopie.elf",
+		machine="EM_X86_64",
+		functions=21,
+		total_slots=13,
+		resolved_slots=19,
+		unresolved_slots=2,
+		call_sites=7,
+		resolved_call_sites=5,
+		exact_call_sites=5,
+		candidate_size_counts=((0, 2), (1, 5)),
+	)
+	assert msgspec.json.decode(msgspec.json.encode(comparison), type=ComparisonReport) == comparison

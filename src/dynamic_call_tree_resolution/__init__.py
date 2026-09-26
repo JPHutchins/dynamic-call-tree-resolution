@@ -35,9 +35,11 @@ from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
 	CallSiteReport,
 	Candidate,
+	ComparisonReport,
 	SignatureReport,
 	SlotAssignmentReport,
 	UnresolvedSlotReport,
+	build_comparison,
 	build_report,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
@@ -59,6 +61,7 @@ __all__ = [
 	"CallSite",
 	"CallSiteReport",
 	"Candidate",
+	"ComparisonReport",
 	"DataObject",
 	"EmbeddedStructMember",
 	"Function",
@@ -79,6 +82,7 @@ __all__ = [
 	"UnresolvedSlotReport",
 	"app",
 	"assignments",
+	"build_comparison",
 	"build_report",
 	"call_site_candidates",
 	"expand_indirect_calls",

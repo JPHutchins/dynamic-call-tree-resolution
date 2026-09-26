@@ -153,4 +153,19 @@ zswatch_build = Task(
 )
 zswatch = Sequential(zswatch_patch, zswatch_build)
 
+pexplorer_testdata = Task(
+	(
+		"uv",
+		"run",
+		"dctr",
+		"compare",
+		*(
+			str(elf)
+			for elf in sorted(Path("references/pexplorer/testdata/elf_testdata").glob("*.elf"))
+			if elf.name != "prusa_buddy_boot_64.elf"  # 127 MB of .debug_info exhausts memory
+		),
+	),
+	help="run dctr's resolution rollup over pexplorer's shared testdata ELFs",
+)
+
 _ = Config(default_task=all, github_task=check, agent=Claude(fix=fix, check=gate))

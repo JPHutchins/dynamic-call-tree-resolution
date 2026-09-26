@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 from msgspec import Struct
 
-from dynamic_call_tree_resolution.call_sites import call_site_candidates
+from dynamic_call_tree_resolution.call_sites import call_site_candidates, extract_call_sites
 from dynamic_call_tree_resolution.model import FunctionSignature, Provenance, render_path
-from dynamic_call_tree_resolution.points_to import unresolved_slots
+from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 
 if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import CallSite, Program, SlotAssignment
@@ -65,6 +65,21 @@ class AnalysisReport(Struct):
 	total_slots: int
 	resolved_slots: int
 	resolved_targets: int
+
+
+class ComparisonReport(Struct):
+	"""Resolution rollup of one ELF, for cross-tool comparison."""
+
+	elf: str
+	machine: str
+	functions: int
+	total_slots: int
+	resolved_slots: int
+	unresolved_slots: int
+	call_sites: int
+	resolved_call_sites: int
+	exact_call_sites: int
+	candidate_size_counts: tuple[tuple[int, int], ...]
 
 
 class AnalysisSummary(Struct):
@@ -138,4 +153,31 @@ def _render_signature(signature: FunctionSignature | None) -> SignatureReport | 
 		SignatureReport(return_type=signature.return_type, parameters=signature.parameters)
 		if signature is not None
 		else None
+	)
+
+
+def build_comparison(name: str, program: Program) -> ComparisonReport:
+	"""Resolution rollup of one ELF, for cross-tool comparison."""
+	resolved = assignments(program)
+	unresolved = unresolved_slots(program, resolved)
+	resolved_by_slot = {assignment.slot: assignment for assignment in resolved}
+	candidate_sizes = sorted(
+		len(call_site_candidates(program, site, resolved_by_slot))
+		for site in extract_call_sites(program)
+	)
+	return ComparisonReport(
+		elf=name,
+		machine=program.machine,
+		functions=len(program.functions),
+		total_slots=len(
+			{assignment.slot for assignment in resolved} | {slot.slot for slot in unresolved}
+		),
+		resolved_slots=len(resolved),
+		unresolved_slots=len(unresolved),
+		call_sites=len(candidate_sizes),
+		resolved_call_sites=sum(size > 0 for size in candidate_sizes),
+		exact_call_sites=sum(size == 1 for size in candidate_sizes),
+		candidate_size_counts=tuple(
+			(size, candidate_sizes.count(size)) for size in dict.fromkeys(candidate_sizes)
+		),
 	)
