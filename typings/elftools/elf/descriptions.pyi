@@ -1,0 +1,3 @@
+from elftools.elf.elffile import ELFFile
+
+def describe_reloc_type(x: int, elffile: ELFFile) -> str: ...

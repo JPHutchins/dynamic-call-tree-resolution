@@ -1,0 +1,20 @@
+from collections.abc import Iterator
+from typing import Any, BinaryIO
+
+from elftools.dwarf.dwarfinfo import DWARFInfo
+from elftools.elf.sections import Section
+
+class ELFHeader:
+	e_machine: str
+	e_ident: dict[str, Any]
+
+class ELFFile:
+	header: ELFHeader
+	elfclass: int
+	little_endian: bool
+	def __init__(self, stream: BinaryIO) -> None: ...
+	def get_section(self, n: int) -> Section | None: ...
+	def get_section_by_name(self, name: str) -> Section | None: ...
+	def iter_sections(self, type: str | None = None) -> Iterator[Section]: ...
+	def has_dwarf_info(self, strict: bool = False) -> bool: ...
+	def get_dwarf_info(self, relocate_dwarf_sections: bool = True) -> DWARFInfo: ...
