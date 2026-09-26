@@ -6,9 +6,21 @@ struct ops {
 	int (*close)(void *self);
 };
 
+struct device_ops {
+	int (*init)(void);
+};
+
 struct device {
 	const struct ops *api;
 	void *context;
+	struct device_ops ops;
+};
+
+struct embedded_holder {
+	struct {
+		int x;
+		int (*fn)(void);
+	} inner;
 };
 
 struct handler_holder {
@@ -57,6 +69,8 @@ static int driver_b_open(void *self, int flags);
 static int driver_b_close(void *self);
 static int node_fn(void);
 static int enum_target(enum flags flags);
+static int dev_init(void);
+static int anon_fn(void);
 
 void plain_target(int value);
 ret_t typedef_target(void);
@@ -64,9 +78,9 @@ void undef_ptr_target(void);
 
 const struct ops ops_a = { .open = driver_a_open, .close = driver_a_close };
 const struct ops ops_b = { .open = driver_b_open, .close = driver_b_close };
-struct device dev_a = { .api = &ops_a, .context = 0 };
-struct device dev_b = { .api = &ops_b, .context = 0 };
-struct device dev_c = { .api = &ops_b, .context = &ops_a };
+struct device dev_a = { .api = &ops_a, .context = 0, .ops = { .init = dev_init } };
+struct device dev_b = { .api = &ops_b, .context = 0, .ops = { .init = dev_init } };
+struct device dev_c = { .api = &ops_b, .context = &ops_a, .ops = { .init = dev_init } };
 struct handler_holder holder = { .run = undef_ptr_target };
 struct handler_holder bss_holder;
 struct node node_a = { .next = &node_a, .fn = node_fn };
@@ -76,6 +90,7 @@ anon_t anon_obj = { .x = 1 };
 struct anon_wrapper wrap = { .anon = &anon_obj };
 union un un_obj = { .a = 1 };
 struct bitpacked bits = { .a = 1, .b = 2 };
+struct embedded_holder holder2 = { .inner = { .x = 1, .fn = anon_fn } };
 
 void (*plain_cb)(int) = plain_target;
 void (*bss_cb)(int);
@@ -147,6 +162,16 @@ static int driver_b_close(void *self)
 static int node_fn(void)
 {
 	return 7;
+}
+
+static int dev_init(void)
+{
+	return 9;
+}
+
+static int anon_fn(void)
+{
+	return 3;
 }
 
 static int enum_target(enum flags flags)

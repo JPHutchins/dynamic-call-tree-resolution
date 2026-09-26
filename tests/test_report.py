@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["nopie"])
 	report = build_report(program, assignments(program))
-	assert report.resolved_slots == 15
-	assert report.resolved_targets == 15
+	assert report.resolved_slots == 19
+	assert report.resolved_targets == 19
 	assert {assignment.member_path for assignment in report.assignments} == {
 		"ops_a.open",
 		"ops_a.close",
@@ -33,6 +33,10 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 		"dev_c.api.close",
 		"dev_c.context.open",
 		"dev_c.context.close",
+		"dev_a.ops.init",
+		"dev_b.ops.init",
+		"dev_c.ops.init",
+		"holder2.inner.fn",
 		"holder.run",
 		"node_a.fn",
 		"plain_cb",

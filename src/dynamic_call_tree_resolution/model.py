@@ -66,7 +66,16 @@ class StructPointerMember(Struct):
 	pointee: str | None
 
 
-type Member = FunctionPointerMember | StructPointerMember
+class EmbeddedStructMember(Struct):
+	"""A by-value structure member whose own members resolve in place."""
+
+	kind: Literal["embedded_struct"]
+	name: str | None
+	offset: int
+	members: tuple[Member, ...]
+
+
+type Member = FunctionPointerMember | StructPointerMember | EmbeddedStructMember
 
 
 class StructureLayout(Struct):

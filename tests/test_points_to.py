@@ -37,6 +37,10 @@ EXPECTED_NOPIE: dict[str, tuple[str, ...]] = {
 	"dev_c.api.close": ("driver_b_close",),
 	"dev_c.context.open": ("driver_a_open",),
 	"dev_c.context.close": ("driver_a_close",),
+	"dev_a.ops.init": ("dev_init",),
+	"dev_b.ops.init": ("dev_init",),
+	"dev_c.ops.init": ("dev_init",),
+	"holder2.inner.fn": ("anon_fn",),
 }
 
 

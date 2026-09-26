@@ -26,6 +26,10 @@ EXPECTED_PATHS = {
 	"dev_c.api.close",
 	"dev_c.context.open",
 	"dev_c.context.close",
+	"dev_a.ops.init",
+	"dev_b.ops.init",
+	"dev_c.ops.init",
+	"holder2.inner.fn",
 	"holder.run",
 	"node_a.fn",
 	"plain_cb",
@@ -41,7 +45,7 @@ def test_cli_analyze_json(fixture_elfs: dict[str, Path]) -> None:
 		text=True,
 	)
 	report = msgspec.json.decode(result.stdout, type=AnalysisReport)
-	assert report.resolved_slots == 15
+	assert report.resolved_slots == 19
 	assert {assignment.member_path for assignment in report.assignments} == EXPECTED_PATHS
 
 
@@ -62,4 +66,4 @@ def test_cli_main_entry(
 	with pytest.raises(SystemExit):
 		main()
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisReport)
-	assert report.resolved_slots == 15
+	assert report.resolved_slots == 19

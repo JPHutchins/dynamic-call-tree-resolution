@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from dynamic_call_tree_resolution.model import (
 	Address,
+	EmbeddedStructMember,
 	FunctionPointerMember,
 	Program,
 	Provenance,
@@ -89,21 +90,32 @@ def _object_assignments(
 			)
 		return
 	visited = visited | {data_object.address}
-	for member in layout.members:
+	yield from _member_assignments(program, data_object, 0, layout.members, path, visited)
+
+
+def _member_assignments(
+	program: Program,
+	data_object: DataObject,
+	base_offset: int,
+	members: tuple[Member, ...],
+	path: tuple[str | None, ...],
+	visited: frozenset[Address],
+) -> Iterable[SlotAssignment]:
+	for member in members:
 		member_path = (*path, member.name)
 		match member:
 			case FunctionPointerMember(offset=offset):
-				target = _read_pointer(program, data_object, offset)
+				target = _read_pointer(program, data_object, base_offset + offset)
 				if target is not None and target in program.functions:
 					yield SlotAssignment(
-						slot=Address(data_object.address + offset),
+						slot=Address(data_object.address + base_offset + offset),
 						path=member_path,
 						candidates=frozenset({target}),
 						provenance=Provenance.CONSTANT_DATA,
 					)
 			case StructPointerMember(offset=offset, pointee=pointee):  # pragma: no branch
 				target_object = _object_covering(
-					program, _read_pointer(program, data_object, offset)
+					program, _read_pointer(program, data_object, base_offset + offset)
 				)
 				if target_object is not None and (
 					pointee is None
@@ -111,6 +123,15 @@ def _object_assignments(
 					or target_object.type_name == pointee
 				):
 					yield from _object_assignments(program, target_object, member_path, visited)
+			case EmbeddedStructMember(offset=offset, members=inner_members):  # pragma: no branch
+				yield from _member_assignments(
+					program,
+					data_object,
+					base_offset + offset,
+					inner_members,
+					member_path,
+					visited,
+				)
 
 
 def _slot_path(program: Program, address: Address) -> tuple[str | None, ...]:

@@ -142,6 +142,7 @@ ignore = [
     "PLR0912",
     "PLR0913",
     "PLR0915",
+    "PLR0917",
     "PLR2004", # honest small numbers
     "TRY003",  # messages live in the raise; no exception-class zoo
     "TRY004",  # ValueError is the CLI's user-error channel (dispatch catches it)

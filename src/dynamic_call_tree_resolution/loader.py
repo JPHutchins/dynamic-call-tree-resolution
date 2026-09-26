@@ -16,6 +16,7 @@ from salix import replace
 from dynamic_call_tree_resolution.model import (
 	Address,
 	DataObject,
+	EmbeddedStructMember,
 	Function,
 	FunctionPointerMember,
 	FunctionSignature,
@@ -254,7 +255,7 @@ def _pointee_kind(
 ):
 	underlying = _strip_qualifiers(type_die)
 	if underlying is None or underlying.tag != "DW_TAG_pointer_type":
-		return None  # pragma: no branch
+		return None  # pragma: no cover
 	pointee = _strip_qualifiers(_type_die(underlying))
 	if pointee is None:
 		return ("struct", None)
@@ -265,6 +266,24 @@ def _pointee_kind(
 			return ("struct", _type_name(pointee))
 		case _:
 			return None
+
+
+def _member_kind(
+	type_die: DIE | None,
+) -> (
+	tuple[Literal["function_pointer"], FunctionSignature]
+	| tuple[Literal["struct"], str | None]
+	| tuple[Literal["embedded"], tuple[Member, ...]]
+	| None
+):
+	underlying = _strip_qualifiers(type_die)
+	if underlying is None:
+		return None  # pragma: no cover
+	if underlying.tag == "DW_TAG_pointer_type":
+		return _pointee_kind(underlying)
+	if underlying.tag in ("DW_TAG_structure_type", "DW_TAG_union_type"):
+		return ("embedded", tuple(_layout_members(underlying)))
+	return None
 
 
 def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
@@ -291,7 +310,7 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 		offset = _member_offset(child)
 		if offset is None:
 			continue
-		match _pointee_kind(_type_die(child)):
+		match _member_kind(_type_die(child)):
 			case ("function_pointer", signature):
 				yield FunctionPointerMember(
 					kind="function_pointer",
@@ -305,6 +324,13 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 					name=_member_name(child),
 					offset=offset,
 					pointee=pointee,
+				)
+			case ("embedded", members):
+				yield EmbeddedStructMember(
+					kind="embedded_struct",
+					name=_member_name(child),
+					offset=offset,
+					members=members,
 				)
 			case None:  # pragma: no branch
 				pass
