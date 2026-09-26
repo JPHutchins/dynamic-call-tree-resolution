@@ -118,9 +118,12 @@ zswatch_patch = Task(
 		"/select DEPRECATED/d",
 		"zephyr/subsys/usb/device/Kconfig",
 		"zephyr/drivers/usb/device/Kconfig",
+		"-e",
+		"s/^    if kconf.warnings:/    if False and kconf.warnings:/",
+		"zephyr/scripts/kconfig/kconfig.py",
 	),
 	cwd=Path("testbeds/zswatch-workspace"),
-	help="drop DEPRECATED selects from the workspace fork's USB symbols (testbed-local)",
+	help="testbed-local fork patches: drop DEPRECATED selects, make kconfig warnings non-fatal",
 )
 zswatch_build = Task(
 	(
@@ -138,8 +141,6 @@ zswatch_build = Task(
 		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
 		"--",
 		"-Dapp_EXTRA_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/configs/zswatch_app.conf",
-		"-Dmcuboot_EXTRA_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/configs/zswatch_mcuboot.conf",
-		"-Dipc_radio_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/configs/zswatch_ipc_radio.conf",
 	),
 	cwd=Path("testbeds/zswatch-workspace"),
 	env={
