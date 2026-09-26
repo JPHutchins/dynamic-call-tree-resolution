@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.callgraph import CallEdge
+
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
 
-	from dynamic_call_tree_resolution.callgraph import CallEdge
 	from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 
@@ -23,6 +24,25 @@ class StackReport(Struct):
 	depth: int
 	recursive: bool
 	has_dynamic: bool
+
+
+def expand_indirect_calls(
+	edges: Iterable[CallEdge],
+	resolved_candidates: Iterable[str],
+) -> tuple[CallEdge, ...]:
+	"""Replace GCC ``__indirect_call`` placeholders with every resolved candidate.
+
+	GCC emits a call edge to the ``__indirect_call`` placeholder for each
+	unresolved indirect call site. Expanding each site to the union of
+	resolved function-pointer targets is a sound upper bound for
+	worst-case stack depth.
+	"""
+	candidates = tuple(sorted(set(resolved_candidates)))
+	return tuple(
+		CallEdge(caller=edge.caller, callee=callee)
+		for edge in edges
+		for callee in (candidates if edge.callee == "__indirect_call" else (edge.callee,))
+	)
 
 
 def worst_case_depths(

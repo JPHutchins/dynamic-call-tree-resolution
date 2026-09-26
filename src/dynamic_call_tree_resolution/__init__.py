@@ -29,7 +29,11 @@ from dynamic_call_tree_resolution.report import (
 	SlotAssignmentReport,
 	build_report,
 )
-from dynamic_call_tree_resolution.stack_analysis import StackReport, worst_case_depths
+from dynamic_call_tree_resolution.stack_analysis import (
+	StackReport,
+	expand_indirect_calls,
+	worst_case_depths,
+)
 from dynamic_call_tree_resolution.stack_usage import (
 	StackUsage,
 	load_stack_usages,
@@ -59,6 +63,7 @@ __all__ = [
 	"app",
 	"assignments",
 	"build_report",
+	"expand_indirect_calls",
 	"load",
 	"load_callgraph",
 	"load_stack_usages",

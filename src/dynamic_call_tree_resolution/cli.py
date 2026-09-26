@@ -13,7 +13,7 @@ from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.loader import load
 from dynamic_call_tree_resolution.points_to import assignments
 from dynamic_call_tree_resolution.report import build_report
-from dynamic_call_tree_resolution.stack_analysis import worst_case_depths
+from dynamic_call_tree_resolution.stack_analysis import expand_indirect_calls, worst_case_depths
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 
 app = App(name="dctr")
@@ -37,9 +37,25 @@ def analyze(
 
 
 @app.command
-def stack(build_directory: Path) -> None:
-	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
-	reports = worst_case_depths(load_callgraph(build_directory), load_stack_usages(build_directory))
+def stack(build_directory: Path, *, elf: Path | None = None) -> None:
+	"""Print worst-case stack depths of a build directory (.su and .ci artifacts).
+
+	When an ELF is given, unresolved indirect call sites are expanded to
+	every resolved function-pointer target.
+	"""
+	edges = load_callgraph(build_directory)
+	indirect_sites = sum(edge.callee == "__indirect_call" for edge in edges)
+	if elf is not None:
+		program = load(elf)
+		resolved = assignments(program)
+		candidates = (
+			program.functions[address].name
+			for assignment in resolved
+			for address in assignment.candidates
+		)
+		edges = expand_indirect_calls(edges, candidates)
+		print(f"resolved slots: {len(resolved)} | indirect call sites: {indirect_sites}")
+	reports = worst_case_depths(edges, load_stack_usages(build_directory))
 	for report in reports:
 		flags = (" recursive" if report.recursive else "") + (
 			" dynamic" if report.has_dynamic else ""

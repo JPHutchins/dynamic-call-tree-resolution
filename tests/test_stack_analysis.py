@@ -3,7 +3,13 @@
 
 """Tests for :mod:`dynamic_call_tree_resolution.stack_analysis`."""
 
-from dynamic_call_tree_resolution import CallEdge, StackReport, StackUsage, worst_case_depths
+from dynamic_call_tree_resolution import (
+	CallEdge,
+	StackReport,
+	StackUsage,
+	expand_indirect_calls,
+	worst_case_depths,
+)
 
 FRAMES = (
 	StackUsage(function="main", bytes=8, dynamic=False),
@@ -55,3 +61,21 @@ def test_worst_case_depth_counts_missing_frames_as_zero() -> None:
 	assert worst_case_depths(edges, FRAMES) == (
 		StackReport(entry="main", depth=8, recursive=False, has_dynamic=False),
 	)
+
+
+def test_expand_indirect_calls_replaces_placeholders_with_candidates() -> None:
+	edges = (
+		CallEdge(caller="main", callee="direct_fn"),
+		CallEdge(caller="main", callee="__indirect_call"),
+	)
+	expanded = expand_indirect_calls(edges, ("cb_b", "cb_a"))
+	assert expanded == (
+		CallEdge(caller="main", callee="direct_fn"),
+		CallEdge(caller="main", callee="cb_a"),
+		CallEdge(caller="main", callee="cb_b"),
+	)
+
+
+def test_expand_indirect_calls_without_candidates_drops_placeholders() -> None:
+	edges = (CallEdge(caller="main", callee="__indirect_call"),)
+	assert expand_indirect_calls(edges, ()) == ()

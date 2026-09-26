@@ -80,3 +80,23 @@ def test_cli_stack_plain_text(tmp_path: Path, capsys: pytest.CaptureFixture[str]
 	(nested / "worker.c.su").write_text("worker.c:2:1:worker\t32\tstatic\n")
 	stack(build_directory)
 	assert "main: 48 bytes" in capsys.readouterr().out
+
+
+def test_cli_stack_with_elf_expands_indirect_sites(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"
+	nested.mkdir(parents=True)
+	(nested / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	(nested / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
+	stack(build_directory, elf=fixture_elfs["nopie"])
+	output = capsys.readouterr().out
+	assert "resolved slots: 19" in output
+	assert "indirect call sites: 1" in output
+	assert "main: 80 bytes" in output
