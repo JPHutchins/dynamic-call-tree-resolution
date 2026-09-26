@@ -75,7 +75,7 @@ counter_su = Task(
 		"../.camas/build/counter-su",
 		"zephyr/samples/drivers/can/counter",
 		"--",
-		"-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da",
+		"-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da,indirect",
 	),
 	cwd=Path("testbeds"),
 	env={
