@@ -5,7 +5,7 @@
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from msgspec import Struct
 
 from dynamic_call_tree_resolution.model import Provenance, render_path
 
@@ -13,14 +13,14 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import Program, SlotAssignment
 
 
-class Candidate(BaseModel):
+class Candidate(Struct):
 	"""A resolved target function."""
 
 	name: str
 	address: int
 
 
-class SlotAssignmentReport(BaseModel):
+class SlotAssignmentReport(Struct):
 	"""One resolved function-pointer slot, rendered for consumers."""
 
 	slot_address: int
@@ -29,7 +29,7 @@ class SlotAssignmentReport(BaseModel):
 	provenance: Provenance
 
 
-class AnalysisReport(BaseModel):
+class AnalysisReport(Struct):
 	"""All resolved slots of one program, with aggregate counts."""
 
 	assignments: tuple[SlotAssignmentReport, ...]

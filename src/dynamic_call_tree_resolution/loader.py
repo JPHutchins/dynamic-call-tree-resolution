@@ -11,6 +11,7 @@ from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import SymbolTableSection
+from salix import replace
 
 from dynamic_call_tree_resolution.model import (
 	Address,
@@ -66,6 +67,7 @@ def _load(stream: BinaryIO) -> Program:
 		objects=_merge_objects(
 			_objects_from_symtab(symtab, sections),
 			_objects_from_dwarf(dwarf, sections, elf.elfclass // 8, _byte_order(elf)),
+			_declaration_types(dwarf),
 		),
 		layouts=_layouts(dwarf),
 		relocations=relocations,
@@ -89,7 +91,9 @@ def _sections(elf: ELFFile) -> dict[str, _SectionBytes]:
 			data=section.data(),
 		)
 		for section in elf.iter_sections()
-		if section.header.sh_size > 0 and section.header.sh_type != "SHT_NOBITS"
+		if section.header.sh_size > 0
+		and section.header.sh_type != "SHT_NOBITS"
+		and not section.name.startswith((".debug", ".symtab", ".strtab"))
 	}
 
 
@@ -243,13 +247,17 @@ def _strip_qualifiers(die: DIE | None) -> DIE | None:
 
 def _pointee_kind(
 	type_die: DIE | None,
-) -> tuple[Literal["function_pointer"], FunctionSignature] | tuple[Literal["struct"], str] | None:
+) -> (
+	tuple[Literal["function_pointer"], FunctionSignature]
+	| tuple[Literal["struct"], str | None]
+	| None
+):
 	underlying = _strip_qualifiers(type_die)
-	if underlying is None:
-		return None  # pragma: no cover
+	if underlying is None or underlying.tag != "DW_TAG_pointer_type":
+		return None  # pragma: no branch
 	pointee = _strip_qualifiers(_type_die(underlying))
 	if pointee is None:
-		return None
+		return ("struct", None)
 	match pointee.tag:
 		case "DW_TAG_subroutine_type":
 			return ("function_pointer", _signature(pointee))
@@ -398,14 +406,36 @@ def _byte_size_of(die: DIE) -> int:
 	return int(byte_size.value) if byte_size is not None else 0  # pragma: no branch
 
 
+def _declaration_types(dwarf: DWARFInfo | None) -> dict[str, str]:
+	if dwarf is None:
+		return {}  # pragma: no cover
+	declarations: dict[str, str] = {}
+	for compilation_unit in dwarf.iter_CUs():
+		for die in _iter_dies(compilation_unit.get_top_DIE()):
+			if die.tag != "DW_TAG_variable":
+				continue
+			if "DW_AT_declaration" not in die.attributes:
+				continue
+			name_attribute = die.attributes.get("DW_AT_name")
+			if name_attribute is None:
+				continue  # pragma: no cover
+			declarations[_attr_string(name_attribute.value)] = _type_name(_type_die(die))
+	return declarations
+
+
 def _merge_objects(
 	symtab_objects: dict[Address, DataObject],
 	dwarf_objects: dict[Address, DataObject],
+	declaration_types: Mapping[str, str],
 ) -> dict[Address, DataObject]:
 	merged = dict(dwarf_objects)
 	for address, data_object in symtab_objects.items():
 		if address not in merged:
 			merged[address] = data_object
+		if merged[address].type_name is None and data_object.name in declaration_types:
+			merged[address] = replace(
+				merged[address], type_name=declaration_types[data_object.name]
+			)
 	return merged
 
 

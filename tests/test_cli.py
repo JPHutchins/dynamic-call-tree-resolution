@@ -3,13 +3,14 @@
 
 """Tests for :mod:`dynamic_call_tree_resolution.cli`."""
 
-import json
 import subprocess
 import sys
 from pathlib import Path
 
+import msgspec
 import pytest
 
+from dynamic_call_tree_resolution import AnalysisReport
 from dynamic_call_tree_resolution.cli import analyze, main
 
 EXPECTED_PATHS = {
@@ -21,6 +22,10 @@ EXPECTED_PATHS = {
 	"dev_a.api.close",
 	"dev_b.api.open",
 	"dev_b.api.close",
+	"dev_c.api.open",
+	"dev_c.api.close",
+	"dev_c.context.open",
+	"dev_c.context.close",
 	"holder.run",
 	"node_a.fn",
 	"plain_cb",
@@ -35,9 +40,9 @@ def test_cli_analyze_json(fixture_elfs: dict[str, Path]) -> None:
 		capture_output=True,
 		text=True,
 	)
-	payload = json.loads(result.stdout)
-	assert payload["resolved_slots"] == 11
-	assert {assignment["member_path"] for assignment in payload["assignments"]} == EXPECTED_PATHS
+	report = msgspec.json.decode(result.stdout, type=AnalysisReport)
+	assert report.resolved_slots == 15
+	assert {assignment.member_path for assignment in report.assignments} == EXPECTED_PATHS
 
 
 def test_cli_analyze_plain_text(
@@ -56,4 +61,5 @@ def test_cli_main_entry(
 	monkeypatch.setattr(sys, "argv", ["dctr", "analyze", "--json", str(fixture_elfs["nopie"])])
 	with pytest.raises(SystemExit):
 		main()
-	assert '"resolved_slots": 11' in capsys.readouterr().out
+	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisReport)
+	assert report.resolved_slots == 15

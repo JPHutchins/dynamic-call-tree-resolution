@@ -6,6 +6,7 @@
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
 from typing import Annotated
 
+import msgspec
 from cyclopts import App, Parameter
 
 from dynamic_call_tree_resolution.loader import load
@@ -25,7 +26,7 @@ def analyze(
 	program = load(elf)
 	report = build_report(program, assignments(program))
 	if json:
-		print(report.model_dump_json(indent=2))
+		print(msgspec.json.format(msgspec.json.encode(report).decode()))
 		return
 	for assignment in report.assignments:
 		label = assignment.member_path or hex(assignment.slot_address)

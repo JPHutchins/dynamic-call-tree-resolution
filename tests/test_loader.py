@@ -60,8 +60,17 @@ def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
 	)
 	assert program.layouts["struct device"].members == (
 		StructPointerMember(kind="struct_pointer", name="api", offset=0, pointee="struct ops"),
+		StructPointerMember(kind="struct_pointer", name="context", offset=8, pointee=None),
 	)
 	assert program.layouts["struct bitpacked"].members == ()
+
+
+def test_load_declaration_types_attach_to_symtab_objects(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["multi"])
+	dev_x = next(
+		data_object for data_object in program.objects.values() if data_object.name == "dev_x"
+	)
+	assert dev_x.type_name == "struct device"
 
 
 def test_load_objects(fixture_elfs: dict[str, Path]) -> None:

@@ -42,4 +42,24 @@ matrix = Sequential(
 	},
 )
 
+zephyr_sdk = Path("/home/jp/zephyr-sdk-0.17.4")
+hello = Task(
+	"uv run --group build west build -b qemu_cortex_m3 -d ../.camas/build/hello zephyr/samples/hello_world",
+	cwd=Path("testbeds"),
+	env={
+		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
+		"DTC": str(zephyr_sdk / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
+	},
+	help="build the zephyr hello_world testbed for qemu_cortex_m3 (needs west update)",
+)
+counter = Task(
+	"uv run --group build west build -b native_sim -d ../.camas/build/counter zephyr/samples/drivers/can/counter",
+	cwd=Path("testbeds"),
+	env={
+		"ZEPHYR_TOOLCHAIN_VARIANT": "host",
+		"DTC": str(zephyr_sdk / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
+	},
+	help="build the zephyr CAN counter testbed for native_sim (device API indirection)",
+)
+
 _ = Config(default_task=all, github_task=check, agent=Claude(fix=fix, check=gate))

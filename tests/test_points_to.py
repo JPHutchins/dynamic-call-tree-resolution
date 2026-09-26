@@ -33,6 +33,10 @@ EXPECTED_NOPIE: dict[str, tuple[str, ...]] = {
 	"holder.run": ("undef_ptr_target",),
 	"node_a.fn": ("node_fn",),
 	"plain_cb": ("plain_target",),
+	"dev_c.api.open": ("driver_b_open",),
+	"dev_c.api.close": ("driver_b_close",),
+	"dev_c.context.open": ("driver_a_open",),
+	"dev_c.context.close": ("driver_a_close",),
 }
 
 
@@ -86,6 +90,12 @@ def test_bss_slots_are_unresolved(fixture_elfs: dict[str, Path]) -> None:
 	resolved, _ = _resolved(fixture_elfs["nopie"])
 	assert "bss_cb" not in resolved
 	assert "bss_holder.run" not in resolved
+
+
+def test_multi_tu_resolves_via_declared_types(fixture_elfs: dict[str, Path]) -> None:
+	resolved, program = _resolved(fixture_elfs["multi"])
+	assert set(resolved) == {"dev_x.api", "ops_hidden"}
+	assert _names(program, resolved["dev_x.api"]) == {"hidden_open"}
 
 
 def test_minimal_pie_resolves_via_relocation(fixture_elfs: dict[str, Path]) -> None:

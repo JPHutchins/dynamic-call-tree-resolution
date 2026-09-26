@@ -22,6 +22,7 @@ struct node {
 
 struct container {
 	struct ops *looks_like_ops;
+	int *ip;
 };
 
 typedef struct {
@@ -65,11 +66,12 @@ const struct ops ops_a = { .open = driver_a_open, .close = driver_a_close };
 const struct ops ops_b = { .open = driver_b_open, .close = driver_b_close };
 struct device dev_a = { .api = &ops_a, .context = 0 };
 struct device dev_b = { .api = &ops_b, .context = 0 };
+struct device dev_c = { .api = &ops_b, .context = &ops_a };
 struct handler_holder holder = { .run = undef_ptr_target };
 struct handler_holder bss_holder;
 struct node node_a = { .next = &node_a, .fn = node_fn };
-struct container wrong_chain = { .looks_like_ops = (struct ops *)&dev_a };
-struct container null_chain = { .looks_like_ops = 0 };
+struct container wrong_chain = { .looks_like_ops = (struct ops *)&dev_a, .ip = 0 };
+struct container null_chain = { .looks_like_ops = 0, .ip = 0 };
 anon_t anon_obj = { .x = 1 };
 struct anon_wrapper wrap = { .anon = &anon_obj };
 union un un_obj = { .a = 1 };

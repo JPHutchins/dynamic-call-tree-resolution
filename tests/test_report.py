@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import msgspec
+
 from dynamic_call_tree_resolution import AnalysisReport, assignments, build_report, load
 
 if TYPE_CHECKING:
@@ -16,8 +18,8 @@ if TYPE_CHECKING:
 def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["nopie"])
 	report = build_report(program, assignments(program))
-	assert report.resolved_slots == 11
-	assert report.resolved_targets == 11
+	assert report.resolved_slots == 15
+	assert report.resolved_targets == 15
 	assert {assignment.member_path for assignment in report.assignments} == {
 		"ops_a.open",
 		"ops_a.close",
@@ -27,8 +29,12 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 		"dev_a.api.close",
 		"dev_b.api.open",
 		"dev_b.api.close",
+		"dev_c.api.open",
+		"dev_c.api.close",
+		"dev_c.context.open",
+		"dev_c.context.close",
 		"holder.run",
 		"node_a.fn",
 		"plain_cb",
 	}
-	assert AnalysisReport.model_validate_json(report.model_dump_json()) == report
+	assert msgspec.json.decode(msgspec.json.encode(report), type=AnalysisReport) == report

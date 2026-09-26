@@ -13,3 +13,6 @@
 [submodule "references/camas"]
 	path = references/camas
 	url = https://github.com/JPHutchins/camas
+[submodule "references/salix"]
+	path = references/salix
+	url = https://github.com/JPHutchins/salix

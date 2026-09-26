@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Literal, NamedTuple, NewType
+from typing import TYPE_CHECKING, Literal, NewType
+
+from salix import Struct
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -16,14 +18,14 @@ Address = NewType("Address", int)
 type ByteOrder = Literal["little", "big"]
 
 
-class FunctionSignature(NamedTuple):
+class FunctionSignature(Struct):
 	"""Return and parameter types of a function, as resolved type names."""
 
 	return_type: str
 	parameters: tuple[str, ...]
 
 
-class Function(NamedTuple):
+class Function(Struct):
 	"""A named code region with an optional DWARF-derived signature."""
 
 	name: str
@@ -32,7 +34,7 @@ class Function(NamedTuple):
 	signature: FunctionSignature | None
 
 
-class DataObject(NamedTuple):
+class DataObject(Struct):
 	"""A statically allocated data symbol, with its initialized bytes."""
 
 	name: str
@@ -42,7 +44,7 @@ class DataObject(NamedTuple):
 	bytes: bytes
 
 
-class FunctionPointerMember(NamedTuple):
+class FunctionPointerMember(Struct):
 	"""A structure member whose value is a function pointer."""
 
 	kind: Literal["function_pointer"]
@@ -51,25 +53,29 @@ class FunctionPointerMember(NamedTuple):
 	signature: FunctionSignature | None
 
 
-class StructPointerMember(NamedTuple):
-	"""A structure member pointing at a statically allocated struct instance."""
+class StructPointerMember(Struct):
+	"""A structure member pointing at a statically allocated struct instance.
+
+	``pointee=None`` marks opaque (``void *``) pointers, which are followed
+	when their static value names an object of any known structure type.
+	"""
 
 	kind: Literal["struct_pointer"]
 	name: str | None
 	offset: int
-	pointee: str
+	pointee: str | None
 
 
 type Member = FunctionPointerMember | StructPointerMember
 
 
-class StructureLayout(NamedTuple):
+class StructureLayout(Struct):
 	"""Byte offsets of a structure's pointer-valued members."""
 
 	members: tuple[Member, ...]
 
 
-class Relocation(NamedTuple):
+class Relocation(Struct):
 	"""A link-time fixup: a slot address pointing at a target address."""
 
 	slot: Address
@@ -78,7 +84,7 @@ class Relocation(NamedTuple):
 	type_name: str
 
 
-class Program(NamedTuple):
+class Program(Struct):
 	"""The immutable analysis model of one ELF image."""
 
 	byte_order: ByteOrder
@@ -96,7 +102,7 @@ class Provenance(Enum):
 	CONSTANT_DATA = auto()
 
 
-class SlotAssignment(NamedTuple):
+class SlotAssignment(Struct):
 	"""Candidate target functions for one function-pointer slot."""
 
 	slot: Address

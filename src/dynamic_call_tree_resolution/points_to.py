@@ -105,7 +105,11 @@ def _object_assignments(
 				target_object = _object_covering(
 					program, _read_pointer(program, data_object, offset)
 				)
-				if target_object is not None and target_object.type_name == pointee:
+				if target_object is not None and (
+					pointee is None
+					or target_object.type_name is None
+					or target_object.type_name == pointee
+				):
 					yield from _object_assignments(program, target_object, member_path, visited)
 
 
