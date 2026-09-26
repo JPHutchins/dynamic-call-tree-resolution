@@ -85,4 +85,50 @@ counter_su = Task(
 	help="build the CAN counter testbed with -fstack-usage/-fcallgraph-info for WCS analysis",
 )
 
+zephyr_sdk_legacy = Path("/home/jp/zephyr-sdk-0.17.4")
+zmk = Task(
+	(
+		"uv",
+		"run",
+		"--group",
+		"build",
+		"west",
+		"build",
+		"-b",
+		"nice_nano_v2",
+		"-d",
+		"../.camas/build/zmk",
+		"-s",
+		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zmk/app",
+	),
+	cwd=Path("testbeds/zmk-workspace"),
+	env={
+		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk_legacy),
+		"DTC": str(zephyr_sdk_legacy / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
+	},
+	help="build the ZMK testbed for nice_nano_v2",
+)
+zswatch = Task(
+	(
+		"uv",
+		"run",
+		"--group",
+		"build",
+		"west",
+		"build",
+		"-b",
+		"zswatch/nrf5340/cpuapp",
+		"-d",
+		"../.camas/build/zswatch",
+		"-s",
+		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
+	),
+	cwd=Path("testbeds/zswatch-workspace"),
+	env={
+		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk_legacy),
+		"DTC": str(zephyr_sdk_legacy / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
+	},
+	help="build the ZSWatch testbed for zswatch/nrf5340/cpuapp",
+)
+
 _ = Config(default_task=all, github_task=check, agent=Claude(fix=fix, check=gate))
