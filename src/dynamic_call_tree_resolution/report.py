@@ -37,6 +37,18 @@ class AnalysisReport(Struct):
 	resolved_targets: int
 
 
+class AnalysisSummary(Struct):
+	"""Cross-cutting resolution and stack summary for CI reporting."""
+
+	resolved_slots: int
+	resolved_targets: int
+	indirect_call_sites: int
+	total_functions: int
+	entry_points: int
+	worst_case_bytes: int
+	worst_case_entry: str
+
+
 def build_report(program: Program, resolved: tuple[SlotAssignment, ...]) -> AnalysisReport:
 	"""Render resolved assignments for JSON export."""
 	return AnalysisReport(

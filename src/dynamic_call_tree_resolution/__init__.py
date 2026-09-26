@@ -25,6 +25,7 @@ from dynamic_call_tree_resolution.model import (
 from dynamic_call_tree_resolution.points_to import assignments
 from dynamic_call_tree_resolution.report import (
 	AnalysisReport,
+	AnalysisSummary,
 	Candidate,
 	SlotAssignmentReport,
 	build_report,
@@ -43,6 +44,7 @@ from dynamic_call_tree_resolution.stack_usage import (
 __all__ = [
 	"Address",
 	"AnalysisReport",
+	"AnalysisSummary",
 	"CallEdge",
 	"Candidate",
 	"DataObject",

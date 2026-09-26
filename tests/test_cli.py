@@ -10,8 +10,8 @@ from pathlib import Path
 import msgspec
 import pytest
 
-from dynamic_call_tree_resolution import AnalysisReport
-from dynamic_call_tree_resolution.cli import analyze, main, stack
+from dynamic_call_tree_resolution import AnalysisReport, AnalysisSummary
+from dynamic_call_tree_resolution.cli import analyze, main, stack, summary
 
 EXPECTED_PATHS = {
 	"ops_a.open",
@@ -100,3 +100,23 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	assert "resolved slots: 19" in output
 	assert "indirect call sites: 1" in output
 	assert "main: 80 bytes" in output
+
+
+def test_cli_summary_json(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"
+	nested.mkdir(parents=True)
+	(nested / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	summary(build_directory, fixture_elfs["nopie"])
+	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisSummary)
+	assert report.resolved_slots == 19
+	assert report.indirect_call_sites == 1
+	assert report.worst_case_entry == "main"
+	assert report.worst_case_bytes == 16

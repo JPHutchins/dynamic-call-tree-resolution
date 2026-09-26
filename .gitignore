@@ -17,3 +17,5 @@ htmlcov/
 testbeds/bootloader/
 testbeds/doc/
 testbeds/tools/
+testbeds/zmk-workspace/
+testbeds/zswatch-workspace/
