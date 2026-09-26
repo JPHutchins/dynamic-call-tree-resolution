@@ -139,6 +139,7 @@ zswatch_build = Task(
 		"--",
 		"-Dapp_EXTRA_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/configs/zswatch_app.conf",
 		"-Dmcuboot_EXTRA_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/configs/zswatch_mcuboot.conf",
+		"-Dipc_radio_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/configs/zswatch_ipc_radio.conf",
 	),
 	cwd=Path("testbeds/zswatch-workspace"),
 	env={
