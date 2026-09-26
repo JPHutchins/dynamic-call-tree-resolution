@@ -111,7 +111,18 @@ zmk = Task(
 	},
 	help="build the ZMK testbed for nice_nano",
 )
-zswatch = Task(
+zswatch_patch = Task(
+	(
+		"sed",
+		"-i",
+		"/select DEPRECATED/d",
+		"zephyr/subsys/usb/device/Kconfig",
+		"zephyr/drivers/usb/device/Kconfig",
+	),
+	cwd=Path("testbeds/zswatch-workspace"),
+	help="drop DEPRECATED selects from the workspace fork's USB symbols (testbed-local)",
+)
+zswatch_build = Task(
 	(
 		"uv",
 		"run",
@@ -137,5 +148,6 @@ zswatch = Task(
 	},
 	help="build the ZSWatch testbed for zswatch/nrf5340/cpuapp",
 )
+zswatch = Sequential(zswatch_patch, zswatch_build)
 
 _ = Config(default_task=all, github_task=check, agent=Claude(fix=fix, check=gate))
