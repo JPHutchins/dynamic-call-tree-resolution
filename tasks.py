@@ -135,7 +135,7 @@ zswatch_build = Task(
 		"west",
 		"build",
 		"-b",
-		"zswatch/nrf5340/cpuapp",
+		"watchdk/nrf5340/cpuapp",
 		"-d",
 		"../../.camas/build/zswatch",
 		"-s",
