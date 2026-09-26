@@ -11,10 +11,12 @@ from dynamic_call_tree_resolution.model import (
 	Address,
 	EmbeddedStructMember,
 	FunctionPointerMember,
+	FunctionSignature,
 	Program,
 	Provenance,
 	SlotAssignment,
 	StructPointerMember,
+	UnresolvedSlot,
 )
 
 if TYPE_CHECKING:
@@ -133,6 +135,66 @@ def _member_assignments(
 					member_path,
 					visited,
 				)
+
+
+def unresolved_slots(
+	program: Program, resolved: tuple[SlotAssignment, ...]
+) -> tuple[UnresolvedSlot, ...]:
+	"""Every function-pointer slot in the image with no resolved candidates.
+
+	The slot universe covers top-level function-pointer globals, every
+	function-pointer member of every object with a known structure layout
+	(including embedded structs), and relocation slots pointing at
+	functions.
+	"""
+	resolved_by_slot = {assignment.slot for assignment in resolved}
+	universe: dict[Address, tuple[tuple[str | None, ...], FunctionSignature | None]] = {}
+	for data_object in program.objects.values():
+		layout = _layout_of(program, data_object)
+		if layout is None:
+			if data_object.type_name == "function pointer":
+				universe.setdefault(
+					data_object.address, ((data_object.name,), data_object.signature)
+				)
+			continue
+		_collect_member_slots(data_object, 0, layout.members, (data_object.name,), universe)
+	for relocation in program.relocations:
+		if relocation.target not in program.functions:
+			continue
+		universe.setdefault(relocation.slot, (_slot_path(program, relocation.slot), None))
+	return tuple(
+		sorted(
+			(
+				UnresolvedSlot(slot=slot, path=path, signature=signature)
+				for slot, (path, signature) in universe.items()
+				if slot not in resolved_by_slot
+			),
+			key=lambda slot: slot.slot,
+		)
+	)
+
+
+def _collect_member_slots(
+	data_object: DataObject,
+	base_offset: int,
+	members: tuple[Member, ...],
+	path: tuple[str | None, ...],
+	universe: dict[Address, tuple[tuple[str | None, ...], FunctionSignature | None]],
+) -> None:
+	for member in members:
+		member_path = (*path, member.name)
+		match member:
+			case FunctionPointerMember(offset=offset, signature=signature):
+				universe.setdefault(
+					Address(data_object.address + base_offset + offset),
+					(member_path, signature),
+				)
+			case EmbeddedStructMember(offset=offset, members=inner_members):
+				_collect_member_slots(
+					data_object, base_offset + offset, inner_members, member_path, universe
+				)
+			case StructPointerMember():  # pragma: no branch
+				pass
 
 
 def _slot_path(program: Program, address: Address) -> tuple[str | None, ...]:

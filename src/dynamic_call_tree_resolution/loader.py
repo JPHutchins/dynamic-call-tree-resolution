@@ -206,7 +206,7 @@ def _signature(die: DIE) -> FunctionSignature:
 
 def _type_name(die: DIE | None) -> str:
 	if die is None:
-		return "<unknown>"  # pragma: no branch
+		return "void"
 	match die.tag:
 		case "DW_TAG_base_type" | "DW_TAG_enumeration_type":
 			return _die_name(die)
@@ -370,6 +370,7 @@ def _objects_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, Dat
 			address=address,
 			size=symbol["st_size"],
 			type_name=None,
+			signature=None,
 		)
 	return objects
 
@@ -398,8 +399,17 @@ def _objects_from_dwarf(
 				address=address,
 				size=size,
 				type_name=_type_name(_type_die(die)),
+				signature=_object_signature(die),
 			)
 	return objects
+
+
+def _object_signature(die: DIE) -> FunctionSignature | None:
+	match _pointee_kind(_type_die(die)):
+		case ("function_pointer", signature):
+			return signature
+		case _:
+			return None
 
 
 def _location_address(die: DIE, pointer_size: int, byte_order: ByteOrder) -> Address | None:

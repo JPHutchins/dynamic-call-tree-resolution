@@ -10,12 +10,14 @@ from typing import TYPE_CHECKING
 import pytest
 
 from dynamic_call_tree_resolution import (
+	FunctionSignature,
 	Program,
 	Provenance,
 	SlotAssignment,
 	assignments,
 	load,
 	render_path,
+	unresolved_slots,
 )
 
 if TYPE_CHECKING:
@@ -116,3 +118,29 @@ def test_assignments_are_sorted_by_slot(fixture_elfs: dict[str, Path]) -> None:
 	assert [assignment.slot for assignment in resolved] == sorted(
 		assignment.slot for assignment in resolved
 	)
+
+
+def test_unresolved_slots_report_bss_slots_with_signatures(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["nopie"])
+	by_path = {
+		render_path(slot.path): slot for slot in unresolved_slots(program, assignments(program))
+	}
+	assert set(by_path) == {"bss_cb", "bss_holder.run"}
+	assert by_path["bss_cb"].signature == FunctionSignature(return_type="void", parameters=("int",))
+	assert by_path["bss_holder.run"].signature == FunctionSignature(
+		return_type="void", parameters=()
+	)
+
+
+@pytest.mark.parametrize("variant", ["pie", "o2"])
+def test_unresolved_slots_across_variants(fixture_elfs: dict[str, Path], variant: str) -> None:
+	program = load(fixture_elfs[variant])
+	assert {render_path(slot.path) for slot in unresolved_slots(program, assignments(program))} == {
+		"bss_cb",
+		"bss_holder.run",
+	}
+
+
+def test_unresolved_slots_without_dwarf_reports_nothing(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["nodebug"])
+	assert unresolved_slots(program, assignments(program)) == ()

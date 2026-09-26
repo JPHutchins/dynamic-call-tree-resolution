@@ -47,7 +47,11 @@ def _program(
 		},
 		objects={
 			Address(address): DataObject(
-				name=name, address=Address(address), size=len(data), type_name=None
+				name=name,
+				address=Address(address),
+				size=len(data),
+				type_name=None,
+				signature=None,
 			)
 			for name, address, data in objects
 		},

@@ -56,6 +56,7 @@ def test_cli_analyze_plain_text(
 	analyze(fixture_elfs["nopie"])
 	output = capsys.readouterr().out
 	assert "dev_a.api.open: driver_a_open" in output
+	assert "bss_cb: <unresolved>" in output
 	assert "main@0x" in output
 
 
@@ -119,6 +120,8 @@ def test_cli_summary_json(
 	summary(build_directory, fixture_elfs["nopie"])
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisSummary)
 	assert report.resolved_slots == 19
+	assert report.total_slots == 13
+	assert report.unresolved_slots == 2
 	assert report.indirect_call_sites == 1
 	assert report.worst_case_entry == "main"
 	assert report.worst_case_bytes == 16

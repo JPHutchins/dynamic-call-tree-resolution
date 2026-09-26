@@ -12,7 +12,7 @@ from cyclopts import App, Parameter
 from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.loader import load
-from dynamic_call_tree_resolution.points_to import assignments
+from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 from dynamic_call_tree_resolution.report import AnalysisSummary, build_report
 from dynamic_call_tree_resolution.stack_analysis import expand_indirect_calls, worst_case_depths
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
@@ -35,6 +35,8 @@ def analyze(
 	for assignment in report.assignments:
 		label = assignment.member_path or hex(assignment.slot_address)
 		print(f"{label}: {', '.join(candidate.name for candidate in assignment.candidates)}")
+	for slot in report.unresolved_slots:
+		print(f"{slot.member_path}: <unresolved>")
 	for site in report.call_sites:
 		label = f"{site.caller}@{site.site_address:#x}"
 		targets = ", ".join(candidate.name for candidate in site.candidates)
@@ -79,8 +81,13 @@ def summary(build_directory: Path, elf: Path) -> None:
 	expanded = expand_indirect_calls(edges, targets_by_caller, fallback)
 	reports = worst_case_depths(expanded, load_stack_usages(build_directory))
 	deepest = max(reports, key=lambda report: report.depth, default=None)
+	unresolved = unresolved_slots(program, resolved)
 	report = AnalysisSummary(
 		resolved_slots=len(resolved),
+		total_slots=len(
+			{assignment.slot for assignment in resolved} | {slot.slot for slot in unresolved}
+		),
+		unresolved_slots=len(unresolved),
 		resolved_targets=sum(len(assignment.candidates) for assignment in resolved),
 		indirect_call_sites=indirect_sites,
 		total_functions=len(program.functions),

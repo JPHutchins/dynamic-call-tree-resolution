@@ -41,6 +41,7 @@ class DataObject(Struct):
 	address: Address
 	size: int
 	type_name: str | None
+	signature: FunctionSignature | None
 
 
 class FunctionPointerMember(Struct):
@@ -133,6 +134,14 @@ class CallSite(Struct):
 	caller_address: Address
 	site_address: Address
 	slot: Address | None
+
+
+class UnresolvedSlot(Struct):
+	"""A function-pointer slot with no statically resolved candidates."""
+
+	slot: Address
+	path: tuple[str | None, ...]
+	signature: FunctionSignature | None
 
 
 def render_path(path: tuple[str | None, ...]) -> str:

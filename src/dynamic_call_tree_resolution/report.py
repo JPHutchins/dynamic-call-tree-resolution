@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 from msgspec import Struct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates
-from dynamic_call_tree_resolution.model import Provenance, render_path
+from dynamic_call_tree_resolution.model import FunctionSignature, Provenance, render_path
+from dynamic_call_tree_resolution.points_to import unresolved_slots
 
 if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import CallSite, Program, SlotAssignment
@@ -40,11 +41,28 @@ class CallSiteReport(Struct):
 	candidates: tuple[Candidate, ...]
 
 
+class SignatureReport(Struct):
+	"""A function signature rendered for consumers."""
+
+	return_type: str
+	parameters: tuple[str, ...]
+
+
+class UnresolvedSlotReport(Struct):
+	"""A function-pointer slot with no statically resolved candidates."""
+
+	slot_address: int
+	member_path: str
+	signature: SignatureReport | None
+
+
 class AnalysisReport(Struct):
-	"""All resolved slots and call sites of one program, with aggregate counts."""
+	"""All resolved slots, call sites, and unresolved slots of one program."""
 
 	assignments: tuple[SlotAssignmentReport, ...]
 	call_sites: tuple[CallSiteReport, ...]
+	unresolved_slots: tuple[UnresolvedSlotReport, ...]
+	total_slots: int
 	resolved_slots: int
 	resolved_targets: int
 
@@ -53,6 +71,8 @@ class AnalysisSummary(Struct):
 	"""Cross-cutting resolution and stack summary for CI reporting."""
 
 	resolved_slots: int
+	total_slots: int
+	unresolved_slots: int
 	resolved_targets: int
 	indirect_call_sites: int
 	total_functions: int
@@ -66,8 +86,9 @@ def build_report(
 	resolved: tuple[SlotAssignment, ...],
 	call_sites: tuple[CallSite, ...],
 ) -> AnalysisReport:
-	"""Render resolved assignments and per-site resolutions for JSON export."""
+	"""Render resolved assignments, per-site resolutions, and unresolved slots."""
 	resolved_by_slot = {assignment.slot: assignment for assignment in resolved}
+	unresolved = unresolved_slots(program, resolved)
 	return AnalysisReport(
 		assignments=tuple(
 			SlotAssignmentReport(
@@ -98,6 +119,23 @@ def build_report(
 			)
 			for site in call_sites
 		),
+		unresolved_slots=tuple(
+			UnresolvedSlotReport(
+				slot_address=slot.slot,
+				member_path=render_path(slot.path),
+				signature=_render_signature(slot.signature),
+			)
+			for slot in unresolved
+		),
+		total_slots=len(set(resolved_by_slot) | {slot.slot for slot in unresolved}),
 		resolved_slots=len(resolved),
 		resolved_targets=sum(len(assignment.candidates) for assignment in resolved),
+	)
+
+
+def _render_signature(signature: FunctionSignature | None) -> SignatureReport | None:
+	return (
+		SignatureReport(return_type=signature.return_type, parameters=signature.parameters)
+		if signature is not None
+		else None
 	)

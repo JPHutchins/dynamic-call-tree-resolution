@@ -110,6 +110,9 @@ def test_load_objects(fixture_elfs: dict[str, Path]) -> None:
 	assert by_name["dev_a"].type_name == "struct device"
 	assert by_name["dev_a"].size == 24
 	assert by_name["plain_cb"].type_name == "function pointer"
+	assert by_name["plain_cb"].signature == FunctionSignature(
+		return_type="void", parameters=("int",)
+	)
 	assert by_name["bss_holder"].size == 8
 	assert program.pointer_size == 8
 	assert program.byte_order == "little"

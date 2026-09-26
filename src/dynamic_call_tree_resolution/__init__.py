@@ -26,15 +26,18 @@ from dynamic_call_tree_resolution.model import (
 	SlotAssignment,
 	StructPointerMember,
 	StructureLayout,
+	UnresolvedSlot,
 	render_path,
 )
-from dynamic_call_tree_resolution.points_to import assignments
+from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisReport,
 	AnalysisSummary,
 	CallSiteReport,
 	Candidate,
+	SignatureReport,
 	SlotAssignmentReport,
+	UnresolvedSlotReport,
 	build_report,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
@@ -65,12 +68,15 @@ __all__ = [
 	"Program",
 	"Provenance",
 	"Relocation",
+	"SignatureReport",
 	"SlotAssignment",
 	"SlotAssignmentReport",
 	"StackReport",
 	"StackUsage",
 	"StructPointerMember",
 	"StructureLayout",
+	"UnresolvedSlot",
+	"UnresolvedSlotReport",
 	"app",
 	"assignments",
 	"build_report",
@@ -85,5 +91,6 @@ __all__ = [
 	"parse_stack_usage",
 	"per_caller_candidates",
 	"render_path",
+	"unresolved_slots",
 	"worst_case_depths",
 ]

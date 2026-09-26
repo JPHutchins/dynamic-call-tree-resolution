@@ -48,4 +48,6 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 		"plain_cb",
 	}
 	assert any(site.caller == "main" and site.candidates for site in report.call_sites)
+	assert {slot.member_path for slot in report.unresolved_slots} == {"bss_cb", "bss_holder.run"}
+	assert report.total_slots == 13  # 11 distinct resolved slots + 2 unresolved
 	assert msgspec.json.decode(msgspec.json.encode(report), type=AnalysisReport) == report
