@@ -105,9 +105,9 @@ zmk = Task(
 	),
 	cwd=Path("testbeds/zmk-workspace"),
 	env={
-		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk_legacy),
+		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
 		"ZEPHYR_TOOLCHAIN_VARIANT": "zephyr",
-		"DTC": str(zephyr_sdk_legacy / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
+		"DTC": str(zephyr_sdk / "hosttools/sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
 	},
 	help="build the ZMK testbed for nice_nano",
 )
