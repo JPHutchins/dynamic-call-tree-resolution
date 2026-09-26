@@ -142,7 +142,6 @@ zswatch_build = Task(
 		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
 		"--",
 		"-DEXTRA_CONF_FILE=boards/debug.conf;boards/log_on_rtt.conf",
-		"-DSB_CONF_FILE=sysbuild.conf",
 		"-DBOARD_ROOT=/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
 	),
 	cwd=Path("testbeds/zswatch-workspace"),
