@@ -100,13 +100,16 @@ zmk = Task(
 		"../../.camas/build/zmk",
 		"-s",
 		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zmk/app",
+		"--",
+		"-DSHIELD=a_dux_left",
 	),
 	cwd=Path("testbeds/zmk-workspace"),
 	env={
 		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk_legacy),
+		"ZEPHYR_TOOLCHAIN_VARIANT": "zephyr",
 		"DTC": str(zephyr_sdk_legacy / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
 	},
-	help="build the ZMK testbed for nice_nano_v2",
+	help="build the ZMK testbed for nice_nano",
 )
 zswatch = Task(
 	(
@@ -126,6 +129,7 @@ zswatch = Task(
 	cwd=Path("testbeds/zswatch-workspace"),
 	env={
 		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk_legacy),
+		"ZEPHYR_TOOLCHAIN_VARIANT": "zephyr",
 		"DTC": str(zephyr_sdk_legacy / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
 	},
 	help="build the ZSWatch testbed for zswatch/nrf5340/cpuapp",
