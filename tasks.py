@@ -142,7 +142,6 @@ zswatch_build = Task(
 		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
 		"--",
 		"-Dapp_EXTRA_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/configs/zswatch_app.conf",
-		"-DSB_CONF_FILE=/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app/sysbuild_no_mcuboot_no_xip.conf",
 	),
 	cwd=Path("testbeds/zswatch-workspace"),
 	env={
