@@ -108,8 +108,10 @@ def test_load_objects(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["pie"])
 	by_name = {data_object.name: data_object for data_object in program.objects.values()}
 	assert by_name["dev_a"].type_name == "struct device"
-	assert len(by_name["dev_a"].bytes) == 24
+	assert by_name["dev_a"].size == 24
 	assert by_name["plain_cb"].type_name == "function pointer"
-	assert by_name["bss_holder"].bytes == b""
+	assert by_name["bss_holder"].size == 8
 	assert program.pointer_size == 8
 	assert program.byte_order == "little"
+	assert program.machine == "EM_X86_64"
+	assert program.sections

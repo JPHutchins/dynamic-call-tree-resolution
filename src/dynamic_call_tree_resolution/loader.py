@@ -41,9 +41,11 @@ class _SectionBytes(NamedTuple):
 	address: int
 	size: int
 	data: bytes
+	flags: int
 
 
 _DW_OP_ADDR = 0x03
+_SHF_ALLOC = 0x2
 
 
 def load(path: Path) -> Program:
@@ -64,14 +66,20 @@ def _load(stream: BinaryIO) -> Program:
 	return Program(
 		byte_order=_byte_order(elf),
 		pointer_size=elf.elfclass // 8,
+		machine=elf.header["e_machine"],
 		functions={**_functions_from_symtab(symtab), **_functions_from_dwarf(dwarf)},
 		objects=_merge_objects(
-			_objects_from_symtab(symtab, sections),
-			_objects_from_dwarf(dwarf, sections, elf.elfclass // 8, _byte_order(elf)),
+			_objects_from_symtab(symtab),
+			_objects_from_dwarf(dwarf, elf.elfclass // 8, _byte_order(elf)),
 			_declaration_types(dwarf),
 		),
 		layouts=_layouts(dwarf),
 		relocations=relocations,
+		sections={
+			Address(section.address): section.data
+			for section in sections.values()
+			if section.flags & _SHF_ALLOC
+		},
 	)
 
 
@@ -90,6 +98,7 @@ def _sections(elf: ELFFile) -> dict[str, _SectionBytes]:
 			address=section.header.sh_addr,
 			size=section.header.sh_size,
 			data=section.data(),
+			flags=section.header.sh_flags,
 		)
 		for section in elf.iter_sections()
 		if section.header.sh_size > 0
@@ -114,6 +123,7 @@ def _relocated_sections(
 			address=section.address,
 			size=section.size,
 			data=_patched(section, patches, pointer_size),
+			flags=section.flags,
 		)
 		for name, section in sections.items()
 	}
@@ -126,15 +136,6 @@ def _patched(section: _SectionBytes, patches: Mapping[Address, bytes], pointer_s
 			offset = slot - section.address
 			data[offset : offset + pointer_size] = target
 	return bytes(data)
-
-
-def _bytes_at(sections: dict[str, _SectionBytes], address: int, size: int) -> bytes:
-	for section in sections.values():
-		if not section.address <= address < section.address + section.size:
-			continue
-		offset = address - section.address
-		return section.data[offset : offset + size]
-	return b""
 
 
 def _functions_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, Function]:
@@ -354,10 +355,7 @@ def _member_offset(member_die: DIE) -> int | None:
 	return int(location.value)
 
 
-def _objects_from_symtab(
-	symtab: SymbolTableSection | None,
-	sections: dict[str, _SectionBytes],
-) -> dict[Address, DataObject]:
+def _objects_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, DataObject]:
 	if symtab is None:
 		return {}  # pragma: no cover
 	objects: dict[Address, DataObject] = {}
@@ -372,14 +370,12 @@ def _objects_from_symtab(
 			address=address,
 			size=symbol["st_size"],
 			type_name=None,
-			bytes=_bytes_at(sections, address, symbol["st_size"]),
 		)
 	return objects
 
 
 def _objects_from_dwarf(
 	dwarf: DWARFInfo | None,
-	sections: dict[str, _SectionBytes],
 	pointer_size: int,
 	byte_order: ByteOrder,
 ) -> dict[Address, DataObject]:
@@ -402,7 +398,6 @@ def _objects_from_dwarf(
 				address=address,
 				size=size,
 				type_name=_type_name(_type_die(die)),
-				bytes=_bytes_at(sections, address, size),
 			)
 	return objects
 

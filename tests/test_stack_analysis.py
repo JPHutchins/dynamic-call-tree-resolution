@@ -67,15 +67,19 @@ def test_expand_indirect_calls_replaces_placeholders_with_candidates() -> None:
 	edges = (
 		CallEdge(caller="main", callee="direct_fn"),
 		CallEdge(caller="main", callee="__indirect_call"),
+		CallEdge(caller="other", callee="__indirect_call"),
 	)
-	expanded = expand_indirect_calls(edges, ("cb_b", "cb_a"))
+	expanded = expand_indirect_calls(
+		edges, {"main": frozenset({"cb_b", "cb_a"})}, frozenset({"fallback_fn"})
+	)
 	assert expanded == (
 		CallEdge(caller="main", callee="direct_fn"),
 		CallEdge(caller="main", callee="cb_a"),
 		CallEdge(caller="main", callee="cb_b"),
+		CallEdge(caller="other", callee="fallback_fn"),
 	)
 
 
 def test_expand_indirect_calls_without_candidates_drops_placeholders() -> None:
 	edges = (CallEdge(caller="main", callee="__indirect_call"),)
-	assert expand_indirect_calls(edges, ()) == ()
+	assert expand_indirect_calls(edges, {}, frozenset()) == ()

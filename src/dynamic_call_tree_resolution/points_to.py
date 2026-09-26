@@ -80,7 +80,7 @@ def _object_assignments(
 		return
 	layout = _layout_of(program, data_object)
 	if layout is None:
-		target = _read_pointer(program, data_object, 0)
+		target = pointer_at(program, data_object.address)
 		if target is not None and target in program.functions:
 			yield SlotAssignment(
 				slot=data_object.address,
@@ -105,7 +105,7 @@ def _member_assignments(
 		member_path = (*path, member.name)
 		match member:
 			case FunctionPointerMember(offset=offset):
-				target = _read_pointer(program, data_object, base_offset + offset)
+				target = pointer_at(program, Address(data_object.address + base_offset + offset))
 				if target is not None and target in program.functions:
 					yield SlotAssignment(
 						slot=Address(data_object.address + base_offset + offset),
@@ -115,7 +115,8 @@ def _member_assignments(
 					)
 			case StructPointerMember(offset=offset, pointee=pointee):  # pragma: no branch
 				target_object = _object_covering(
-					program, _read_pointer(program, data_object, base_offset + offset)
+					program,
+					pointer_at(program, Address(data_object.address + base_offset + offset)),
 				)
 				if target_object is not None and (
 					pointee is None
@@ -170,11 +171,32 @@ def _object_covering(program: Program, address: Address | None) -> DataObject | 
 	)
 
 
-def _read_pointer(program: Program, data_object: DataObject, offset: int) -> Address | None:
-	if offset + program.pointer_size > len(data_object.bytes):
+def memory_at(program: Program, address: Address, size: int) -> bytes:
+	"""Read ``size`` bytes of the loaded image at ``address``.
+
+	Returns a short (possibly empty) slice when the read extends past the
+	end of the covering allocated section.
+	"""
+	for section_address, data in program.sections.items():
+		if not section_address <= address < section_address + len(data):
+			continue
+		offset = address - section_address
+		return data[offset : offset + size]
+	return b""
+
+
+def pointer_at(program: Program, address: Address) -> Address | None:
+	"""Read the pointer stored at ``address`` in the loaded image.
+
+	Reads are bounded by any object covering the address, so a pointer
+	that would extend past its object is not readable.
+	"""
+	data_object = _object_covering(program, address)
+	if data_object is not None and (
+		address + program.pointer_size > data_object.address + max(data_object.size, 1)
+	):
 		return None
-	return Address(
-		int.from_bytes(
-			data_object.bytes[offset : offset + program.pointer_size], program.byte_order
-		)
-	)
+	data = memory_at(program, address, program.pointer_size)
+	if len(data) != program.pointer_size:
+		return None
+	return Address(int.from_bytes(data, program.byte_order))

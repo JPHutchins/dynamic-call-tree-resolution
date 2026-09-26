@@ -3,6 +3,7 @@ from typing import Any, Literal, overload
 
 class SectionHeader:
 	sh_addr: int
+	sh_flags: int
 	sh_size: int
 	sh_type: str
 

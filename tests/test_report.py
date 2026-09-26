@@ -9,7 +9,13 @@ from typing import TYPE_CHECKING
 
 import msgspec
 
-from dynamic_call_tree_resolution import AnalysisReport, assignments, build_report, load
+from dynamic_call_tree_resolution import (
+	AnalysisReport,
+	assignments,
+	build_report,
+	extract_call_sites,
+	load,
+)
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -17,7 +23,7 @@ if TYPE_CHECKING:
 
 def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["nopie"])
-	report = build_report(program, assignments(program))
+	report = build_report(program, assignments(program), extract_call_sites(program))
 	assert report.resolved_slots == 19
 	assert report.resolved_targets == 19
 	assert {assignment.member_path for assignment in report.assignments} == {
@@ -41,4 +47,5 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 		"node_a.fn",
 		"plain_cb",
 	}
+	assert any(site.caller == "main" and site.candidates for site in report.call_sites)
 	assert msgspec.json.decode(msgspec.json.encode(report), type=AnalysisReport) == report

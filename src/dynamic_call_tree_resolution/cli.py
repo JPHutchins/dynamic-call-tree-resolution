@@ -9,6 +9,7 @@ from typing import Annotated
 import msgspec
 from cyclopts import App, Parameter
 
+from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.loader import load
 from dynamic_call_tree_resolution.points_to import assignments
@@ -25,15 +26,19 @@ def analyze(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 ) -> None:
-	"""Print resolved function-pointer assignments of an ELF image."""
+	"""Print resolved function-pointer assignments and call sites of an ELF image."""
 	program = load(elf)
-	report = build_report(program, assignments(program))
+	report = build_report(program, assignments(program), extract_call_sites(program))
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(report).decode()))
 		return
 	for assignment in report.assignments:
 		label = assignment.member_path or hex(assignment.slot_address)
 		print(f"{label}: {', '.join(candidate.name for candidate in assignment.candidates)}")
+	for site in report.call_sites:
+		label = f"{site.caller}@{site.site_address:#x}"
+		targets = ", ".join(candidate.name for candidate in site.candidates)
+		print(f"{label}: {targets or '<unresolved>'}")
 
 
 @app.command
@@ -48,12 +53,10 @@ def stack(build_directory: Path, *, elf: Path | None = None) -> None:
 	if elf is not None:
 		program = load(elf)
 		resolved = assignments(program)
-		candidates = (
-			program.functions[address].name
-			for assignment in resolved
-			for address in assignment.candidates
+		targets_by_caller, fallback = per_caller_candidates(
+			program, extract_call_sites(program), resolved
 		)
-		edges = expand_indirect_calls(edges, candidates)
+		edges = expand_indirect_calls(edges, targets_by_caller, fallback)
 		print(f"resolved slots: {len(resolved)} | indirect call sites: {indirect_sites}")
 	reports = worst_case_depths(edges, load_stack_usages(build_directory))
 	for report in reports:
@@ -70,12 +73,10 @@ def summary(build_directory: Path, elf: Path) -> None:
 	resolved = assignments(program)
 	edges = load_callgraph(build_directory)
 	indirect_sites = sum(edge.callee == "__indirect_call" for edge in edges)
-	candidates = (
-		program.functions[address].name
-		for assignment in resolved
-		for address in assignment.candidates
+	targets_by_caller, fallback = per_caller_candidates(
+		program, extract_call_sites(program), resolved
 	)
-	expanded = expand_indirect_calls(edges, candidates)
+	expanded = expand_indirect_calls(edges, targets_by_caller, fallback)
 	reports = worst_case_depths(expanded, load_stack_usages(build_directory))
 	deepest = max(reports, key=lambda report: report.depth, default=None)
 	report = AnalysisSummary(

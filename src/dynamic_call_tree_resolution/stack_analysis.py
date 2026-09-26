@@ -28,20 +28,24 @@ class StackReport(Struct):
 
 def expand_indirect_calls(
 	edges: Iterable[CallEdge],
-	resolved_candidates: Iterable[str],
+	targets_by_caller: Mapping[str, frozenset[str]],
+	fallback: frozenset[str],
 ) -> tuple[CallEdge, ...]:
-	"""Replace GCC ``__indirect_call`` placeholders with every resolved candidate.
+	"""Replace GCC ``__indirect_call`` placeholders with resolved targets.
 
-	GCC emits a call edge to the ``__indirect_call`` placeholder for each
-	unresolved indirect call site. Expanding each site to the union of
-	resolved function-pointer targets is a sound upper bound for
-	worst-case stack depth.
+	Each caller's placeholders expand to the union of the candidates of the
+	call sites extracted from that caller's code; callers without extracted
+	sites expand to ``fallback`` (the union of all resolved targets). Both
+	expansions are sound upper bounds for worst-case stack depth.
 	"""
-	candidates = tuple(sorted(set(resolved_candidates)))
 	return tuple(
 		CallEdge(caller=edge.caller, callee=callee)
 		for edge in edges
-		for callee in (candidates if edge.callee == "__indirect_call" else (edge.callee,))
+		for callee in (
+			sorted(targets_by_caller.get(edge.caller, fallback))
+			if edge.callee == "__indirect_call"
+			else (edge.callee,)
+		)
 	)
 
 

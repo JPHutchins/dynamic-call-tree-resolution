@@ -1,0 +1,6 @@
+X86_OP_IMM: int
+X86_OP_MEM: int
+X86_OP_REG: int
+X86_REG_RBP: int
+X86_REG_RIP: int
+X86_REG_RSP: int

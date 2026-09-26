@@ -35,13 +35,12 @@ class Function(Struct):
 
 
 class DataObject(Struct):
-	"""A statically allocated data symbol, with its initialized bytes."""
+	"""A statically allocated data symbol."""
 
 	name: str
 	address: Address
 	size: int
 	type_name: str | None
-	bytes: bytes
 
 
 class FunctionPointerMember(Struct):
@@ -98,10 +97,12 @@ class Program(Struct):
 
 	byte_order: ByteOrder
 	pointer_size: int
+	machine: str
 	functions: Mapping[Address, Function]
 	objects: Mapping[Address, DataObject]
 	layouts: Mapping[str, StructureLayout]
 	relocations: tuple[Relocation, ...]
+	sections: Mapping[Address, bytes]
 
 
 class Provenance(Enum):
@@ -118,6 +119,20 @@ class SlotAssignment(Struct):
 	path: tuple[str | None, ...]
 	candidates: frozenset[Address]
 	provenance: Provenance
+
+
+class CallSite(Struct):
+	"""An indirect call or tail-branch instruction in one function's code.
+
+	``slot`` is the address the call target is taken from: the target
+	function itself when the site's register or memory operand resolves
+	directly to one, the function-pointer slot holding the target, or
+	``None`` when neither could be established.
+	"""
+
+	caller_address: Address
+	site_address: Address
+	slot: Address | None
 
 
 def render_path(path: tuple[str | None, ...]) -> str:

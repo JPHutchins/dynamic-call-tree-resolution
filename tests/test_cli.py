@@ -54,7 +54,9 @@ def test_cli_analyze_plain_text(
 	capsys: pytest.CaptureFixture[str],
 ) -> None:
 	analyze(fixture_elfs["nopie"])
-	assert "dev_a.api.open: driver_a_open" in capsys.readouterr().out
+	output = capsys.readouterr().out
+	assert "dev_a.api.open: driver_a_open" in output
+	assert "main@0x" in output
 
 
 def test_cli_main_entry(
