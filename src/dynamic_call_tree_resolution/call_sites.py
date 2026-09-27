@@ -8,9 +8,11 @@ bytes with capstone, then a ten-instruction window of register tracking maps
 the target register back to a pointer value. Memory loads dereference
 through the loaded image, so chains like ``mov rax, [rip+dev]`` /
 ``mov rax, [rax]`` resolve to the stored function pointer rather than
-stopping at the first slot. Unconditional control transfers clear the
-tracked values (registers are dead across them); conditional branches keep
-them, since both paths to the site run the tracked instructions.
+stopping at the first slot. Control flow within the window is explored
+path-by-path: conditional branches fork, direct jumps carry their state to
+the target (loops re-enter the window), and calls keep callee-saved
+registers. Registers whose values disagree across paths are dropped, so the
+site falls back to the union of resolved targets rather than guess.
 
 The linear sweep decodes past embedded data (jump tables, literal pools)
 on architectures where every byte is a valid instruction; sites found in
@@ -88,6 +90,49 @@ _X86_TRANSFERS = (
 	"hlt",
 )
 _ARM_TRANSFERS = ("bl", "blx", "bx", "b", "pop", "svc", "bkpt", "udf", "tbb", "tbh")
+_X86_CALLS = ("call",)
+_ARM_CALLS = ("bl", "blx")
+_ARM_CONDITIONAL = frozenset(
+	{
+		"beq",
+		"bne",
+		"bcs",
+		"bcc",
+		"bmi",
+		"bpl",
+		"bvs",
+		"bvc",
+		"bhi",
+		"bls",
+		"bge",
+		"blt",
+		"bgt",
+		"ble",
+		"bhs",
+		"blo",
+		"cbz",
+		"cbnz",
+	}
+)
+_X86_CALLER_SAVED = (
+	x86_const.X86_REG_RAX,
+	x86_const.X86_REG_RCX,
+	x86_const.X86_REG_RDX,
+	x86_const.X86_REG_RSI,
+	x86_const.X86_REG_RDI,
+	x86_const.X86_REG_R8,
+	x86_const.X86_REG_R9,
+	x86_const.X86_REG_R10,
+	x86_const.X86_REG_R11,
+)
+_ARM_CALLER_SAVED = (
+	arm_const.ARM_REG_R0,
+	arm_const.ARM_REG_R1,
+	arm_const.ARM_REG_R2,
+	arm_const.ARM_REG_R3,
+	arm_const.ARM_REG_R12,
+	arm_const.ARM_REG_LR,
+)
 _X86_MOVES = ("mov", "movabs")
 _ARM_LOADS = ("ldr", "ldr.w", "ldr.n")
 _ARM_MOVES = ("mov", "movs", "mov.w")
@@ -169,14 +214,110 @@ def _site_operand(
 
 def _window_state(
 	instructions: tuple[CsInsn, ...], site_index: int, program: Program
-) -> dict[int, Address | None]:
-	state: dict[int, Address | None] = {}
-	for instruction in instructions[max(0, site_index - _WINDOW) : site_index]:
-		if _is_control_transfer(instruction, program.machine):
-			state = {}
+) -> dict[int, Address]:
+	"""Register values the site may see on any in-window path.
+
+	Streams explore the window from its start: conditional branches fork
+	into fallthrough and taken paths, a direct jump carries its stream to
+	the target (backward jumps re-enter the window), calls keep
+	callee-saved registers, and registers whose values disagree across
+	paths are dropped so the site falls back rather than guess.
+	"""
+	start = max(0, site_index - _WINDOW)
+	by_address = {
+		instruction.address: index
+		for index, instruction in enumerate(instructions[start:site_index], start)
+	}
+	streams: list[tuple[int, dict[int, Address]]] = [(start, {})]
+	seen: set[tuple[int, tuple[tuple[int, Address], ...]]] = set()
+	final: dict[int, Address] = {}
+	while streams:
+		index, state = streams.pop()
+		if index >= site_index:
+			_merge_may_set(final, state)
 			continue
-		_apply(instruction, state, program)
-	return state
+		key = (index, tuple(sorted(state.items())))
+		if key in seen:
+			continue
+		seen.add(key)
+		instruction = instructions[index]
+		if instruction.mnemonic == ".byte":
+			streams.append((index + 1, state))
+			continue
+		target = _branch_target(instruction, program.machine)
+		if target is not None:
+			target_address, conditional = target
+			if conditional:
+				streams.append((index + 1, state))
+			target_index = by_address.get(target_address)
+			if target_index is not None:
+				streams.append((target_index, dict(state)))
+			elif target_address == instructions[site_index].address:
+				streams.append((site_index, dict(state)))
+			elif target_address < instructions[start].address:
+				streams.append((start, dict(state)))
+			continue
+		if _is_control_transfer(instruction, program.machine):
+			if instruction.mnemonic in (
+				_X86_CALLS if program.machine in ("EM_X86_64", "EM_386") else _ARM_CALLS
+			):
+				streams.append((index + 1, _clobber_caller_saved(state, program.machine)))
+			continue
+		next_state = dict(state)
+		_apply(instruction, next_state, program)
+		streams.append((index + 1, next_state))
+	return final
+
+
+def _branch_target(instruction: CsInsn, machine: str) -> tuple[int, bool] | None:
+	"""(target address, conditional) of a direct branch, or None."""
+	if machine in ("EM_X86_64", "EM_386"):
+		if instruction.mnemonic == "jmp":
+			conditional = False
+		elif instruction.mnemonic.startswith("j") or instruction.mnemonic in (
+			"loop",
+			"loope",
+			"loopne",
+		):
+			conditional = True
+		else:
+			return None
+		operand = instruction.operands[0]
+		if operand.type != x86_const.X86_OP_IMM:
+			return None
+		return operand.imm, conditional  # capstone reports the absolute target
+	base = instruction.mnemonic.split(".")[0]
+	if base == "b":
+		conditional = False
+	elif base in _ARM_CONDITIONAL:
+		conditional = True
+	else:
+		return None
+	if base in ("cbz", "cbnz"):
+		imm5 = (instruction.bytes[1] >> 3) & 0x1F
+		return instruction.address + 4 + 2 * imm5, conditional
+	operand = instruction.operands[0]
+	if operand.type != arm_const.ARM_OP_IMM:
+		return None  # pragma: no cover
+	# capstone's imm is unaligned PC-relative; b-family encodings align PC to 4
+	pc = instruction.address + 4
+	displacement = operand.imm - pc
+	return (pc & ~3) + displacement, conditional
+
+
+def _clobber_caller_saved(state: dict[int, Address], machine: str) -> dict[int, Address]:
+	clobbered = dict(state)
+	for register in _X86_CALLER_SAVED if machine in ("EM_X86_64", "EM_386") else _ARM_CALLER_SAVED:
+		clobbered.pop(register, None)
+	return clobbered
+
+
+def _merge_may_set(final: dict[int, Address], state: dict[int, Address]) -> None:
+	for register, value in state.items():
+		if register in final and final[register] != value:
+			del final[register]
+		else:
+			final[register] = value
 
 
 def _is_control_transfer(instruction: CsInsn, machine: str) -> bool:
@@ -185,44 +326,52 @@ def _is_control_transfer(instruction: CsInsn, machine: str) -> bool:
 	return instruction.mnemonic in _ARM_TRANSFERS
 
 
-def _apply(instruction: CsInsn, state: dict[int, Address | None], program: Program) -> None:
-	if instruction.mnemonic == ".byte":
-		return
+def _apply(instruction: CsInsn, state: dict[int, Address], program: Program) -> None:
 	if program.machine in ("EM_X86_64", "EM_386"):
 		_apply_x86(instruction, state, program)
 	else:
 		_apply_arm(instruction, state, program)
 
 
-def _apply_x86(instruction: CsInsn, state: dict[int, Address | None], program: Program) -> None:
+def _apply_x86(instruction: CsInsn, state: dict[int, Address], program: Program) -> None:
 	if instruction.mnemonic in _X86_MOVES:
 		destination, source = instruction.operands
 		if destination.type == x86_const.X86_OP_REG:
 			match source.type:
 				case x86_const.X86_OP_REG:
-					state[destination.reg] = state.get(source.reg)
+					_copy_register(state, destination.reg, source.reg)
 				case x86_const.X86_OP_IMM:
 					state[destination.reg] = Address(source.imm)
 				case x86_const.X86_OP_MEM:
-					state[destination.reg] = _deref(
-						_x86_memory_address(instruction, source, state), program
+					_set_deref(
+						state,
+						destination.reg,
+						_x86_memory_address(instruction, source, state),
+						program,
 					)
 				case _:
-					pass
+					state.pop(destination.reg, None)
 			return
 	if instruction.mnemonic == "lea":
 		destination, source = instruction.operands
-		state[destination.reg] = _x86_memory_address(instruction, source, state)
+		address = _x86_memory_address(instruction, source, state)
+		if address is None:
+			state.pop(destination.reg, None)
+		else:
+			state[destination.reg] = address
 		return
 	for register in instruction.regs_access()[1]:
-		state[register] = None
+		state.pop(register, None)
 
 
-def _apply_arm(instruction: CsInsn, state: dict[int, Address | None], program: Program) -> None:
+def _apply_arm(instruction: CsInsn, state: dict[int, Address], program: Program) -> None:
 	if instruction.mnemonic in _ARM_LOADS:
 		destination = instruction.operands[0]
-		state[destination.reg] = _deref(
-			_arm_memory_address(instruction, instruction.operands[1], state), program
+		_set_deref(
+			state,
+			destination.reg,
+			_arm_memory_address(instruction, instruction.operands[1], state),
+			program,
 		)
 		return
 	if instruction.mnemonic in _ARM_MOVES:
@@ -230,14 +379,31 @@ def _apply_arm(instruction: CsInsn, state: dict[int, Address | None], program: P
 		source = instruction.operands[1]
 		match source.type:
 			case arm_const.ARM_OP_REG:
-				state[destination.reg] = state.get(source.reg)
+				_copy_register(state, destination.reg, source.reg)
 			case arm_const.ARM_OP_IMM:
 				state[destination.reg] = Address(source.imm)
 			case _:
-				pass
+				state.pop(destination.reg, None)
 		return
 	for register in instruction.regs_access()[1]:
-		state[register] = None
+		state.pop(register, None)
+
+
+def _copy_register(state: dict[int, Address], destination: int, source: int) -> None:
+	if source in state:
+		state[destination] = state[source]
+	else:
+		state.pop(destination, None)
+
+
+def _set_deref(
+	state: dict[int, Address], register: int, address: Address | None, program: Program
+) -> None:
+	value = _deref(address, program)
+	if value is None:
+		state.pop(register, None)
+	else:
+		state[register] = value
 
 
 def _deref(address: Address | None, program: Program) -> Address | None:
@@ -247,7 +413,7 @@ def _deref(address: Address | None, program: Program) -> Address | None:
 def _x86_memory_address(
 	instruction: CsInsn,
 	operand: _Operand,
-	state: dict[int, Address | None],
+	state: dict[int, Address],
 ) -> Address | None:
 	memory = operand.mem
 	if memory is None:
@@ -265,7 +431,7 @@ def _x86_memory_address(
 def _arm_memory_address(
 	instruction: CsInsn,
 	operand: _Operand,
-	state: dict[int, Address | None],
+	state: dict[int, Address],
 ) -> Address | None:
 	memory = operand.mem
 	if memory is None:

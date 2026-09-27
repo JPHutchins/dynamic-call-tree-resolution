@@ -3,4 +3,9 @@ ARM_OP_MEM: int
 ARM_OP_REG: int
 ARM_REG_LR: int
 ARM_REG_PC: int
+ARM_REG_R0: int
+ARM_REG_R1: int
+ARM_REG_R2: int
+ARM_REG_R3: int
+ARM_REG_R12: int
 ARM_REG_SP: int
