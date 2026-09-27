@@ -609,6 +609,11 @@ def test_skipped_bytes_are_not_sites() -> None:
 	assert site.slot == 0x2000
 
 
+def test_analyze_is_deterministic(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["nopie"])
+	assert extract_call_sites(program) == extract_call_sites(program)
+
+
 def test_unsupported_machine_is_rejected_at_construction() -> None:
 	with pytest.raises(ValueError, match="EM_RISCV"):
 		_program("EM_RISCV", b"")
