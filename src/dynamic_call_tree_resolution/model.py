@@ -131,6 +131,19 @@ def thumb_twin(address: Address) -> Address:
 
 ANONYMOUS = "<anonymous>"
 
+FUNCTION_POINTER = "function pointer"
+ARRAY_SUFFIX = " []"
+
+
+def array_element_type(type_name: str) -> str:
+	"""The element type name of an array type name; identity when not an array."""
+	return type_name.removesuffix(ARRAY_SUFFIX)
+
+
+def layout_key(keyword: str, name: str) -> str:
+	"""The layout-table key for a structure or union type name."""
+	return f"{keyword} {name}"
+
 
 class Provenance(Enum):
 	"""How a slot assignment was established."""

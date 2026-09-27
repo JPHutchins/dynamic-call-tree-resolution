@@ -20,11 +20,19 @@ class CallEdge(Struct):
 	callee: str
 
 
+class _VcgEdge(Struct):
+	"""One raw ``.ci`` edge entry."""
+
+	sourcename: str
+	targetname: str
+
+
 def parse_callgraph(path: Path) -> tuple[CallEdge, ...]:
 	"""Parse one GCC ``.ci`` VCG file into its call edges."""
-	entries = _parse_vcg(path.read_text())
-	edges = entries.get("edge", [])
-	return tuple(CallEdge(caller=edge["sourcename"], callee=edge["targetname"]) for edge in edges)
+	return tuple(
+		CallEdge(caller=edge.sourcename, callee=edge.targetname)
+		for edge in _parse_vcg(path.read_text())
+	)
 
 
 def load_callgraph(build_directory: Path) -> tuple[CallEdge, ...]:
@@ -36,9 +44,17 @@ def load_callgraph(build_directory: Path) -> tuple[CallEdge, ...]:
 	)
 
 
-def _parse_vcg(text: str) -> dict[str, list[dict[str, str]]]:
+def _parse_vcg(text: str) -> tuple[_VcgEdge, ...]:
 	tokens = _tokenize(text)
-	return _parse_body(tokens, 0, "graph")[0]
+	entries, _ = _parse_body(tokens, 0, "graph")
+	return tuple(_edge(entry) for entry in entries.get("edge", ()))
+
+
+def _edge(entry: dict[str, str]) -> _VcgEdge:
+	try:
+		return _VcgEdge(sourcename=entry["sourcename"], targetname=entry["targetname"])
+	except KeyError as missing:
+		raise ValueError(f"edge entry is missing {missing.args[0]!r}") from None
 
 
 def _tokenize(text: str) -> tuple[str, ...]:

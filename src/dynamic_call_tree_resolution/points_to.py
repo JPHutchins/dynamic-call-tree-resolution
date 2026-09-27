@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from dynamic_call_tree_resolution.model import (
+	ARRAY_SUFFIX,
+	FUNCTION_POINTER,
 	Address,
 	EmbeddedStructMember,
 	FunctionPointerMember,
@@ -17,6 +19,7 @@ from dynamic_call_tree_resolution.model import (
 	SlotAssignment,
 	StructPointerMember,
 	UnresolvedSlot,
+	array_element_type,
 )
 
 if TYPE_CHECKING:
@@ -82,9 +85,9 @@ def _object_assignments(
 		return
 	layout = _layout_of(program, data_object)
 	if layout is None:
-		if data_object.type_name is not None and data_object.type_name.endswith(" []"):
-			element_name = data_object.type_name.removesuffix(" []")
-			if program.layouts.get(element_name) is not None or element_name == "function pointer":
+		if data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
+			element_name = array_element_type(data_object.type_name)
+			if program.layouts.get(element_name) is not None or element_name == FUNCTION_POINTER:
 				yield from _array_element_assignments(program, data_object, path, visited)
 			else:
 				yield from _vector_table_assignments(program, data_object, path)
@@ -141,7 +144,7 @@ def _array_element_assignments(
 	path: tuple[str | None, ...],
 	visited: frozenset[Address],
 ) -> Iterable[SlotAssignment]:
-	element_name = data_object.type_name.removesuffix(" []") if data_object.type_name else ""
+	element_name = array_element_type(data_object.type_name) if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
 	if element_layout is None:
 		for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
@@ -207,6 +210,11 @@ def _member_assignments(
 				)
 
 
+class _SlotUniverseEntry(NamedTuple):
+	path: tuple[str | None, ...]
+	signature: FunctionSignature | None
+
+
 def unresolved_slots(
 	program: Program, resolved: tuple[SlotAssignment, ...]
 ) -> tuple[UnresolvedSlot, ...]:
@@ -218,27 +226,30 @@ def unresolved_slots(
 	functions.
 	"""
 	resolved_by_slot = {assignment.slot for assignment in resolved}
-	universe: dict[Address, tuple[tuple[str | None, ...], FunctionSignature | None]] = {}
+	universe: dict[Address, _SlotUniverseEntry] = {}
 	for data_object in program.objects.values():
 		layout = _layout_of(program, data_object)
 		if layout is None:
-			if data_object.type_name == "function pointer":
+			if data_object.type_name == FUNCTION_POINTER:
 				universe.setdefault(
-					data_object.address, ((data_object.name,), data_object.signature)
+					data_object.address,
+					_SlotUniverseEntry((data_object.name,), data_object.signature),
 				)
-			elif data_object.type_name is not None and data_object.type_name.endswith(" []"):
+			elif data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
 				_array_element_slots(program, data_object, (data_object.name,), universe)
 			continue
 		_collect_member_slots(data_object, 0, layout.members, (data_object.name,), universe)
 	for relocation in program.relocations:
 		if relocation.target not in program.functions:
 			continue
-		universe.setdefault(relocation.slot, (_slot_path(program, relocation.slot), None))
+		universe.setdefault(
+			relocation.slot, _SlotUniverseEntry(_slot_path(program, relocation.slot), None)
+		)
 	return tuple(
 		sorted(
 			(
-				UnresolvedSlot(slot=slot, path=path, signature=signature)
-				for slot, (path, signature) in universe.items()
+				UnresolvedSlot(slot=slot, path=entry.path, signature=entry.signature)
+				for slot, entry in universe.items()
 				if slot not in resolved_by_slot
 			),
 			key=lambda slot: slot.slot,
@@ -250,16 +261,16 @@ def _array_element_slots(
 	program: Program,
 	data_object: DataObject,
 	path: tuple[str | None, ...],
-	universe: dict[Address, tuple[tuple[str | None, ...], FunctionSignature | None]],
+	universe: dict[Address, _SlotUniverseEntry],
 ) -> None:
-	element_name = data_object.type_name.removesuffix(" []") if data_object.type_name else ""
+	element_name = array_element_type(data_object.type_name) if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
 	if element_layout is None:
-		if element_name == "function pointer":
+		if element_name == FUNCTION_POINTER:
 			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
 				universe.setdefault(
 					Address(data_object.address + base_offset),
-					((*path, f"[{index}]"), data_object.signature),
+					_SlotUniverseEntry((*path, f"[{index}]"), data_object.signature),
 				)
 		return
 	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
@@ -277,7 +288,7 @@ def _collect_member_slots(
 	base_offset: int,
 	members: tuple[Member, ...],
 	path: tuple[str | None, ...],
-	universe: dict[Address, tuple[tuple[str | None, ...], FunctionSignature | None]],
+	universe: dict[Address, _SlotUniverseEntry],
 ) -> None:
 	for member in members:
 		member_path = (*path, member.name)
@@ -285,7 +296,7 @@ def _collect_member_slots(
 			case FunctionPointerMember(offset=offset, signature=signature):
 				universe.setdefault(
 					Address(data_object.address + base_offset + offset),
-					(member_path, signature),
+					_SlotUniverseEntry(member_path, signature),
 				)
 			case EmbeddedStructMember(offset=offset, members=inner_members):
 				_collect_member_slots(

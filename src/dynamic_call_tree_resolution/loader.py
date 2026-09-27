@@ -16,6 +16,8 @@ from salix import replace
 
 from dynamic_call_tree_resolution.model import (
 	ANONYMOUS,
+	ARRAY_SUFFIX,
+	FUNCTION_POINTER,
 	Address,
 	DataObject,
 	EmbeddedStructMember,
@@ -27,12 +29,13 @@ from dynamic_call_tree_resolution.model import (
 	Relocation,
 	StructPointerMember,
 	StructureLayout,
+	layout_key,
 )
 
 if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
 	from pathlib import Path
-	from typing import BinaryIO, Literal
+	from typing import BinaryIO
 
 	from elftools.dwarf.die import DIE
 	from elftools.dwarf.dwarfinfo import DWARFInfo
@@ -229,18 +232,20 @@ def _type_name(die: DIE | None) -> str:
 			if pointee is None:
 				return "void *"
 			return (
-				"function pointer"
+				FUNCTION_POINTER
 				if pointee.tag == "DW_TAG_subroutine_type"
 				else f"{_type_name(pointee)} *"
 			)
 		case "DW_TAG_typedef":
 			return _type_name(_type_die(die))
 		case "DW_TAG_structure_type" | "DW_TAG_union_type" | "DW_TAG_class_type":
-			return f"{'union' if die.tag == 'DW_TAG_union_type' else 'struct'} {_die_name(die)}"
+			return layout_key(
+				"union" if die.tag == "DW_TAG_union_type" else "struct", _die_name(die)
+			)
 		case "DW_TAG_array_type":
-			return f"{_type_name(_type_die(die))} []"
+			return f"{_type_name(_type_die(die))}{ARRAY_SUFFIX}"
 		case "DW_TAG_subroutine_type":  # pragma: no cover
-			return "function pointer"
+			return FUNCTION_POINTER
 		case _:
 			return str(die.tag)  # pragma: no cover
 
@@ -261,43 +266,46 @@ def _strip_qualifiers(die: DIE | None) -> DIE | None:
 	return _strip_qualifiers(_type_die(die))
 
 
-def _pointee_kind(
-	type_die: DIE | None,
-) -> (
-	tuple[Literal["function_pointer"], FunctionSignature]
-	| tuple[Literal["struct"], str | None]
-	| None
-):
+class _FunctionPointer(NamedTuple):
+	signature: FunctionSignature
+
+
+class _StructPointer(NamedTuple):
+	pointee: str | None
+
+
+class _EmbeddedStruct(NamedTuple):
+	members: tuple[Member, ...]
+
+
+type _PointeeKind = _FunctionPointer | _StructPointer | None
+type _MemberKind = _FunctionPointer | _StructPointer | _EmbeddedStruct | None
+
+
+def _pointee_kind(type_die: DIE | None) -> _PointeeKind:
 	underlying = _strip_qualifiers(type_die)
 	if underlying is None or underlying.tag != "DW_TAG_pointer_type":
 		return None  # pragma: no cover
 	pointee = _strip_qualifiers(_type_die(underlying))
 	if pointee is None:
-		return ("struct", None)
+		return _StructPointer(None)
 	match pointee.tag:
 		case "DW_TAG_subroutine_type":
-			return ("function_pointer", _signature(pointee))
+			return _FunctionPointer(_signature(pointee))
 		case "DW_TAG_structure_type" | "DW_TAG_union_type" if "DW_AT_name" in pointee.attributes:
-			return ("struct", _type_name(pointee))
+			return _StructPointer(_type_name(pointee))
 		case _:
 			return None
 
 
-def _member_kind(
-	type_die: DIE | None,
-) -> (
-	tuple[Literal["function_pointer"], FunctionSignature]
-	| tuple[Literal["struct"], str | None]
-	| tuple[Literal["embedded"], tuple[Member, ...]]
-	| None
-):
+def _member_kind(type_die: DIE | None) -> _MemberKind:
 	underlying = _strip_qualifiers(type_die)
 	if underlying is None:
 		return None  # pragma: no cover
 	if underlying.tag == "DW_TAG_pointer_type":
 		return _pointee_kind(underlying)
 	if underlying.tag in ("DW_TAG_structure_type", "DW_TAG_union_type"):
-		return ("embedded", tuple(_layout_members(underlying)))
+		return _EmbeddedStruct(tuple(_layout_members(underlying)))
 	return None
 
 
@@ -322,7 +330,7 @@ def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 				continue  # pragma: no cover
 			name = _attr_string(name_attribute.value)
 			keyword = "union" if die.tag == "DW_TAG_union_type" else "struct"
-			key = f"{keyword} {name}"
+			key = layout_key(keyword, name)
 			byte_size = die.attributes.get("DW_AT_byte_size")
 			layout = StructureLayout(
 				members=tuple(_layout_members(die)),
@@ -342,21 +350,21 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 		if offset is None:
 			continue  # pragma: no cover
 		match _member_kind(_type_die(child)):
-			case ("function_pointer", signature):
+			case _FunctionPointer(signature):
 				yield FunctionPointerMember(
 					kind="function_pointer",
 					name=_member_name(child),
 					offset=offset,
 					signature=signature,
 				)
-			case ("struct", pointee):
+			case _StructPointer(pointee):
 				yield StructPointerMember(
 					kind="struct_pointer",
 					name=_member_name(child),
 					offset=offset,
 					pointee=pointee,
 				)
-			case ("embedded", members):
+			case _EmbeddedStruct(members):
 				yield EmbeddedStructMember(
 					kind="embedded_struct",
 					name=_member_name(child),
@@ -443,7 +451,7 @@ def _object_signature(die: DIE) -> FunctionSignature | None:
 	if type_die is not None and type_die.tag == "DW_TAG_array_type":
 		type_die = _type_die(type_die)
 	match _pointee_kind(type_die):
-		case ("function_pointer", signature):
+		case _FunctionPointer(signature):
 			return signature
 		case _:
 			return None
