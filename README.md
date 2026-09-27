@@ -56,6 +56,28 @@ console_out@0x960: <unresolved>
   through the `device->api` chain to its single target — the slot layer sees what the site
   alone cannot.
 
+## Where this beats the standard tools
+
+[puncover](https://github.com/HBehrens/puncover) 0.8.0 in its non-interactive report mode
+(`puncover --elf <exe> --build_dir <build> --gcc-tools-base /usr/bin --non-interactive
+--generate-report --report-type json`) on the same Zephyr CAN counter build that `dctr
+stack` analyzes, both fed by GCC's `-fstack-usage`/`-fcallgraph-info` artifacts:
+
+| | puncover | dctr |
+|---|---|---|
+| indirect calls detected | 0 (assembly-text regex) | 98 call sites |
+| `poll_state_thread` worst case | 96 bytes | 340 bytes |
+| `shell_readline` worst case | not reported (symbol match fails) | 1100 bytes |
+
+puncover's indirect-call handling is a detection flag, not a resolution: its worst-case
+traversal dead-ends at indirect edges, so the 244-byte gap for `poll_state_thread` is the
+`can_loopback_get_state` device-API chain it cannot follow — exactly the chain the slot
+layer resolves. pexplorer has the same shape: dynamic edges detected, resolution deferred
+to a hand-maintained config file. That gap is this project's point: everything statically
+assigned resolves exactly (`dctr analyze`), the call sites get per-site candidate sets
+(`dctr compare --pexplorer`), and the runtime-assigned residue is enumerated with member
+paths and signatures instead of left to disassembly-hunting.
+
 ## References
 
 - [pexplorer](https://paulwuertz.github.io/pexplorer/) — Paul Würtz's browser-based
