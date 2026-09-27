@@ -73,6 +73,7 @@ class AnalysisReport(Struct):
 class FunctionComparison(Struct):
 	"""Per-function dynamic-call comparison between pexplorer and dctr."""
 
+	address: int
 	caller: str
 	pexplorer_dynamic_sites: int
 	dctr_call_sites: int
@@ -197,7 +198,8 @@ def build_comparison(
 		)
 	rows = [
 		FunctionComparison(
-			caller=_caller_name(program, caller_address),
+			address=caller_address,
+			caller=_row_name(program, caller_address, dynamic_by_caller),
 			pexplorer_dynamic_sites=dynamic_by_caller[caller_address][1]
 			if caller_address in dynamic_by_caller
 			else 0,
@@ -209,6 +211,7 @@ def build_comparison(
 	]
 	rows.extend(
 		FunctionComparison(
+			address=caller_address,
 			caller=", ".join(dynamic_by_caller[caller_address][0]),
 			pexplorer_dynamic_sites=dynamic_by_caller[caller_address][1],
 			dctr_call_sites=0,
@@ -242,5 +245,17 @@ def _caller_name(program: Program, caller_address: Address) -> str:
 	function = program.functions.get(caller_address) or program.functions.get(
 		Address(caller_address | 1)
 	)
-	assert function is not None
+	if function is None:
+		raise ValueError(f"no function for caller address {caller_address:#x}")  # pragma: no cover
 	return function.name
+
+
+def _row_name(
+	program: Program,
+	caller_address: Address,
+	dynamic_by_caller: Mapping[Address, tuple[tuple[str, ...], int]],
+) -> str:
+	name = _caller_name(program, caller_address)
+	if name == "<anonymous>" and caller_address in dynamic_by_caller:
+		return ", ".join(dynamic_by_caller[caller_address][0])
+	return name

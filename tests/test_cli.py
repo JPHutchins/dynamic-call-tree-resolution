@@ -160,6 +160,56 @@ def test_cli_stack_warns_when_indirect_edges_are_dropped(
 	assert "warning: 1 of 1 indirect call edges have no candidates and were dropped" in output.err
 
 
+def test_cli_bad_input_prints_one_line(
+	tmp_path: Path,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	monkeypatch.setattr(sys, "argv", ["dctr", "analyze", str(tmp_path / "missing.elf")])
+	with pytest.raises(SystemExit) as error:
+		main()
+	assert str(error.value).startswith("dctr: ")
+
+
+def test_cli_compare_warns_on_empty_directory(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	empty = tmp_path / "empty"
+	empty.mkdir()
+	compare([empty])
+	assert f"warning: {empty}: no .elf files" in capsys.readouterr().err
+
+
+def test_cli_compare_skips_oversized_elfs(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	directory = tmp_path / "elftest"
+	directory.mkdir()
+	oversized = directory / "oversized.elf"
+	with oversized.open("wb") as stream:
+		stream.truncate(51 * 1024 * 1024)
+	compare([directory])
+	assert "too large" in capsys.readouterr().err
+
+
+def test_cli_stack_accepts_positional_elf(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"
+	nested.mkdir(parents=True)
+	(nested / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	(nested / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
+	stack(build_directory, fixture_elfs["nopie"])
+	output = capsys.readouterr().out
+	assert "resolved slots: 11" in output
+	assert "main: 80 bytes" in output
+
+
 def test_cli_summary_warns_when_indirect_edges_are_dropped(
 	tmp_path: Path,
 	fixture_elfs: dict[str, Path],

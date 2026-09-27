@@ -10,6 +10,7 @@ from typing import Annotated
 
 import msgspec
 from cyclopts import App, Parameter
+from elftools.common.exceptions import ELFError
 
 from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
@@ -25,6 +26,18 @@ from dynamic_call_tree_resolution.stack_analysis import (
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 
 app = App(name="dctr")
+
+_MAX_ELF_SIZE = 50 * 1024 * 1024
+
+
+def _warn_if_large(path: Path) -> bool:
+	if path.stat().st_size > _MAX_ELF_SIZE:
+		print(
+			f"warning: skipping {path} ({path.stat().st_size // 1024 // 1024} MiB; too large)",
+			file=sys.stderr,
+		)
+		return False
+	return True
 
 
 def _dropped_indirect_edges(
@@ -80,9 +93,16 @@ def compare(
 	either side gets a row comparing pexplorer's dynamic-call count with
 	dctr's per-site candidate sets.
 	"""
-	paths = [
-		path for elf in elfs for path in (sorted(elf.glob("*.elf")) if elf.is_dir() else (elf,))
-	]
+	paths: list[Path] = []
+	for elf in elfs:
+		if elf.is_dir():
+			found = sorted(elf.glob("*.elf"))
+			paths.extend(found)
+			if not found:
+				print(f"warning: {elf}: no .elf files", file=sys.stderr)
+		else:
+			paths.append(elf)
+	paths = [path for path in paths if _warn_if_large(path)]
 	pexplorer_report = load_pexplorer(pexplorer) if pexplorer is not None else None
 	comparisons = [build_comparison(elf.name, load(elf), pexplorer_report) for elf in paths]
 	if json:
@@ -108,7 +128,7 @@ def compare(
 
 
 @app.command
-def stack(build_directory: Path, *, elf: Path | None = None) -> None:
+def stack(build_directory: Path, elf: Path | None = None) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts).
 
 	When an ELF is given, unresolved indirect call sites are expanded to
@@ -181,5 +201,12 @@ def summary(build_directory: Path, elf: Path) -> None:
 
 
 def main() -> None:
-	"""Entry point installed as the ``dctr`` executable."""
-	app()
+	"""Entry point installed as the ``dctr`` executable.
+
+	Raises:
+		SystemExit: for usage errors and unparseable inputs.
+	"""
+	try:
+		app()
+	except (OSError, ELFError, ValueError, msgspec.ValidationError) as error:
+		raise SystemExit(f"dctr: {error}") from None

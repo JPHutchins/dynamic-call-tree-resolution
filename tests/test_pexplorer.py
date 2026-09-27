@@ -147,6 +147,44 @@ def test_missing_dynamic_flag_fails_loud(tmp_path: Path) -> None:
 		load_pexplorer(report)
 
 
+def test_anonymous_rows_fall_back_to_the_pexplorer_name() -> None:
+	body = bytes.fromhex("00 4b 98 47") + (0x2000).to_bytes(4, "little")
+	program = Program(
+		byte_order="little",
+		pointer_size=4,
+		machine="EM_ARM",
+		functions={
+			Address(0x1001): Function(
+				name="<anonymous>", address=Address(0x1001), size=8, signature=None
+			),
+			Address(0x2000): Function(
+				name="target", address=Address(0x2000), size=4, signature=None
+			),
+		},
+		objects={
+			Address(0x3000): DataObject(
+				name="slot", address=Address(0x3000), size=4, type_name=None, signature=None
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x1000): body, Address(0x3000): (0x2000).to_bytes(4, "little")},
+	)
+	report = PexplorerReport(
+		functions=(
+			PexplorerFunction(
+				name="pex_name",
+				address=0x1001,
+				callees=(PexplorerCallee(call_from=0x1001, dynamic=True),),
+			),
+		)
+	)
+	comparison = build_comparison("anon.elf", program, report)
+	rows = {row.caller: row for row in comparison.function_comparisons}
+	assert "pex_name" in rows
+	assert rows["pex_name"].address == 0x1000
+
+
 def test_comparison_resolves_thumb_bit_only_callers() -> None:
 	body = bytes.fromhex("00 4b 98 47") + (0x2000).to_bytes(4, "little")
 	program = Program(
