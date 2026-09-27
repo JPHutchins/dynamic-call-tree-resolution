@@ -35,6 +35,16 @@ jobs:
 
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
+      - name: Install jphfmt (v0.2.2, crates.io prebuilt)
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl --fail --location --silent --show-error \
+            -o "$HOME/.local/bin/jphfmt" \
+            https://github.com/JPHutchins/jphfmt/releases/download/v0.2.2/jphfmt-x86_64-unknown-linux-gnu
+          chmod +x "$HOME/.local/bin/jphfmt"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          jphfmt --version
+
       - run: uv run camas
         env:
           UV_PYTHON: ${{ matrix.python }}

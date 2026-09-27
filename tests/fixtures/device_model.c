@@ -42,7 +42,7 @@ typedef struct {
 } anon_t;
 
 struct anon_wrapper {
-	anon_t *anon;
+	anon_t * anon;
 };
 
 union un {
