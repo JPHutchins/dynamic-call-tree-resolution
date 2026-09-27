@@ -375,7 +375,6 @@ def memory_at(program: Program, address: Address, size: int) -> bytes:
 
 
 def pointer_at(program: Program, address: Address) -> Address | None:
-	"""Read the pointer stored at ``address`` in the loaded image."""
 	covering = _object_covering(program, address)
 	bound = covering.address + max(covering.size, 1) if covering is not None else None
 	return read_pointer(program, address, bound)

@@ -203,7 +203,6 @@ def _frame_name(usage: StackUsage) -> str:
 
 
 def _callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
-	"""Every callee in the call graph."""
 	return frozenset(callee for callees in adjacency.values() for callee in callees)
 
 
@@ -252,6 +251,11 @@ def frame_key(name: str) -> str:
 	(``"/abs/path/file.c:func"``) and clone-suffixed (``func.isra.0``) while
 	``.su`` records use bare names (``func.isra``); both sides are reduced to
 	``func`` so they meet in one key space.
+
+	>>> frame_key("/abs/path/file.c:func")
+	'func'
+	>>> frame_key("func.isra.0")
+	'func'
 	"""
 	if "/" in name:
 		name = name.rsplit(":", 1)[-1]

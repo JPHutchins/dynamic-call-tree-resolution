@@ -60,6 +60,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+addopts = ["--doctest-modules"]
 testpaths = ["src", "tests"]
 norecursedirs = ["fixtures"]
 markers = ["slow: tests excluded from the default check run"]

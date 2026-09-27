@@ -149,7 +149,6 @@ def slot_counts(
 
 
 def resolved_by_slot(resolved: tuple[SlotAssignment, ...]) -> Mapping[Address, SlotAssignment]:
-	"""Resolved assignments keyed by slot address."""
 	return {assignment.slot: assignment for assignment in resolved}
 
 
@@ -158,7 +157,6 @@ def _site_address(site: CallSite) -> Address:
 
 
 def _candidates(program: Program, addresses: frozenset[Address]) -> tuple[Candidate, ...]:
-	"""Candidate records for the given target addresses."""
 	return tuple(
 		Candidate(name=program.functions[address].name, address=address)
 		for address in sorted(addresses)
@@ -170,7 +168,6 @@ def build_report(
 	resolved: tuple[SlotAssignment, ...],
 	call_sites: tuple[CallSite, ...],
 ) -> AnalysisReport:
-	"""Render resolved assignments, per-site resolutions, and unresolved slots."""
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
 	signatures = signatures_by_slot(unresolved)
@@ -230,7 +227,8 @@ def build_comparison(
 
 	When a pexplorer report is given, each function with dynamic calls on
 	either side gets a row: pexplorer's dynamic-call count against dctr's
-	per-site candidate sets.
+	per-site candidate sets. Callers aggregate by aligned address, so
+	alias twins (ARM/Thumb) do not overwrite each other's counts.
 	"""
 	resolved = assignments(program)
 	unresolved = unresolved_slots(program, resolved)
