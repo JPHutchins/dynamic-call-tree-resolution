@@ -82,22 +82,57 @@ def _object_assignments(
 		return
 	layout = _layout_of(program, data_object)
 	if layout is None:
-		target = pointer_at(program, data_object.address)
-		if target is not None and target != 0 and target in program.functions:
-			yield SlotAssignment(
-				slot=data_object.address,
-				path=path,
-				candidates=frozenset({target}),
-				provenance=Provenance.CONSTANT_DATA,
-			)
+		if data_object.type_name is not None and data_object.type_name.endswith(" []"):
+			yield from _array_element_assignments(program, data_object, path, visited)
+		else:
+			target = pointer_at(program, data_object.address)
+			if target is not None and target != 0 and target in program.functions:
+				yield SlotAssignment(
+					slot=data_object.address,
+					path=path,
+					candidates=frozenset({target}),
+					provenance=Provenance.CONSTANT_DATA,
+				)
 		return
 	visited = visited | {data_object.address}
-	yield from _member_assignments(program, data_object, 0, layout.members, path, visited)
+	yield from _member_assignments(program, data_object.address, 0, layout.members, path, visited)
+
+
+def _array_element_assignments(
+	program: Program,
+	data_object: DataObject,
+	path: tuple[str | None, ...],
+	visited: frozenset[Address],
+) -> Iterable[SlotAssignment]:
+	element_name = data_object.type_name.removesuffix(" []") if data_object.type_name else ""
+	element_layout = program.layouts.get(element_name)
+	if element_layout is None:
+		if element_name != "function pointer":
+			return
+		for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
+			target = pointer_at(program, Address(data_object.address + base_offset))
+			if target is not None and target != 0 and target in program.functions:
+				yield SlotAssignment(
+					slot=Address(data_object.address + base_offset),
+					path=(*path, f"[{index}]"),
+					candidates=frozenset({target}),
+					provenance=Provenance.CONSTANT_DATA,
+				)
+		return
+	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
+		yield from _member_assignments(
+			program,
+			data_object.address,
+			base_offset,
+			element_layout.members,
+			(*path, f"[{index}]"),
+			visited,
+		)
 
 
 def _member_assignments(
 	program: Program,
-	data_object: DataObject,
+	base_address: Address,
 	base_offset: int,
 	members: tuple[Member, ...],
 	path: tuple[str | None, ...],
@@ -107,10 +142,10 @@ def _member_assignments(
 		member_path = (*path, member.name)
 		match member:
 			case FunctionPointerMember(offset=offset):
-				target = pointer_at(program, Address(data_object.address + base_offset + offset))
+				target = pointer_at(program, Address(base_address + base_offset + offset))
 				if target is not None and target != 0 and target in program.functions:
 					yield SlotAssignment(
-						slot=Address(data_object.address + base_offset + offset),
+						slot=Address(base_address + base_offset + offset),
 						path=member_path,
 						candidates=frozenset({target}),
 						provenance=Provenance.CONSTANT_DATA,
@@ -118,7 +153,7 @@ def _member_assignments(
 			case StructPointerMember(offset=offset, pointee=pointee):  # pragma: no branch
 				target_object = _object_covering(
 					program,
-					pointer_at(program, Address(data_object.address + base_offset + offset)),
+					pointer_at(program, Address(base_address + base_offset + offset)),
 				)
 				if target_object is not None and (
 					pointee is None
@@ -129,7 +164,7 @@ def _member_assignments(
 			case EmbeddedStructMember(offset=offset, members=inner_members):  # pragma: no branch
 				yield from _member_assignments(
 					program,
-					data_object,
+					base_address,
 					base_offset + offset,
 					inner_members,
 					member_path,
@@ -156,6 +191,8 @@ def unresolved_slots(
 				universe.setdefault(
 					data_object.address, ((data_object.name,), data_object.signature)
 				)
+			elif data_object.type_name is not None and data_object.type_name.endswith(" []"):
+				_array_element_slots(program, data_object, (data_object.name,), universe)
 			continue
 		_collect_member_slots(data_object, 0, layout.members, (data_object.name,), universe)
 	for relocation in program.relocations:
@@ -172,6 +209,32 @@ def unresolved_slots(
 			key=lambda slot: slot.slot,
 		)
 	)
+
+
+def _array_element_slots(
+	program: Program,
+	data_object: DataObject,
+	path: tuple[str | None, ...],
+	universe: dict[Address, tuple[tuple[str | None, ...], FunctionSignature | None]],
+) -> None:
+	element_name = data_object.type_name.removesuffix(" []") if data_object.type_name else ""
+	element_layout = program.layouts.get(element_name)
+	if element_layout is None:
+		if element_name == "function pointer":
+			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
+				universe.setdefault(
+					Address(data_object.address + base_offset),
+					((*path, f"[{index}]"), data_object.signature),
+				)
+		return
+	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
+		_collect_member_slots(
+			data_object,
+			base_offset,
+			element_layout.members,
+			(*path, f"[{index}]"),
+			universe,
+		)
 
 
 def _collect_member_slots(

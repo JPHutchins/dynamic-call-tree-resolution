@@ -79,9 +79,10 @@ type Member = FunctionPointerMember | StructPointerMember | EmbeddedStructMember
 
 
 class StructureLayout(Struct):
-	"""Byte offsets of a structure's pointer-valued members."""
+	"""Byte offsets of a structure's pointer-valued members, and its size."""
 
 	members: tuple[Member, ...]
+	size: int
 
 
 class Relocation(Struct):

@@ -217,3 +217,22 @@ def test_declaration_only_struct_dies_do_not_clobber_definitions(
 def test_nonzero_slot_still_resolves_even_with_a_function_at_zero() -> None:
 	resolved = assignments(_program_with_slot(0x1000))
 	assert [assignment.candidates for assignment in resolved] == [frozenset({Address(0x1000)})]
+
+
+def test_array_globals_descend_each_element(fixture_elfs: dict[str, Path]) -> None:
+	resolved, program = _resolved(fixture_elfs["arrays"])
+	assert _names(program, resolved["table.[0].isr"]) == {"handler_a"}
+	assert _names(program, resolved["table.[1].isr"]) == {"handler_b"}
+	assert _names(program, resolved["cbs.[0]"]) == {"handler_a"}
+	assert _names(program, resolved["cbs.[1]"]) == {"handler_b"}
+
+
+def test_array_globals_report_unresolved_elements(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["arrays"])
+	unresolved = {
+		render_path(slot.path): slot for slot in unresolved_slots(program, assignments(program))
+	}
+	assert set(unresolved) == {"dynamic_cbs.[0]", "dynamic_cbs.[1]"}
+	assert unresolved["dynamic_cbs.[0]"].signature == FunctionSignature(
+		return_type="void", parameters=()
+	)

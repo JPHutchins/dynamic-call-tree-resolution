@@ -233,6 +233,8 @@ def _type_name(die: DIE | None) -> str:
 			return _type_name(_type_die(die))
 		case "DW_TAG_structure_type" | "DW_TAG_union_type" | "DW_TAG_class_type":
 			return f"{'union' if die.tag == 'DW_TAG_union_type' else 'struct'} {_die_name(die)}"
+		case "DW_TAG_array_type":
+			return f"{_type_name(_type_die(die))} []"
 		case "DW_TAG_subroutine_type":  # pragma: no cover
 			return "function pointer"
 		case _:
@@ -317,7 +319,11 @@ def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 			name = _attr_string(name_attribute.value)
 			keyword = "union" if die.tag == "DW_TAG_union_type" else "struct"
 			key = f"{keyword} {name}"
-			layout = StructureLayout(members=tuple(_layout_members(die)))
+			byte_size = die.attributes.get("DW_AT_byte_size")
+			layout = StructureLayout(
+				members=tuple(_layout_members(die)),
+				size=int(byte_size.value) if byte_size is not None else 0,  # pragma: no branch
+			)
 			existing = layouts.get(key)
 			if existing is None or len(layout.members) > len(existing.members):
 				layouts[key] = layout
@@ -428,7 +434,10 @@ def _objects_from_dwarf(
 
 
 def _object_signature(die: DIE) -> FunctionSignature | None:
-	match _pointee_kind(_type_die(die)):
+	type_die = _type_die(die)
+	if type_die is not None and type_die.tag == "DW_TAG_array_type":
+		type_die = _type_die(type_die)
+	match _pointee_kind(type_die):
 		case ("function_pointer", signature):
 			return signature
 		case _:
@@ -490,6 +499,8 @@ def _merge_objects(
 			merged[address] = replace(
 				merged[address], type_name=declaration_types[data_object.name]
 			)
+		if data_object.size > merged[address].size:
+			merged[address] = replace(merged[address], size=data_object.size)
 	return merged
 
 

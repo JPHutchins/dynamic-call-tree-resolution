@@ -21,6 +21,7 @@ FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 		"null_fn.c",
 		("-g", "-O0", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-no-pie"),
 	),
+	"arrays": ("array_fn.c", ("-g", "-O0", "-no-pie")),
 }
 
 
