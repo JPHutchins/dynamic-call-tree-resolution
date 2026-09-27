@@ -13,3 +13,9 @@ X86_REG_RDX: int
 X86_REG_RIP: int
 X86_REG_RSI: int
 X86_REG_RSP: int
+X86_REG_EAX: int
+X86_REG_EBX: int
+X86_REG_ECX: int
+X86_REG_EDX: int
+X86_REG_EDI: int
+X86_REG_ESI: int

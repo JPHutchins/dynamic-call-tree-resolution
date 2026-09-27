@@ -121,6 +121,32 @@ def test_x86_callee_saved_register_survives_a_direct_call() -> None:
 	assert site.slot == 0x3000
 
 
+def test_x86_32_direct_call_in_window_clears_caller_saved_registers() -> None:
+	code = bytes.fromhex("b8 00 30 00 00e8 00 00 00 00ff d0")
+	program = _program(
+		"EM_386",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.slot is None
+
+
+def test_x86_32_callee_saved_register_survives_a_direct_call() -> None:
+	code = bytes.fromhex("bb 00 30 00 00e8 00 00 00 00ff d3")
+	program = _program(
+		"EM_386",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.slot == 0x3000
+
+
 def test_x86_jump_to_the_site_carries_state() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 00eb 00ff d3")
 	program = _x86(code)
