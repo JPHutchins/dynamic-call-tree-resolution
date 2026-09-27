@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from collections.abc import Callable, Hashable
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import TYPE_CHECKING, Literal, cast
 
 from capstone import (
@@ -210,75 +212,104 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 	tracked into the operand. Unknown or unreachable operands yield empty
 	candidates, which consumers replace with the resolved-target
 	fallback union.
+
+	Each round's per-function interpretations run as one thread swarm
+	(``executor.map`` over the fixed function order), and the writes,
+	seeds, and site results are joined in submission order afterwards —
+	the result is identical to the sequential analysis on any build; on
+	a free-threaded interpreter the rounds run in parallel.
 	"""
 	disassembler = Cs(*_DISASSEMBLERS[program.machine])
 	disassembler.detail = True
 	disassembler.skipdata = True
 	blocks_by_function = _blocks_by_function(program, disassembler)
+	functions = tuple(blocks_by_function.values())
+	_prewarm_instructions(functions, program.machine)
 	seeds: dict[Address, State] = {}
 	global_writes: dict[int, frozenset[Address]] = {}
-	cache: dict[
-		Address,
-		tuple[
-			State,
-			Mapping[int, frozenset[Address]],
-			tuple[CallSite, ...],
-			Mapping[int, frozenset[Address]],
-			tuple[_CallObservation, ...],
-		],
-	] = {}
 	stable_write_rounds = 0
-	for _ in range(_MAX_ROUNDS):
-		context = _context_for(program, global_writes)
-		observations: list[_CallObservation] = []
-		written: list[Mapping[int, frozenset[Address]]] = []
-		for function, blocks in blocks_by_function.values():
-			normalized = _normalized(function.address, program.machine)
-			seed = _seed(seeds.get(normalized), program.machine)
-			entry = cache.get(normalized)
-			if entry is not None and entry[0] == seed and entry[1] == global_writes:
-				_, _, _, function_writes, function_observations = entry
-			else:
-				result = _analyze_function(context, function, blocks, seed)
-				function_writes = result.writes
-				function_observations = result.observations
-				cache[normalized] = (
-					seed,
-					global_writes,
-					(),
-					function_writes,
-					function_observations,
+	with ThreadPoolExecutor() as executor:
+		for _ in range(_MAX_ROUNDS):
+			context = _context_for(program, global_writes)
+			observations: list[_CallObservation] = []
+			written: list[Mapping[int, frozenset[Address]]] = []
+			for result in executor.map(
+				partial(_round_analysis, program, context, seeds), functions
+			):
+				written.append(result.writes)
+				observations.extend(result.observations)
+			next_seeds = dict(seeds)
+			for observation in observations:
+				next_seeds[observation.callee] = _join_seeds(
+					next_seeds.get(observation.callee),
+					_seed_from_observation(observation, program),
 				)
-			written.append(function_writes)
-			observations.extend(function_observations)
-		next_seeds = dict(seeds)
-		for observation in observations:
-			next_seeds[observation.callee] = _join_seeds(
-				next_seeds.get(observation.callee),
-				_seed_from_observation(observation, program),
-			)
-		next_writes = _accumulate_writes(global_writes, written)
-		if next_seeds == seeds and next_writes == global_writes:
-			break
-		seeds_changed = next_seeds != seeds
-		seeds, global_writes = next_seeds, next_writes
-		if seeds_changed:
-			stable_write_rounds = 0
-		else:
-			stable_write_rounds += 1
-			if stable_write_rounds >= _GLOBAL_ROUNDS:
+			next_writes = _accumulate_writes(global_writes, written)
+			if next_seeds == seeds and next_writes == global_writes:
 				break
-	final_context = _context_for(program, global_writes)
-	return tuple(
-		site
-		for function, blocks in blocks_by_function.values()
-		for site in _analyze_function(
-			final_context,
-			function,
-			blocks,
-			_seed(seeds.get(_normalized(function.address, program.machine)), program.machine),
-		).sites
-	)
+			seeds_changed = next_seeds != seeds
+			seeds, global_writes = next_seeds, next_writes
+			if seeds_changed:
+				stable_write_rounds = 0
+			else:
+				stable_write_rounds += 1
+				if stable_write_rounds >= _GLOBAL_ROUNDS:
+					break
+		final_context = _context_for(program, global_writes)
+		return tuple(
+			site
+			for sites in executor.map(
+				partial(_final_sites, program, final_context, seeds), functions
+			)
+			for site in sites
+		)
+
+
+def _round_analysis(
+	program: Program,
+	context: _Context,
+	seeds: Mapping[Address, State],
+	function_blocks: tuple[Function, tuple[_Block, ...]],
+) -> _FunctionResult:
+	function, blocks = function_blocks
+	seed = _seed(seeds.get(_normalized(function.address, program.machine)), program.machine)
+	return _analyze_function(context, function, blocks, seed)
+
+
+def _final_sites(
+	program: Program,
+	context: _Context,
+	seeds: Mapping[Address, State],
+	function_blocks: tuple[Function, tuple[_Block, ...]],
+) -> tuple[CallSite, ...]:
+	function, blocks = function_blocks
+	return _analyze_function(
+		context,
+		function,
+		blocks,
+		_seed(seeds.get(_normalized(function.address, program.machine)), program.machine),
+	).sites
+
+
+def _prewarm_instructions(
+	functions: tuple[tuple[Function, tuple[_Block, ...]], ...], machine: Machine
+) -> None:
+	"""Touch every lazy capstone detail once, in one thread.
+
+	Capstone fills operand details on first access; the round workers
+	read those fields in parallel, so the first touch must happen before
+	the swarm.
+	"""
+	for _, blocks in functions:
+		for block in blocks:
+			for instruction in block.instructions:
+				if instruction.mnemonic == ".byte":
+					continue
+				for operand in instruction.operands:
+					if machine is Machine.EM_ARM:
+						_ = cast("ArmCsOperand", operand).shift
+					else:
+						_ = operand.mem
 
 
 def _function_address(function: Function) -> Address:
