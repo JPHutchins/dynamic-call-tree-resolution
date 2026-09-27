@@ -39,6 +39,7 @@ __device_dts_ord_22.ops.init: uart_stellaris_init
 ...
 z_main_thread.base.timeout.fn: <unresolved>
 _thread_dummy.base.timeout.fn: <unresolved>
+...
 _stdout_hook: <unresolved>
 ...
 char_out@0x118: arch_printk_char_out
@@ -71,8 +72,8 @@ the numbers below are pinned by `tests/test_counter_fixture.py`):
 | indirect calls detected | 0 (assembly-text regex) | 98 call sites |
 | `poll_state_thread` worst case | 96 bytes | 460 bytes (static-only; 996 with indirect expansion) |
 | `shell_readline` worst case | not reported (symbol match fails) | 2108 bytes (upper bound; 1760 without indirect expansion) |
-| slots resolved/unresolved/total | — | 75/78/153 |
-| call sites resolved/exact/total | — | 6/6/98 |
+| slots resolved/unresolved/total | — | 121/113/234 |
+| call sites resolved/exact/total | — | 7/7/98 |
 
 puncover's indirect-call handling is an assembly-text detection flag, and its reported
 worst case for `poll_state_thread` contains only the function itself, omitting the
