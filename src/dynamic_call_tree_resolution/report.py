@@ -187,7 +187,7 @@ def build_comparison(
 	candidate_sizes = sorted(
 		len(call_site_candidates(program, site, resolved_by_slot)) for site in sites
 	)
-	dynamic_by_caller: Mapping[Address, tuple[str, int]] = (
+	dynamic_by_caller: Mapping[Address, tuple[tuple[str, ...], int]] = (
 		dynamic_sites_by_caller(pexplorer) if pexplorer is not None else {}
 	)
 	sites_by_caller: dict[Address, list[frozenset[Address]]] = {}
@@ -209,7 +209,7 @@ def build_comparison(
 	]
 	rows.extend(
 		FunctionComparison(
-			caller=dynamic_by_caller[caller_address][0],
+			caller=", ".join(dynamic_by_caller[caller_address][0]),
 			pexplorer_dynamic_sites=dynamic_by_caller[caller_address][1],
 			dctr_call_sites=0,
 			dctr_resolved_sites=0,
