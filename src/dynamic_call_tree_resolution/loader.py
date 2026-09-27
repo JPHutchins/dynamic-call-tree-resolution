@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
+from elftools.elf.relocation import Relocation as ElfRelocation
 from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import SymbolTableSection
 from salix import replace
@@ -59,18 +60,23 @@ def load(path: Path) -> Program:
 
 def _load(stream: BinaryIO) -> Program:
 	elf = ELFFile(stream)
+	if elf.header["e_type"] == "ET_REL":
+		raise ValueError("relocatable (ET_REL) images are not supported; link the image first")
 	dwarf = elf.get_dwarf_info() if elf.has_dwarf_info() else None
 	symtab = _symbol_table(elf)
-	relocations = _relocations(elf)
-	sections = _relocated_sections(_sections(elf), relocations, elf.elfclass // 8, _byte_order(elf))
+	pointer_size = elf.elfclass // 8
+	byte_order = _byte_order(elf)
+	raw_sections = _sections(elf)
+	relocations = _relocations(elf, raw_sections, pointer_size, byte_order)
+	sections = _relocated_sections(raw_sections, relocations, pointer_size, byte_order)
 	return Program(
-		byte_order=_byte_order(elf),
-		pointer_size=elf.elfclass // 8,
+		byte_order=byte_order,
+		pointer_size=pointer_size,
 		machine=elf.header["e_machine"],
 		functions={**_functions_from_symtab(symtab), **_functions_from_dwarf(dwarf)},
 		objects=_merge_objects(
 			_objects_from_symtab(symtab),
-			_objects_from_dwarf(dwarf, elf.elfclass // 8, _byte_order(elf)),
+			_objects_from_dwarf(dwarf, pointer_size, byte_order),
 			_declaration_types(dwarf),
 		),
 		layouts=_layouts(dwarf),
@@ -472,29 +478,79 @@ def _merge_objects(
 	return merged
 
 
-def _relocations(elf: ELFFile) -> tuple[Relocation, ...]:
+def _relocations(
+	elf: ELFFile,
+	sections: dict[str, _SectionBytes],
+	pointer_size: int,
+	byte_order: ByteOrder,
+) -> tuple[Relocation, ...]:
 	relocations: list[Relocation] = []
 	for section in elf.iter_sections():
 		if not isinstance(section, RelocationSection):
 			continue
+		target_index = section["sh_info"]
+		target_section = elf.get_section(target_index)
+		if target_index != 0 and (
+			target_section is None or not target_section.header.sh_flags & _SHF_ALLOC
+		):
+			continue  # pragma: no branch
 		symbol_table = elf.get_section(section["sh_link"])
 		if not isinstance(symbol_table, SymbolTableSection):
 			continue  # pragma: no cover
 		for relocation in section.iter_relocations():
-			target = (
-				relocation["r_addend"]
-				if relocation["r_info_sym"] == 0
-				else symbol_table.get_symbol(relocation["r_info_sym"])["st_value"]
+			slot = Address(relocation["r_offset"])
+			addend = _relocation_addend(
+				section.is_RELA(), relocation, sections, slot, pointer_size, byte_order
 			)
 			relocations.append(
 				Relocation(
-					slot=Address(relocation["r_offset"]),
-					target=Address(target),
-					addend=relocation["r_addend"] if section.is_RELA() else 0,  # pragma: no branch
+					slot=slot,
+					target=Address(
+						_relocation_target(
+							relocation["r_info_sym"],
+							symbol_table.get_symbol(relocation["r_info_sym"])["st_value"],
+							addend,
+						)
+					),
+					addend=addend,
 					type_name=describe_reloc_type(relocation["r_info_type"], elf),
 				)
 			)
 	return tuple(relocations)
+
+
+def _relocation_addend(
+	is_rela: bool,
+	entry: ElfRelocation,
+	sections: dict[str, _SectionBytes],
+	slot: Address,
+	pointer_size: int,
+	byte_order: ByteOrder,
+) -> int:
+	"""The relocation's addend, from the entry (RELA) or the field (REL).
+
+	REL addends live in the image at the slot; a slot in no loaded section
+	(bss) carries the zero addend the zero-filled section implies.
+	"""
+	if is_rela:
+		return int(entry["r_addend"])
+	target_section = next(
+		(
+			candidate
+			for candidate in sections.values()
+			if candidate.address <= slot < candidate.address + candidate.size
+		),
+		None,
+	)
+	if target_section is None:
+		return 0
+	offset = slot - target_section.address
+	return int.from_bytes(target_section.data[offset : offset + pointer_size], byte_order)
+
+
+def _relocation_target(symbol_index: int, symbol_value: int, addend: int) -> int:
+	"""The final target: the addend itself for symbol-less entries, else S + A."""
+	return addend if symbol_index == 0 else symbol_value + addend
 
 
 def _iter_dies(root: DIE) -> Iterator[DIE]:
