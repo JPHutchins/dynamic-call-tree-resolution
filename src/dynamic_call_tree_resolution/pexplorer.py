@@ -20,11 +20,11 @@ if TYPE_CHECKING:
 class PexplorerCallee(Struct):
 	"""One call edge in pexplorer's report; dynamic edges have no target."""
 
+	dynamic: bool
 	call_from: int | None = field(default=None, name="from")
 	call_from_function_name: str | None = field(default=None, name="from_function_name")
 	call_to: int | None = field(default=None, name="to")
 	call_to_function_name: str | None = field(default=None, name="to_function_name")
-	dynamic: bool = False
 
 
 class PexplorerFunction(Struct):
@@ -46,13 +46,24 @@ def load_pexplorer(path: Path) -> PexplorerReport:
 	return msgspec.json.decode(path.read_bytes(), type=PexplorerReport)
 
 
-def dynamic_sites_by_caller(report: PexplorerReport) -> Mapping[Address, tuple[str, int]]:
-	"""Per caller: name and dynamic-call count, keyed by aligned address."""
+def dynamic_sites_by_caller(
+	report: PexplorerReport,
+) -> Mapping[Address, tuple[tuple[str, ...], int]]:
+	"""Per caller: names and summed dynamic-call count, keyed by aligned address.
+
+	Functions sharing an aligned address (aliases, ARM/Thumb twins)
+	aggregate instead of overwriting, so no caller's dynamic sites are
+	dropped by the join.
+	"""
+	by_caller: dict[Address, list[tuple[str, int]]] = {}
+	for function in report.functions:
+		count = sum(callee.dynamic for callee in function.callees)
+		if count:
+			by_caller.setdefault(Address(function.address & ~1), []).append((function.name, count))
 	return {
-		Address(function.address & ~1): (
-			function.name,
-			sum(callee.dynamic for callee in function.callees),
+		address: (
+			tuple(name for name, _ in entries),
+			sum(count for _, count in entries),
 		)
-		for function in report.functions
-		if any(callee.dynamic for callee in function.callees)
+		for address, entries in by_caller.items()
 	}

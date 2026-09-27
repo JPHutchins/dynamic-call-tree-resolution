@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import msgspec
+import pytest
 
 from dynamic_call_tree_resolution import (
 	Address,
@@ -23,11 +24,10 @@ from dynamic_call_tree_resolution import (
 	load_pexplorer,
 )
 from dynamic_call_tree_resolution.cli import compare
+from dynamic_call_tree_resolution.pexplorer import dynamic_sites_by_caller
 
 if TYPE_CHECKING:
 	from pathlib import Path
-
-	import pytest
 
 
 def _write_report(path: Path, report: PexplorerReport) -> Path:
@@ -109,6 +109,42 @@ def test_comparison_round_trip_with_pexplorer_fields(
 	)
 	comparison = build_comparison("nopie.elf", program, report)
 	assert msgspec.json.decode(msgspec.json.encode(comparison), type=ComparisonReport) == comparison
+
+
+def test_alias_callers_aggregate_instead_of_overwriting() -> None:
+	report = PexplorerReport(
+		functions=(
+			PexplorerFunction(
+				name="alias_a",
+				address=0x1000,
+				callees=(PexplorerCallee(call_from=0x1000, dynamic=True),),
+			),
+			PexplorerFunction(
+				name="alias_b",
+				address=0x1001,
+				callees=(
+					PexplorerCallee(call_from=0x1001, dynamic=True),
+					PexplorerCallee(call_from=0x1001, dynamic=True),
+				),
+			),
+			PexplorerFunction(
+				name="quiet",
+				address=0x2000,
+				callees=(PexplorerCallee(call_from=0x2000, dynamic=False),),
+			),
+		)
+	)
+	assert dynamic_sites_by_caller(report) == {Address(0x1000): (("alias_a", "alias_b"), 3)}
+
+
+def test_missing_dynamic_flag_fails_loud(tmp_path: Path) -> None:
+	report = tmp_path / "report.json"
+	report.write_text(
+		'{"functions": [{"name": "nodyn", "address": 4242, '
+		'"callees": [{"from": 4242, "from_function_name": "nodyn"}]}]}'
+	)
+	with pytest.raises(msgspec.ValidationError, match="dynamic"):
+		load_pexplorer(report)
 
 
 def test_comparison_resolves_thumb_bit_only_callers() -> None:
