@@ -58,9 +58,8 @@ class DynamicSites(SalixStruct):
 def dynamic_sites_by_caller(report: PexplorerReport) -> Mapping[Address, DynamicSites]:
 	"""Per caller: names and summed dynamic-call count, keyed by aligned address.
 
-	Functions sharing an aligned address (aliases, ARM/Thumb twins)
-	aggregate instead of overwriting, so no caller's dynamic sites are
-	dropped by the join.
+	Aliases sharing an aligned address aggregate instead of overwriting;
+	the join this feeds is documented on :func:`build_comparison`.
 	"""
 	return {
 		address: DynamicSites(

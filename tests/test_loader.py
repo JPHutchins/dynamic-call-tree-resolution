@@ -9,6 +9,7 @@ import struct
 from typing import TYPE_CHECKING
 
 import pytest
+from elftools.common.exceptions import ELFError
 
 from dynamic_call_tree_resolution import (
 	Address,
@@ -128,6 +129,13 @@ def test_load_objects(fixture_elfs: dict[str, Path]) -> None:
 def test_load_rejects_relocatable_objects(fixture_elfs: dict[str, Path]) -> None:
 	with pytest.raises(ValueError, match="ET_REL"):
 		load(fixture_elfs["object"])
+
+
+def test_load_propagates_malformed_elf_errors(tmp_path: Path) -> None:
+	path = tmp_path / "corrupt.elf"
+	path.write_bytes(b"\x7fELF" + b"\0" * 64)
+	with pytest.raises(ELFError):
+		load(path)
 
 
 def test_load_rejects_unknown_machines(tmp_path: Path, fixture_elfs: dict[str, Path]) -> None:

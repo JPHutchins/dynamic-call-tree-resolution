@@ -389,7 +389,6 @@ def _span_at(context: _Context, address: Address) -> tuple[int, int] | None:
 
 
 def _pointer_value(context: _Context, address: Address) -> Address | None:
-	"""One pointer read with the object-coverage bounds the slot layer applies."""
 	span = _span_at(context, address)
 	return read_pointer(context.program, address, span[1] if span is not None else None)
 
@@ -694,8 +693,9 @@ def _store_value(
 ) -> State:
 	"""Write a value through a memory operand.
 
-	Frame-slot stores are modeled; stores elsewhere are not tracked in
-	this pass, matching the loaded-image stance of the slot analysis.
+	Frame-slot stores join the stack map; other stores join the globals
+	map where they can be placed, and the rest drop out of this pass,
+	matching the loaded-image stance of the slot analysis.
 	"""
 	machine = context.program.machine
 	memory = operand.mem
@@ -754,7 +754,10 @@ class _BranchTarget(Struct):
 
 
 def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | None:
-	"""(target address, conditional) of a direct branch, or ``None``."""
+	"""(target address, conditional) of a direct branch, or ``None``.
+
+	Capstone reports x86 branch immediates as absolute targets.
+	"""
 	if machine.is_x86:
 		if instruction.mnemonic == "jmp":
 			conditional = False
@@ -769,9 +772,7 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | Non
 		operand = instruction.operands[0]
 		if operand.type != x86_const.X86_OP_IMM:
 			return None
-		return _BranchTarget(
-			target=operand.imm, conditional=conditional
-		)  # capstone reports the absolute target
+		return _BranchTarget(target=operand.imm, conditional=conditional)
 	base = instruction.mnemonic.split(".")[0]
 	if base == "b":
 		conditional = False
@@ -792,20 +793,25 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | Non
 
 
 def _call_target(instruction: CsInsn, machine: Machine) -> int | None:
-	"""Absolute target of a direct call, or ``None``."""
+	"""Absolute target of a direct call, or ``None``.
+
+	Capstone reports call immediates as absolute targets (bl and blx
+	included — unlike b-family branch immediates, which are unaligned
+	PC-relative and recomputed where they are read).
+	"""
 	if machine.is_x86:
 		if instruction.mnemonic != "call":
 			return None
 		operand = instruction.operands[0]
 		if operand.type != x86_const.X86_OP_IMM:
 			return None
-		return operand.imm  # capstone reports the absolute target
+		return operand.imm
 	if instruction.mnemonic.split(".")[0] not in ("bl", "blx"):
 		return None
 	operand = instruction.operands[0]
 	if operand.type != arm_const.ARM_OP_IMM:
 		return None
-	return operand.imm  # capstone reports the absolute target for bl/blx
+	return operand.imm
 
 
 def _is_control_transfer(instruction: CsInsn, machine: Machine) -> bool:
