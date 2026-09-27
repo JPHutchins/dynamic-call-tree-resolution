@@ -477,6 +477,33 @@ def test_arm_conditional_branch_past_the_site_keeps_fallthrough_state() -> None:
 	assert call_site_candidates(program, site, {}) == frozenset({Address(0x2000)})
 
 
+def test_arm_movw_movt_pair_resolves() -> None:
+	body = bytes.fromhex("41 f2 34 23c5 f2 78 6398 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x56781234, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1008
+	assert site.slot == 0x56781234
+	assert call_site_candidates(program, site, {}) == frozenset({Address(0x56781234)})
+
+
+def test_arm_movt_without_movw_keeps_only_the_high_half() -> None:
+	body = bytes.fromhex("c5 f2 78 6398 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1004
+	assert site.slot == 0x56780000
+
+
 def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
 	body = bytes.fromhex("02 4c0c b3a0 47") + b"\x00\xbf" * 3 + _pointer(0x3000, 4)
 	program = _program(

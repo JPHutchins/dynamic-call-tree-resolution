@@ -365,6 +365,18 @@ def _apply_x86(instruction: CsInsn, state: dict[int, Address], program: Program)
 
 
 def _apply_arm(instruction: CsInsn, state: dict[int, Address], program: Program) -> None:
+	if instruction.mnemonic.split(".")[0] in ("movw", "movt"):
+		destination = instruction.operands[0]
+		source = instruction.operands[1]
+		if source.type == arm_const.ARM_OP_IMM:  # pragma: no branch
+			if instruction.mnemonic.split(".")[0] == "movw":
+				state[destination.reg] = Address(source.imm)
+			else:
+				low = state.get(destination.reg)
+				state[destination.reg] = Address(
+					(source.imm << 16) | (low & 0xFFFF if low is not None else 0)
+				)
+		return
 	if instruction.mnemonic in _ARM_LOADS:
 		destination = instruction.operands[0]
 		_set_deref(
