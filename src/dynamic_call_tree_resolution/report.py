@@ -19,7 +19,11 @@ from dynamic_call_tree_resolution.model import (
 	render_path,
 	thumb_twin,
 )
-from dynamic_call_tree_resolution.pexplorer import PexplorerReport, dynamic_sites_by_caller
+from dynamic_call_tree_resolution.pexplorer import (
+	DynamicSites,
+	PexplorerReport,
+	dynamic_sites_by_caller,
+)
 from dynamic_call_tree_resolution.points_to import assignments, signatures_by_slot, unresolved_slots
 
 if TYPE_CHECKING:
@@ -231,7 +235,7 @@ def build_comparison(
 	candidate_sizes = sorted(
 		len(call_site_candidates(program, site, resolved_map, signatures)) for site in sites
 	)
-	dynamic_by_caller: Mapping[Address, tuple[tuple[str, ...], int]] = (
+	dynamic_by_caller: Mapping[Address, DynamicSites] = (
 		dynamic_sites_by_caller(pexplorer) if pexplorer is not None else {}
 	)
 	sites_by_caller: dict[Address, list[frozenset[Address]]] = {}
@@ -243,7 +247,7 @@ def build_comparison(
 		FunctionComparison(
 			address=caller_address,
 			caller=_row_name(program, caller_address, dynamic_by_caller),
-			pexplorer_dynamic_sites=dynamic_by_caller[caller_address][1]
+			pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total
 			if caller_address in dynamic_by_caller
 			else 0,
 			dctr_call_sites=len(candidates),
@@ -255,8 +259,8 @@ def build_comparison(
 	rows.extend(
 		FunctionComparison(
 			address=caller_address,
-			caller=", ".join(dynamic_by_caller[caller_address][0]),
-			pexplorer_dynamic_sites=dynamic_by_caller[caller_address][1],
+			caller=", ".join(dynamic_by_caller[caller_address].names),
+			pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total,
 			dctr_call_sites=0,
 			dctr_resolved_sites=0,
 			dctr_exact_sites=0,
@@ -278,7 +282,9 @@ def build_comparison(
 			(size, candidate_sizes.count(size)) for size in dict.fromkeys(candidate_sizes)
 		),
 		pexplorer_dynamic_sites=(
-			sum(count for _, count in dynamic_by_caller.values()) if pexplorer is not None else None
+			sum(sites.total for sites in dynamic_by_caller.values())
+			if pexplorer is not None
+			else None
 		),
 		function_comparisons=tuple(sorted(rows, key=lambda row: row.caller)),
 	)
@@ -296,9 +302,9 @@ def _caller_name(program: Program, caller_address: Address) -> str:
 def _row_name(
 	program: Program,
 	caller_address: Address,
-	dynamic_by_caller: Mapping[Address, tuple[tuple[str, ...], int]],
+	dynamic_by_caller: Mapping[Address, DynamicSites],
 ) -> str:
 	name = _caller_name(program, caller_address)
 	if name == ANONYMOUS and caller_address in dynamic_by_caller:
-		return ", ".join(dynamic_by_caller[caller_address][0])
+		return ", ".join(dynamic_by_caller[caller_address].names)
 	return name

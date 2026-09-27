@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import msgspec
 from msgspec import Struct, field
@@ -46,9 +46,14 @@ def load_pexplorer(path: Path) -> PexplorerReport:
 	return msgspec.json.decode(path.read_bytes(), type=PexplorerReport)
 
 
-def dynamic_sites_by_caller(
-	report: PexplorerReport,
-) -> Mapping[Address, tuple[tuple[str, ...], int]]:
+class DynamicSites(NamedTuple):
+	"""One caller's aggregated pexplorer dynamic sites."""
+
+	names: tuple[str, ...]
+	total: int
+
+
+def dynamic_sites_by_caller(report: PexplorerReport) -> Mapping[Address, DynamicSites]:
 	"""Per caller: names and summed dynamic-call count, keyed by aligned address.
 
 	Functions sharing an aligned address (aliases, ARM/Thumb twins)
@@ -63,9 +68,9 @@ def dynamic_sites_by_caller(
 				(function.name, count)
 			)
 	return {
-		address: (
-			tuple(name for name, _ in entries),
-			sum(count for _, count in entries),
+		address: DynamicSites(
+			names=tuple(name for name, _ in entries),
+			total=sum(total for _, total in entries),
 		)
 		for address, entries in by_caller.items()
 	}

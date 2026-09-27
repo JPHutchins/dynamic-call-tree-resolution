@@ -272,9 +272,9 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 			if entry is not None and entry[0] == seed and entry[1] == global_writes:
 				_, _, _, function_writes, function_observations = entry
 			else:
-				_, function_writes, function_observations = _analyze_function(
-					context, function, blocks, seed
-				)
+				result = _analyze_function(context, function, blocks, seed)
+				function_writes = result.writes
+				function_observations = result.observations
 				cache[normalized] = (
 					seed,
 					global_writes,
@@ -310,7 +310,7 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 			function,
 			blocks,
 			_seed(seeds.get(_normalized(function.address, program.machine)), program.machine),
-		)[0]
+		).sites
 	)
 
 
@@ -783,7 +783,12 @@ def _copy_register(state: State, destination: int, source: int) -> State:
 	return _set_register(state, destination, state.registers.get(source))
 
 
-def _branch_target(instruction: CsInsn, machine: Machine) -> tuple[int, bool] | None:
+class _BranchTarget(NamedTuple):
+	target: int
+	conditional: bool
+
+
+def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | None:
 	"""(target address, conditional) of a direct branch, or ``None``."""
 	if machine.is_x86:
 		if instruction.mnemonic == "jmp":
@@ -799,7 +804,7 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> tuple[int, bool] | 
 		operand = instruction.operands[0]
 		if operand.type != x86_const.X86_OP_IMM:
 			return None
-		return operand.imm, conditional  # capstone reports the absolute target
+		return _BranchTarget(operand.imm, conditional)  # capstone reports the absolute target
 	base = instruction.mnemonic.split(".")[0]
 	if base == "b":
 		conditional = False
@@ -809,14 +814,14 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> tuple[int, bool] | 
 		return None
 	if base in ("cbz", "cbnz"):
 		imm5 = (instruction.bytes[1] >> 3) & 0x1F
-		return instruction.address + 4 + 2 * imm5, conditional
+		return _BranchTarget(instruction.address + 4 + 2 * imm5, conditional)
 	operand = instruction.operands[0]
 	if operand.type != arm_const.ARM_OP_IMM:
 		return None  # pragma: no cover
 	# capstone's imm is unaligned PC-relative; b-family encodings align PC to 4
 	pc = instruction.address + 4
 	displacement = operand.imm - pc
-	return (pc & ~3) + displacement, conditional
+	return _BranchTarget((pc & ~3) + displacement, conditional)
 
 
 def _call_target(instruction: CsInsn, machine: Machine) -> int | None:
@@ -870,12 +875,11 @@ def _successors(
 ) -> tuple[Address, ...]:
 	branch = _branch_target(instruction, machine)
 	if branch is not None:
-		target, conditional = branch
 		successors: list[Address] = []
-		if conditional and next_address is not None:
+		if branch.conditional and next_address is not None:
 			successors.append(Address(next_address))
-		if target in by_address:
-			successors.append(Address(target))
+		if branch.target in by_address:
+			successors.append(Address(branch.target))
 		return tuple(successors)
 	fallthrough = (Address(next_address),) if next_address is not None else ()
 	if instruction.mnemonic == ".byte":
@@ -903,7 +907,7 @@ def _block_ends(instruction: CsInsn, machine: Machine) -> bool:
 def _build_blocks(instructions: tuple[CsInsn, ...], machine: Machine) -> tuple[_Block, ...]:
 	by_address = {instruction.address: index for index, instruction in enumerate(instructions)}
 	targets = frozenset(
-		branch[0]
+		branch.target
 		for instruction in instructions
 		if (branch := _branch_target(instruction, machine)) is not None
 	)
@@ -1240,9 +1244,15 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 	)
 
 
+class _FunctionResult(NamedTuple):
+	sites: tuple[CallSite, ...]
+	writes: Mapping[int, frozenset[Address]]
+	observations: tuple[_CallObservation, ...]
+
+
 def _analyze_function(
 	context: _Context, function: Function, blocks: tuple[_Block, ...], seed: State
-) -> tuple[tuple[CallSite, ...], Mapping[int, frozenset[Address]], tuple[_CallObservation, ...]]:
+) -> _FunctionResult:
 	"""Fixpoint interpretation of one function from its seeded entry state.
 
 	Returns the site resolutions, the program-global writes accumulated
@@ -1274,8 +1284,8 @@ def _analyze_function(
 		observation = _call_observation(context, block, state)
 		if observation is not None:
 			observations.append(observation)
-	return (
-		tuple(
+	return _FunctionResult(
+		sites=tuple(
 			site
 			for block in blocks
 			if (
@@ -1285,8 +1295,8 @@ def _analyze_function(
 			)
 			is not None
 		),
-		writes,
-		tuple(observations),
+		writes=writes,
+		observations=tuple(observations),
 	)
 
 

@@ -55,6 +55,13 @@ def test_parse_callgraph_rejects_graph_without_braces(tmp_path: Path) -> None:
 		parse_callgraph(callgraph_file)
 
 
+def test_parse_callgraph_rejects_edge_without_target(tmp_path: Path) -> None:
+	callgraph_file = tmp_path / "bad.ci"
+	callgraph_file.write_text('graph: { edge: { sourcename: "main" } }\n')
+	with pytest.raises(ValueError, match="targetname"):
+		parse_callgraph(callgraph_file)
+
+
 def test_parse_callgraph_rejects_entry_without_colon(tmp_path: Path) -> None:
 	callgraph_file = tmp_path / "bad.ci"
 	callgraph_file.write_text('graph: { edge sourcename: "main" }\n')
