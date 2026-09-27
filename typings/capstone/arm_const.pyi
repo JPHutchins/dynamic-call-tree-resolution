@@ -9,3 +9,5 @@ ARM_REG_R2: int
 ARM_REG_R3: int
 ARM_REG_R12: int
 ARM_REG_SP: int
+ARM_SFT_INVALID: int
+ARM_SFT_LSL: int

@@ -44,8 +44,10 @@ _stdout_hook: <unresolved>
 ...
 char_out@0x118: arch_printk_char_out
 ...
+_isr_wrapper@0x884: z_irq_spurious
+...
 console_out@0x956: uart_stellaris_poll_out
-console_out@0x960: <unresolved>
+console_out@0x960: uart_stellaris_poll_out
 ```
 
 - `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, enumerated exactly from their
@@ -53,9 +55,10 @@ console_out@0x960: <unresolved>
   init function.
 - The `<unresolved>` lines are the runtime-assigned residue — thread timeout callbacks and
   the console output hook — enumerated with member paths for manual review.
-- `console_out@0x956: uart_stellaris_poll_out` is an indirect call site (`blx r3`) resolved
-  through the `device->api` chain to its single target — the slot layer sees what the site
-  alone cannot.
+- `console_out@0x956` and `console_out@0x960` are indirect call sites (`blx r3`) resolved
+  through the `device->api` chain to their single target.
+- `_isr_wrapper@0x884` resolves to `z_irq_spurious` through the indexed load over the baked
+  `_sw_isr_table`: every static entry's handler points there.
 
 ## Tool comparison
 
@@ -73,7 +76,7 @@ the numbers below are pinned by `tests/test_counter_fixture.py`):
 | `poll_state_thread` worst case | 96 bytes | 460 bytes (static-only; 996 with indirect expansion) |
 | `shell_readline` worst case | not reported (symbol match fails) | 2108 bytes (upper bound; 1760 without indirect expansion) |
 | slots resolved/unresolved/total | — | 121/113/234 |
-| call sites resolved/exact/total | — | 7/7/98 |
+| call sites resolved/exact/total | — | 10/9/98 |
 
 puncover's indirect-call handling is an assembly-text detection flag, and its reported
 worst case for `poll_state_thread` contains only the function itself, omitting the

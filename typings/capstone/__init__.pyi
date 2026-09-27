@@ -11,6 +11,7 @@ class CsError(Exception): ...
 class _CsMemOperand:
 	base: int
 	index: int
+	scale: int
 	disp: int
 
 class CsOperand:

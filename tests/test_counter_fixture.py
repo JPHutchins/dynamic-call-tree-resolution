@@ -60,4 +60,4 @@ def test_stack_pins_the_published_depths() -> None:
 def test_compare_pins_the_published_rollup() -> None:
 	output = _dctr("compare", str(EXECUTABLE))
 	assert "121/113/234" in output
-	assert "7/7/98" in output
+	assert "10/9/98" in output
