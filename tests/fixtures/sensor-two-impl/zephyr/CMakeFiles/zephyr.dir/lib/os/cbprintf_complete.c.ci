@@ -1,0 +1,26 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" label: "encode_uint\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:788:14\n40 bytes (static)\n0 dynamic objects" }
+node: { title: "__aeabi_uldivmod" label: "__aeabi_uldivmod\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" targetname: "__aeabi_uldivmod" }
+node: { title: "z_cbvprintf_impl" label: "z_cbvprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1367:5\n120 bytes (static)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1407:4" }
+node: { title: "memset" label: "__builtin_memset\n<built-in>" shape : ellipse }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "memset" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1355:12" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1617:4" }
+node: { title: "strnlen" label: "strnlen\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/string.h:176:9" shape : ellipse }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "strnlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1625:11" }
+node: { title: "strlen" label: "strlen\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/string.h:162:9" shape : ellipse }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1627:11" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1641:11" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1690:10" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1796:7" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1803:6" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1812:4" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1861:5" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1865:5" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1870:5" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1355:12" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1878:4" }
+}

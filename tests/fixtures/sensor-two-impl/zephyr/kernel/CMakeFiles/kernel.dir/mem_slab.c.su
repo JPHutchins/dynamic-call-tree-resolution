@@ -1,0 +1,6 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mem_slab.c:111:12:create_free_list	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mem_slab.c:158:13:init_mem_slab_module	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mem_slab.c:170:5:k_mem_slab_init	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mem_slab.c:220:5:k_mem_slab_alloc	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mem_slab.c:269:6:k_mem_slab_free	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mem_slab.c:296:5:k_mem_slab_runtime_stats_get	8	static

@@ -1,0 +1,7 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/timeutil.h:545:19:timespec_compare	12	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/timeutil.h:441:20:timespec_add	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/clock.c:53:5:sys_clock_from_clockid	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/clock.c:104:6:z_impl_sys_clock_getrtoffset	12	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/clock.c:69:5:sys_clock_gettime	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/clock.c:124:5:z_impl_sys_clock_settime	32	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/clock.c:156:5:z_impl_sys_clock_nanosleep	72	static

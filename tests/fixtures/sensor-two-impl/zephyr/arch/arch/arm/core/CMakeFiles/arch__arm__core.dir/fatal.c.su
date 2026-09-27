@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:95:6:z_arm_fatal_error	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:136:6:z_do_kernel_oops	0	static

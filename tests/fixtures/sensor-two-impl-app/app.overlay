@@ -1,0 +1,32 @@
+/*
+ * Copyright (c) 2026 JP Hutchins
+ * SPDX-License-Identifier: MIT
+ *
+ * qemu_cortex_m3 has no I2C controller; the emulated controller hosts
+ * both sensors so the drivers run unchanged against software.
+ */
+
+#include <zephyr/dt-bindings/i2c/i2c.h>
+
+/ {
+	fake_i2c_bus: i2c@100 {
+		status = "okay";
+		compatible = "zephyr,i2c-emul-controller";
+		clock-frequency = <I2C_BITRATE_STANDARD>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x100 4>;
+
+		adt7420: adt7420@48 {
+			compatible = "adi,adt7420";
+			reg = <0x48>;
+			status = "okay";
+		};
+
+		bmi160: bmi160@68 {
+			compatible = "bosch,bmi160";
+			reg = <0x68>;
+			status = "okay";
+		};
+	};
+};

@@ -1,0 +1,58 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c"
+node: { title: "timeutil_timegm64" label: "timeutil_timegm64\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:49:9\n32 bytes (static)\n0 dynamic objects" }
+node: { title: "__aeabi_ldivmod" label: "__aeabi_ldivmod\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_timegm64" targetname: "__aeabi_ldivmod" }
+edge: { sourcename: "timeutil_timegm64" targetname: "__aeabi_ldivmod" }
+node: { title: "timeutil_timegm" label: "timeutil_timegm\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:63:8\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "timeutil_timegm" targetname: "timeutil_timegm64" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:65:17" }
+node: { title: "timeutil_sync_state_update" label: "timeutil_sync_state_update\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:79:5\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "memset" label: "__builtin_memset\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_state_update" targetname: "memset" }
+node: { title: "timeutil_sync_state_set_skew" label: "timeutil_sync_state_set_skew\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:101:5\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "__aeabi_fcmpgt" label: "__aeabi_fcmpgt\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_state_set_skew" targetname: "__aeabi_fcmpgt" }
+edge: { sourcename: "timeutil_sync_state_set_skew" targetname: "memset" }
+node: { title: "timeutil_sync_estimate_skew" label: "timeutil_sync_estimate_skew\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:118:7\n56 bytes (static)\n0 dynamic objects" }
+node: { title: "__aeabi_ui2d" label: "__aeabi_ui2d\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_ui2d" }
+node: { title: "__aeabi_ul2d" label: "__aeabi_ul2d\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_ul2d" }
+node: { title: "__aeabi_dmul" label: "__aeabi_dmul\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_dmul" }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_ul2d" }
+node: { title: "__aeabi_ddiv" label: "__aeabi_ddiv\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_ddiv" }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_ui2d" }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_ddiv" }
+node: { title: "__aeabi_d2f" label: "__aeabi_d2f\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_estimate_skew" targetname: "__aeabi_d2f" }
+node: { title: "timeutil_sync_ref_from_local" label: "timeutil_sync_ref_from_local\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:134:5\n40 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_fcmpgt" }
+node: { title: "__aeabi_fcmpeq" label: "__aeabi_fcmpeq\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_fcmpeq" }
+node: { title: "__aeabi_l2d" label: "__aeabi_l2d\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_l2d" }
+node: { title: "__aeabi_f2d" label: "__aeabi_f2d\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_f2d" }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_dmul" }
+node: { title: "__aeabi_d2lz" label: "__aeabi_d2lz\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_d2lz" }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_ldivmod" }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__aeabi_fcmpeq" }
+node: { title: "timeutil_sync_local_from_ref" label: "timeutil_sync_local_from_ref\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:164:5\n40 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_fcmpgt" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_ldivmod" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_fcmpeq" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_l2d" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_f2d" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_ddiv" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_d2lz" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__aeabi_fcmpeq" }
+node: { title: "timeutil_sync_skew_to_ppb" label: "timeutil_sync_skew_to_ppb\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:191:9\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "timeutil_sync_skew_to_ppb" targetname: "__aeabi_f2d" }
+node: { title: "__aeabi_dsub" label: "__aeabi_dsub\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_sync_skew_to_ppb" targetname: "__aeabi_dsub" }
+edge: { sourcename: "timeutil_sync_skew_to_ppb" targetname: "__aeabi_dmul" }
+edge: { sourcename: "timeutil_sync_skew_to_ppb" targetname: "__aeabi_d2lz" }
+node: { title: "timespec_normalize" label: "timespec_normalize\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:199:6\n16 bytes (static)\n0 dynamic objects" }
+}

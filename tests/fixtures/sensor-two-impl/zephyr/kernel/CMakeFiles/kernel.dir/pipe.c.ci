@@ -1,0 +1,36 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:wait_for" label: "wait_for\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:45:12\n40 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_timepoint_timeout" label: "sys_timepoint_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/clock.h:324:13" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:wait_for" targetname: "sys_timepoint_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:49:24" }
+node: { title: "z_pend_curr" label: "z_pend_curr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:58:5" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:wait_for" targetname: "z_pend_curr" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:65:7" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" label: "z_sched_wake_all.constprop\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/scheduler.h:111:20\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "z_try_abort_timeout" label: "z_try_abort_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:121:5" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:144:9" }
+node: { title: "z_sched_ready_locked" label: "z_sched_ready_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:122:6" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" targetname: "z_sched_ready_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:304:4" }
+node: { title: "z_impl_k_pipe_init" label: "z_impl_k_pipe_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:78:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_pipe_write" label: "z_impl_k_pipe_write\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:152:5\n96 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_timepoint_calc" label: "sys_timepoint_calc\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/clock.h:309:15" shape : ellipse }
+edge: { sourcename: "z_impl_k_pipe_write" targetname: "sys_timepoint_calc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:157:22" }
+node: { title: "memcpy" label: "__builtin_memcpy\n<built-in>" shape : ellipse }
+edge: { sourcename: "z_impl_k_pipe_write" targetname: "memcpy" }
+edge: { sourcename: "z_impl_k_pipe_write" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:144:9" }
+edge: { sourcename: "z_impl_k_pipe_write" targetname: "z_sched_ready_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:143:5" }
+edge: { sourcename: "z_impl_k_pipe_write" targetname: "memcpy" }
+edge: { sourcename: "z_impl_k_pipe_write" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:wait_for" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:217:8" }
+node: { title: "z_reschedule" label: "z_reschedule\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:62:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_pipe_write" targetname: "z_reschedule" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:228:3" }
+node: { title: "z_impl_k_pipe_read" label: "z_impl_k_pipe_read\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:235:5\n96 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_pipe_read" targetname: "sys_timepoint_calc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:239:22" }
+edge: { sourcename: "z_impl_k_pipe_read" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:258:19" }
+edge: { sourcename: "z_impl_k_pipe_read" targetname: "memcpy" }
+edge: { sourcename: "z_impl_k_pipe_read" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:wait_for" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:272:8" }
+edge: { sourcename: "z_impl_k_pipe_read" targetname: "z_reschedule" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:283:3" }
+node: { title: "z_impl_k_pipe_reset" label: "z_impl_k_pipe_reset\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:290:6\n16 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_pipe_reset" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:297:4" }
+edge: { sourcename: "z_impl_k_pipe_reset" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:298:4" }
+node: { title: "z_impl_k_pipe_close" label: "z_impl_k_pipe_close\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:304:6\n16 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_pipe_close" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:309:3" }
+edge: { sourcename: "z_impl_k_pipe_close" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:z_sched_wake_all.constprop.0" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:310:3" }
+}

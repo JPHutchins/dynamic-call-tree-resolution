@@ -1,0 +1,12 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c"
+node: { title: "getopt_init" label: "getopt_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:14:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_getopt_init" label: "sys_getopt_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/sys_getopt.h:56:6" shape : ellipse }
+edge: { sourcename: "getopt_init" targetname: "sys_getopt_init" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:16:2" }
+node: { title: "getopt_state_get" label: "getopt_state_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:19:22\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_getopt_state_get" label: "sys_getopt_state_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/sys_getopt.h:59:26" shape : ellipse }
+edge: { sourcename: "getopt_state_get" targetname: "sys_getopt_state_get" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:21:9" }
+node: { title: "getopt" label: "getopt\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:24:5\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_getopt" label: "sys_getopt\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/sys_getopt.h:74:5" shape : ellipse }
+edge: { sourcename: "getopt" targetname: "sys_getopt" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:26:9" }
+node: { title: "z_getopt_global_state_update_shim" label: "z_getopt_global_state_update_shim\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:29:6\n0 bytes (static)\n0 dynamic objects" }
+}

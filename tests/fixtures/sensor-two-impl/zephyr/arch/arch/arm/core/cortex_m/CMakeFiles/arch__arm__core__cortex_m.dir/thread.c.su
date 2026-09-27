@@ -1,0 +1,5 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:90:6:arch_new_thread	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:541:5:arch_coprocessors_disable	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:578:6:arch_switch_to_main_thread	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:672:13:arch_irq_unlock_outlined	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:681:21:arch_irq_lock_outlined	0	static

@@ -1,0 +1,16 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout_list.h:27:32:z_timeout_q_first	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:126:17:next_timeout	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:72:17:elapsed	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout_list.h:82:25:z_timeout_q_remainder	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:176:11:z_add_timeout	40	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:239:5:z_try_abort_timeout	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:276:6:z_timeout_inflight_superseded	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:288:11:z_timeout_remaining	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:302:11:z_timeout_expires	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:317:10:z_get_next_timeout_expiry	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:339:6:sys_clock_announce_locked	32	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:434:9:sys_clock_tick_get	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:444:10:sys_clock_tick_get_32	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:453:9:z_impl_k_uptime_ticks	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:466:15:sys_timepoint_calc	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeout.c:487:13:sys_timepoint_timeout	24	static

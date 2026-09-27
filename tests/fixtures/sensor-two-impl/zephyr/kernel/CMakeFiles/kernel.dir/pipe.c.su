@@ -1,0 +1,7 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:45:12:wait_for	40	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/scheduler.h:111:20:z_sched_wake_all.constprop	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:78:6:z_impl_k_pipe_init	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:152:5:z_impl_k_pipe_write	96	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:235:5:z_impl_k_pipe_read	96	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:290:6:z_impl_k_pipe_reset	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/pipe.c:304:6:z_impl_k_pipe_close	16	static

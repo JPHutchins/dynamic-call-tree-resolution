@@ -1,0 +1,4 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mutex.c:129:13:adjust_owner_prio.isra	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mutex.c:81:5:z_impl_k_mutex_init	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mutex.c:172:5:z_impl_k_mutex_lock	56	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mutex.c:381:5:z_impl_k_mutex_unlock	24	static

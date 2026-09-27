@@ -1,0 +1,13 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:386:12:adt7420_channel_get	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/i2c.h:1535:19:i2c_write	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:68:12:adt7420_set_threshold.isra	32	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/i2c.h:1869:19:i2c_reg_write_byte_dt	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/i2c.h:1628:19:i2c_write_read.constprop	32	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:231:12:adt7420_get_threshold.isra	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/i2c.h:1929:19:i2c_reg_update_byte_dt.constprop	40	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/i2c.h:1823:19:i2c_reg_read_byte_dt	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:333:12:adt7420_attr_get	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:368:12:adt7420_sample_fetch	32	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:432:12:adt7420_probe	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:549:12:adt7420_init	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420.c:182:12:adt7420_attr_set	16	static

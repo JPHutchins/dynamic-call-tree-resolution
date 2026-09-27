@@ -1,0 +1,21 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_set_channel" label: "bmi160_emul_backend_set_channel\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:287:12\n32 bytes (static)\n0 dynamic objects" }
+node: { title: "__aeabi_ldivmod" label: "__aeabi_ldivmod\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_set_channel" targetname: "__aeabi_ldivmod" }
+node: { title: "__aeabi_uldivmod" label: "__aeabi_uldivmod\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_set_channel" targetname: "__aeabi_uldivmod" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_set_channel" targetname: "__aeabi_ldivmod" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_get_sample_range" label: "bmi160_emul_backend_get_sample_range\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:374:12\n24 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_get_sample_range" targetname: "__aeabi_ldivmod" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_get_sample_range" targetname: "__aeabi_ldivmod" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_get_attribute_metadata" label: "bmi160_emul_backend_get_attribute_metadata\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:531:12\n24 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:emul_bosch_bmi160_init" label: "emul_bosch_bmi160_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:584:12\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_transfer_i2c" label: "bmi160_emul_transfer_i2c\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:229:12\n32 bytes (static)\n0 dynamic objects" }
+node: { title: "i2c_dump_msgs_rw" label: "i2c_dump_msgs_rw\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/i2c.h:698:6" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_transfer_i2c" targetname: "i2c_dump_msgs_rw" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:238:2" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_set_attribute" label: "bmi160_emul_backend_set_attribute\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:518:12\n48 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:bmi160_emul_backend_set_attribute" targetname: "__aeabi_ldivmod" }
+node: { title: "emul_bmi160_get_reg_value" label: "emul_bmi160_get_reg_value\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:49:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "memcpy" label: "__builtin_memcpy\n<built-in>" shape : ellipse }
+edge: { sourcename: "emul_bmi160_get_reg_value" targetname: "memcpy" }
+}

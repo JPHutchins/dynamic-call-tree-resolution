@@ -1,0 +1,7 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/calloc.c"
+node: { title: "calloc" label: "calloc\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:136:7\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "malloc" label: "malloc\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:183:7" shape : ellipse }
+edge: { sourcename: "calloc" targetname: "malloc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/calloc.c:21:8" }
+node: { title: "memset" label: "__builtin_memset\n<built-in>" shape : ellipse }
+edge: { sourcename: "calloc" targetname: "memset" }
+}

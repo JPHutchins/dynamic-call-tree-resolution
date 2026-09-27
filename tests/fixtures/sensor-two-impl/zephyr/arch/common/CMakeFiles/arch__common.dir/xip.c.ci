@@ -1,0 +1,6 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/xip.c"
+node: { title: "arch_data_copy" label: "arch_data_copy\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/xip.c:27:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "arch_early_memcpy" label: "arch_early_memcpy\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/common/init.h:16:6" shape : ellipse }
+edge: { sourcename: "arch_data_copy" targetname: "arch_early_memcpy" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/xip.c:29:2" }
+edge: { sourcename: "arch_data_copy" targetname: "arch_early_memcpy" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/xip.c:32:2" }
+}

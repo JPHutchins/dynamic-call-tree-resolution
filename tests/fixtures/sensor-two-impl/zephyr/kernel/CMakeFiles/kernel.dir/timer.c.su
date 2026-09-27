@@ -1,0 +1,8 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:72:6:z_timer_expiration_handler	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:156:5:z_timer_cleanup	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:212:5:k_timer_cleanup	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:218:6:k_timer_init	12	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:246:6:z_impl_k_timer_start	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:287:6:z_impl_k_timer_stop	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:341:10:z_impl_k_timer_status_get	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:361:10:z_impl_k_timer_status_sync	24	static

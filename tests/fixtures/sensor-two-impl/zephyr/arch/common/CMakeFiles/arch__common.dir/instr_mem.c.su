@@ -1,0 +1,4 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:9:13:arch_is_instr_mem	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:21:14:arch_memset_instr	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:26:14:arch_memcpy_to_instr	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:31:14:arch_memcpy_from_instr	0	static

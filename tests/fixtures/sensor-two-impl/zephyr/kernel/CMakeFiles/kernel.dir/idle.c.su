@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/idle.c:22:6:idle	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/idle.c:100:13:arch_spin_relax	0	static

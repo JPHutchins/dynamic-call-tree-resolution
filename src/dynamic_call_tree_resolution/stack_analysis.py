@@ -28,7 +28,7 @@ class StackReport(Struct):
 	unmeasured: int
 
 
-_MAX_CYCLE_SIZE: Final = 20
+_MAX_CYCLE_SIZE: Final = 64
 
 INDIRECT_CALLEE: Final = "__indirect_call"
 
@@ -37,6 +37,8 @@ def expand_indirect_calls(
 	edges: Iterable[CallEdge],
 	targets_by_caller: Mapping[str, frozenset[str]],
 	fallback: frozenset[str],
+	*,
+	exact: bool = False,
 ) -> tuple[CallEdge, ...]:
 	"""Replace GCC ``__indirect_call`` placeholders with resolved targets.
 
@@ -44,13 +46,41 @@ def expand_indirect_calls(
 	call sites extracted from that caller's code and ``fallback`` (the union
 	of all resolved targets): per-caller candidates refine on top of the
 	fallback, never replace it, so sites the extractor missed cannot vanish
-	from the bound.
+	from the bound. With ``exact`` the fallback union is dropped, trusting
+	the per-caller candidates alone.
+
+	With ``exact``, candidate names are also translated to every raw ``.ci``
+	graph name with the same bare key — static functions are path-qualified
+	there — so an expanded edge lands on the node whose own outgoing edges
+	connect the deeper graph. (In the sound mode the bare names stay: the
+	translation connects the fallback union into real recursive cycles
+	through cbprintf-style output pointers, which the sound bound must
+	flag rather than silently drop.)
 	"""
+	edges_tuple = tuple(edges)
+	raw_names_by_key: dict[str, set[str]] = {}
+	for edge in edges_tuple:
+		for name in (edge.caller, edge.callee):
+			raw_names_by_key.setdefault(frame_key(name), set()).add(name)
+
+	def graph_targets(target: str) -> frozenset[str]:
+		if not exact:
+			return frozenset({target})
+		raw_names = raw_names_by_key.get(frame_key(target))
+		return frozenset(raw_names) if raw_names is not None else frozenset({target})
+
 	return tuple(
 		CallEdge(caller=edge.caller, callee=callee)
-		for edge in edges
+		for edge in edges_tuple
 		for callee in (
-			sorted(targets_by_caller.get(frame_key(edge.caller), frozenset()) | fallback)
+			sorted(
+				graph_target
+				for target in sorted(
+					targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
+					| (frozenset[str]() if exact else fallback)
+				)
+				for graph_target in graph_targets(target)
+			)
 			if edge.callee == INDIRECT_CALLEE
 			else (edge.callee,)
 		)
@@ -60,29 +90,32 @@ def expand_indirect_calls(
 def worst_case_depths(
 	edges: Iterable[CallEdge],
 	frames: Iterable[StackUsage],
+	*,
+	entry_edges: Iterable[CallEdge] | None = None,
 ) -> tuple[StackReport, ...]:
 	"""Compute worst-case stack depths for every entry point.
 
 	Entry points are functions with no incoming call edges, plus
 	``.su``-recorded functions with no call edges at all (leaf callbacks
-	and ISRs). Cycles (recursion) are broken at the back edge and flagged;
-	the flags reflect any branch of the subtree, not only the deepest one.
-	Frames using ``alloca``/VLAs are counted but flagged, and path frames
-	without ``.su`` records are counted as unmeasured.
+	and ISRs). When ``entry_edges`` (the unexpanded graph) is given, the
+	root test uses it while the depths still use the expanded ``edges``:
+	expansion adds only sound fallback edges, so a thread function whose
+	only incoming edges are fallback unions keeps its per-entry report.
+	Cycles (recursion) are broken at the back edge and flagged; the flags
+	reflect any branch of the subtree, not only the deepest one. Frames
+	using ``alloca``/VLAs are counted but flagged, and path frames without
+	``.su`` records are counted as unmeasured.
 	"""
 	frames_tuple = tuple(frames)
 	frame_by_name = _frames_by_bare_name(frames_tuple)
-	edges_tuple = tuple(edges)
-	adjacency = {
-		caller: frozenset(edge.callee for edge in group)
-		for caller, group in groupby(sorted(edges_tuple, key=_caller), key=_caller)
-	}
+	adjacency = _adjacency(edges)
+	root_adjacency = _adjacency(entry_edges) if entry_edges is not None else adjacency
 	depths = _depths_by_component(adjacency, frame_by_name)
-	callees = _callees(adjacency)
-	bare_graph_nodes = {frame_key(node) for node in set(adjacency) | callees}
+	root_callees = _callees(root_adjacency)
+	root_graph_nodes = {frame_key(node) for node in set(root_adjacency) | root_callees}
 	roots = sorted(
-		(adjacency.keys() - callees)
-		| ({frame_key(usage.function) for usage in frames_tuple} - bare_graph_nodes)
+		(root_adjacency.keys() - root_callees)
+		| ({frame_key(usage.function) for usage in frames_tuple} - root_graph_nodes)
 	)
 	return tuple(
 		report
@@ -95,6 +128,13 @@ def worst_case_depths(
 			reverse=True,
 		)
 	)
+
+
+def _adjacency(edges: Iterable[CallEdge]) -> dict[str, frozenset[str]]:
+	callees_by_name: dict[str, set[str]] = {}
+	for edge in edges:
+		callees_by_name.setdefault(edge.caller, set()).add(edge.callee)
+	return {caller: frozenset(callees) for caller, callees in callees_by_name.items()}
 
 
 def _leaf_report(function: str, frame_by_name: Mapping[str, StackUsage]) -> StackReport:
@@ -192,10 +232,6 @@ def _report_depth(report: StackReport) -> int:
 
 def _frame_bytes(usage: StackUsage) -> int:
 	return usage.bytes
-
-
-def _caller(edge: CallEdge) -> str:
-	return edge.caller
 
 
 def _frame_name(usage: StackUsage) -> str:
