@@ -176,7 +176,7 @@ def test_cli_summary_warns_when_indirect_edges_are_dropped(
 	output = capsys.readouterr()
 	assert "warning: 1 of 1 indirect call edges have no candidates and were dropped" in output.err
 	report = msgspec.json.decode(output.out, type=AnalysisSummary)
-	assert report.entry_points == 0
+	assert report.entry_points == 1
 
 
 def test_cli_summary_json(

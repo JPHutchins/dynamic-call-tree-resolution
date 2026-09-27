@@ -45,5 +45,5 @@ def _parse_record(line: str) -> StackUsage:
 	return StackUsage(
 		function=location.split(":", 3)[3],
 		bytes=int(byte_count),
-		dynamic=qualifier == "dynamic",
+		dynamic=qualifier.startswith("dynamic"),
 	)
