@@ -28,7 +28,7 @@ from bisect import bisect_right
 from collections.abc import Callable, Hashable
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Final, Literal, cast
 
 from capstone import (
 	CS_ARCH_ARM,
@@ -52,25 +52,25 @@ if TYPE_CHECKING:
 
 	from dynamic_call_tree_resolution.model import Function, Program
 
-_K_BOUND = 64
+_K_BOUND: Final = 64
 
-_GLOBAL_ROUNDS = 3
+_GLOBAL_ROUNDS: Final = 3
 
-_MAX_ROUNDS = 8
+_MAX_ROUNDS: Final = 8
 
-_DISASSEMBLERS: Mapping[Machine, tuple[int, int]] = {
+_DISASSEMBLERS: Final[Mapping[Machine, tuple[int, int]]] = {
 	Machine.EM_X86_64: (CS_ARCH_X86, CS_MODE_64),
 	Machine.EM_386: (CS_ARCH_X86, CS_MODE_32),
 	Machine.EM_ARM: (CS_ARCH_ARM, CS_MODE_THUMB),
 }
 
-_SP_REGISTERS: Mapping[Machine, tuple[int, ...]] = {
+_SP_REGISTERS: Final[Mapping[Machine, tuple[int, ...]]] = {
 	Machine.EM_X86_64: (x86_const.X86_REG_RSP, x86_const.X86_REG_RBP),
 	Machine.EM_386: (x86_const.X86_REG_ESP, x86_const.X86_REG_EBP),
 	Machine.EM_ARM: (arm_const.ARM_REG_SP,),
 }
 
-_X86_TRANSFERS = (
+_X86_TRANSFERS: Final = (
 	"call",
 	"jmp",
 	"ret",
@@ -85,10 +85,10 @@ _X86_TRANSFERS = (
 	"ud2",
 	"hlt",
 )
-_ARM_TRANSFERS = ("bl", "blx", "bx", "b", "pop", "svc", "bkpt", "udf", "tbb", "tbh")
-_X86_CALLS = ("call",)
-_ARM_CALLS = ("bl", "blx")
-_ARM_CONDITIONAL = frozenset(
+_ARM_TRANSFERS: Final = ("bl", "blx", "bx", "b", "pop", "svc", "bkpt", "udf", "tbb", "tbh")
+_X86_CALLS: Final = ("call",)
+_ARM_CALLS: Final = ("bl", "blx")
+_ARM_CONDITIONAL: Final = frozenset(
 	{
 		"beq",
 		"bne",
@@ -110,7 +110,7 @@ _ARM_CONDITIONAL = frozenset(
 		"cbnz",
 	}
 )
-_X86_CALLER_SAVED_64 = (
+_X86_CALLER_SAVED_64: Final = (
 	x86_const.X86_REG_RAX,
 	x86_const.X86_REG_RCX,
 	x86_const.X86_REG_RDX,
@@ -121,14 +121,14 @@ _X86_CALLER_SAVED_64 = (
 	x86_const.X86_REG_R10,
 	x86_const.X86_REG_R11,
 )
-_X86_CALLER_SAVED_32 = (
+_X86_CALLER_SAVED_32: Final = (
 	x86_const.X86_REG_EAX,
 	x86_const.X86_REG_ECX,
 	x86_const.X86_REG_EDX,
 	x86_const.X86_REG_ESI,
 	x86_const.X86_REG_EDI,
 )
-_ARM_CALLER_SAVED = (
+_ARM_CALLER_SAVED: Final = (
 	arm_const.ARM_REG_R0,
 	arm_const.ARM_REG_R1,
 	arm_const.ARM_REG_R2,
@@ -136,10 +136,10 @@ _ARM_CALLER_SAVED = (
 	arm_const.ARM_REG_R12,
 	arm_const.ARM_REG_LR,
 )
-_X86_MOVES = ("mov", "movabs")
-_ARM_LOADS = ("ldr", "ldr.w", "ldr.n")
-_ARM_MOVES = ("mov", "movs", "mov.w")
-_X86_64_ARGUMENT_REGISTERS = (
+_X86_MOVES: Final = ("mov", "movabs")
+_ARM_LOADS: Final = ("ldr", "ldr.w", "ldr.n")
+_ARM_MOVES: Final = ("mov", "movs", "mov.w")
+_X86_64_ARGUMENT_REGISTERS: Final = (
 	x86_const.X86_REG_RDI,
 	x86_const.X86_REG_RSI,
 	x86_const.X86_REG_RDX,
@@ -147,13 +147,13 @@ _X86_64_ARGUMENT_REGISTERS = (
 	x86_const.X86_REG_R8,
 	x86_const.X86_REG_R9,
 )
-_ARM_ARGUMENT_REGISTERS = (
+_ARM_ARGUMENT_REGISTERS: Final = (
 	arm_const.ARM_REG_R0,
 	arm_const.ARM_REG_R1,
 	arm_const.ARM_REG_R2,
 	arm_const.ARM_REG_R3,
 )
-_EM_386_STACK_ARGUMENTS = 8
+_EM_386_STACK_ARGUMENTS: Final = 8
 
 type ValueSet = frozenset[Address] | None
 type OffsetSet = frozenset[int] | None

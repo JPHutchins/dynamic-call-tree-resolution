@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
@@ -50,8 +50,8 @@ class _SectionBytes(Struct):
 	flags: int
 
 
-_DW_OP_ADDR = 0x03
-_SHF_ALLOC = 0x2
+_DW_OP_ADDR: Final = 0x03
+_SHF_ALLOC: Final = 0x2
 
 
 def load(path: Path) -> Program:
