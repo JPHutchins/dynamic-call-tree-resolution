@@ -158,7 +158,7 @@ def build_report(
 			for slot in unresolved
 		),
 		total_slots=len(set(resolved_by_slot) | {slot.slot for slot in unresolved}),
-		resolved_slots=len(resolved),
+		resolved_slots=len(resolved_by_slot),
 		resolved_targets=sum(len(assignment.candidates) for assignment in resolved),
 	)
 
@@ -222,10 +222,8 @@ def build_comparison(
 		elf=name,
 		machine=program.machine,
 		functions=len(program.functions),
-		total_slots=len(
-			{assignment.slot for assignment in resolved} | {slot.slot for slot in unresolved}
-		),
-		resolved_slots=len(resolved),
+		total_slots=len(set(resolved_by_slot) | {slot.slot for slot in unresolved}),
+		resolved_slots=len(resolved_by_slot),
 		unresolved_slots=len(unresolved),
 		call_sites=len(candidate_sizes),
 		resolved_call_sites=sum(size > 0 for size in candidate_sizes),

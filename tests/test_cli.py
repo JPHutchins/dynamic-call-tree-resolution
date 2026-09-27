@@ -45,7 +45,7 @@ def test_cli_analyze_json(fixture_elfs: dict[str, Path]) -> None:
 		text=True,
 	)
 	report = msgspec.json.decode(result.stdout, type=AnalysisReport)
-	assert report.resolved_slots == 19
+	assert report.resolved_slots == 11
 	assert {assignment.member_path for assignment in report.assignments} == EXPECTED_PATHS
 
 
@@ -94,7 +94,7 @@ def test_cli_compare_plain_text_and_directories(
 	compare([directory])
 	output = capsys.readouterr().out
 	assert output.count("EM_X86_64") == 2
-	assert "19/2/13" in output
+	assert "11/2/13" in output
 	assert "5/5/7" in output
 
 
@@ -107,7 +107,7 @@ def test_cli_main_entry(
 	with pytest.raises(SystemExit):
 		main()
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisReport)
-	assert report.resolved_slots == 19
+	assert report.resolved_slots == 11
 
 
 def test_cli_stack_plain_text(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -138,7 +138,7 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	(nested / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
 	stack(build_directory, elf=fixture_elfs["nopie"])
 	output = capsys.readouterr().out
-	assert "resolved slots: 19" in output
+	assert "resolved slots: 11" in output
 	assert "indirect call sites: 1" in output
 	assert "main: 80 bytes" in output
 
@@ -157,7 +157,7 @@ def test_cli_summary_json(
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	summary(build_directory, fixture_elfs["nopie"])
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisSummary)
-	assert report.resolved_slots == 19
+	assert report.resolved_slots == 11
 	assert report.total_slots == 13
 	assert report.unresolved_slots == 2
 	assert report.indirect_call_sites == 1
