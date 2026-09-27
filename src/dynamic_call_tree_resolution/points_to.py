@@ -83,7 +83,13 @@ def _object_assignments(
 	layout = _layout_of(program, data_object)
 	if layout is None:
 		if data_object.type_name is not None and data_object.type_name.endswith(" []"):
-			yield from _array_element_assignments(program, data_object, path, visited)
+			element_name = data_object.type_name.removesuffix(" []")
+			if program.layouts.get(element_name) is not None or element_name == "function pointer":
+				yield from _array_element_assignments(program, data_object, path, visited)
+			else:
+				yield from _vector_table_assignments(program, data_object, path)
+		elif data_object.size > program.pointer_size:
+			yield from _vector_table_assignments(program, data_object, path)
 		else:
 			target = pointer_at(program, data_object.address)
 			if target is not None and target != 0 and target in program.functions:
@@ -98,6 +104,37 @@ def _object_assignments(
 	yield from _member_assignments(program, data_object.address, 0, layout.members, path, visited)
 
 
+def _vector_table_assignments(
+	program: Program,
+	data_object: DataObject,
+	path: tuple[str | None, ...],
+) -> Iterable[SlotAssignment]:
+	"""Typeless objects whose every element is a function: vector tables.
+
+	Assembly-defined vector tables (``_irq_vector_table`` and friends)
+	have no DWARF type; a typeless object whose elements are all known
+	function addresses is one.
+	"""
+	values = tuple(
+		pointer_at(program, Address(data_object.address + base_offset))
+		for base_offset in range(0, data_object.size, program.pointer_size)
+	)
+	targets = tuple(
+		target
+		for target in values
+		if target is not None and target != 0 and target in program.functions
+	)
+	if len(targets) != len(values):
+		return
+	for index, target in enumerate(targets):
+		yield SlotAssignment(
+			slot=Address(data_object.address + index * program.pointer_size),
+			path=(*path, f"[{index}]"),
+			candidates=frozenset({target}),
+			provenance=Provenance.CONSTANT_DATA,
+		)
+
+
 def _array_element_assignments(
 	program: Program,
 	data_object: DataObject,
@@ -107,8 +144,6 @@ def _array_element_assignments(
 	element_name = data_object.type_name.removesuffix(" []") if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
 	if element_layout is None:
-		if element_name != "function pointer":
-			return
 		for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
 			target = pointer_at(program, Address(data_object.address + base_offset))
 			if target is not None and target != 0 and target in program.functions:

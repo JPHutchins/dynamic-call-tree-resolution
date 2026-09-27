@@ -90,10 +90,20 @@ def test_pie_resolves_relocations_with_their_slots(fixture_elfs: dict[str, Path]
 
 def test_nodebug_resolves_direct_slots_only(fixture_elfs: dict[str, Path]) -> None:
 	resolved, program = _resolved(fixture_elfs["nodebug"])
-	assert set(resolved) == {"ops_a", "ops_b", "plain_cb", "holder"}
+	assert set(resolved) == {
+		"ops_a.[0]",
+		"ops_a.[1]",
+		"ops_b.[0]",
+		"ops_b.[1]",
+		"plain_cb",
+		"holder",
+	}
 	assert _names(program, resolved["plain_cb"]) == {"plain_target"}
 	assert _names(program, resolved["holder"]) == {"undef_ptr_target"}
-	assert _names(program, resolved["ops_a"]) == {"driver_a_open"}
+	assert _names(program, resolved["ops_a.[0]"]) == {"driver_a_open"}
+	assert _names(program, resolved["ops_a.[1]"]) == {"driver_a_close"}
+	assert _names(program, resolved["ops_b.[0]"]) == {"driver_b_open"}
+	assert _names(program, resolved["ops_b.[1]"]) == {"driver_b_close"}
 
 
 def test_bss_slots_are_unresolved(fixture_elfs: dict[str, Path]) -> None:
@@ -104,8 +114,14 @@ def test_bss_slots_are_unresolved(fixture_elfs: dict[str, Path]) -> None:
 
 def test_multi_tu_resolves_via_declared_types(fixture_elfs: dict[str, Path]) -> None:
 	resolved, program = _resolved(fixture_elfs["multi"])
-	assert set(resolved) == {"dev_x.api", "ops_hidden"}
-	assert _names(program, resolved["dev_x.api"]) == {"hidden_open"}
+	assert set(resolved) == {
+		"dev_x.api.[0]",
+		"dev_x.api.[1]",
+		"ops_hidden.[0]",
+		"ops_hidden.[1]",
+	}
+	assert _names(program, resolved["dev_x.api.[0]"]) == {"hidden_open"}
+	assert _names(program, resolved["dev_x.api.[1]"]) == {"hidden_close"}
 
 
 def test_minimal_pie_resolves_via_relocation(fixture_elfs: dict[str, Path]) -> None:
@@ -236,3 +252,9 @@ def test_array_globals_report_unresolved_elements(fixture_elfs: dict[str, Path])
 	assert unresolved["dynamic_cbs.[0]"].signature == FunctionSignature(
 		return_type="void", parameters=()
 	)
+
+
+def test_typeless_vector_table_resolves_element_by_element(fixture_elfs: dict[str, Path]) -> None:
+	resolved, program = _resolved(fixture_elfs["arrays"])
+	assert _names(program, resolved["vector_table.[0]"]) == {"handler_a"}
+	assert _names(program, resolved["vector_table.[1]"]) == {"handler_b"}
