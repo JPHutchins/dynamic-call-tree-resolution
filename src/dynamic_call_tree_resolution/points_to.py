@@ -83,7 +83,7 @@ def _object_assignments(
 	layout = _layout_of(program, data_object)
 	if layout is None:
 		target = pointer_at(program, data_object.address)
-		if target is not None and target in program.functions:
+		if target is not None and target != 0 and target in program.functions:
 			yield SlotAssignment(
 				slot=data_object.address,
 				path=path,
@@ -108,7 +108,7 @@ def _member_assignments(
 		match member:
 			case FunctionPointerMember(offset=offset):
 				target = pointer_at(program, Address(data_object.address + base_offset + offset))
-				if target is not None and target in program.functions:
+				if target is not None and target != 0 and target in program.functions:
 					yield SlotAssignment(
 						slot=Address(data_object.address + base_offset + offset),
 						path=member_path,

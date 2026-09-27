@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from dynamic_call_tree_resolution import (
+	Address,
+	DataObject,
+	Function,
 	FunctionSignature,
 	Program,
 	Provenance,
@@ -144,3 +147,48 @@ def test_unresolved_slots_across_variants(fixture_elfs: dict[str, Path], variant
 def test_unresolved_slots_without_dwarf_reports_nothing(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["nodebug"])
 	assert unresolved_slots(program, assignments(program)) == ()
+
+
+def test_null_fixture_keeps_no_functions_at_address_zero(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["null"])
+	assert Address(0) not in program.functions
+	assert Address(1) not in program.functions
+
+
+def test_null_fixture_resolves_nothing(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["null"])
+	assert assignments(program) == ()
+	assert {render_path(slot.path) for slot in unresolved_slots(program, assignments(program))} == {
+		"null_cb"
+	}
+
+
+def _program_with_slot(stored: int) -> Program:
+	return Program(
+		byte_order="little",
+		pointer_size=8,
+		machine="EM_X86_64",
+		functions={
+			Address(0): Function(name="phantom", address=Address(0), size=8, signature=None),
+			Address(0x1000): Function(
+				name="real_target", address=Address(0x1000), size=8, signature=None
+			),
+		},
+		objects={
+			Address(0x2000): DataObject(
+				name="fp_slot", address=Address(0x2000), size=8, type_name=None, signature=None
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x2000): stored.to_bytes(8, "little")},
+	)
+
+
+def test_null_slot_does_not_resolve_to_a_function_at_address_zero() -> None:
+	assert assignments(_program_with_slot(0)) == ()
+
+
+def test_nonzero_slot_still_resolves_even_with_a_function_at_zero() -> None:
+	resolved = assignments(_program_with_slot(0x1000))
+	assert [assignment.candidates for assignment in resolved] == [frozenset({Address(0x1000)})]

@@ -169,6 +169,8 @@ def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 			if low_pc is None:
 				continue
 			address = Address(int(low_pc.value))
+			if address & ~1 == 0:
+				continue
 			functions[address] = Function(
 				name=_die_name(die),
 				address=address,
