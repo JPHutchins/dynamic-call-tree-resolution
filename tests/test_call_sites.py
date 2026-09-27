@@ -189,7 +189,7 @@ def test_x86_loop_back_edge_carries_state() -> None:
 	assert site.slot == 0x3000
 
 
-def test_x86_conditional_taken_path_to_the_site_conflicts_to_unresolved() -> None:
+def test_x86_conditional_paths_union_into_the_site_candidates() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00ff d3")
 	program = _program(
 		"EM_X86_64",
@@ -203,6 +203,7 @@ def test_x86_conditional_taken_path_to_the_site_conflicts_to_unresolved() -> Non
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1013
 	assert site.slot is None
+	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
 
 
 def test_conflicting_paths_fall_back_to_the_resolved_union() -> None:
@@ -299,21 +300,36 @@ def test_x86_immediate_load_resolves_directly() -> None:
 	assert call_site_candidates(program, site, {}) == frozenset({Address(0x3000)})
 
 
-def test_x86_unmodeled_writes_are_cleared() -> None:
+def test_x86_elementwise_add_shifts_the_tracked_address() -> None:
 	program = _x86(
 		bytes.fromhex("48 8b 05 f9 0f 00 0048 83 c0 04ff d0"),
 		objects=(("slot", 0x2000, _pointer(0x3000, 8)),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.slot is None
+	assert site.site_address == 0x100B
+	assert site.slot == 0x3004
+	assert call_site_candidates(program, site, {}) == frozenset()
 
 
-def test_x86_definitions_beyond_the_window_are_unknown() -> None:
+def test_x86_elementwise_add_lands_on_a_resolvable_slot() -> None:
+	program = _x86(
+		bytes.fromhex("48 c7 c0 00 20 00 0048 83 c0 04ff 10"),
+		objects=(("slot", 0x2004, _pointer(0x3000, 8)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100B
+	assert site.slot == 0x2004
+	assert call_site_candidates(program, site, {}) == frozenset({Address(0x3000)})
+
+
+def test_x86_definitions_beyond_the_former_window_resolve() -> None:
 	program = _x86(
 		bytes.fromhex("48 b8 00 30 00 00 00 00 00 00") + b"\x90" * 12 + bytes.fromhex("ff d0")
 	)
 	(site,) = extract_call_sites(program)
-	assert site.slot is None
+	assert site.site_address == 0x1016
+	assert site.slot == 0x3000
+	assert site.candidates == frozenset({Address(0x3000)})
 
 
 def test_arm_thumb_bit_twins_are_deduplicated() -> None:
@@ -517,7 +533,7 @@ def test_arm_movw_movt_pair_resolves() -> None:
 	assert call_site_candidates(program, site, {}) == frozenset({Address(0x56781234)})
 
 
-def test_arm_movt_without_movw_keeps_only_the_high_half() -> None:
+def test_arm_movt_without_movw_is_unresolved() -> None:
 	body = bytes.fromhex("c5 f2 78 6398 47")
 	program = _program(
 		"EM_ARM",
@@ -527,7 +543,8 @@ def test_arm_movt_without_movw_keeps_only_the_high_half() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1004
-	assert site.slot == 0x56780000
+	assert site.slot is None
+	assert site.candidates == frozenset()
 
 
 def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
@@ -558,7 +575,7 @@ def test_arm_call_in_window_clears_registers() -> None:
 	assert site.slot is None
 
 
-def test_arm_unmodeled_writes_are_cleared() -> None:
+def test_arm_elementwise_add_shifts_the_tracked_address() -> None:
 	body = bytes.fromhex("01 4b 04 33 98 4700 bf") + _pointer(0x2000, 4)
 	program = _program(
 		"EM_ARM",
@@ -568,7 +585,8 @@ def test_arm_unmodeled_writes_are_cleared() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1004
-	assert site.slot is None
+	assert site.slot == 0x2004
+	assert call_site_candidates(program, site, {}) == frozenset()
 
 
 def test_chasing_self_referential_pointer_stops() -> None:
@@ -673,3 +691,571 @@ def test_per_caller_candidates_unions_sites_with_fallback(fixture_elfs: dict[str
 		for assignment in resolved
 		for address in assignment.candidates
 	}
+
+
+def test_x86_loop_merges_conditional_paths_into_a_union() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 0a48 c7 c3 00 40 00 0048 ff c975 efff d3")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1018
+	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+	assert call_site_candidates(program, site, {}) == frozenset({Address(0x3000), Address(0x4000)})
+
+
+def test_x86_loop_carried_union_overflows_k_to_top() -> None:
+	table = b"".join((0x3000 + index * 8).to_bytes(8, "little") for index in range(65))
+	code = bytes.fromhex(
+		"48 c7 c1 41 00 00 0048 c7 c3 00 20 00 0048 8b 0348 83 c3 0848 ff c975 f4ff d0"
+	)
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+		objects=(("table", 0x2000, table),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x101A
+	assert site.candidates == frozenset()
+
+
+def test_x86_top_index_over_baked_object_enumerates_its_slots() -> None:
+	code = bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
+		objects=(("table", 0x2000, _pointer(0x3000, 8) + _pointer(0x4000, 8)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100B
+	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+
+
+def test_x86_top_index_without_an_enclosing_object_is_unresolved() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 8b 04 cbff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100B
+	assert site.candidates == frozenset()
+
+
+def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
+	program = Program(
+		byte_order="little",
+		pointer_size=8,
+		machine="EM_X86_64",
+		functions={
+			Address(0x1000): Function(
+				name="caller", address=Address(0x1000), size=15, signature=None
+			),
+		},
+		objects={
+			Address(0x2000): DataObject(
+				name="short", address=Address(0x2000), size=2, type_name=None, signature=None
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x1000): bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0")},
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()
+
+
+def test_x86_bss_slot_read_is_unknown() -> None:
+	program = Program(
+		byte_order="little",
+		pointer_size=8,
+		machine="EM_X86_64",
+		functions={
+			Address(0x1000): Function(
+				name="caller", address=Address(0x1000), size=9, signature=None
+			),
+		},
+		objects={
+			Address(0x2000): DataObject(
+				name="bss_slot", address=Address(0x2000), size=8, type_name=None, signature=None
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x1000): bytes.fromhex("48 8b 05 f9 0f 00 00ff d0")},
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()
+
+
+def test_x86_read_of_unmapped_memory_drops_the_value() -> None:
+	code = bytes.fromhex("48 8b 05 f9 07 00 00ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()
+
+
+def test_x86_join_with_one_path_missing_the_register_is_top() -> None:
+	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00eb 02ff d3")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1015
+	assert site.candidates == frozenset()
+
+
+def test_x86_join_with_the_other_path_missing_the_register_is_top() -> None:
+	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c075 0748 c7 c3 00 40 00 00eb 02ff d3")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1015
+	assert site.candidates == frozenset()
+
+
+def test_x86_loop_instruction_top_out_the_counter_and_keep_values() -> None:
+	code = bytes.fromhex("b9 03 00 00 0048 c7 c0 00 30 00 00e2 f8ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100E
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_stack_copy_survives_an_intervening_call() -> None:
+	code = bytes.fromhex("5548 89 e548 c7 c3 00 30 00 0048 89 5d f8e8 00 00 00 0048 8b 45 f8ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1018
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_frame_slot_aliases_between_rbp_and_rsp() -> None:
+	code = bytes.fromhex("5548 89 e548 c7 c3 00 30 00 0048 89 5d f848 8b 44 24 f8ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1014
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_push_pop_round_trip_carries_the_value() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 005358ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_push_immediate_pop_round_trip_carries_the_value() -> None:
+	code = bytes.fromhex("68 00 30 00 0058ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_sub_rsp_keeps_frame_offsets_consistent() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 83 ec 1048 89 1c 2448 8b 04 24ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_indexed_stack_read_with_a_known_index() -> None:
+	code = bytes.fromhex(
+		"5548 89 e548 c7 c3 00 30 00 0048 89 5d f848 c7 c3 00 40 00 0048 89 5d f0"
+		"48 c7 c1 00 00 00 0048 8b 44 cd f8ff d0"
+	)
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_indexed_stack_read_with_a_top_index_is_unresolved() -> None:
+	code = bytes.fromhex(
+		"5548 89 e548 c7 c3 00 30 00 0048 89 5d f848 c7 c3 00 40 00 0048 89 5d f0"
+		"48 8b 44 cd f8ff d0"
+	)
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()
+
+
+def test_x86_inc_shifts_the_tracked_address() -> None:
+	code = bytes.fromhex("48 c7 c0 ff 2f 00 0048 ff c0ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_xor_self_yields_zero_and_does_not_resolve() -> None:
+	code = bytes.fromhex("48 31 c0ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.slot == 0
+	assert site.candidates == frozenset({Address(0)})
+	assert call_site_candidates(program, site, {}) == frozenset()
+
+
+def test_x86_lea_frame_offset_then_memory_site_resolves() -> None:
+	code = bytes.fromhex("5548 89 e548 c7 c3 00 30 00 0048 89 5d f848 8d 45 f8ff 10")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1013
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_32_frame_relative_memory_site_has_no_slot_address() -> None:
+	code = bytes.fromhex("ff 55 08")
+	program = _program(
+		"EM_386",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1000
+	assert site.slot is None
+	assert site.candidates == frozenset()
+
+
+def test_arm_post_indexed_load_advances_the_base() -> None:
+	body = bytes.fromhex("42 f2 00 0454 f8 04 3b98 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		objects=(("slot", 0x2000, _pointer(0x3000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1008
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_arm_push_then_sp_post_indexed_load_resolves() -> None:
+	body = bytes.fromhex("43 f2 00 0410 b45d f8 04 3b98 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_arm_mov_from_sp_then_load_through_it_resolves() -> None:
+	body = bytes.fromhex("43 f2 00 0410 b468 4601 6888 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_arm_scaled_add_with_top_index_enumerates_the_object() -> None:
+	body = bytes.fromhex("02 4a02 eb c3 0149 6888 47") + b"\x00\xbf" + _pointer(0x2000, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("second", 0x4000, 4), ("fourth", 0x6000, 4)),
+		objects=(
+			(
+				"table",
+				0x2000,
+				_pointer(0x3000, 4)
+				+ _pointer(0x4000, 4)
+				+ _pointer(0x5000, 4)
+				+ _pointer(0x6000, 4),
+			),
+		),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1008
+	assert site.candidates == frozenset({Address(0x4000), Address(0x6000)})
+
+
+def test_arm_non_lsl_shifted_add_tops_the_destination() -> None:
+	body = bytes.fromhex("02 4a02 eb d3 0149 6888 47") + b"\x00\xbf" * 2 + _pointer(0x2000, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)),),
+		objects=(("table", 0x2000, _pointer(0x3000, 4) + _pointer(0x4000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1008
+	assert site.candidates == frozenset()
+
+
+def test_arm_three_operand_immediate_add_shifts_the_value() -> None:
+	body = bytes.fromhex("03 4b03 f1 04 0188 47") + b"\x00\xbf" * 4 + _pointer(0x2FFC, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1006
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_indexed_load_with_a_known_index_resolves() -> None:
+	code = bytes.fromhex("48 c7 c3 00 20 00 0048 c7 c1 01 00 00 0048 8b 04 cbff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
+		objects=(("table", 0x2000, _pointer(0x3000, 8) + _pointer(0x4000, 8)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1012
+	assert site.candidates == frozenset({Address(0x4000)})
+
+
+def test_x86_store_of_an_unknown_value_tops_the_slot() -> None:
+	code = bytes.fromhex("5548 89 e548 89 4d f848 8b 45 f8ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100C
+	assert site.candidates == frozenset()
+
+
+def test_x86_push_of_a_memory_operand_resolves() -> None:
+	code = bytes.fromhex("48 c7 c0 00 20 00 00ff 3059ff d1")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+		objects=(("slot", 0x2000, _pointer(0x3000, 8)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_add_to_a_memory_operand_writes_no_registers() -> None:
+	code = bytes.fromhex("48 83 05 f9 0f 00 00 04ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1008
+	assert site.candidates == frozenset()
+
+
+def test_x86_inc_of_a_memory_operand_writes_no_registers() -> None:
+	code = bytes.fromhex("48 ff 00ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1003
+	assert site.candidates == frozenset()
+
+
+def test_arm_str_then_reload_from_the_frame_resolves() -> None:
+	body = bytes.fromhex("82 b043 f2 00 0001 9001 9988 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_arm_add_from_sp_then_load_through_it_resolves() -> None:
+	body = bytes.fromhex("43 f2 00 0410 b400 a909 6888 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_arm_pop_round_trip_carries_the_value() -> None:
+	body = bytes.fromhex("43 f2 00 0410 b402 bc88 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1008
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_arm_unshifted_register_add_uses_scale_one() -> None:
+	body = bytes.fromhex("42 f2 00 0200 2302 eb 03 0109 6888 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		objects=(("slot", 0x2000, _pointer(0x3000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100C
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_known_index_with_a_top_base_is_unresolved() -> None:
+	code = bytes.fromhex("48 c7 c1 01 00 00 0048 8b 04 cbff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100B
+	assert site.candidates == frozenset()
+
+
+def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
+	table_one = b"".join((0x3000 + index * 8).to_bytes(8, "little") for index in range(33))
+	table_two = b"".join((0x5000 + index * 8).to_bytes(8, "little") for index in range(32))
+	code = bytes.fromhex(
+		"5548 89 e548 c7 c3 00 20 00 0048 8b 04 cb48 89 45 f848 c7 c3 00 40 00 00"
+		"48 8b 04 cb48 89 45 f848 8b 45 f8ff d0"
+	)
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+		objects=(("table_one", 0x2000, table_one), ("table_two", 0x4000, table_two)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1026
+	assert site.candidates == frozenset()
+
+
+def test_x86_global_store_is_a_no_op_in_this_pass() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 89 0d f9 0f 00 00ff d3")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100E
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_xor_of_distinct_registers_tops_the_destination() -> None:
+	code = bytes.fromhex("48 c7 c0 00 30 00 0048 31 d8ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.candidates == frozenset()
+
+
+def test_arm_pointer_store_is_a_no_op_in_this_pass() -> None:
+	body = bytes.fromhex("43 f2 00 0242 f2 00 0108 6090 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100A
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_arm_post_indexed_store_advances_the_base() -> None:
+	body = bytes.fromhex("42 f2 00 0143 f2 00 0041 f8 04 0b0a 6890 47")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("second", 0x4000, 4)),
+		objects=(("slot", 0x2004, _pointer(0x4000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100E
+	assert site.candidates == frozenset({Address(0x4000)})

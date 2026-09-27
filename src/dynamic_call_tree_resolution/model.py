@@ -126,15 +126,18 @@ class SlotAssignment(Struct):
 class CallSite(Struct):
 	"""An indirect call or tail-branch instruction in one function's code.
 
-	``slot`` is the address the call target is taken from: the target
-	function itself when the site's register or memory operand resolves
-	directly to one, the function-pointer slot holding the target, or
-	``None`` when neither could be established.
+	``slot`` is the address the call target is taken from when the
+	operand's value set is a single address — the target function itself
+	or the slot holding it — and ``None`` when the set could not be
+	narrowed to one. ``candidates`` is the pre-chase set of addresses the
+	value-set analysis tracked into the operand; an empty set means
+	unresolved and consumers fall back to the union of resolved targets.
 	"""
 
 	caller_address: Address
 	site_address: Address
 	slot: Address | None
+	candidates: frozenset[Address]
 
 
 class UnresolvedSlot(Struct):

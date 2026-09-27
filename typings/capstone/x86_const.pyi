@@ -19,3 +19,5 @@ X86_REG_ECX: int
 X86_REG_EDX: int
 X86_REG_EDI: int
 X86_REG_ESI: int
+X86_REG_EBP: int
+X86_REG_ESP: int
