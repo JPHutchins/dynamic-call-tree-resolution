@@ -33,6 +33,15 @@ def _compile(source: Path, output: Path, *flags: str) -> Path:
 	return output
 
 
+def _compile_object(source: Path, output: Path) -> Path:
+	subprocess.run(
+		["cc", "-c", "-g", "-O0", str(source), "-o", str(output)],
+		check=True,
+		capture_output=True,
+	)
+	return output
+
+
 def _compile_multi(source_directory: Path, build_directory: Path) -> Path:
 	definition_object = build_directory / "multi_def.o"
 	use_object = build_directory / "multi_use.o"
@@ -68,4 +77,7 @@ def fixture_elfs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
 		for variant, (source, flags) in FIXTURE_VARIANTS.items()
 	}
 	variants["multi"] = _compile_multi(FIXTURE_DIRECTORY, build_directory)
+	variants["object"] = _compile_object(
+		FIXTURE_DIRECTORY / "minimal.c", build_directory / "minimal.o"
+	)
 	return variants

@@ -5,12 +5,17 @@
 
 from __future__ import annotations
 
+import struct
 from typing import TYPE_CHECKING
 
+import pytest
+
 from dynamic_call_tree_resolution import (
+	Address,
 	EmbeddedStructMember,
 	FunctionPointerMember,
 	FunctionSignature,
+	Relocation,
 	StructPointerMember,
 	load,
 )
@@ -118,3 +123,69 @@ def test_load_objects(fixture_elfs: dict[str, Path]) -> None:
 	assert program.byte_order == "little"
 	assert program.machine == "EM_X86_64"
 	assert program.sections
+
+
+def test_load_rejects_relocatable_objects(fixture_elfs: dict[str, Path]) -> None:
+	with pytest.raises(ValueError, match="ET_REL"):
+		load(fixture_elfs["object"])
+
+
+def test_load_rel_elf_reads_in_field_addends(tmp_path: Path) -> None:
+	path = tmp_path / "rel.elf"
+	path.write_bytes(_rel_elf())
+	program = load(path)
+	assert program.relocations == (
+		Relocation(slot=Address(0x1000), target=Address(0x1044), addend=0x44, type_name="R_386_32"),
+		Relocation(slot=Address(0x2000), target=Address(0), addend=0, type_name="R_386_RELATIVE"),
+	)
+	assert program.sections[Address(0x1000)] == b"\x44\x10\x00\x00"
+
+
+def _rel_elf() -> bytes:
+	"""A minimal i386 REL executable with in-field, bss, and non-alloc relocs."""
+	shstrtab = b"\0.text\0.rel.text\0.symtab\0.shstrtab\0.strtab\0.bss\0.extra\0.rel.extra\0"
+	strtab = b"\0fn\0"
+	sections_data = (
+		b"\x44\0\0\0",
+		struct.pack("<II", 0x1000, (1 << 8) | 1) + struct.pack("<II", 0x2000, 8),
+		b"\0" * 16 + struct.pack("<IIIBBH", 1, 0x1000, 4, 0x12, 0, 1),
+		shstrtab,
+		strtab,
+		b"\0\0\0\0",
+		struct.pack("<II", 0x3000, (1 << 8) | 1),
+	)
+	offsets: list[int] = []
+	offset = 52
+	for data in sections_data:
+		offsets.append(offset)
+		offset += len(data)
+	header = struct.pack(
+		"<16sHHIIIIIHHHHHH",
+		b"\x7fELF\x01\x01\x01\0" + b"\0" * 8,
+		2,
+		3,
+		1,
+		0x1000,
+		0,
+		offset,
+		0,
+		52,
+		0,
+		0,
+		40,
+		9,
+		4,
+	)
+	sections = (
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(1, 1, 0x6, 0x1000, offsets[0], 4, 0, 0, 4, 0),
+		(7, 9, 0, 0, offsets[1], 16, 3, 1, 4, 8),
+		(17, 2, 0, 0, offsets[2], 32, 5, 1, 4, 16),
+		(25, 3, 0, 0, offsets[3], len(shstrtab), 0, 0, 1, 0),
+		(34, 3, 0, 0, offsets[4], len(strtab), 0, 0, 1, 0),
+		(41, 8, 0x3, 0x2000, 0, 4, 0, 0, 4, 0),
+		(46, 1, 0, 0x3000, offsets[5], 4, 0, 0, 1, 0),
+		(53, 9, 0, 0, offsets[6], 8, 3, 7, 4, 8),
+	)
+	shdrs = b"".join(struct.pack("<IIIIIIIIII", *section) for section in sections)
+	return header + b"".join(sections_data) + shdrs
