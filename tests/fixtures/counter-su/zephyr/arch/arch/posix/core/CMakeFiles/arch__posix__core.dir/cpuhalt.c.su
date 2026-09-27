@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c:36:6:arch_cpu_idle	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c:45:6:arch_cpu_atomic_idle	4	static

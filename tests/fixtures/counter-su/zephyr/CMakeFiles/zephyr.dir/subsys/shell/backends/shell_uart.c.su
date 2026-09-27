@@ -1,0 +1,8 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:381:12:enable	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:442:12:write_uart	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:546:12:read_uart	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:366:12:uninit	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:311:12:init	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:598:12:enable_shell_uart	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:289:13:polling_rx_timeout_handler	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/backends/shell_uart.c:625:21:shell_backend_uart_get_ptr	4	static

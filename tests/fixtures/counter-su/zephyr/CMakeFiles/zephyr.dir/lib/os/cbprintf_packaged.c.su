@@ -1,0 +1,5 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:239:5:cbvprintf_package	144	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:825:5:cbprintf_package	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:837:5:cbpprintf_external	64	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:892:6:is_ptr	20	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:919:5:cbprintf_package_convert	128	dynamic,bounded

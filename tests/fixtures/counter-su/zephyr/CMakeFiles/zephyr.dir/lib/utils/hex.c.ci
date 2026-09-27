@@ -1,0 +1,13 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c"
+node: { title: "char2hex" label: "char2hex\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:12:5\n12 bytes (static)\n0 dynamic objects" }
+node: { title: "hex2char" label: "hex2char\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:27:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "bin2hex" label: "bin2hex\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:40:8\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "bin2hex" targetname: "hex2char" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:47:3" }
+edge: { sourcename: "bin2hex" targetname: "hex2char" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:48:3" }
+node: { title: "hex2bin" label: "hex2bin\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:55:8\n80 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "hex2bin" targetname: "char2hex" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:65:7" }
+edge: { sourcename: "hex2bin" targetname: "char2hex" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:75:7" }
+edge: { sourcename: "hex2bin" targetname: "char2hex" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/hex.c:80:7" }
+node: { title: "__stack_chk_fail" label: "__stack_chk_fail\n<built-in>" shape : ellipse }
+edge: { sourcename: "hex2bin" targetname: "__stack_chk_fail" }
+}

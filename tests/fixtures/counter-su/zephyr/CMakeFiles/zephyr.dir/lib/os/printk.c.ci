@@ -1,0 +1,29 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:arch_printk_char_out" label: "arch_printk_char_out\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:46:27\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:char_out" label: "char_out\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:109:12\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:char_out" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:112:9" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:str_out" label: "str_out\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:284:12\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:vprintk_core" label: "vprintk_core\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:120:13\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_cbvprintf_impl" label: "z_cbvprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:691:5" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:vprintk_core" targetname: "z_cbvprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:725:9" }
+node: { title: "__printk_hook_install" label: "__printk_hook_install\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:57:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "__printk_get_hook" label: "__printk_get_hook\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:62:18\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "printk_panic" label: "printk_panic\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:75:6\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "vprintk_unlocked" label: "vprintk_unlocked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:157:6\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "vprintk_unlocked" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:vprintk_core" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:164:2" }
+node: { title: "printk_unlocked" label: "printk_unlocked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:168:6\n16 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "printk_unlocked" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:vprintk_core" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:164:2" }
+node: { title: "vprintk" label: "vprintk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:180:6\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "vprintk" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:vprintk_core" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:201:3" }
+node: { title: "z_impl_k_str_out" label: "z_impl_k_str_out\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:214:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_str_out" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:210:3" }
+node: { title: "printk" label: "printk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:261:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "printk" targetname: "vprintk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:267:2" }
+node: { title: "vsnprintk" label: "vsnprintk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:314:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "vsnprintk" targetname: "z_cbvprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:725:9" }
+node: { title: "__stack_chk_fail" label: "__stack_chk_fail\n<built-in>" shape : ellipse }
+edge: { sourcename: "vsnprintk" targetname: "__stack_chk_fail" }
+node: { title: "snprintk" label: "snprintk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:302:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "snprintk" targetname: "vsnprintk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:308:8" }
+}

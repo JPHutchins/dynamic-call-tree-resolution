@@ -1,0 +1,9 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:18:6:posix_exit	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:23:6:posix_vprint_error_and_exit	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:28:6:posix_vprint_warning	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:33:6:posix_vprint_trace	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:38:6:posix_print_error_and_exit	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:47:6:posix_print_warning	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:56:6:posix_print_trace	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:65:5:posix_trace_over_tty	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:70:10:posix_get_hw_cycle	4	static

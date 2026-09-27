@@ -1,0 +1,127 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "z_shell_strlen\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.h:34:24\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "strlen" label: "strlen\n/usr/include/string.h:407:15" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.h:36:38" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" label: "shell_device_internal\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:611:29\n80 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_device_get_all_static" label: "z_device_get_all_static\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/device.h:888:8" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" targetname: "z_device_get_all_static" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:618:15" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:620:41" }
+node: { title: "z_impl_device_is_ready" label: "z_impl_device_is_ready\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:45:13" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" targetname: "z_impl_device_is_ready" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:56:9" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" targetname: "z_impl_device_is_ready" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:56:9" }
+node: { title: "strncmp" label: "strncmp\n/usr/include/string.h:159:12" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" targetname: "strncmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:631:8" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:633:29" }
+node: { title: "__stack_chk_fail" label: "__stack_chk_fail\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" targetname: "__stack_chk_fail" }
+node: { title: "z_column_span_with_buffer_offsets_get" label: "z_column_span_with_buffer_offsets_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:75:9\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "z_row_span_with_buffer_offsets_get" label: "z_row_span_with_buffer_offsets_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:83:9\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "z_shell_multiline_data_calc" label: "z_shell_multiline_data_calc\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:91:6\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "z_shell_make_argv" label: "z_shell_make_argv\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:214:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__ctype_b_loc" label: "__ctype_b_loc\n/usr/include/ctype.h:79:35" shape : ellipse }
+edge: { sourcename: "z_shell_make_argv" targetname: "__ctype_b_loc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:227:7" }
+edge: { sourcename: "z_shell_make_argv" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:121:7" }
+node: { title: "memmove" label: "__builtin_memmove\n<built-in>" shape : ellipse }
+edge: { sourcename: "z_shell_make_argv" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+edge: { sourcename: "z_shell_make_argv" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:128:7" }
+edge: { sourcename: "z_shell_make_argv" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+edge: { sourcename: "z_shell_make_argv" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:137:26" }
+edge: { sourcename: "z_shell_make_argv" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+edge: { sourcename: "z_shell_make_argv" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:147:7" }
+edge: { sourcename: "z_shell_make_argv" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+edge: { sourcename: "z_shell_make_argv" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:168:7" }
+edge: { sourcename: "z_shell_make_argv" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+edge: { sourcename: "z_shell_make_argv" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:195:7" }
+edge: { sourcename: "z_shell_make_argv" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+node: { title: "z_shell_pattern_remove" label: "z_shell_pattern_remove\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:242:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "strstr" label: "strstr\n/usr/include/string.h:350:14" shape : ellipse }
+edge: { sourcename: "z_shell_pattern_remove" targetname: "strstr" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:244:23" }
+edge: { sourcename: "z_shell_pattern_remove" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:246:25" }
+edge: { sourcename: "z_shell_pattern_remove" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:259:10" }
+edge: { sourcename: "z_shell_pattern_remove" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+node: { title: "root_cmd_find" label: "root_cmd_find\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:275:34\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "strcmp" label: "strcmp\n/usr/include/string.h:156:12" shape : ellipse }
+edge: { sourcename: "root_cmd_find" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:282:7" }
+node: { title: "z_shell_cmd_get" label: "z_shell_cmd_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:290:34\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_shell_cmd_get" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:312:4" }
+node: { title: "z_shell_find_cmd" label: "z_shell_find_cmd\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:348:34\n96 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_shell_find_cmd" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:369:7" }
+edge: { sourcename: "z_shell_find_cmd" targetname: "z_shell_cmd_get" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:368:18" }
+edge: { sourcename: "z_shell_find_cmd" targetname: "__stack_chk_fail" }
+node: { title: "z_shell_find_alias" label: "z_shell_find_alias\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:385:5\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_shell_expand_alias" label: "z_shell_expand_alias\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:407:5\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_shell_get_last_command" label: "z_shell_get_last_command\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:472:34\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_shell_has_wildcard" label: "z_shell_has_wildcard\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_wildcard.h:32:6" shape : ellipse }
+edge: { sourcename: "z_shell_get_last_command" targetname: "z_shell_has_wildcard" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:488:8" }
+edge: { sourcename: "z_shell_get_last_command" targetname: "z_shell_find_cmd" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:495:11" }
+node: { title: "shell_set_root_cmd" label: "shell_set_root_cmd\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:512:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "shell_set_root_cmd" targetname: "root_cmd_find" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:516:16" }
+node: { title: "z_shell_spaces_trim" label: "z_shell_spaces_trim\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:532:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_shell_spaces_trim" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:z_shell_strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:534:17" }
+edge: { sourcename: "z_shell_spaces_trim" targetname: "__ctype_b_loc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:542:7" }
+edge: { sourcename: "z_shell_spaces_trim" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+node: { title: "z_shell_cmd_trim" label: "z_shell_cmd_trim\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:599:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_shell_cmd_trim" targetname: "__ctype_b_loc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:576:9" }
+edge: { sourcename: "z_shell_cmd_trim" targetname: "memmove" label: "/usr/include/bits/string_fortified.h:36:10" }
+node: { title: "shell_device_filter" label: "shell_device_filter\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:645:22\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "shell_device_filter" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:648:9" }
+node: { title: "shell_device_lookup" label: "shell_device_lookup\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:652:22\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "shell_device_lookup" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:655:9" }
+node: { title: "shell_device_lookup_all" label: "shell_device_lookup_all\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:659:22\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "shell_device_lookup_all" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:662:9" }
+node: { title: "shell_device_lookup_non_ready" label: "shell_device_lookup_non_ready\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:666:22\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "shell_device_lookup_non_ready" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:shell_device_internal" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:669:9" }
+node: { title: "shell_device_get_binding" label: "shell_device_get_binding\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:673:22\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_impl_device_get_binding" label: "z_impl_device_get_binding\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:23:30" shape : ellipse }
+edge: { sourcename: "shell_device_get_binding" targetname: "z_impl_device_get_binding" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:34:9" }
+node: { title: "z_impl_device_get_by_dt_nodelabel" label: "z_impl_device_get_by_dt_nodelabel\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:111:30" shape : ellipse }
+edge: { sourcename: "shell_device_get_binding" targetname: "z_impl_device_get_by_dt_nodelabel" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:122:9" }
+node: { title: "shell_device_get_binding_all" label: "shell_device_get_binding_all\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:711:22\n96 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "z_device_get_all_static" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:714:15" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:718:21" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:722:13" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:723:13" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:693:21" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:698:9" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:699:9" }
+edge: { sourcename: "shell_device_get_binding_all" targetname: "__stack_chk_fail" }
+node: { title: "shell_strtol" label: "shell_strtol\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:733:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__errno_location" label: "__errno_location\n/usr/include/errno.h:37:13" shape : ellipse }
+edge: { sourcename: "shell_strtol" targetname: "__errno_location" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:738:2" }
+node: { title: "strtol" label: "strtol\n/usr/include/stdlib.h:177:17" shape : ellipse }
+edge: { sourcename: "shell_strtol" targetname: "strtol" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:739:8" }
+edge: { sourcename: "shell_strtol" targetname: "__stack_chk_fail" }
+node: { title: "shell_strtoul" label: "shell_strtoul\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:751:15\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "shell_strtoul" targetname: "__errno_location" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:761:2" }
+node: { title: "strtoul" label: "strtoul\n/usr/include/stdlib.h:181:26" shape : ellipse }
+edge: { sourcename: "shell_strtoul" targetname: "strtoul" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:762:8" }
+edge: { sourcename: "shell_strtoul" targetname: "__stack_chk_fail" }
+node: { title: "shell_strtoull" label: "shell_strtoull\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:774:20\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "shell_strtoull" targetname: "__errno_location" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:784:2" }
+node: { title: "strtoull" label: "strtoull\n/usr/include/stdlib.h:206:31" shape : ellipse }
+edge: { sourcename: "shell_strtoull" targetname: "strtoull" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:785:8" }
+edge: { sourcename: "shell_strtoull" targetname: "__stack_chk_fail" }
+node: { title: "shell_strtobool" label: "shell_strtobool\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:797:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "shell_strtobool" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:799:7" }
+edge: { sourcename: "shell_strtobool" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:799:29" }
+edge: { sourcename: "shell_strtobool" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:799:55" }
+edge: { sourcename: "shell_strtobool" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:803:7" }
+edge: { sourcename: "shell_strtobool" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:803:30" }
+edge: { sourcename: "shell_strtobool" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:803:57" }
+edge: { sourcename: "shell_strtobool" targetname: "shell_strtoul" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:807:9" }
+node: { title: "shell_hexdump_line" label: "shell_hexdump_line\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:810:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "shell_fprintf_impl" label: "shell_fprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/shell/shell.h:1287:26" shape : ellipse }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:817:2" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:821:4" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:825:4" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:828:4" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:832:2" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:836:4" }
+edge: { sourcename: "shell_hexdump_line" targetname: "__ctype_b_loc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:842:4" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:842:4" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:845:4" }
+edge: { sourcename: "shell_hexdump_line" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:849:2" }
+node: { title: "shell_hexdump" label: "shell_hexdump\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:852:6\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "shell_hexdump" targetname: "shell_hexdump_line" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_utils.c:862:3" }
+}

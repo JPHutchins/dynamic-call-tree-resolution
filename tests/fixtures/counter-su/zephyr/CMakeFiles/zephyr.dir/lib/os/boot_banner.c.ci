@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/boot_banner.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/boot_banner.c:boot_banner" label: "boot_banner\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/boot_banner.c:27:12\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "printk" label: "printk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk.h:58:26" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/boot_banner.c:boot_banner" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/boot_banner.c:46:2" }
+}

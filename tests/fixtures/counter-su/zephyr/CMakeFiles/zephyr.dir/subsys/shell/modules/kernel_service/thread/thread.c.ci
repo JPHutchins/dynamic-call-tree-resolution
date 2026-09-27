@@ -1,0 +1,8 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/thread.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/thread.c:thread_valid_cb" label: "thread_valid_cb\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/thread.c:20:13\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_thread_is_valid" label: "z_thread_is_valid\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/thread.c:29:6\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "k_thread_foreach" label: "k_thread_foreach\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/kernel.h:198:6" shape : ellipse }
+edge: { sourcename: "z_thread_is_valid" targetname: "k_thread_foreach" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/thread.c:36:2" }
+node: { title: "__stack_chk_fail" label: "__stack_chk_fail\n<built-in>" shape : ellipse }
+edge: { sourcename: "z_thread_is_valid" targetname: "__stack_chk_fail" }
+}

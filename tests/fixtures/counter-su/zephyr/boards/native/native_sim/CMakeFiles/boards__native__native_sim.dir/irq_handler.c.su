@@ -1,0 +1,14 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:67:6:posix_irq_handler	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:127:6:nsif_cpu0_irq_raised_from_sw	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:177:14:posix_irq_lock	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:191:6:posix_irq_unlock	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:196:6:posix_irq_full_unlock	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:201:6:posix_irq_enable	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:206:6:posix_irq_disable	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:211:5:posix_irq_is_enabled	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:216:5:posix_irq_is_pending	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:221:5:posix_get_current_irq	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:241:6:posix_isr_declare	20	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:262:6:posix_irq_priority_set	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:280:6:posix_sw_set_pending_IRQ	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/irq_handler.c:289:6:posix_sw_clear_pending_IRQ	4	static

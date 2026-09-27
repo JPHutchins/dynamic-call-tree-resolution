@@ -1,0 +1,89 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:set_thread_name.part.0" label: "set_thread_name.part.0\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:136:13\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "strncpy" label: "__builtin_strncpy\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:set_thread_name.part.0" targetname: "strncpy" label: "/usr/include/bits/string_fortified.h:95:10" }
+node: { title: "arch_thread_name_set" label: "arch_thread_name_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kernel_arch_interface.h:624:5" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:set_thread_name.part.0" targetname: "arch_thread_name_set" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:143:3" }
+node: { title: "k_is_in_isr" label: "k_is_in_isr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:73:6\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_is_preempt_thread" label: "z_impl_k_is_preempt_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:108:5\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_thread_priority_get" label: "z_impl_k_thread_priority_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:121:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_thread_name_set" label: "z_impl_k_thread_name_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:151:5\n16 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_thread_name_set" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:set_thread_name.part.0" }
+node: { title: "k_thread_name_get" label: "k_thread_name_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:201:13\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_thread_name_copy" label: "z_impl_k_thread_name_copy\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:211:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_thread_name_copy" targetname: "strncpy" label: "/usr/include/bits/string_fortified.h:95:10" }
+node: { title: "k_thread_state_str" label: "k_thread_state_str\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:234:13\n28 bytes (static)\n0 dynamic objects" }
+node: { title: "z_setup_new_thread" label: "z_setup_new_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:905:7\n80 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "arch_new_thread" label: "arch_new_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kernel_arch_interface.h:76:6" shape : ellipse }
+edge: { sourcename: "z_setup_new_thread" targetname: "arch_new_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:936:2" }
+node: { title: "posix_irq_lock" label: "posix_irq_lock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:31:14" shape : ellipse }
+edge: { sourcename: "z_setup_new_thread" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "posix_irq_unlock" label: "posix_irq_unlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:32:6" shape : ellipse }
+edge: { sourcename: "z_setup_new_thread" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "z_setup_new_thread" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:set_thread_name.part.0" }
+node: { title: "z_init_thread_base" label: "z_init_thread_base\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1115:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "k_thread_user_mode_enter" label: "k_thread_user_mode_enter\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1150:20\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_thread_entry" label: "z_thread_entry\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kernel_internal.h:75:27" shape : ellipse }
+edge: { sourcename: "k_thread_user_mode_enter" targetname: "z_thread_entry" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1178:2" }
+node: { title: "z_stack_space_get" label: "z_stack_space_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1187:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_thread_stack_space_get" label: "z_impl_k_thread_stack_space_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1313:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_thread_stack_space_get" targetname: "z_stack_space_get" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1322:9" }
+node: { title: "k_thread_runtime_stats_get" label: "k_thread_runtime_stats_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1403:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "k_thread_runtime_stats_all_get" label: "k_thread_runtime_stats_all_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1419:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "k_thread_runtime_stats_cpu_get" label: "k_thread_runtime_stats_cpu_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1453:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_dummy_thread_init" label: "z_dummy_thread_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1612:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_thread_priority_set" label: "z_impl_k_thread_priority_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1656:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_thread_prio_set" label: "z_thread_prio_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:66:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_priority_set" targetname: "z_thread_prio_set" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1664:20" }
+edge: { sourcename: "z_impl_k_thread_priority_set" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_reschedule_irqlock" label: "z_reschedule_irqlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:64:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_priority_set" targetname: "z_reschedule_irqlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:157:2" }
+node: { title: "z_impl_k_thread_suspend" label: "z_impl_k_thread_suspend\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1688:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_thread_suspend_current" label: "z_thread_suspend_current\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:68:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_suspend" targetname: "z_thread_suspend_current" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1697:3" }
+edge: { sourcename: "z_impl_k_thread_suspend" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_impl_k_thread_suspend" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_thread_halt" label: "z_thread_halt\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:112:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_suspend" targetname: "z_thread_halt" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1711:2" }
+node: { title: "z_impl_k_thread_resume" label: "z_impl_k_thread_resume\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1725:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_thread_resume" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_impl_k_thread_resume" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_sched_ready_locked" label: "z_sched_ready_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:122:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_resume" targetname: "z_sched_ready_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1738:2" }
+node: { title: "z_reschedule_locked" label: "z_reschedule_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:63:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_resume" targetname: "z_reschedule_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1740:2" }
+node: { title: "z_impl_k_wakeup" label: "z_impl_k_wakeup\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1754:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_wakeup" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_try_abort_timeout" label: "z_try_abort_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:121:5" shape : ellipse }
+edge: { sourcename: "z_impl_k_wakeup" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:144:9" }
+edge: { sourcename: "z_impl_k_wakeup" targetname: "z_sched_ready_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1763:3" }
+edge: { sourcename: "z_impl_k_wakeup" targetname: "z_reschedule_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1764:3" }
+edge: { sourcename: "z_impl_k_wakeup" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_impl_k_thread_create" label: "z_impl_k_thread_create\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1028:9\n80 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_thread_create" targetname: "z_setup_new_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1036:2" }
+edge: { sourcename: "z_impl_k_thread_create" targetname: "z_impl_k_wakeup" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:208:2" }
+node: { title: "z_add_timeout" label: "z_add_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:100:11" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_create" targetname: "z_add_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:139:9" }
+node: { title: "z_thread_abort" label: "z_thread_abort\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1779:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_thread_abort" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_thread_abort" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "z_thread_abort" targetname: "z_thread_halt" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1789:2" }
+node: { title: "printk" label: "printk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk.h:58:26" shape : ellipse }
+edge: { sourcename: "z_thread_abort" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1793:3" }
+node: { title: "z_fatal_error" label: "z_fatal_error\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/fatal.h:84:6" shape : ellipse }
+edge: { sourcename: "z_thread_abort" targetname: "z_fatal_error" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1793:3" }
+node: { title: "z_impl_k_thread_join" label: "z_impl_k_thread_join\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1810:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_thread_join" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_sched_add_to_waitq_locked" label: "z_sched_add_to_waitq_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:133:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_join" targetname: "z_sched_add_to_waitq_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1827:3" }
+edge: { sourcename: "z_impl_k_thread_join" targetname: "z_add_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:139:9" }
+node: { title: "arch_swap" label: "arch_swap\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/include/kernel_arch_func.h:43:5" shape : ellipse }
+edge: { sourcename: "z_impl_k_thread_join" targetname: "arch_swap" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kswap.h:208:8" }
+edge: { sourcename: "z_impl_k_thread_join" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "k_can_yield" label: "k_can_yield\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1902:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "k_can_yield" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:83:21" }
+edge: { sourcename: "k_can_yield" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:86:2" }
+node: { title: "z_impl_k_yield" label: "z_impl_k_yield\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1908:6\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_sched_yield" label: "z_sched_yield\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:153:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_yield" targetname: "z_sched_yield" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/thread.c:1914:2" }
+}

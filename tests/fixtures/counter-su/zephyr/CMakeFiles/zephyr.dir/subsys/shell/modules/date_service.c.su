@@ -1,0 +1,4 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/date_service.c:19:13:date_print	64	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/date_service.c:185:12:cmd_date_get	112	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/date_service.c:81:12:get_h_m_s	64	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/date_service.c:135:12:cmd_date_set	128	dynamic,bounded

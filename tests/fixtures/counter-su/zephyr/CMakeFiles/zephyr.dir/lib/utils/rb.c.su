@@ -1,0 +1,12 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:78:12:find_and_stack	64	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:539:30:stack_left_limb	12	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:33:13:set_child	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:129:13:rotate	64	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:101:16:z_rb_get_minmax	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:218:6:rb_insert	96	dynamic
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:371:6:rb_remove	96	dynamic
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:503:6:z_rb_walk	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:513:16:z_rb_child	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:518:5:z_rb_is_black	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:523:6:rb_contains	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/rb.c:563:16:z_rb_foreach_next	16	static

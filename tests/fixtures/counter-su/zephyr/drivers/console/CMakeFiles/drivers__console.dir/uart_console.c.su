@@ -1,0 +1,3 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:606:12:uart_console_init	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:80:12:console_out	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:578:6:uart_register_input	4	static

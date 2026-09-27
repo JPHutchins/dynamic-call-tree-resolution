@@ -1,0 +1,7 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/soc.c:38:5:posix_is_cpu_running	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/soc.c:54:6:posix_change_cpu_state_and_wait	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/soc.c:67:6:posix_interrupt_raised	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/soc.c:83:6:posix_halt_cpu	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/soc.c:110:6:posix_atomic_halt_cpu	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/soc.c:122:6:posix_boot_cpu	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/soc.c:134:6:posix_soc_clean_up	32	dynamic,bounded

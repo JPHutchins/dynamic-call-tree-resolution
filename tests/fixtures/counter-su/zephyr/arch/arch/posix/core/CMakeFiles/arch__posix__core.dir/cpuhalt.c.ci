@@ -1,0 +1,10 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c"
+node: { title: "arch_cpu_idle" label: "arch_cpu_idle\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c:36:6\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "posix_irq_full_unlock" label: "posix_irq_full_unlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:33:6" shape : ellipse }
+edge: { sourcename: "arch_cpu_idle" targetname: "posix_irq_full_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c:41:2" }
+node: { title: "posix_halt_cpu" label: "posix_halt_cpu\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:24:6" shape : ellipse }
+edge: { sourcename: "arch_cpu_idle" targetname: "posix_halt_cpu" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c:42:2" }
+node: { title: "arch_cpu_atomic_idle" label: "arch_cpu_atomic_idle\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c:45:6\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "posix_atomic_halt_cpu" label: "posix_atomic_halt_cpu\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:25:6" shape : ellipse }
+edge: { sourcename: "arch_cpu_atomic_idle" targetname: "posix_atomic_halt_cpu" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/cpuhalt.c:50:2" }
+}
