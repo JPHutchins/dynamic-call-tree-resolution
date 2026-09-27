@@ -14,6 +14,7 @@ from dynamic_call_tree_resolution import (
 	DataObject,
 	Function,
 	FunctionSignature,
+	Machine,
 	Program,
 	Provenance,
 	SlotAssignment,
@@ -608,8 +609,9 @@ def test_skipped_bytes_are_not_sites() -> None:
 	assert site.slot == 0x2000
 
 
-def test_unsupported_machine_has_no_sites() -> None:
-	assert extract_call_sites(_program("EM_RISCV", b"")) == ()
+def test_unsupported_machine_is_rejected_at_construction() -> None:
+	with pytest.raises(ValueError, match="EM_RISCV"):
+		_program("EM_RISCV", b"")
 
 
 def test_function_without_code_bytes_has_no_sites() -> None:
@@ -736,7 +738,7 @@ def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
 	program = Program(
 		byte_order="little",
 		pointer_size=8,
-		machine="EM_X86_64",
+		machine=Machine.EM_X86_64,
 		functions={
 			Address(0x1000): Function(
 				name="caller", address=Address(0x1000), size=15, signature=None
@@ -759,7 +761,7 @@ def test_x86_bss_slot_read_is_unknown() -> None:
 	program = Program(
 		byte_order="little",
 		pointer_size=8,
-		machine="EM_X86_64",
+		machine=Machine.EM_X86_64,
 		functions={
 			Address(0x1000): Function(
 				name="caller", address=Address(0x1000), size=9, signature=None
@@ -1611,7 +1613,7 @@ def _signature_program() -> Program:
 	return Program(
 		byte_order="little",
 		pointer_size=8,
-		machine="EM_X86_64",
+		machine=Machine.EM_X86_64,
 		functions={
 			Address(0x1000): Function(
 				name="caller",
@@ -1682,7 +1684,7 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 	program = Program(
 		byte_order="little",
 		pointer_size=8,
-		machine="EM_X86_64",
+		machine=Machine.EM_X86_64,
 		functions={
 			Address(0x1000): Function(
 				name="caller", address=Address(0x1000), size=6, signature=None
@@ -1722,7 +1724,7 @@ def test_report_narrows_a_bss_site_to_its_slot_signature() -> None:
 	program = Program(
 		byte_order="little",
 		pointer_size=8,
-		machine="EM_X86_64",
+		machine=Machine.EM_X86_64,
 		functions={
 			Address(0x1000): Function(
 				name="caller", address=Address(0x1000), size=6, signature=None

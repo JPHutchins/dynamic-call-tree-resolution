@@ -39,7 +39,7 @@ from capstone import (
 	x86_const,
 )
 
-from dynamic_call_tree_resolution.model import Address, CallSite, aligned
+from dynamic_call_tree_resolution.model import Address, CallSite, Machine, aligned
 from dynamic_call_tree_resolution.points_to import memory_at
 
 if TYPE_CHECKING:
@@ -55,16 +55,16 @@ _GLOBAL_ROUNDS = 3
 
 _MAX_ROUNDS = 8
 
-_DISASSEMBLERS: Mapping[str, tuple[int, int]] = {
-	"EM_X86_64": (CS_ARCH_X86, CS_MODE_64),
-	"EM_386": (CS_ARCH_X86, CS_MODE_32),
-	"EM_ARM": (CS_ARCH_ARM, CS_MODE_THUMB),
+_DISASSEMBLERS: Mapping[Machine, tuple[int, int]] = {
+	Machine.EM_X86_64: (CS_ARCH_X86, CS_MODE_64),
+	Machine.EM_386: (CS_ARCH_X86, CS_MODE_32),
+	Machine.EM_ARM: (CS_ARCH_ARM, CS_MODE_THUMB),
 }
 
-_SP_REGISTERS: Mapping[str, tuple[int, ...]] = {
-	"EM_X86_64": (x86_const.X86_REG_RSP, x86_const.X86_REG_RBP),
-	"EM_386": (x86_const.X86_REG_ESP, x86_const.X86_REG_EBP),
-	"EM_ARM": (arm_const.ARM_REG_SP,),
+_SP_REGISTERS: Mapping[Machine, tuple[int, ...]] = {
+	Machine.EM_X86_64: (x86_const.X86_REG_RSP, x86_const.X86_REG_RBP),
+	Machine.EM_386: (x86_const.X86_REG_ESP, x86_const.X86_REG_EBP),
+	Machine.EM_ARM: (arm_const.ARM_REG_SP,),
 }
 
 _X86_TRANSFERS = (
@@ -244,10 +244,7 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 	candidates, which consumers replace with the resolved-target
 	fallback union.
 	"""
-	mode = _DISASSEMBLERS.get(program.machine)
-	if mode is None:
-		return ()
-	disassembler = Cs(*mode)
+	disassembler = Cs(*_DISASSEMBLERS[program.machine])
 	disassembler.detail = True
 	disassembler.skipdata = True
 	blocks_by_function = _blocks_by_function(program, disassembler)
@@ -326,7 +323,7 @@ def _blocks_by_function(
 	for function in sorted(program.functions.values(), key=lambda function: function.address):
 		# ARM symbol addresses carry the Thumb bit; strip it so the code
 		# decodes from the aligned start, and skip the symbol/DWARF twin.
-		start = aligned(function.address) if program.machine == "EM_ARM" else function.address
+		start = aligned(function.address) if program.machine is Machine.EM_ARM else function.address
 		if start in seen:
 			continue
 		seen.add(start)
@@ -338,12 +335,12 @@ def _blocks_by_function(
 	return blocks
 
 
-def _normalized(address: Address, machine: str) -> Address:
+def _normalized(address: Address, machine: Machine) -> Address:
 	"""The aligned address a function's code and call targets share."""
-	return aligned(address) if machine == "EM_ARM" else address
+	return aligned(address) if machine is Machine.EM_ARM else address
 
 
-def _seed(base: State | None, machine: str) -> State:
+def _seed(base: State | None, machine: Machine) -> State:
 	"""Entry state of one function: the seeded frame."""
 	if base is None:
 		return State(
@@ -362,9 +359,9 @@ def _seed_from_observation(observation: _CallObservation, program: Program) -> S
 	for position, value in observation.arguments.items():
 		if value is None:
 			continue
-		if program.machine == "EM_386":
+		if program.machine is Machine.EM_386:
 			stack[program.pointer_size * (position + 1)] = value
-		elif program.machine == "EM_X86_64":
+		elif program.machine is Machine.EM_X86_64:
 			registers[_X86_64_ARGUMENT_REGISTERS[position]] = value
 		else:
 			registers[_ARM_ARGUMENT_REGISTERS[position]] = value
@@ -712,7 +709,7 @@ def _load_value(
 	"""Value loaded from a memory operand; frame slots read through offsets."""
 	machine = context.program.machine
 	memory = operand.mem
-	if machine in ("EM_X86_64", "EM_386"):
+	if machine.is_x86:
 		if memory.base == x86_const.X86_REG_RIP:
 			address = Address(instruction.address + instruction.size + memory.disp)
 			return _image_value(context, state, frozenset({address}))
@@ -737,7 +734,7 @@ def _store_value(
 	"""
 	machine = context.program.machine
 	memory = operand.mem
-	if machine in ("EM_X86_64", "EM_386"):
+	if machine.is_x86:
 		if memory.base in _SP_REGISTERS[machine] or memory.base in state.sp_offsets:
 			return State(
 				registers=state.registers,
@@ -773,7 +770,7 @@ def _store_addresses(
 ) -> ValueSet:
 	"""Address set of a non-frame store; Top when the store cannot be placed."""
 	machine = context.program.machine
-	if machine in ("EM_X86_64", "EM_386") and memory.base == x86_const.X86_REG_RIP:
+	if machine.is_x86 and memory.base == x86_const.X86_REG_RIP:
 		return frozenset({Address(instruction.address + instruction.size + memory.disp)})
 	return _memory_addresses(context, state, memory)
 
@@ -786,9 +783,9 @@ def _copy_register(state: State, destination: int, source: int) -> State:
 	return _set_register(state, destination, state.registers.get(source))
 
 
-def _branch_target(instruction: CsInsn, machine: str) -> tuple[int, bool] | None:
+def _branch_target(instruction: CsInsn, machine: Machine) -> tuple[int, bool] | None:
 	"""(target address, conditional) of a direct branch, or ``None``."""
-	if machine in ("EM_X86_64", "EM_386"):
+	if machine.is_x86:
 		if instruction.mnemonic == "jmp":
 			conditional = False
 		elif instruction.mnemonic.startswith("j") or instruction.mnemonic in (
@@ -822,9 +819,9 @@ def _branch_target(instruction: CsInsn, machine: str) -> tuple[int, bool] | None
 	return (pc & ~3) + displacement, conditional
 
 
-def _call_target(instruction: CsInsn, machine: str) -> int | None:
+def _call_target(instruction: CsInsn, machine: Machine) -> int | None:
 	"""Absolute target of a direct call, or ``None``."""
-	if machine in ("EM_X86_64", "EM_386"):
+	if machine.is_x86:
 		if instruction.mnemonic != "call":
 			return None
 		operand = instruction.operands[0]
@@ -839,14 +836,14 @@ def _call_target(instruction: CsInsn, machine: str) -> int | None:
 	return operand.imm  # capstone reports the absolute target for bl/blx
 
 
-def _is_control_transfer(instruction: CsInsn, machine: str) -> bool:
-	if machine in ("EM_X86_64", "EM_386"):
+def _is_control_transfer(instruction: CsInsn, machine: Machine) -> bool:
+	if machine.is_x86:
 		return instruction.mnemonic in _X86_TRANSFERS
 	return instruction.mnemonic.split(".")[0] in _ARM_TRANSFERS
 
 
 def _site_operand(
-	instruction: CsInsn, machine: str
+	instruction: CsInsn, machine: Machine
 ) -> tuple[Literal["memory", "register"], _Operand] | None:
 	if instruction.mnemonic == ".byte":
 		return None
@@ -854,7 +851,7 @@ def _site_operand(
 		return None
 	operand = instruction.operands[0]
 	mnemonic = instruction.mnemonic
-	if machine in ("EM_X86_64", "EM_386"):
+	if machine.is_x86:
 		if mnemonic in ("call", "jmp"):
 			if operand.type == x86_const.X86_OP_MEM:
 				return "memory", operand
@@ -869,7 +866,7 @@ def _site_operand(
 
 
 def _successors(
-	instruction: CsInsn, machine: str, by_address: Mapping[int, int], next_address: int | None
+	instruction: CsInsn, machine: Machine, by_address: Mapping[int, int], next_address: int | None
 ) -> tuple[Address, ...]:
 	branch = _branch_target(instruction, machine)
 	if branch is not None:
@@ -884,9 +881,7 @@ def _successors(
 	if instruction.mnemonic == ".byte":
 		return fallthrough
 	if _is_control_transfer(instruction, machine):
-		if instruction.mnemonic in (
-			_X86_CALLS if machine in ("EM_X86_64", "EM_386") else _ARM_CALLS
-		):
+		if instruction.mnemonic in (_X86_CALLS if machine.is_x86 else _ARM_CALLS):
 			return fallthrough
 		if (
 			instruction.mnemonic.split(".")[0] == "pop"
@@ -897,7 +892,7 @@ def _successors(
 	raise AssertionError  # every block-ending instruction matches an arm above
 
 
-def _block_ends(instruction: CsInsn, machine: str) -> bool:
+def _block_ends(instruction: CsInsn, machine: Machine) -> bool:
 	return (
 		instruction.mnemonic == ".byte"
 		or _branch_target(instruction, machine) is not None
@@ -905,7 +900,7 @@ def _block_ends(instruction: CsInsn, machine: str) -> bool:
 	)
 
 
-def _build_blocks(instructions: tuple[CsInsn, ...], machine: str) -> tuple[_Block, ...]:
+def _build_blocks(instructions: tuple[CsInsn, ...], machine: Machine) -> tuple[_Block, ...]:
 	by_address = {instruction.address: index for index, instruction in enumerate(instructions)}
 	targets = frozenset(
 		branch[0]
@@ -948,12 +943,12 @@ def _build_blocks(instructions: tuple[CsInsn, ...], machine: str) -> tuple[_Bloc
 	return tuple(blocks)
 
 
-def _clobber_caller_saved(state: State, machine: str) -> State:
+def _clobber_caller_saved(state: State, machine: Machine) -> State:
 	registers = (
 		_X86_CALLER_SAVED_32
-		if machine == "EM_386"
+		if machine is Machine.EM_386
 		else _X86_CALLER_SAVED_64
-		if machine == "EM_X86_64"
+		if machine is Machine.EM_X86_64
 		else _ARM_CALLER_SAVED
 	)
 	return _top_registers(state, registers)
@@ -963,13 +958,13 @@ def _transfer(context: _Context, instruction: CsInsn, state: State) -> State:
 	machine = context.program.machine
 	if instruction.mnemonic == ".byte":
 		return state
-	if instruction.mnemonic in (_X86_CALLS if machine in ("EM_X86_64", "EM_386") else _ARM_CALLS):
+	if instruction.mnemonic in (_X86_CALLS if machine.is_x86 else _ARM_CALLS):
 		return _clobber_caller_saved(state, machine)
 	if instruction.mnemonic in ("loop", "loope", "loopne"):
 		return _top_registers(
-			state, (x86_const.X86_REG_ECX if machine == "EM_386" else x86_const.X86_REG_RCX,)
+			state, (x86_const.X86_REG_ECX if machine is Machine.EM_386 else x86_const.X86_REG_RCX,)
 		)
-	if machine in ("EM_X86_64", "EM_386"):
+	if machine.is_x86:
 		return _apply_x86(context, instruction, state)
 	return _apply_arm(context, instruction, state)
 
@@ -1049,7 +1044,7 @@ def _apply_x86(context: _Context, instruction: CsInsn, state: State) -> State:
 
 
 def _shift_x86_destination(
-	state: State, machine: str, destination: int, source: int, delta: int
+	state: State, machine: Machine, destination: int, source: int, delta: int
 ) -> State:
 	"""Shift a register's set by an immediate, staying in its domain."""
 	if destination in _SP_REGISTERS[machine]:
@@ -1301,7 +1296,9 @@ def _call_observation(context: _Context, block: _Block, state: State) -> _CallOb
 	target = _call_target(instruction, context.program.machine)
 	if target is None:
 		return None
-	callee = aligned(Address(target)) if context.program.machine == "EM_ARM" else Address(target)
+	callee = (
+		aligned(Address(target)) if context.program.machine is Machine.EM_ARM else Address(target)
+	)
 	if callee not in context.program.functions:
 		return None
 	return _CallObservation(callee=callee, arguments=_call_arguments(context, state, instruction))
@@ -1310,12 +1307,12 @@ def _call_observation(context: _Context, block: _Block, state: State) -> _CallOb
 def _call_arguments(context: _Context, state: State, instruction: CsInsn) -> Mapping[int, ValueSet]:
 	"""Argument value sets of a direct call, by ABI position."""
 	machine = context.program.machine
-	if machine == "EM_X86_64":
+	if machine is Machine.EM_X86_64:
 		return {
 			position: state.registers.get(register)
 			for position, register in enumerate(_X86_64_ARGUMENT_REGISTERS)
 		}
-	if machine == "EM_386":
+	if machine is Machine.EM_386:
 		# at the call instruction the return address is not pushed yet, so
 		# the first argument sits at the top of the caller's stack
 		offsets = state.sp_offsets.get(_SP_REGISTERS[machine][0])

@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.model import (
 	Function,
 	FunctionPointerMember,
 	FunctionSignature,
+	Machine,
 	Program,
 	Relocation,
 	StructPointerMember,
@@ -73,7 +74,7 @@ def _load(stream: BinaryIO) -> Program:
 	return Program(
 		byte_order=byte_order,
 		pointer_size=pointer_size,
-		machine=elf.header["e_machine"],
+		machine=Machine(elf.header["e_machine"]),
 		functions={**_functions_from_symtab(symtab), **_functions_from_dwarf(dwarf)},
 		objects=_merge_objects(
 			_objects_from_symtab(symtab),

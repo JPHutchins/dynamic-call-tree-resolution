@@ -36,7 +36,7 @@ def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
 
 	Sites carry the address their target is taken from when the operand's
 	value set is a single address, plus the set of addresses the analysis
-	tracked into the operand. Unsupported machine types yield no sites.
+	tracked into the operand.
 	"""
 	return analyze(program)
 

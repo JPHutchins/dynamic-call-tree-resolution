@@ -130,6 +130,15 @@ def test_load_rejects_relocatable_objects(fixture_elfs: dict[str, Path]) -> None
 		load(fixture_elfs["object"])
 
 
+def test_load_rejects_unknown_machines(tmp_path: Path, fixture_elfs: dict[str, Path]) -> None:
+	path = tmp_path / "aarch64.elf"
+	data = bytearray(fixture_elfs["nopie"].read_bytes())
+	data[18:20] = (183).to_bytes(2, "little")  # EM_AARCH64
+	path.write_bytes(data)
+	with pytest.raises(ValueError, match="EM_AARCH64"):
+		load(path)
+
+
 def test_load_rel_elf_reads_in_field_addends(tmp_path: Path) -> None:
 	path = tmp_path / "rel.elf"
 	path.write_bytes(_rel_elf())

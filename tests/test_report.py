@@ -13,6 +13,7 @@ from dynamic_call_tree_resolution import (
 	AnalysisReport,
 	ComparisonReport,
 	FunctionComparison,
+	Machine,
 	assignments,
 	build_comparison,
 	build_report,
@@ -44,7 +45,7 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 	comparison = build_comparison("nopie.elf", program)
 	assert comparison == ComparisonReport(
 		elf="nopie.elf",
-		machine="EM_X86_64",
+		machine=Machine.EM_X86_64,
 		functions=21,
 		total_slots=13,
 		resolved_slots=11,
