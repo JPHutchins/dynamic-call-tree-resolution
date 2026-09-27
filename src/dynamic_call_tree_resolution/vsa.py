@@ -24,6 +24,7 @@ unvisited, which the same fallback covers.
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Callable, Hashable
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol, cast
 
@@ -39,7 +40,7 @@ from capstone import (
 )
 
 from dynamic_call_tree_resolution.model import Address, CallSite
-from dynamic_call_tree_resolution.points_to import memory_at, pointer_at
+from dynamic_call_tree_resolution.points_to import memory_at
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -49,6 +50,10 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import Function, Program
 
 _K_BOUND = 64
+
+_GLOBAL_ROUNDS = 3
+
+_MAX_ROUNDS = 8
 
 _DISASSEMBLERS: Mapping[str, tuple[int, int]] = {
 	"EM_X86_64": (CS_ARCH_X86, CS_MODE_64),
@@ -131,6 +136,21 @@ _ARM_CALLER_SAVED = (
 _X86_MOVES = ("mov", "movabs")
 _ARM_LOADS = ("ldr", "ldr.w", "ldr.n")
 _ARM_MOVES = ("mov", "movs", "mov.w")
+_X86_64_ARGUMENT_REGISTERS = (
+	x86_const.X86_REG_RDI,
+	x86_const.X86_REG_RSI,
+	x86_const.X86_REG_RDX,
+	x86_const.X86_REG_RCX,
+	x86_const.X86_REG_R8,
+	x86_const.X86_REG_R9,
+)
+_ARM_ARGUMENT_REGISTERS = (
+	arm_const.ARM_REG_R0,
+	arm_const.ARM_REG_R1,
+	arm_const.ARM_REG_R2,
+	arm_const.ARM_REG_R3,
+)
+_EM_386_STACK_ARGUMENTS = 8
 
 type ValueSet = frozenset[Address] | None
 type OffsetSet = frozenset[int] | None
@@ -175,13 +195,15 @@ class State(NamedTuple):
 
 	Absent map entries mean Top (unknown); empty sets mean Bottom (no
 	value flows). ``sp_offsets`` tracks stack-pointer registers as offsets
-	from the entry stack pointer, and ``stack`` holds the value sets of
-	frame slots at those offsets.
+	from the entry stack pointer, ``stack`` holds the value sets of frame
+	slots at those offsets, and ``globals`` holds value sets written to
+	program-global addresses.
 	"""
 
 	registers: Mapping[int, frozenset[Address]]
 	sp_offsets: Mapping[int, frozenset[int]]
 	stack: Mapping[int, frozenset[Address]]
+	globals: Mapping[int, frozenset[Address]]
 
 
 class _Block(NamedTuple):
@@ -190,19 +212,37 @@ class _Block(NamedTuple):
 	successors: tuple[Address, ...]
 
 
+class _CallObservation(NamedTuple):
+	"""One direct call's argument value sets, by ABI position."""
+
+	callee: Address
+	arguments: Mapping[int, ValueSet]
+
+
 class _Context(NamedTuple):
 	program: Program
 	object_spans: tuple[tuple[int, int], ...]
+	object_starts: tuple[int, ...]
+	global_writes: Mapping[int, frozenset[Address]]
 
 
 def analyze(program: Program) -> tuple[CallSite, ...]:
 	"""Extract every indirect call and tail-branch site with its candidate set.
 
-	Sites carry the address their target is taken from when the operand's
-	value set is a single address, and the pre-chase set of addresses the
-	analysis tracked into the operand. Unsupported machine types yield no
-	sites; unknown or unreachable operands yield empty candidates, which
-	consumers replace with the resolved-target fallback union.
+	Functions are abstractly interpreted with their parameters seeded from
+	every caller's analyzed argument sets — register arguments per ABI,
+	stack arguments on EM_386 — and re-analyzed in bounded rounds until
+	the seeds and the program-global writes stabilize, so driver-class
+	dispatch resolves through static const device pointers. The rounds
+	are capped at ``_MAX_ROUNDS`` and the write propagation after the
+	seeds settle at ``_GLOBAL_ROUNDS``; whatever a truncated fixpoint
+	misses stays Top and the consumers' resolved-target fallback keeps
+	the stack bound sound. Sites carry the
+	address their target is taken from when the operand's value set is a
+	single address, and the pre-chase set of addresses the analysis
+	tracked into the operand. Unknown or unreachable operands yield empty
+	candidates, which consumers replace with the resolved-target
+	fallback union.
 	"""
 	mode = _DISASSEMBLERS.get(program.machine)
 	if mode is None:
@@ -210,9 +250,79 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 	disassembler = Cs(*mode)
 	disassembler.detail = True
 	disassembler.skipdata = True
-	context = _Context(program=program, object_spans=_object_spans(program))
+	blocks_by_function = _blocks_by_function(program, disassembler)
+	seeds: dict[Address, State] = {}
+	global_writes: dict[int, frozenset[Address]] = {}
+	cache: dict[
+		Address,
+		tuple[
+			State,
+			Mapping[int, frozenset[Address]],
+			tuple[CallSite, ...],
+			Mapping[int, frozenset[Address]],
+			tuple[_CallObservation, ...],
+		],
+	] = {}
+	stable_write_rounds = 0
+	for _ in range(_MAX_ROUNDS):
+		context = _context_for(program, global_writes)
+		observations: list[_CallObservation] = []
+		written: list[Mapping[int, frozenset[Address]]] = []
+		for function, blocks in blocks_by_function.values():
+			normalized = _normalized(function.address, program.machine)
+			seed = _seed(seeds.get(normalized), program.machine)
+			entry = cache.get(normalized)
+			if entry is not None and entry[0] == seed and entry[1] == global_writes:
+				_, _, _, function_writes, function_observations = entry
+			else:
+				_, function_writes, function_observations = _analyze_function(
+					context, function, blocks, seed
+				)
+				cache[normalized] = (
+					seed,
+					global_writes,
+					(),
+					function_writes,
+					function_observations,
+				)
+			written.append(function_writes)
+			observations.extend(function_observations)
+		next_seeds = dict(seeds)
+		for observation in observations:
+			next_seeds[observation.callee] = _join_seeds(
+				next_seeds.get(observation.callee),
+				_seed_from_observation(observation, program),
+			)
+		next_writes = _accumulate_writes(global_writes, written)
+		if next_seeds == seeds and next_writes == global_writes:
+			break
+		seeds_changed = next_seeds != seeds
+		seeds, global_writes = next_seeds, next_writes
+		if seeds_changed:
+			stable_write_rounds = 0
+		else:
+			stable_write_rounds += 1
+			if stable_write_rounds >= _GLOBAL_ROUNDS:
+				break
+	final_context = _context_for(program, global_writes)
+	return tuple(
+		site
+		for function, blocks in blocks_by_function.values()
+		for site in _analyze_function(
+			final_context,
+			function,
+			blocks,
+			_seed(seeds.get(_normalized(function.address, program.machine)), program.machine),
+		)[0]
+	)
+
+
+def _blocks_by_function(
+	program: Program, disassembler: Cs
+) -> dict[Address, tuple[Function, tuple[_Block, ...]]]:
+	"""Per-function CFGs, keyed by the normalized function address."""
 	seen: set[Address] = set()
-	sites: list[CallSite] = []
+	blocks: dict[Address, tuple[Function, tuple[_Block, ...]]] = {}
 	for function in sorted(program.functions.values(), key=lambda function: function.address):
 		# ARM symbol addresses carry the Thumb bit; strip it so the code
 		# decodes from the aligned start, and skip the symbol/DWARF twin.
@@ -224,28 +334,102 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 		if not code:
 			continue
 		instructions = tuple(disassembler.disasm(code, start))
-		sites.extend(
-			_analyze_function(context, function, _build_blocks(instructions, program.machine))
+		blocks[start] = (function, _build_blocks(instructions, program.machine))
+	return blocks
+
+
+def _normalized(address: Address, machine: str) -> Address:
+	"""The aligned address a function's code and call targets share."""
+	return Address(address & ~1) if machine == "EM_ARM" else address
+
+
+def _seed(base: State | None, machine: str) -> State:
+	"""Entry state of one function: the seeded frame."""
+	if base is None:
+		return State(
+			registers={},
+			sp_offsets={_SP_REGISTERS[machine][0]: frozenset({0})},
+			stack={},
+			globals={},
 		)
-	return tuple(sites)
+	return State(registers=base.registers, sp_offsets=base.sp_offsets, stack=base.stack, globals={})
 
 
-def _object_spans(program: Program) -> tuple[tuple[int, int], ...]:
-	return tuple(
+def _seed_from_observation(observation: _CallObservation, program: Program) -> State:
+	"""Callee entry state seeded from one call observation's argument sets."""
+	registers: dict[int, frozenset[Address]] = {}
+	stack: dict[int, frozenset[Address]] = {}
+	for position, value in observation.arguments.items():
+		if value is None:
+			continue
+		if program.machine == "EM_386":
+			stack[program.pointer_size * (position + 1)] = value
+		elif program.machine == "EM_X86_64":
+			registers[_X86_64_ARGUMENT_REGISTERS[position]] = value
+		else:
+			registers[_ARM_ARGUMENT_REGISTERS[position]] = value
+	return State(
+		registers=registers,
+		sp_offsets={_SP_REGISTERS[program.machine][0]: frozenset({0})},
+		stack=stack,
+		globals={},
+	)
+
+
+def _accumulate_writes(
+	current: Mapping[int, frozenset[Address]], written: list[Mapping[int, frozenset[Address]]]
+) -> dict[int, frozenset[Address]]:
+	"""Union per-function global-write maps into the program-global one."""
+	accumulated = dict(current)
+	for function_writes in written:
+		for address, values in function_writes.items():
+			existing = accumulated.get(address)
+			if existing is None:
+				accumulated[address] = values
+				continue
+			combined = existing | values
+			if len(combined) > _K_BOUND:
+				accumulated.pop(address, None)
+			else:
+				accumulated[address] = combined
+	return accumulated
+
+
+def _context_for(program: Program, global_writes: Mapping[int, frozenset[Address]]) -> _Context:
+	spans = tuple(
 		sorted(
 			(object_.address, object_.address + object_.size)
 			for object_ in program.objects.values()
 			if object_.size > 0
 		)
 	)
+	return _Context(
+		program=program,
+		object_spans=spans,
+		object_starts=tuple(span[0] for span in spans),
+		global_writes=global_writes,
+	)
 
 
 def _span_at(context: _Context, address: Address) -> tuple[int, int] | None:
-	return min(
-		(span for span in context.object_spans if span[0] <= address < span[1]),
-		key=lambda span: span[1],
-		default=None,
-	)
+	"""Tightest enclosing data-object span, by bisect over the sorted starts."""
+	index = bisect_right(context.object_starts, address) - 1
+	if index < 0:
+		return None
+	span = context.object_spans[index]
+	return span if span[0] <= address < span[1] else None
+
+
+def _pointer_value(context: _Context, address: Address) -> Address | None:
+	"""One pointer read with the object-coverage bounds the slot layer applies."""
+	span = _span_at(context, address)
+	pointer_size = context.program.pointer_size
+	if span is not None and address + pointer_size > span[1]:
+		return None
+	data = memory_at(context.program, address, pointer_size)
+	if len(data) != pointer_size:
+		return None
+	return Address(int.from_bytes(data, context.program.byte_order))
 
 
 def _object_slots(context: _Context, start: Address, stride: int) -> ValueSet:
@@ -267,23 +451,29 @@ def _object_slots(context: _Context, start: Address, stride: int) -> ValueSet:
 	return frozenset(Address(start + index * stride) for index in range(count))
 
 
-def _image_value(context: _Context, addresses: ValueSet) -> ValueSet:
-	"""Read each address from the loaded image.
+def _image_value(context: _Context, state: State, addresses: ValueSet) -> ValueSet:
+	"""Read each address from the loaded image, unioned with statically known writes.
 
-	Unreadable addresses inside data objects (BSS) are runtime values, so
-	the read is Top; addresses outside every object are invalid reads and
-	drop out.
+	Values written to the address anywhere in the analyzed program count
+	alongside the baked image value. An unreadable address inside a data
+	object (BSS) is a runtime value: the written set when one is known,
+	Top otherwise; addresses outside every object with no known writes
+	are invalid reads and drop out.
 	"""
 	if addresses is None:
 		return None
 	values: set[Address] = set()
 	for address in addresses:
-		value = pointer_at(context.program, address)
-		if value is None:
-			if _span_at(context, address) is not None:
-				return None
-			continue
-		values.add(value)
+		written = state.globals.get(address)
+		if written is None:
+			written = context.global_writes.get(address)
+		if written is not None:
+			values.update(written)
+		value = _pointer_value(context, address)
+		if value is not None:
+			values.add(value)
+		elif written is None and _span_at(context, address) is not None:
+			return None
 	return None if len(values) > _K_BOUND else frozenset(values)
 
 
@@ -310,6 +500,37 @@ def _join_maps[T: Hashable](
 	return joined
 
 
+def _join_seeds(current: State | None, incoming: State) -> State:
+	"""Accumulate a call observation into a callee's entry seed.
+
+	Unlike path joins, an absent seed entry means nothing is known yet,
+	so incoming values are adopted rather than drowned by the Top
+	interpretation. An overflowing join keeps the accumulated value as
+	is: monotone, and sound by the consumers' resolved-target fallback.
+	"""
+	if current is None:
+		return incoming
+	registers = dict(current.registers)
+	for register, value in incoming.registers.items():
+		if register not in current.registers:
+			registers[register] = value
+			continue
+		joined = _join_sets(current.registers[register], value)
+		if joined is not None:
+			registers[register] = joined
+	stack = dict(current.stack)
+	for offset, value in incoming.stack.items():
+		if offset not in current.stack:
+			stack[offset] = value
+			continue
+		joined = _join_sets(current.stack[offset], value)
+		if joined is not None:
+			stack[offset] = joined
+	return State(
+		registers=registers, sp_offsets=current.sp_offsets, stack=stack, globals=current.globals
+	)
+
+
 def _join_states(current: State | None, incoming: State) -> State:
 	if current is None:
 		return incoming
@@ -317,6 +538,7 @@ def _join_states(current: State | None, incoming: State) -> State:
 		registers=_join_maps(current.registers, incoming.registers),
 		sp_offsets=_join_maps(current.sp_offsets, incoming.sp_offsets),
 		stack=_join_maps(current.stack, incoming.stack),
+		globals=_join_maps(current.globals, incoming.globals),
 	)
 
 
@@ -373,6 +595,7 @@ def _set_register(state: State, register: int, value: ValueSet) -> State:
 		registers=_put_value(state.registers, register, value),
 		sp_offsets=sp_offsets,
 		stack=state.stack,
+		globals=state.globals,
 	)
 
 
@@ -383,6 +606,7 @@ def _set_offsets(state: State, register: int, value: OffsetSet) -> State:
 		registers=registers,
 		sp_offsets=_put_value(state.sp_offsets, register, value),
 		stack=state.stack,
+		globals=state.globals,
 	)
 
 
@@ -390,7 +614,9 @@ def _top_registers(state: State, registers: tuple[int, ...]) -> State:
 	remaining = {
 		register: value for register, value in state.registers.items() if register not in registers
 	}
-	return State(registers=remaining, sp_offsets=state.sp_offsets, stack=state.stack)
+	return State(
+		registers=remaining, sp_offsets=state.sp_offsets, stack=state.stack, globals=state.globals
+	)
 
 
 def _top_written(instruction: CsInsn, state: State) -> State:
@@ -408,6 +634,7 @@ def _top_written(instruction: CsInsn, state: State) -> State:
 			if register not in written
 		},
 		stack=state.stack,
+		globals=state.globals,
 	)
 
 
@@ -424,14 +651,14 @@ def _stack_read(stack: Mapping[int, frozenset[Address]], offsets: OffsetSet) -> 
 	return None if len(values) > _K_BOUND else frozenset(values)
 
 
-def _stack_write(
-	stack: Mapping[int, frozenset[Address]], offsets: OffsetSet, value: ValueSet
+def _union_write(
+	mapping: Mapping[int, frozenset[Address]], keys: OffsetSet, value: ValueSet
 ) -> dict[int, frozenset[Address]]:
-	"""Union-write a value into the frame slots; a Top write Tops the slots."""
-	written = dict(stack)
-	if offsets is None:
+	"""Union-write a value into the keyed slots; a Top write Tops the slots."""
+	written = dict(mapping)
+	if keys is None:
 		return written
-	for offset in offsets:
+	for offset in keys:
 		if value is None:
 			written.pop(offset, None)
 			continue
@@ -488,16 +715,16 @@ def _load_value(
 	if machine in ("EM_X86_64", "EM_386"):
 		if memory.base == x86_const.X86_REG_RIP:
 			address = Address(instruction.address + instruction.size + memory.disp)
-			return _image_value(context, frozenset({address}))
+			return _image_value(context, state, frozenset({address}))
 		if memory.base in _SP_REGISTERS[machine] or memory.base in state.sp_offsets:
 			return _stack_read(state.stack, _stack_offsets(state, memory, memory.base))
-		return _image_value(context, _memory_addresses(context, state, memory))
+		return _image_value(context, state, _memory_addresses(context, state, memory))
 	if memory.base == arm_const.ARM_REG_PC:
 		address = Address(((instruction.address + 4) & ~3) + memory.disp)
-		return _image_value(context, frozenset({address}))
+		return _image_value(context, state, frozenset({address}))
 	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
 		return _stack_read(state.stack, _stack_offsets(state, memory, memory.base))
-	return _image_value(context, _memory_addresses(context, state, memory))
+	return _image_value(context, state, _memory_addresses(context, state, memory))
 
 
 def _store_value(
@@ -515,16 +742,40 @@ def _store_value(
 			return State(
 				registers=state.registers,
 				sp_offsets=state.sp_offsets,
-				stack=_stack_write(state.stack, _stack_offsets(state, memory, memory.base), value),
+				stack=_union_write(state.stack, _stack_offsets(state, memory, memory.base), value),
+				globals=state.globals,
 			)
-		return state
+		addresses = _store_addresses(context, state, instruction, memory)
+		return State(
+			registers=state.registers,
+			sp_offsets=state.sp_offsets,
+			stack=state.stack,
+			globals=_union_write(state.globals, addresses, value),
+		)
 	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
 		return State(
 			registers=state.registers,
 			sp_offsets=state.sp_offsets,
-			stack=_stack_write(state.stack, _stack_offsets(state, memory, memory.base), value),
+			stack=_union_write(state.stack, _stack_offsets(state, memory, memory.base), value),
+			globals=state.globals,
 		)
-	return state
+	addresses = _store_addresses(context, state, instruction, memory)
+	return State(
+		registers=state.registers,
+		sp_offsets=state.sp_offsets,
+		stack=state.stack,
+		globals=_union_write(state.globals, addresses, value),
+	)
+
+
+def _store_addresses(
+	context: _Context, state: State, instruction: CsInsn, memory: _MemoryOperand
+) -> ValueSet:
+	"""Address set of a non-frame store; Top when the store cannot be placed."""
+	machine = context.program.machine
+	if machine in ("EM_X86_64", "EM_386") and memory.base == x86_const.X86_REG_RIP:
+		return frozenset({Address(instruction.address + instruction.size + memory.disp)})
+	return _memory_addresses(context, state, memory)
 
 
 def _copy_register(state: State, destination: int, source: int) -> State:
@@ -569,6 +820,23 @@ def _branch_target(instruction: CsInsn, machine: str) -> tuple[int, bool] | None
 	pc = instruction.address + 4
 	displacement = operand.imm - pc
 	return (pc & ~3) + displacement, conditional
+
+
+def _call_target(instruction: CsInsn, machine: str) -> int | None:
+	"""Absolute target of a direct call, or ``None``."""
+	if machine in ("EM_X86_64", "EM_386"):
+		if instruction.mnemonic != "call":
+			return None
+		operand = instruction.operands[0]
+		if operand.type != x86_const.X86_OP_IMM:
+			return None
+		return operand.imm  # capstone reports the absolute target
+	if instruction.mnemonic.split(".")[0] not in ("bl", "blx"):
+		return None
+	operand = instruction.operands[0]
+	if operand.type != arm_const.ARM_OP_IMM:
+		return None
+	return operand.imm  # capstone reports the absolute target for bl/blx
 
 
 def _is_control_transfer(instruction: CsInsn, machine: str) -> bool:
@@ -648,7 +916,9 @@ def _build_blocks(instructions: tuple[CsInsn, ...], machine: str) -> tuple[_Bloc
 	current: list[CsInsn] = []
 	for index, instruction in enumerate(instructions):
 		if (
-			instruction.address in targets or _site_operand(instruction, machine) is not None
+			instruction.address in targets
+			or _site_operand(instruction, machine) is not None
+			or _call_target(instruction, machine) is not None
 		) and current:
 			blocks.append(
 				_Block(
@@ -794,7 +1064,8 @@ def _push(state: State, sp: int, pointer_size: int, value: ValueSet) -> State:
 	return State(
 		registers=state.registers,
 		sp_offsets=_put_value(state.sp_offsets, sp, offsets),
-		stack=_stack_write(state.stack, offsets, value),
+		stack=_union_write(state.stack, offsets, value),
+		globals=state.globals,
 	)
 
 
@@ -804,6 +1075,7 @@ def _pop(state: State, sp: int, pointer_size: int, destination: int) -> State:
 		registers=_put_value(state.registers, destination, _stack_read(state.stack, offsets)),
 		sp_offsets=_put_value(state.sp_offsets, sp, _shift_offsets(offsets, pointer_size)),
 		stack=state.stack,
+		globals=state.globals,
 	)
 
 
@@ -939,13 +1211,14 @@ def _arm_push(instruction: CsInsn, state: State) -> State:
 	offsets = _shift_offsets(state.sp_offsets.get(arm_const.ARM_REG_SP), -4 * len(registers))
 	stack = state.stack
 	for index, register in enumerate(registers):
-		stack = _stack_write(
+		stack = _union_write(
 			stack, _shift_offsets(offsets, 4 * index), state.registers.get(register)
 		)
 	return State(
 		registers=state.registers,
 		sp_offsets=_put_value(state.sp_offsets, arm_const.ARM_REG_SP, offsets),
 		stack=stack,
+		globals=state.globals,
 	)
 
 
@@ -968,39 +1241,94 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 			state.sp_offsets, arm_const.ARM_REG_SP, _shift_offsets(offsets, 4 * len(operands))
 		),
 		stack=state.stack,
+		globals=state.globals,
 	)
 
 
 def _analyze_function(
-	context: _Context, function: Function, blocks: tuple[_Block, ...]
-) -> tuple[CallSite, ...]:
-	machine = context.program.machine
+	context: _Context, function: Function, blocks: tuple[_Block, ...], seed: State
+) -> tuple[tuple[CallSite, ...], Mapping[int, frozenset[Address]], tuple[_CallObservation, ...]]:
+	"""Fixpoint interpretation of one function from its seeded entry state.
+
+	Returns the site resolutions, the program-global writes accumulated
+	over every reachable state, and one observation per direct call whose
+	callee is a known function.
+	"""
 	entry = blocks[0].start
-	seed = State(
-		registers={},
-		sp_offsets={_SP_REGISTERS[machine][0]: frozenset({0})},
-		stack={},
-	)
 	in_states: dict[Address, State] = {entry: seed}
 	worklist = [entry]
 	by_start = {block.start: block for block in blocks}
+	writes: dict[int, frozenset[Address]] = {}
 	while worklist:
 		block = by_start[worklist.pop()]
 		incoming = in_states[block.start]
 		outgoing = incoming
 		for instruction in block.instructions:
 			outgoing = _transfer(context, instruction, outgoing)
+		writes = _accumulate_writes(writes, [outgoing.globals])
 		for successor in block.successors:
 			joined = _join_states(in_states.get(successor), outgoing)
 			if joined != in_states.get(successor):
 				in_states[successor] = joined
 				worklist.append(successor)
-	return tuple(
-		site
-		for block in blocks
-		if (site := _site_resolution(context, block, function.address, in_states.get(block.start)))
-		is not None
+	observations: list[_CallObservation] = []
+	for block in blocks:
+		state = in_states.get(block.start)
+		if state is None:
+			continue
+		observation = _call_observation(context, block, state)
+		if observation is not None:
+			observations.append(observation)
+	return (
+		tuple(
+			site
+			for block in blocks
+			if (
+				site := _site_resolution(
+					context, block, function.address, in_states.get(block.start)
+				)
+			)
+			is not None
+		),
+		writes,
+		tuple(observations),
 	)
+
+
+def _call_observation(context: _Context, block: _Block, state: State) -> _CallObservation | None:
+	"""The direct call of a block, when its callee is a known function."""
+	instruction = block.instructions[-1]
+	target = _call_target(instruction, context.program.machine)
+	if target is None:
+		return None
+	callee = Address(target & ~1) if context.program.machine == "EM_ARM" else Address(target)
+	if callee not in context.program.functions:
+		return None
+	return _CallObservation(callee=callee, arguments=_call_arguments(context, state, instruction))
+
+
+def _call_arguments(context: _Context, state: State, instruction: CsInsn) -> Mapping[int, ValueSet]:
+	"""Argument value sets of a direct call, by ABI position."""
+	machine = context.program.machine
+	if machine == "EM_X86_64":
+		return {
+			position: state.registers.get(register)
+			for position, register in enumerate(_X86_64_ARGUMENT_REGISTERS)
+		}
+	if machine == "EM_386":
+		# at the call instruction the return address is not pushed yet, so
+		# the first argument sits at the top of the caller's stack
+		offsets = state.sp_offsets.get(_SP_REGISTERS[machine][0])
+		return {
+			position: _stack_read(
+				state.stack, _shift_offsets(offsets, context.program.pointer_size * position)
+			)
+			for position in range(_EM_386_STACK_ARGUMENTS)
+		}
+	return {
+		position: state.registers.get(register)
+		for position, register in enumerate(_ARM_ARGUMENT_REGISTERS)
+	}
 
 
 def _site_operand_addresses(

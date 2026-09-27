@@ -1259,3 +1259,377 @@ def test_arm_post_indexed_store_advances_the_base() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100E
 	assert site.candidates == frozenset({Address(0x4000)})
+
+
+def _multi_program(
+	machine: str,
+	code_by_address: dict[int, bytes],
+	functions: tuple[tuple[str, int, int], ...],
+	objects: tuple[tuple[str, int, bytes], ...] = (),
+	pointer_size: int = 8,
+) -> Program:
+	return Program(
+		byte_order="little",
+		pointer_size=pointer_size,
+		machine=machine,
+		functions={
+			Address(address): Function(
+				name=name, address=Address(address), size=size, signature=None
+			)
+			for name, address, size in functions
+		},
+		objects={
+			Address(address): DataObject(
+				name=name, address=Address(address), size=len(data), type_name=None, signature=None
+			)
+			for name, address, data in objects
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(address): code for address, code in code_by_address.items()}
+		| {Address(address): data for _, address, data in objects},
+	)
+
+
+def test_x86_64_callee_is_seeded_from_the_caller_register_argument() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 c7 00 30 00 00e8 f4 0f 00 00"),
+			0x2000: bytes.fromhex("ff d7"),
+		},
+		functions=(("caller", 0x1000, 12), ("callee", 0x2000, 2), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_32_callee_is_seeded_from_the_callers_first_stack_argument() -> None:
+	program = _multi_program(
+		"EM_386",
+		{
+			0x1000: bytes.fromhex("68 00 30 00 00e8 f6 0f 00 00"),
+			0x2000: bytes.fromhex("5589 e58b 45 08ff d0"),
+		},
+		functions=(("caller", 0x1000, 10), ("callee", 0x2000, 8), ("target", 0x3000, 1)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.site_address == 0x2006
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_x86_32_callee_is_seeded_from_the_callers_second_stack_argument() -> None:
+	program = _multi_program(
+		"EM_386",
+		{
+			0x1000: bytes.fromhex("68 00 40 00 0068 00 30 00 00e8 f1 0f 00 00"),
+			0x2000: bytes.fromhex("5589 e58b 45 0cff d0"),
+		},
+		functions=(("caller", 0x1000, 15), ("callee", 0x2000, 8), ("second", 0x4000, 1)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.site_address == 0x2006
+	assert site.candidates == frozenset({Address(0x4000)})
+
+
+def test_arm_callee_is_seeded_from_the_caller_register_argument() -> None:
+	program = _multi_program(
+		"EM_ARM",
+		{
+			0x1000: bytes.fromhex("43 f2 00 0000 f0 fc ff"),
+			0x2000: bytes.fromhex("80 47"),
+		},
+		functions=(("caller", 0x1000, 8), ("callee", 0x2000, 2), ("target", 0x3000, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_seeds_propagate_along_a_call_chain() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 c7 00 30 00 00e8 f4 0f 00 00"),
+			0x2000: bytes.fromhex("e8 fb 1f 00 00"),
+			0x4000: bytes.fromhex("ff d7"),
+		},
+		functions=(
+			("first", 0x1000, 12),
+			("middle", 0x2000, 5),
+			("leaf", 0x4000, 2),
+			("target", 0x3000, 1),
+		),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x4000
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_callee_seed_joins_across_callers() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 c7 00 30 00 00e8 f4 0f 00 00"),
+			0x1200: bytes.fromhex("48 c7 c7 00 40 00 00e8 f4 0d 00 00"),
+			0x2000: bytes.fromhex("ff d7"),
+		},
+		functions=(
+			("first_caller", 0x1000, 12),
+			("second_caller", 0x1200, 12),
+			("callee", 0x2000, 2),
+			("first", 0x3000, 1),
+			("second", 0x4000, 1),
+		),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+
+
+def test_cross_function_global_write_propagates_between_rounds() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 05 f5 3f 00 0000 30 00 00c3"),
+			0x2000: bytes.fromhex("48 8b 05 f9 2f 00 00ff d0"),
+		},
+		functions=(("writer", 0x1000, 12), ("reader", 0x2000, 9), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.site_address == 0x2007
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_global_write_chain_caps_at_three_rounds() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 05 f5 0f 00 0000 30 00 00c3"),
+			0x1100: bytes.fromhex("48 8b 05 f9 0e 00 0048 89 05 02 0f 00 00c3"),
+			0x1200: bytes.fromhex("48 8b 05 09 0e 00 0048 89 05 12 0e 00 00c3"),
+			0x1300: bytes.fromhex("48 8b 05 19 0d 00 0048 89 05 22 0d 00 00c3"),
+			0x1400: bytes.fromhex("48 8b 05 29 0c 00 0048 89 05 32 0c 00 00c3"),
+			0x1500: bytes.fromhex("48 8b 05 39 0b 00 00ff d0"),
+		},
+		functions=(
+			("first", 0x1000, 12),
+			("second", 0x1100, 16),
+			("third", 0x1200, 16),
+			("fourth", 0x1300, 16),
+			("fifth", 0x1400, 16),
+			("reader", 0x1500, 9),
+			("target", 0x3000, 1),
+		),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x1500
+	assert site.candidates == frozenset()
+
+
+def test_global_write_union_overflow_is_top() -> None:
+	table_one = b"".join((0x3000 + index * 8).to_bytes(8, "little") for index in range(33))
+	table_two = b"".join((0x5000 + index * 8).to_bytes(8, "little") for index in range(33))
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 c3 00 60 00 0048 8b 04 cb48 89 05 ee 0f 00 00c3"),
+			0x1100: bytes.fromhex("48 c7 c3 00 70 00 0048 8b 04 cb48 89 05 ee 0e 00 00c3"),
+			0x1200: bytes.fromhex("48 8b 05 f9 0d 00 00ff d0"),
+		},
+		functions=(
+			("first_writer", 0x1000, 19),
+			("second_writer", 0x1100, 19),
+			("reader", 0x1200, 9),
+		),
+		objects=(("table_one", 0x6000, table_one), ("table_two", 0x7000, table_two)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x1200
+	assert site.candidates == frozenset()
+
+
+def test_recursive_seeding_converges() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{0x1000: bytes.fromhex("e8 fb ff ff ffff d7")},
+		functions=(("recursive", 0x1000, 7),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x1000
+	assert site.site_address == 0x1005
+	assert site.candidates == frozenset()
+
+
+def test_x86_call_arguments_with_a_top_stack_pointer_are_top() -> None:
+	code = bytes.fromhex("83 e4 f0e8 00 00 00 00ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1008
+	assert site.candidates == frozenset()
+
+
+def test_x86_32_callee_seed_joins_across_callers() -> None:
+	program = _multi_program(
+		"EM_386",
+		{
+			0x1000: bytes.fromhex("68 00 30 00 00e8 f6 0f 00 00"),
+			0x1100: bytes.fromhex("68 00 40 00 00e8 f6 0e 00 00"),
+			0x2000: bytes.fromhex("5589 e58b 45 08ff d0"),
+		},
+		functions=(
+			("first_caller", 0x1000, 10),
+			("second_caller", 0x1100, 10),
+			("callee", 0x2000, 8),
+			("first", 0x3000, 1),
+			("second", 0x4000, 1),
+		),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+
+
+def test_x86_64_callee_seed_overflow_is_top() -> None:
+	table_one = b"".join((0x3000 + index * 8).to_bytes(8, "little") for index in range(33))
+	table_two = b"".join((0x5000 + index * 8).to_bytes(8, "little") for index in range(33))
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 c3 00 60 00 0048 8b 3c cbe8 f0 0f 00 00"),
+			0x1100: bytes.fromhex("48 c7 c3 00 70 00 0048 8b 3c cbe8 f0 0e 00 00"),
+			0x2000: bytes.fromhex("ff d7"),
+		},
+		functions=(
+			("first_caller", 0x1000, 16),
+			("second_caller", 0x1100, 16),
+			("callee", 0x2000, 2),
+		),
+		objects=(("table_one", 0x6000, table_one), ("table_two", 0x7000, table_two)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert len(site.candidates) == 33
+
+
+def test_x86_32_callee_seed_overflow_is_top() -> None:
+	table_one = b"".join((0x3000 + index * 4).to_bytes(4, "little") for index in range(33))
+	table_two = b"".join((0x5000 + index * 4).to_bytes(4, "little") for index in range(33))
+	program = _multi_program(
+		"EM_386",
+		{
+			0x1000: bytes.fromhex("bb 00 60 00 008b 04 8b50e8 f2 0f 00 00"),
+			0x1100: bytes.fromhex("bb 00 70 00 008b 04 8b50e8 f2 0e 00 00"),
+			0x2000: bytes.fromhex("5589 e58b 45 08ff d0"),
+		},
+		functions=(
+			("first_caller", 0x1000, 14),
+			("second_caller", 0x1100, 14),
+			("callee", 0x2000, 8),
+		),
+		objects=(("table_one", 0x6000, table_one), ("table_two", 0x7000, table_two)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert len(site.candidates) == 33
+
+
+def test_a_global_write_feeding_a_call_argument_grows_the_seed_late() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 05 f5 3f 00 0000 30 00 00c3"),
+			0x1100: bytes.fromhex("48 8b 3d f9 3e 00 00e8 f4 0e 00 00"),
+			0x2000: bytes.fromhex("ff d7"),
+		},
+		functions=(
+			("writer", 0x1000, 12),
+			("caller", 0x1100, 12),
+			("callee", 0x2000, 2),
+			("target", 0x3000, 1),
+		),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2000
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def test_the_round_budget_exhausts_on_a_deep_chain() -> None:
+	program = _multi_program(
+		"EM_X86_64",
+		{
+			0x1000: bytes.fromhex("48 c7 c7 00 30 00 0048 89 3d f2 0f 00 00e8 ed 00 00 00"),
+			0x1100: bytes.fromhex("48 89 3d 09 0f 00 00e8 f4 00 00 00"),
+			0x1200: bytes.fromhex("48 89 3d 19 0e 00 00e8 f4 00 00 00"),
+			0x1300: bytes.fromhex("48 89 3d 29 0d 00 00e8 f4 00 00 00"),
+			0x1400: bytes.fromhex("48 89 3d 39 0c 00 00e8 f4 00 00 00"),
+			0x1500: bytes.fromhex("48 89 3d 49 0b 00 00e8 f4 00 00 00"),
+			0x1600: bytes.fromhex("48 89 3d 59 0a 00 00e8 f4 00 00 00"),
+			0x1700: bytes.fromhex("48 89 3d 69 09 00 00c3"),
+			0x1800: bytes.fromhex("48 8b 05 79 08 00 00ff d0"),
+		},
+		functions=(
+			("first", 0x1000, 19),
+			("second", 0x1100, 12),
+			("third", 0x1200, 12),
+			("fourth", 0x1300, 12),
+			("fifth", 0x1400, 12),
+			("sixth", 0x1500, 12),
+			("seventh", 0x1600, 12),
+			("eighth", 0x1700, 8),
+			("reader", 0x1800, 9),
+			("target", 0x3000, 1),
+		),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x1800
+	assert site.candidates == frozenset()
+
+
+def test_x86_32_seed_adopts_arguments_from_different_callers() -> None:
+	program = _multi_program(
+		"EM_386",
+		{
+			0x1000: bytes.fromhex("5368 00 30 00 00e8 f5 0f 00 00"),
+			0x1100: bytes.fromhex("68 00 40 00 0053e8 f5 0e 00 00"),
+			0x2000: bytes.fromhex("5589 e58b 45 08ff d08b 45 0cff d0"),
+		},
+		functions=(
+			("first_caller", 0x1000, 11),
+			("second_caller", 0x1100, 11),
+			("callee", 0x2000, 13),
+			("first", 0x3000, 1),
+			("second", 0x4000, 1),
+		),
+		pointer_size=4,
+	)
+	first_site, second_site = extract_call_sites(program)
+	assert first_site.site_address == 0x2006
+	assert first_site.candidates == frozenset({Address(0x3000)})
+	assert second_site.site_address == 0x200B
+	assert second_site.candidates == frozenset({Address(0x4000)})
+
+
+def test_x86_global_store_then_load_resolves_within_the_function() -> None:
+	code = bytes.fromhex("48 c7 c0 00 30 00 0048 89 05 f2 0f 00 0048 8b 05 eb 0f 00 00ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1015
+	assert site.candidates == frozenset({Address(0x3000)})
