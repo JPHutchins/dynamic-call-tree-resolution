@@ -13,6 +13,7 @@ from dynamic_call_tree_resolution import (
 	Address,
 	DataObject,
 	Function,
+	FunctionPointerMember,
 	FunctionSignature,
 	Program,
 	Provenance,
@@ -187,6 +188,30 @@ def _program_with_slot(stored: int) -> Program:
 
 def test_null_slot_does_not_resolve_to_a_function_at_address_zero() -> None:
 	assert assignments(_program_with_slot(0)) == ()
+
+
+def test_declaration_only_struct_dies_do_not_clobber_definitions(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	program = load(fixture_elfs["decl"])
+	assert program.layouts["struct shared"].members == (
+		FunctionPointerMember(
+			kind="function_pointer",
+			name="fn",
+			offset=0,
+			signature=FunctionSignature(return_type="int", parameters=()),
+		),
+		FunctionPointerMember(
+			kind="function_pointer",
+			name="extra",
+			offset=8,
+			signature=FunctionSignature(return_type="int", parameters=()),
+		),
+	)
+	resolved, program = _resolved(fixture_elfs["decl"])
+	assert _names(program, resolved["instance.fn"]) == {"target_fn"}
+	assert _names(program, resolved["second_instance.fn"]) == {"second_fn"}
+	assert _names(program, resolved["second_instance.extra"]) == {"second_fn"}
 
 
 def test_nonzero_slot_still_resolves_even_with_a_function_at_zero() -> None:

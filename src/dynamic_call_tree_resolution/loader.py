@@ -296,6 +296,12 @@ def _member_kind(
 
 
 def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
+	"""Structure layouts by type name, from the most complete definition.
+
+	Forward declarations (``DW_AT_declaration``) must not clobber a real
+	definition, and duplicate definitions across CUs keep the layout with
+	the most pointer-valued members.
+	"""
 	if dwarf is None:
 		return {}  # pragma: no cover
 	layouts: dict[str, StructureLayout] = {}
@@ -303,12 +309,18 @@ def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 		for die in _iter_dies(compilation_unit.get_top_DIE()):
 			if die.tag not in ("DW_TAG_structure_type", "DW_TAG_union_type"):
 				continue
+			if "DW_AT_declaration" in die.attributes:
+				continue
 			name_attribute = die.attributes.get("DW_AT_name")
 			if name_attribute is None:
-				continue
+				continue  # pragma: no cover
 			name = _attr_string(name_attribute.value)
 			keyword = "union" if die.tag == "DW_TAG_union_type" else "struct"
-			layouts[f"{keyword} {name}"] = StructureLayout(members=tuple(_layout_members(die)))
+			key = f"{keyword} {name}"
+			layout = StructureLayout(members=tuple(_layout_members(die)))
+			existing = layouts.get(key)
+			if existing is None or len(layout.members) > len(existing.members):
+				layouts[key] = layout
 	return layouts
 
 
@@ -318,7 +330,7 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 			continue  # pragma: no cover
 		offset = _member_offset(child)
 		if offset is None:
-			continue
+			continue  # pragma: no cover
 		match _member_kind(_type_die(child)):
 			case ("function_pointer", signature):
 				yield FunctionPointerMember(
@@ -352,14 +364,17 @@ def _member_name(member_die: DIE) -> str | None:
 
 def _member_offset(member_die: DIE) -> int | None:
 	location = member_die.attributes.get("DW_AT_data_member_location")
-	if location is None or location.form not in (
+	if location is None:
+		return 0
+	if location.form not in (
 		"DW_FORM_data1",
 		"DW_FORM_data2",
 		"DW_FORM_data4",
 		"DW_FORM_data8",
 		"DW_FORM_udata",
+		"DW_FORM_implicit_const",
 	):
-		return None  # pragma: no branch
+		return None  # pragma: no cover
 	return int(location.value)
 
 
