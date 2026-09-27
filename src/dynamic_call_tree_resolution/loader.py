@@ -394,13 +394,14 @@ def _objects_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, Dat
 		if symbol["st_shndx"] == "SHN_UNDEF":
 			continue  # pragma: no cover
 		address = Address(symbol["st_value"])
-		objects[address] = DataObject(
-			name=symbol.name,
-			address=address,
-			size=symbol["st_size"],
-			type_name=None,
-			signature=None,
-		)
+		if objects.get(address) is None or symbol["st_size"] > objects[address].size:
+			objects[address] = DataObject(
+				name=symbol.name,
+				address=address,
+				size=symbol["st_size"],
+				type_name=None,
+				signature=None,
+			)
 	return objects
 
 

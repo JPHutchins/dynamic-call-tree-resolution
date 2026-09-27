@@ -24,6 +24,16 @@ void (*dynamic_cbs[2])(void);
 
 int counts[2] = {0, 0};
 
+__asm__(
+	".section .rodata.vector,\"a\"\n"
+	".globl vector_table\n"
+	".type vector_table, @object\n"
+	".size vector_table, 16\n"
+	"vector_table:\n"
+	"	.quad handler_a\n"
+	"	.quad handler_b\n"
+);
+
 int main(void)
 {
 	table[0].isr();
