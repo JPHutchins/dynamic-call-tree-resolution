@@ -114,7 +114,7 @@ _ARM_CONDITIONAL = frozenset(
 		"cbnz",
 	}
 )
-_X86_CALLER_SAVED = (
+_X86_CALLER_SAVED_64 = (
 	x86_const.X86_REG_RAX,
 	x86_const.X86_REG_RCX,
 	x86_const.X86_REG_RDX,
@@ -124,6 +124,13 @@ _X86_CALLER_SAVED = (
 	x86_const.X86_REG_R9,
 	x86_const.X86_REG_R10,
 	x86_const.X86_REG_R11,
+)
+_X86_CALLER_SAVED_32 = (
+	x86_const.X86_REG_EAX,
+	x86_const.X86_REG_ECX,
+	x86_const.X86_REG_EDX,
+	x86_const.X86_REG_ESI,
+	x86_const.X86_REG_EDI,
 )
 _ARM_CALLER_SAVED = (
 	arm_const.ARM_REG_R0,
@@ -307,7 +314,14 @@ def _branch_target(instruction: CsInsn, machine: str) -> tuple[int, bool] | None
 
 def _clobber_caller_saved(state: dict[int, Address], machine: str) -> dict[int, Address]:
 	clobbered = dict(state)
-	for register in _X86_CALLER_SAVED if machine in ("EM_X86_64", "EM_386") else _ARM_CALLER_SAVED:
+	registers = (
+		_X86_CALLER_SAVED_32
+		if machine == "EM_386"
+		else _X86_CALLER_SAVED_64
+		if machine == "EM_X86_64"
+		else _ARM_CALLER_SAVED
+	)
+	for register in registers:
 		clobbered.pop(register, None)
 	return clobbered
 
