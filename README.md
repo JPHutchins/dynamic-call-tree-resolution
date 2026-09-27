@@ -26,6 +26,36 @@ tools report hundreds of "unresolved dynamic calls" and stop there.
 Worst-case stack usage follows from the resolved call graph combined with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts.
 
+## Usage
+
+On Zephyr's `hello_world` for `qemu_cortex_m3` (`tests/fixtures/hello_zephyr_qemu_cortex_m3.elf`):
+
+```console
+$ dctr analyze tests/fixtures/hello_zephyr_qemu_cortex_m3.elf
+...
+__init_uart_stellaris_init.init_fn: uart_stellaris_init
+...
+__device_dts_ord_22.ops.init: uart_stellaris_init
+...
+z_main_thread.base.timeout.fn: <unresolved>
+_thread_dummy.base.timeout.fn: <unresolved>
+_stdout_hook: <unresolved>
+...
+char_out@0x118: arch_printk_char_out
+...
+console_out@0x956: uart_stellaris_poll_out
+console_out@0x960: <unresolved>
+```
+
+- `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, enumerated exactly from their
+  linker sections; `__device_dts_ord_22.ops.init` is the linker-synthesized device struct's
+  init function.
+- The `<unresolved>` lines are the runtime-assigned residue — thread timeout callbacks and
+  the console output hook — enumerated with member paths for manual review.
+- `console_out@0x956: uart_stellaris_poll_out` is an indirect call site (`blx r3`) resolved
+  through the `device->api` chain to its single target — the slot layer sees what the site
+  alone cannot.
+
 ## References
 
 - [pexplorer](https://paulwuertz.github.io/pexplorer/) — Paul Würtz's browser-based
