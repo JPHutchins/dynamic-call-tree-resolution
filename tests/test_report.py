@@ -59,6 +59,7 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 
 def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["nopie"])
+	addresses = {function.name: function.address for function in program.functions.values()}
 	comparison = build_comparison("nopie.elf", program)
 	assert comparison == ComparisonReport(
 		elf="nopie.elf",
@@ -74,6 +75,7 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 		pexplorer_dynamic_sites=None,
 		function_comparisons=(
 			FunctionComparison(
+				address=addresses["_start"] & ~1,
 				caller="_start",
 				pexplorer_dynamic_sites=0,
 				dctr_call_sites=1,
@@ -81,6 +83,7 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 				dctr_exact_sites=0,
 			),
 			FunctionComparison(
+				address=addresses["main"] & ~1,
 				caller="main",
 				pexplorer_dynamic_sites=0,
 				dctr_call_sites=6,
