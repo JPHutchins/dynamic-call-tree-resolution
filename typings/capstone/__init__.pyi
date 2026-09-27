@@ -17,7 +17,7 @@ class CsOperand:
 	type: int
 	reg: int
 	imm: int
-	mem: _CsMemOperand | None
+	mem: _CsMemOperand
 
 class CsInsn:
 	id: int
@@ -26,7 +26,7 @@ class CsInsn:
 	bytes: bytes
 	mnemonic: str
 	op_str: str
-	operands: tuple[CsOperand, ...]
+	operands: list[CsOperand]
 
 	def regs_access(self) -> tuple[list[int], list[int]]: ...
 
