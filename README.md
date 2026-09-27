@@ -67,15 +67,50 @@ stack` analyzes; both fed by GCC's `-fstack-usage`/`-fcallgraph-info` artifacts:
 |---|---|---|
 | indirect calls detected | 0 (assembly-text regex) | 98 call sites |
 | `poll_state_thread` worst case | 96 bytes | 340 bytes |
-| `shell_readline` worst case | not reported (symbol match fails) | 1100 bytes |
+| `shell_readline` worst case | not reported (symbol match fails) | 1100 bytes (upper bound; 800 without indirect expansion) |
 
-puncover's indirect-call handling is an assembly-text detection flag, and its worst-case
-traversal does not follow indirect edges; the 244-byte difference for
-`poll_state_thread` corresponds to the `can_loopback_get_state` chain. pexplorer's
-dynamic edges are likewise detected, with resolution deferred to a hand-maintained
-config file. dctr resolves statically assigned function pointers exactly
-(`dctr analyze`), reports per-site candidate sets (`dctr compare --pexplorer`), and
-enumerates the runtime-assigned residue with member paths and signatures.
+puncover's indirect-call handling is an assembly-text detection flag, and its reported
+worst case for `poll_state_thread` contains only the function itself, omitting the
+static callee depth the same artifacts yield (details below). pexplorer's dynamic
+edges are likewise detected, with resolution deferred to a hand-maintained config
+file. dctr resolves statically assigned function pointers exactly (`dctr analyze`),
+reports per-site candidate sets (`dctr compare --pexplorer`), and enumerates the
+runtime-assigned residue with member paths and signatures.
+
+<details>
+<summary>poll_state_thread trees — puncover 0.8.0 report vs dctr</summary>
+
+puncover's report (`stack_report.poll_state_thread`, `call_stack` in full):
+
+```
+poll_state_thread (96)
+```
+
+dctr's deepest path over the same `.su`/`.ci` artifacts (frame bytes; cumulative in
+parentheses):
+
+```
+poll_state_thread (96)
+└── k_sleep_ticks.isra (0)                  [static]
+    └── z_impl_k_sleep_ticks (64, 160)      [static]
+        └── z_impl_k_yield (4, 164)         [static]
+            └── z_sched_yield (48, 212)     [static]
+                └── z_time_slice_reset (16, 228)  [static]
+                    └── slice_reset (0, 228)      [static]
+                        └── z_add_timeout (80, 308)  [static]
+                            └── elapsed (0, 308)  [static]
+                                └── sys_clock_elapsed (32, 340)  [static]
+                                    └── __udivdi3 (0, 340)  [static]
+```
+
+Every edge on the deepest path is a static `.ci` edge, so the 244-byte difference is
+static callee depth that puncover's report omits. The function's one indirect call
+site is resolved exactly by dctr to `can_loopback_get_state` (8 bytes) — exact, but
+on a separate branch, not the deepest one. dctr's 340 expands indirect edges to
+per-caller candidate sets (a sound upper bound); along this path all edges are
+static.
+
+</details>
 
 ## References
 
