@@ -3,6 +3,8 @@
 
 """Tests for :mod:`dynamic_call_tree_resolution.stack_analysis`."""
 
+import pytest
+
 from dynamic_call_tree_resolution import (
 	CallEdge,
 	StackReport,
@@ -121,6 +123,118 @@ def test_static_entry_points_report_bare_names() -> None:
 	)
 	assert worst_case_depths(edges, frames) == (
 		StackReport(entry="static_entry", depth=20, recursive=False, has_dynamic=False),
+	)
+
+
+def test_same_named_statics_in_different_files_stay_distinct_nodes() -> None:
+	edges = (
+		CallEdge(caller="main", callee="/home/jp/zephyr/a.c:helper"),
+		CallEdge(caller="main", callee="/home/jp/zephyr/b.c:helper"),
+		CallEdge(caller="/home/jp/zephyr/a.c:helper", callee="leaf_a"),
+		CallEdge(caller="/home/jp/zephyr/b.c:helper", callee="leaf_b"),
+	)
+	frames = (
+		StackUsage(function="main", bytes=8, dynamic=False),
+		StackUsage(function="helper", bytes=16, dynamic=False),
+		StackUsage(function="leaf_a", bytes=40, dynamic=False),
+		StackUsage(function="leaf_b", bytes=24, dynamic=False),
+	)
+	assert worst_case_depths(edges, frames) == (
+		StackReport(entry="main", depth=8 + 16 + 40, recursive=False, has_dynamic=False),
+	)
+
+
+def test_oversized_cycles_fail_loudly() -> None:
+	edges = tuple(CallEdge(caller=f"node_{i}", callee=f"node_{(i + 1) % 65}") for i in range(65))
+	with pytest.raises(ValueError, match="cycle"):
+		worst_case_depths(edges, ())
+
+
+def test_within_cycle_diamonds_reuse_computed_states() -> None:
+	edges = (
+		CallEdge(caller="main", callee="a"),
+		CallEdge(caller="a", callee="b"),
+		CallEdge(caller="a", callee="c"),
+		CallEdge(caller="b", callee="c"),
+		CallEdge(caller="c", callee="b"),
+		CallEdge(caller="b", callee="d"),
+		CallEdge(caller="c", callee="d"),
+		CallEdge(caller="d", callee="a"),
+	)
+	frames = (
+		StackUsage(function="main", bytes=2, dynamic=False),
+		StackUsage(function="a", bytes=4, dynamic=False),
+		StackUsage(function="b", bytes=8, dynamic=False),
+		StackUsage(function="c", bytes=16, dynamic=False),
+		StackUsage(function="d", bytes=2, dynamic=False),
+	)
+	assert worst_case_depths(edges, frames) == (
+		StackReport(entry="main", depth=2 + 4 + 16 + 8 + 2, recursive=True, has_dynamic=False),
+	)
+
+
+def test_diamond_dag_depth_accounts_shared_subtrees_once() -> None:
+	edges = (
+		CallEdge(caller="main", callee="a"),
+		CallEdge(caller="main", callee="b"),
+		CallEdge(caller="a", callee="c"),
+		CallEdge(caller="b", callee="c"),
+		CallEdge(caller="c", callee="leaf"),
+	)
+	frames = (
+		StackUsage(function="main", bytes=8, dynamic=False),
+		StackUsage(function="a", bytes=16, dynamic=False),
+		StackUsage(function="b", bytes=24, dynamic=False),
+		StackUsage(function="c", bytes=32, dynamic=False),
+		StackUsage(function="leaf", bytes=4, dynamic=False),
+	)
+	assert worst_case_depths(edges, frames) == (
+		StackReport(entry="main", depth=8 + 24 + 32 + 4, recursive=False, has_dynamic=False),
+	)
+
+
+def test_deep_diamond_completes_with_memoized_subtrees() -> None:
+	edges: list[CallEdge] = []
+	for index in range(30):
+		edges.extend(
+			(
+				CallEdge(caller=f"layer_{index}", callee=f"side_a_{index}"),
+				CallEdge(caller=f"layer_{index}", callee=f"side_b_{index}"),
+				CallEdge(caller=f"side_a_{index}", callee=f"layer_{index + 1}"),
+				CallEdge(caller=f"side_b_{index}", callee=f"layer_{index + 1}"),
+			)
+		)
+	frames = tuple(
+		StackUsage(function=f"layer_{index}", bytes=8, dynamic=False) for index in range(31)
+	)
+	assert worst_case_depths(edges, frames) == (
+		StackReport(entry="layer_0", depth=31 * 8, recursive=False, has_dynamic=False),
+	)
+
+
+def test_depth_through_cyclic_nodes_matches_all_paths() -> None:
+	edges = (
+		CallEdge(caller="main", callee="p"),
+		CallEdge(caller="main", callee="q"),
+		CallEdge(caller="p", callee="cyc"),
+		CallEdge(caller="q", callee="cyc"),
+		CallEdge(caller="cyc", callee="cyc"),
+		CallEdge(caller="cyc", callee="x1"),
+		CallEdge(caller="cyc", callee="x2"),
+		CallEdge(caller="x1", callee="leaf"),
+		CallEdge(caller="x2", callee="leaf"),
+	)
+	frames = (
+		StackUsage(function="main", bytes=8, dynamic=False),
+		StackUsage(function="p", bytes=4, dynamic=False),
+		StackUsage(function="q", bytes=12, dynamic=False),
+		StackUsage(function="cyc", bytes=16, dynamic=False),
+		StackUsage(function="x1", bytes=20, dynamic=False),
+		StackUsage(function="x2", bytes=24, dynamic=False),
+		StackUsage(function="leaf", bytes=32, dynamic=False),
+	)
+	assert worst_case_depths(edges, frames) == (
+		StackReport(entry="main", depth=8 + 12 + 16 + 24 + 32, recursive=True, has_dynamic=False),
 	)
 
 
