@@ -1,0 +1,4 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/dynamic_disabled.c"
+node: { title: "z_impl_k_thread_stack_alloc" label: "z_impl_k_thread_stack_alloc\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/dynamic_disabled.c:12:19\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_thread_stack_free" label: "z_impl_k_thread_stack_free\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/dynamic_disabled.c:20:5\n4 bytes (static)\n0 dynamic objects" }
+}

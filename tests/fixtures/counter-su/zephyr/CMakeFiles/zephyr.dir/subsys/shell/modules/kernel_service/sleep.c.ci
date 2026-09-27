@@ -1,0 +1,15 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:cmd_kernel_sleep" label: "cmd_kernel_sleep\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:12:12\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "shell_strtoul" label: "shell_strtoul\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/shell/shell_string_conv.h:60:15" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:cmd_kernel_sleep" targetname: "shell_strtoul" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:19:7" }
+node: { title: "__udivdi3" label: "__udivdi3\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:cmd_kernel_sleep" targetname: "__udivdi3" }
+node: { title: "__divdi3" label: "__divdi3\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:cmd_kernel_sleep" targetname: "__divdi3" }
+node: { title: "z_impl_k_sleep_ticks" label: "z_impl_k_sleep_ticks\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/sleep.h:23:18" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:cmd_kernel_sleep" targetname: "z_impl_k_sleep_ticks" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/sleep.h:36:9" }
+node: { title: "shell_fprintf_impl" label: "shell_fprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/shell/shell.h:1287:26" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:cmd_kernel_sleep" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:24:3" }
+node: { title: "__stack_chk_fail" label: "__stack_chk_fail\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/sleep.c:cmd_kernel_sleep" targetname: "__stack_chk_fail" }
+}

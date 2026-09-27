@@ -1,0 +1,59 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c"
+node: { title: "z_timer_expiration_handler" label: "z_timer_expiration_handler\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:72:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "posix_irq_lock" label: "posix_irq_lock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:31:14" shape : ellipse }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "posix_irq_unlock" label: "posix_irq_unlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:32:6" shape : ellipse }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_timeout_inflight_superseded" label: "z_timeout_inflight_superseded\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:128:6" shape : ellipse }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "z_timeout_inflight_superseded" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:87:6" }
+node: { title: "z_impl_k_uptime_ticks" label: "z_impl_k_uptime_ticks\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:596:16" shape : ellipse }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "z_impl_k_uptime_ticks" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:608:9" }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "z_impl_k_uptime_ticks" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:608:9" }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "z_impl_k_uptime_ticks" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:608:9" }
+node: { title: "z_add_timeout" label: "z_add_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:100:11" shape : ellipse }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "z_add_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:111:3" }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:129:3" }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_sched_ready_locked" label: "z_sched_ready_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:122:6" shape : ellipse }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "z_sched_ready_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:147:4" }
+edge: { sourcename: "z_timer_expiration_handler" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_timer_cleanup" label: "z_timer_cleanup\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:156:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_timer_cleanup" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_try_abort_timeout" label: "z_try_abort_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:121:5" shape : ellipse }
+edge: { sourcename: "z_timer_cleanup" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:199:6" }
+edge: { sourcename: "z_timer_cleanup" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "z_timer_cleanup" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "k_timer_cleanup" label: "k_timer_cleanup\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:212:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "k_timer_cleanup" targetname: "z_timer_cleanup" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:214:9" }
+node: { title: "k_timer_init" label: "k_timer_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:218:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_timer_start" label: "z_impl_k_timer_start\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:246:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_timer_start" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_impl_k_timer_start" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:264:8" }
+edge: { sourcename: "z_impl_k_timer_start" targetname: "z_add_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:269:2" }
+edge: { sourcename: "z_impl_k_timer_start" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_impl_k_timer_stop" label: "z_impl_k_timer_stop\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:287:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:293:6" }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:309:3" }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_unpend1_no_timeout" label: "z_unpend1_no_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:57:18" shape : ellipse }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "z_unpend1_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:322:36" }
+node: { title: "z_ready_thread" label: "z_ready_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:91:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "z_ready_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:325:3" }
+node: { title: "z_reschedule" label: "z_reschedule\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:62:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "z_reschedule" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:326:3" }
+edge: { sourcename: "z_impl_k_timer_stop" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_impl_k_timer_status_get" label: "z_impl_k_timer_status_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:341:10\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_timer_status_get" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_impl_k_timer_status_get" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_impl_k_timer_status_sync" label: "z_impl_k_timer_status_sync\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:361:10\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_timer_status_sync" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_pend_curr" label: "z_pend_curr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:58:5" shape : ellipse }
+edge: { sourcename: "z_impl_k_timer_status_sync" targetname: "z_pend_curr" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timer.c:399:10" }
+edge: { sourcename: "z_impl_k_timer_status_sync" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_impl_k_timer_status_sync" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+}

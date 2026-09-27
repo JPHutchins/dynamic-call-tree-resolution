@@ -1,0 +1,6 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/set.c"
+node: { title: "sys_set_find" label: "sys_set_find\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/set.c:9:22\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_set_union" label: "sys_set_union\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/set.c:22:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "sys_set_union" targetname: "sys_set_find" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/set.c:24:31" }
+edge: { sourcename: "sys_set_union" targetname: "sys_set_find" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/set.c:25:31" }
+}

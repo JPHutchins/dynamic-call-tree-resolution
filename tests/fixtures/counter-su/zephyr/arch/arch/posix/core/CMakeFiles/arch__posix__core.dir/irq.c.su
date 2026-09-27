@@ -1,0 +1,7 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/irq.c:25:6:arch_irq_enable	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/irq.c:30:6:arch_irq_disable	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/irq.c:35:5:arch_irq_is_enabled	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/irq.c:41:6:arch_irq_set_pending	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/irq.c:46:6:arch_irq_clear_pending	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/irq.c:51:6:arch_irq_is_pending	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/irq.c:58:14:arch_irq_get_active	4	static

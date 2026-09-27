@@ -1,0 +1,34 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:outs" label: "outs\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1346:12\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:outs" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1355:12" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:extract_decimal" label: "extract_decimal\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:315:15\n32 bytes (static)\n0 dynamic objects" }
+node: { title: "__ctype_b_loc" label: "__ctype_b_loc\n/usr/include/ctype.h:79:35" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:extract_decimal" targetname: "__ctype_b_loc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:320:9" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" label: "encode_uint\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:788:14\n112 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" targetname: "__ctype_b_loc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:793:16" }
+node: { title: "__udivmoddi4" label: "__udivmoddi4\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" targetname: "__udivmoddi4" }
+node: { title: "z_cbvprintf_impl" label: "z_cbvprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1367:5\n160 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1407:4" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:extract_decimal" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:397:17" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:extract_decimal" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:433:16" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:outs" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1608:4" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1617:4" }
+node: { title: "strnlen" label: "strnlen\n/usr/include/string.h:413:15" shape : ellipse }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "strnlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1625:11" }
+node: { title: "strlen" label: "strlen\n/usr/include/string.h:407:15" shape : ellipse }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "strlen" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1627:11" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1641:11" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:encode_uint" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1690:10" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1796:7" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1803:6" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1812:4" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1861:5" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1865:5" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1870:5" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:outs" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1873:4" }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1878:4" }
+node: { title: "__stack_chk_fail" label: "__stack_chk_fail\n<built-in>" shape : ellipse }
+edge: { sourcename: "z_cbvprintf_impl" targetname: "__stack_chk_fail" }
+}

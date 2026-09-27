@@ -1,0 +1,26 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c"
+node: { title: "posix_arch_init" label: "posix_arch_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:20:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nct_init" label: "nct_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:21:7" shape : ellipse }
+edge: { sourcename: "posix_arch_init" targetname: "nct_init" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:23:13" }
+node: { title: "posix_arch_clean_up" label: "posix_arch_clean_up\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:30:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nct_clean_up" label: "nct_clean_up\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:22:6" shape : ellipse }
+edge: { sourcename: "posix_arch_clean_up" targetname: "nct_clean_up" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:32:2" }
+node: { title: "posix_swap" label: "posix_swap\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:35:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "nct_swap_threads" label: "nct_swap_threads\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:23:6" shape : ellipse }
+edge: { sourcename: "posix_swap" targetname: "nct_swap_threads" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:38:2" }
+node: { title: "posix_main_thread_start" label: "posix_main_thread_start\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:41:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nct_first_thread_start" label: "nct_first_thread_start\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:24:6" shape : ellipse }
+edge: { sourcename: "posix_main_thread_start" targetname: "nct_first_thread_start" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:43:2" }
+node: { title: "posix_new_thread" label: "posix_new_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:46:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nct_new_thread" label: "nct_new_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:25:5" shape : ellipse }
+edge: { sourcename: "posix_new_thread" targetname: "nct_new_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:48:9" }
+node: { title: "posix_abort_thread" label: "posix_abort_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:51:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nct_abort_thread" label: "nct_abort_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:26:6" shape : ellipse }
+edge: { sourcename: "posix_abort_thread" targetname: "nct_abort_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:53:2" }
+node: { title: "posix_arch_get_unique_thread_id" label: "posix_arch_get_unique_thread_id\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:56:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nct_get_unique_thread_id" label: "nct_get_unique_thread_id\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:27:5" shape : ellipse }
+edge: { sourcename: "posix_arch_get_unique_thread_id" targetname: "nct_get_unique_thread_id" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:58:9" }
+node: { title: "posix_arch_thread_name_set" label: "posix_arch_thread_name_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:61:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nct_thread_name_set" label: "nct_thread_name_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nct_if.h:28:5" shape : ellipse }
+edge: { sourcename: "posix_arch_thread_name_set" targetname: "nct_thread_name_set" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:63:9" }
+}

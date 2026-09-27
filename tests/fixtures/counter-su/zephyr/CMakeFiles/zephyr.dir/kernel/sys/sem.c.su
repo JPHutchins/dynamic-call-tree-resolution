@@ -1,0 +1,4 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sys/sem.c:9:5:sys_sem_init	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sys/sem.c:17:5:sys_sem_give	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sys/sem.c:24:5:sys_sem_take	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sys/sem.c:36:14:sys_sem_count_get	8	static

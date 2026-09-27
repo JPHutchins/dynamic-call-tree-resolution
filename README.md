@@ -60,14 +60,19 @@ console_out@0x960: <unresolved>
 
 [puncover](https://github.com/HBehrens/puncover) 0.8.0, non-interactive report mode
 (`puncover --elf <exe> --build_dir <build> --gcc-tools-base /usr/bin --non-interactive
---generate-report --report-type json`), on the same Zephyr CAN counter build that `dctr
-stack` analyzes; both fed by GCC's `-fstack-usage`/`-fcallgraph-info` artifacts:
+--generate-report --report-type json`), on the Zephyr CAN counter build whose linked
+executable and `-fstack-usage`/`-fcallgraph-info` artifacts are committed at
+`tests/fixtures/counter-su` (`dctr stack tests/fixtures/counter-su` and `dctr
+summary tests/fixtures/counter-su tests/fixtures/counter-su/zephyr/zephyr.exe`;
+the numbers below are pinned by `tests/test_counter_fixture.py`):
 
 | | puncover | dctr |
 |---|---|---|
 | indirect calls detected | 0 (assembly-text regex) | 98 call sites |
-| `poll_state_thread` worst case | 96 bytes | 340 bytes |
-| `shell_readline` worst case | not reported (symbol match fails) | 1100 bytes (upper bound; 800 without indirect expansion) |
+| `poll_state_thread` worst case | 96 bytes | 460 bytes |
+| `shell_readline` worst case | not reported (symbol match fails) | 2108 bytes (upper bound; 1760 without indirect expansion) |
+| slots resolved/unresolved/total | — | 70/51/121 |
+| call sites resolved/exact/total | — | 6/6/98 |
 
 puncover's indirect-call handling is an assembly-text detection flag, and its reported
 worst case for `poll_state_thread` contains only the function itself, omitting the
@@ -86,29 +91,65 @@ puncover's report (`stack_report.poll_state_thread`, `call_stack` in full):
 poll_state_thread (96)
 ```
 
-dctr's deepest path over the same `.su`/`.ci` artifacts (frame bytes; cumulative in
+dctr's deepest path over the committed artifacts (frame bytes; cumulative in
 parentheses):
 
 ```
-poll_state_thread (96)
-└── k_sleep_ticks.isra (0)                  [static]
-    └── z_impl_k_sleep_ticks (64, 160)      [static]
-        └── z_impl_k_yield (4, 164)         [static]
-            └── z_sched_yield (48, 212)     [static]
-                └── z_time_slice_reset (16, 228)  [static]
-                    └── slice_reset (0, 228)      [static]
-                        └── z_add_timeout (80, 308)  [static]
-                            └── elapsed (0, 308)  [static]
-                                └── sys_clock_elapsed (32, 340)  [static]
-                                    └── __udivdi3 (0, 340)  [static]
+poll_state_thread (96, 96)
+└── k_sleep_ticks (32, 128)                  [static]
+    └── z_impl_k_sleep_ticks (64, 192)       [static]
+        └── z_impl_k_yield (4, 196)          [static]
+            └── z_sched_yield (48, 244)      [static]
+                └── z_time_slice_reset (16, 260)  [static]
+                    └── slice_reset (64, 324)     [static]
+                        └── z_add_timeout (80, 404)  [static]
+                            └── sys_clock_set_timeout (8, 412)  [static]
+                                └── timer_core_arm (48, 460)    [static]
+                                    └── hwtimer_set_tick_one_shot (0, 460)  [static]
 ```
 
-Every edge on the deepest path is a static `.ci` edge, so the 244-byte difference is
-static callee depth that puncover's report omits. The function's one indirect call
-site is resolved exactly by dctr to `can_loopback_get_state` (8 bytes) — exact, but
-on a separate branch, not the deepest one. dctr's 340 expands indirect edges to
-per-caller candidate sets (a sound upper bound); along this path all edges are
-static.
+Every edge on the deepest path is a static `.ci` edge; the frames are the `.su`
+record bytes, so the 364-byte difference is static callee depth that puncover's
+report omits. The function's one indirect call site is resolved exactly by dctr to
+`can_loopback_get_state` (8 bytes) — exact, but on a separate branch, not the
+deepest one. dctr's 460 expands indirect edges to per-caller candidate sets (a sound
+upper bound); along this path all edges are static.
+
+</details>
+
+<details>
+<summary>shell_readline deepest path — the one genuinely indirect edge</summary>
+
+dctr's deepest path over the committed artifacts (frame bytes; cumulative in
+parentheses):
+
+```
+shell_readline (96, 96)
+└── state_collect (96, 192)                      [static]
+    └── tab_handle (480, 672)                    [static]
+        └── z_shell_op_char_insert (64, 736)     [static]
+            └── data_insert (64, 800)            [static]
+                └── reprint_from_cursor (80, 880)     [static]
+                    └── z_shell_fprintf (32, 912)     [static]
+                        └── z_shell_vfprintf (8, 920) [static]
+                            └── z_shell_print (80, 1000)  [static]
+                                └── z_shell_vt100_colors_restore (32, 1032)  [static]
+                                    └── z_shell_vt100_color_set (32, 1064)   [static]
+                                        └── z_shell_raw_fprintf (32, 1096)   [static]
+                                            └── z_shell_fprintf_fmt (32, 1128)  [static]
+                                                └── cbvprintf (48, 1176)     [static]
+                                                    └── z_cbvprintf_impl (160, 1336)  [static]
+                                                        └── outs (64, 1400)  [static]
+                                                            └── z_shell_print_stream (4, 1404)  [indirect]
+                                                                └── z_shell_write (80, 1484)  [static]
+                                                                    ... (kernel wait, fatal, scheduler frames — all [static])
+                                                                    └── timer_core_arm (48, 2108)  [static]
+                                                                        └── hwtimer_set_tick_one_shot (0, 2108)  [static]
+```
+
+The only indirect edge on the path is `outs → z_shell_print_stream`: the shell's
+print-stream hook, which dctr resolves to a single candidate. dctr reports 2108 with
+indirect expansion and 1760 over static `.ci` edges alone.
 
 </details>
 

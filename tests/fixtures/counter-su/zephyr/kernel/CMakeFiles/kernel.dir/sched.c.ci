@@ -1,0 +1,123 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:sys_dlist_remove" label: "sys_dlist_remove\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/dlist.h:532:20\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "unpend_thread_no_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:227:20\n16 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:sys_dlist_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/priority_q.h:132:2" }
+node: { title: "move_current_to_end_of_prio_q" label: "move_current_to_end_of_prio_q\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:160:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_time_slice_reset" label: "z_time_slice_reset\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeslicing.h:11:6" shape : ellipse }
+edge: { sourcename: "move_current_to_end_of_prio_q" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:ready_thread" label: "ready_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:218:20\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:ready_thread" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+node: { title: "z_ready_thread" label: "z_ready_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:237:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "posix_irq_lock" label: "posix_irq_lock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:31:14" shape : ellipse }
+edge: { sourcename: "z_ready_thread" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_ready_thread" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:ready_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:241:4" }
+node: { title: "posix_irq_unlock" label: "posix_irq_unlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:32:6" shape : ellipse }
+edge: { sourcename: "z_ready_thread" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unready_thread" label: "unready_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:248:13\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unready_thread" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:sys_dlist_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/priority_q.h:132:2" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unready_thread" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+node: { title: "z_unready_thread" label: "z_unready_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:261:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_unready_thread" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_unready_thread" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unready_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:264:3" }
+edge: { sourcename: "z_unready_thread" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_yield_testing_only" label: "z_yield_testing_only\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:272:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_yield_testing_only" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_yield_testing_only" targetname: "move_current_to_end_of_prio_q" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:275:3" }
+edge: { sourcename: "z_yield_testing_only" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_thread_halt" label: "z_thread_halt\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:307:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_thread_halt" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:sys_dlist_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/priority_q.h:132:2" }
+edge: { sourcename: "z_thread_halt" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:874:5" }
+edge: { sourcename: "z_thread_halt" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "z_thread_halt" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_try_abort_timeout" label: "z_try_abort_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:121:5" shape : ellipse }
+edge: { sourcename: "z_thread_halt" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:144:9" }
+edge: { sourcename: "z_thread_halt" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:833:3" }
+edge: { sourcename: "z_thread_halt" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:144:9" }
+edge: { sourcename: "z_thread_halt" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:ready_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:839:3" }
+edge: { sourcename: "z_thread_halt" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+node: { title: "arch_coprocessors_disable" label: "arch_coprocessors_disable\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kernel_arch_interface.h:230:5" shape : ellipse }
+edge: { sourcename: "z_thread_halt" targetname: "arch_coprocessors_disable" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:921:3" }
+node: { title: "z_thread_monitor_exit" label: "z_thread_monitor_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kthread.h:42:6" shape : ellipse }
+edge: { sourcename: "z_thread_halt" targetname: "z_thread_monitor_exit" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:925:3" }
+edge: { sourcename: "z_thread_halt" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "printk" label: "printk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk.h:58:26" shape : ellipse }
+edge: { sourcename: "z_thread_halt" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:361:5" }
+node: { title: "z_fatal_error" label: "z_fatal_error\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/fatal.h:84:6" shape : ellipse }
+edge: { sourcename: "z_thread_halt" targetname: "z_fatal_error" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:361:5" }
+edge: { sourcename: "z_thread_halt" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "arch_swap" label: "arch_swap\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/include/kernel_arch_func.h:43:5" shape : ellipse }
+edge: { sourcename: "z_thread_halt" targetname: "arch_swap" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kswap.h:208:8" }
+edge: { sourcename: "z_thread_halt" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:reschedule" label: "reschedule\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:403:13\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:reschedule" targetname: "arch_swap" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kswap.h:208:8" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:reschedule" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:reschedule_locked" label: "reschedule_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:416:13\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:reschedule_locked" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:reschedule" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:418:9" }
+node: { title: "z_sched_lock_reschedule" label: "z_sched_lock_reschedule\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:421:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_sched_lock_reschedule" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+edge: { sourcename: "z_sched_lock_reschedule" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:reschedule_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:424:2" }
+node: { title: "z_sched_yield" label: "z_sched_yield\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:427:6\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_sched_yield" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_sched_yield" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+edge: { sourcename: "z_sched_yield" targetname: "arch_swap" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kswap.h:208:8" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:add_to_waitq_locked" label: "add_to_waitq_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:437:13\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:add_to_waitq_locked" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unready_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:442:2" }
+node: { title: "z_pend_thread" label: "z_pend_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:466:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_pend_thread" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_pend_thread" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:add_to_waitq_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:462:2" }
+node: { title: "z_add_timeout" label: "z_add_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:100:11" shape : ellipse }
+edge: { sourcename: "z_pend_thread" targetname: "z_add_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:139:9" }
+edge: { sourcename: "z_pend_thread" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_unpend_thread_no_timeout" label: "z_unpend_thread_no_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:475:6\n16 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_unpend_thread_no_timeout" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_unpend_thread_no_timeout" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:479:4" }
+edge: { sourcename: "z_unpend_thread_no_timeout" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_sched_wake_thread_locked" label: "z_sched_wake_thread_locked\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:484:6\n16 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_sched_wake_thread_locked" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:493:4" }
+edge: { sourcename: "z_sched_wake_thread_locked" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:ready_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:496:3" }
+node: { title: "z_thread_timeout" label: "z_thread_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:502:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_thread_timeout" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_timeout_inflight_superseded" label: "z_timeout_inflight_superseded\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:128:6" shape : ellipse }
+edge: { sourcename: "z_thread_timeout" targetname: "z_timeout_inflight_superseded" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:515:8" }
+edge: { sourcename: "z_thread_timeout" targetname: "z_sched_wake_thread_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:516:4" }
+edge: { sourcename: "z_thread_timeout" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_pend_curr" label: "z_pend_curr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:522:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_pend_curr" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:533:3" }
+edge: { sourcename: "z_pend_curr" targetname: "z_fatal_error" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:533:3" }
+edge: { sourcename: "z_pend_curr" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_pend_curr" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:add_to_waitq_locked" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:462:2" }
+edge: { sourcename: "z_pend_curr" targetname: "z_add_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:139:9" }
+edge: { sourcename: "z_pend_curr" targetname: "arch_swap" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kswap.h:208:8" }
+node: { title: "z_unpend1_no_timeout" label: "z_unpend1_no_timeout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:555:18\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_unpend1_no_timeout" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_unpend1_no_timeout" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:563:4" }
+edge: { sourcename: "z_unpend1_no_timeout" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_unpend_thread" label: "z_unpend_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:570:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_unpend_thread" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_unpend_thread" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:575:3" }
+edge: { sourcename: "z_unpend_thread" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "z_unpend_thread" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_unpend_thread" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:144:9" }
+edge: { sourcename: "z_unpend_thread" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_thread_prio_set" label: "z_thread_prio_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:587:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_thread_prio_set" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_thread_prio_set" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:sys_dlist_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/priority_q.h:132:2" }
+edge: { sourcename: "z_thread_prio_set" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+edge: { sourcename: "z_thread_prio_set" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:sys_dlist_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/priority_q.h:132:2" }
+edge: { sourcename: "z_thread_prio_set" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_reschedule_irqlock" label: "z_reschedule_irqlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:647:6\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_reschedule_irqlock" targetname: "arch_swap" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kswap.h:208:8" }
+edge: { sourcename: "z_reschedule_irqlock" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_swap_next_thread" label: "z_swap_next_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:662:18\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_unpend_all" label: "z_unpend_all\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:802:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_unpend_all" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_unpend_all" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:unpend_thread_no_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:811:4" }
+edge: { sourcename: "z_unpend_all" targetname: "z_try_abort_timeout" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/timeout_q.h:144:9" }
+edge: { sourcename: "z_unpend_all" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:ready_thread" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:818:4" }
+edge: { sourcename: "z_unpend_all" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_thread_suspend_current" label: "z_thread_suspend_current\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:985:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_thread_suspend_current" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_thread_suspend_current" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:sys_dlist_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/priority_q.h:132:2" }
+edge: { sourcename: "z_thread_suspend_current" targetname: "z_time_slice_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sched.c:175:4" }
+edge: { sourcename: "z_thread_suspend_current" targetname: "arch_swap" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kswap.h:208:8" }
+}

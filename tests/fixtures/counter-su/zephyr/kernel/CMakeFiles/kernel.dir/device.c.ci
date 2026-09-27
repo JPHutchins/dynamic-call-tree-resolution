@@ -1,0 +1,17 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c"
+node: { title: "do_device_init" label: "do_device_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:18:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "do_device_init" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:23:8" }
+node: { title: "z_impl_device_init" label: "z_impl_device_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:63:5\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_device_init" targetname: "do_device_init" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:69:9" }
+node: { title: "z_device_get_all_static" label: "z_device_get_all_static\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:176:8\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_device_is_ready" label: "z_impl_device_is_ready\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:186:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_device_get_binding" label: "z_impl_device_get_binding\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:83:22\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_device_get_binding" targetname: "z_impl_device_is_ready" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:95:11" }
+node: { title: "strcmp" label: "strcmp\n/usr/include/string.h:156:12" shape : ellipse }
+edge: { sourcename: "z_impl_device_get_binding" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:94:31" }
+node: { title: "z_impl_device_get_by_dt_nodelabel" label: "z_impl_device_get_by_dt_nodelabel\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:126:22\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_device_get_by_dt_nodelabel" targetname: "z_impl_device_is_ready" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:145:8" }
+edge: { sourcename: "z_impl_device_get_by_dt_nodelabel" targetname: "strcmp" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:152:8" }
+node: { title: "z_impl_device_deinit" label: "z_impl_device_deinit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:199:5\n4 bytes (static)\n0 dynamic objects" }
+}

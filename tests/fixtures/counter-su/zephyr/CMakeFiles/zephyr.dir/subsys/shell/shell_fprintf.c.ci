@@ -1,0 +1,18 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:cbvprintf" label: "cbvprintf\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:723:5\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_cbvprintf_impl" label: "z_cbvprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:691:5" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:cbvprintf" targetname: "z_cbvprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:725:9" }
+node: { title: "z_shell_fprintf_buffer_flush" label: "z_shell_fprintf_buffer_flush\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:52:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "z_shell_fprintf_buffer_flush" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:54:2" }
+node: { title: "z_shell_fprintf_fmt" label: "z_shell_fprintf_fmt\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:33:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_shell_fprintf_fmt" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:cbvprintf" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:36:8" }
+edge: { sourcename: "z_shell_fprintf_fmt" targetname: "z_shell_fprintf_buffer_flush" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:39:3" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:out_func" label: "out_func\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:11:12\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:out_func" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:out_func" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:20:9" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:out_func" targetname: "z_shell_fprintf_buffer_flush" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:27:3" }
+node: { title: "z_shell_cbpprintf_fmt" label: "z_shell_cbpprintf_fmt\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:43:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "cbpprintf_external" label: "cbpprintf_external\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:629:5" shape : ellipse }
+edge: { sourcename: "z_shell_cbpprintf_fmt" targetname: "cbpprintf_external" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:795:9" }
+edge: { sourcename: "z_shell_cbpprintf_fmt" targetname: "z_shell_fprintf_buffer_flush" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:48:3" }
+}

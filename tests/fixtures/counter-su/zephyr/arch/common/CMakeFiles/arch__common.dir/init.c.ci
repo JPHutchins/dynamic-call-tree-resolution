@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:arch_early_memset" label: "arch_early_memset\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:27:13\n12 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:arch_early_memcpy" label: "arch_early_memcpy\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:40:13\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "arch_bss_zero" label: "arch_bss_zero\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:51:6\n4 bytes (static)\n0 dynamic objects" }
+}

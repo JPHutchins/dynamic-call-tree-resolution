@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/swap.c:22:5:arch_swap	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/swap.c:82:6:arch_switch_to_main_thread	8	static

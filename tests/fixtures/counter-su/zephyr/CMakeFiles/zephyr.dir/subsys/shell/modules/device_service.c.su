@@ -1,0 +1,4 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/device_service.c:123:13:device_name_lookup	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/device_service.c:198:13:device_name_get_non_ready	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/device_service.c:154:12:cmd_device_init	80	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/device_service.c:51:12:cmd_device_list	144	dynamic,bounded

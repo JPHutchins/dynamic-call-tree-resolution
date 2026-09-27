@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/dynamic_disabled.c:12:19:z_impl_k_thread_stack_alloc	4	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/dynamic_disabled.c:20:5:z_impl_k_thread_stack_free	4	static

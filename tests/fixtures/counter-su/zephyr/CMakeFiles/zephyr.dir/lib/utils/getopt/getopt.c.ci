@@ -1,0 +1,18 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c"
+node: { title: "sys_getopt_init" label: "sys_getopt_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:43:6\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_getopt_state_get" label: "sys_getopt_state_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/sys_getopt.h:59:26" shape : ellipse }
+edge: { sourcename: "sys_getopt_init" targetname: "sys_getopt_state_get" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:47:10" }
+node: { title: "sys_getopt" label: "sys_getopt\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:73:5\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "sys_getopt" targetname: "sys_getopt_state_get" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:79:10" }
+node: { title: "z_getopt_global_state_update" label: "z_getopt_global_state_update\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.h:17:6" shape : ellipse }
+edge: { sourcename: "sys_getopt" targetname: "z_getopt_global_state_update" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:87:4" }
+edge: { sourcename: "sys_getopt" targetname: "z_getopt_global_state_update" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:95:4" }
+node: { title: "strchr" label: "strchr\n/usr/include/string.h:246:14" shape : ellipse }
+edge: { sourcename: "sys_getopt" targetname: "strchr" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:103:8" }
+edge: { sourcename: "sys_getopt" targetname: "z_getopt_global_state_update" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:104:5" }
+edge: { sourcename: "sys_getopt" targetname: "strchr" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:114:8" }
+edge: { sourcename: "sys_getopt" targetname: "z_getopt_global_state_update" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:122:3" }
+edge: { sourcename: "sys_getopt" targetname: "z_getopt_global_state_update" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:145:5" }
+edge: { sourcename: "sys_getopt" targetname: "z_getopt_global_state_update" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:151:4" }
+edge: { sourcename: "sys_getopt" targetname: "z_getopt_global_state_update" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:157:2" }
+}

@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/native_tasks.c"
+node: { title: "run_native_tasks" label: "run_native_tasks\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/native_tasks.c:12:6\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "run_native_tasks" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/native/inf_clock/native_tasks.c:35:5" }
+}

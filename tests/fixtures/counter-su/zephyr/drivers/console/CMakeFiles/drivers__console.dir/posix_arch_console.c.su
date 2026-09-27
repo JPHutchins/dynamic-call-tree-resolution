@@ -1,0 +1,3 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:52:12:posix_arch_console_init	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:18:12:print_char	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:42:6:posix_flush_stdout	32	dynamic,bounded

@@ -1,0 +1,9 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:183:13:state_change_callback_handler	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:53:6:tx_irq_callback	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:98:6:change_led_work_handler	80	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/sleep.h:25:25:k_sleep_ticks.isra	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:65:6:rx_thread	64	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:122:7:state_to_str	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:140:6:poll_state_thread	96	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:174:6:state_change_work_handler	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/samples/drivers/can/counter/src/main.c:198:5:main	160	dynamic,bounded

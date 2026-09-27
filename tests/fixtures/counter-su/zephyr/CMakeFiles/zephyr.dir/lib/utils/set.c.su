@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/set.c:9:22:sys_set_find	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/set.c:22:6:sys_set_union	32	dynamic,bounded

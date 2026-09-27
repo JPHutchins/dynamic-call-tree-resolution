@@ -1,0 +1,12 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:uart_console_init" label: "uart_console_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:606:12\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_impl_device_is_ready" label: "z_impl_device_is_ready\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:45:13" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:uart_console_init" targetname: "z_impl_device_is_ready" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/device.h:56:9" }
+node: { title: "__printk_hook_install" label: "__printk_hook_install\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk-hooks.h:31:6" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:uart_console_init" targetname: "__printk_hook_install" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:597:2" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:console_out" label: "console_out\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:80:12\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:console_out" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/uart/uart_internal.h:184:2" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:console_out" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/uart/uart_internal.h:184:2" }
+node: { title: "uart_register_input" label: "uart_register_input\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/uart_console.c:578:6\n4 bytes (static)\n0 dynamic objects" }
+}

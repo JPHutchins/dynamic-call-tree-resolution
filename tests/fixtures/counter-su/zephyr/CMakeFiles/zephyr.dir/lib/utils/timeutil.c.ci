@@ -1,0 +1,19 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c"
+node: { title: "timeutil_timegm64" label: "timeutil_timegm64\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:49:9\n80 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__divdi3" label: "__divdi3\n<built-in>" shape : ellipse }
+edge: { sourcename: "timeutil_timegm64" targetname: "__divdi3" }
+edge: { sourcename: "timeutil_timegm64" targetname: "__divdi3" }
+node: { title: "timeutil_timegm" label: "timeutil_timegm\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:63:8\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "timeutil_timegm" targetname: "timeutil_timegm64" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:65:17" }
+node: { title: "__errno_location" label: "__errno_location\n/usr/include/errno.h:37:13" shape : ellipse }
+edge: { sourcename: "timeutil_timegm" targetname: "__errno_location" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:68:2" }
+node: { title: "timeutil_sync_state_update" label: "timeutil_sync_state_update\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:79:5\n20 bytes (static)\n0 dynamic objects" }
+node: { title: "timeutil_sync_state_set_skew" label: "timeutil_sync_state_set_skew\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:101:5\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "timeutil_sync_estimate_skew" label: "timeutil_sync_estimate_skew\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:118:7\n48 bytes (static)\n0 dynamic objects" }
+node: { title: "timeutil_sync_ref_from_local" label: "timeutil_sync_ref_from_local\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:134:5\n80 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "timeutil_sync_ref_from_local" targetname: "__divdi3" }
+node: { title: "timeutil_sync_local_from_ref" label: "timeutil_sync_local_from_ref\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:164:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "timeutil_sync_local_from_ref" targetname: "__divdi3" }
+node: { title: "timeutil_sync_skew_to_ppb" label: "timeutil_sync_skew_to_ppb\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:191:9\n40 bytes (static)\n0 dynamic objects" }
+node: { title: "timespec_normalize" label: "timespec_normalize\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:199:6\n20 bytes (static)\n0 dynamic objects" }
+}

@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/cpu_wait.c:37:6:arch_busy_wait	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/cpu_wait.c:61:6:posix_cpu_hold	64	dynamic,bounded

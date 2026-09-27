@@ -1,0 +1,10 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:posix_arch_console_init" label: "posix_arch_console_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:52:12\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "__printk_hook_install" label: "__printk_hook_install\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk-hooks.h:31:6" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:posix_arch_console_init" targetname: "__printk_hook_install" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:55:2" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:print_char" label: "print_char\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:18:12\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "posix_print_trace" label: "posix_print_trace\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_trace.h:20:6" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:print_char" targetname: "posix_print_trace" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:30:3" }
+node: { title: "posix_flush_stdout" label: "posix_flush_stdout\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:42:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "posix_flush_stdout" targetname: "posix_print_trace" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/console/posix_arch_console.c:46:3" }
+}

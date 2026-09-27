@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/busy_wait.c"
+node: { title: "z_impl_k_busy_wait" label: "z_impl_k_busy_wait\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/busy_wait.c:29:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "arch_busy_wait" label: "arch_busy_wait\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kernel_arch_interface.h:39:6" shape : ellipse }
+edge: { sourcename: "z_impl_k_busy_wait" targetname: "arch_busy_wait" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/busy_wait.c:38:2" }
+}

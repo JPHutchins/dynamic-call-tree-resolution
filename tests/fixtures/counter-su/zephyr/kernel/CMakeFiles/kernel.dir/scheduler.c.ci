@@ -1,0 +1,25 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c"
+node: { title: "z_sched_init" label: "z_sched_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:16:6\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "k_sched_lock" label: "k_sched_lock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:27:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "posix_irq_lock" label: "posix_irq_lock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:31:14" shape : ellipse }
+edge: { sourcename: "k_sched_lock" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "posix_irq_unlock" label: "posix_irq_unlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:32:6" shape : ellipse }
+edge: { sourcename: "k_sched_lock" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "k_sched_unlock" label: "k_sched_unlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:41:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "k_sched_unlock" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "z_sched_lock_reschedule" label: "z_sched_lock_reschedule\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/scheduler.h:27:6" shape : ellipse }
+edge: { sourcename: "k_sched_unlock" targetname: "z_sched_lock_reschedule" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:50:2" }
+node: { title: "z_impl_k_reschedule" label: "z_impl_k_reschedule\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:53:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_k_reschedule" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "z_impl_k_reschedule" targetname: "z_sched_lock_reschedule" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:59:2" }
+node: { title: "z_impl_k_sched_current_thread_query" label: "z_impl_k_sched_current_thread_query\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:70:9\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "z_sched_waitq_walk" label: "z_sched_waitq_walk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:84:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_sched_waitq_walk" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "z_sched_waitq_walk" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:106:13" }
+edge: { sourcename: "z_sched_waitq_walk" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:118:4" }
+edge: { sourcename: "z_sched_waitq_walk" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_sched_wait" label: "z_sched_wait\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:130:5\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_pend_curr" label: "z_pend_curr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/ksched.h:58:5" shape : ellipse }
+edge: { sourcename: "z_sched_wait" targetname: "z_pend_curr" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:133:12" }
+}

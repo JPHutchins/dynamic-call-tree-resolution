@@ -1,0 +1,24 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c"
+node: { title: "posix_exit" label: "posix_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:18:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nsi_exit" label: "nsi_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nsi_main.h:36:24" shape : ellipse }
+edge: { sourcename: "posix_exit" targetname: "nsi_exit" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:20:2" }
+node: { title: "posix_vprint_error_and_exit" label: "posix_vprint_error_and_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:23:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "nsi_vprint_error_and_exit" label: "nsi_vprint_error_and_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nsi_tracing.h:28:24" shape : ellipse }
+edge: { sourcename: "posix_vprint_error_and_exit" targetname: "nsi_vprint_error_and_exit" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:25:2" }
+node: { title: "posix_vprint_warning" label: "posix_vprint_warning\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:28:6\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "nsi_vprint_warning" label: "nsi_vprint_warning\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nsi_tracing.h:29:6" shape : ellipse }
+edge: { sourcename: "posix_vprint_warning" targetname: "nsi_vprint_warning" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:30:2" }
+node: { title: "posix_vprint_trace" label: "posix_vprint_trace\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:33:6\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "nsi_vprint_trace" label: "nsi_vprint_trace\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nsi_tracing.h:30:6" shape : ellipse }
+edge: { sourcename: "posix_vprint_trace" targetname: "nsi_vprint_trace" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:35:2" }
+node: { title: "posix_print_error_and_exit" label: "posix_print_error_and_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:38:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "posix_print_error_and_exit" targetname: "nsi_vprint_error_and_exit" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:43:2" }
+node: { title: "posix_print_warning" label: "posix_print_warning\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:47:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "posix_print_warning" targetname: "nsi_vprint_warning" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:52:2" }
+node: { title: "posix_print_trace" label: "posix_print_trace\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:56:6\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "posix_print_trace" targetname: "nsi_vprint_trace" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:61:2" }
+node: { title: "posix_trace_over_tty" label: "posix_trace_over_tty\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:65:5\n4 bytes (static)\n0 dynamic objects" }
+node: { title: "nsi_trace_over_tty" label: "nsi_trace_over_tty\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/common/src/include/nsi_tracing.h:42:5" shape : ellipse }
+edge: { sourcename: "posix_trace_over_tty" targetname: "nsi_trace_over_tty" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:67:9" }
+node: { title: "posix_get_hw_cycle" label: "posix_get_hw_cycle\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/posix_arch_if.c:70:10\n4 bytes (static)\n0 dynamic objects" }
+}

@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf.c"
+node: { title: "cbprintf" label: "cbprintf\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf.c:11:5\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_cbvprintf_impl" label: "z_cbvprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:691:5" shape : ellipse }
+edge: { sourcename: "cbprintf" targetname: "z_cbvprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:725:9" }
+}

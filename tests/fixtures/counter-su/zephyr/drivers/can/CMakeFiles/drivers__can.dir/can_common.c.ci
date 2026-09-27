@@ -1,0 +1,58 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:sys_slist_find_and_remove" label: "sys_slist_find_and_remove\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/slist.h:453:1\n12 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_tx_default_cb" label: "can_tx_default_cb\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:24:13\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_sem_give" label: "z_impl_k_sem_give\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1113:13" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_tx_default_cb" targetname: "z_impl_k_sem_give" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1125:2" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_state_change_callback_legacy_handler" label: "can_state_change_callback_legacy_handler\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:135:13\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "posix_irq_lock" label: "posix_irq_lock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:31:14" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_state_change_callback_legacy_handler" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+node: { title: "posix_irq_unlock" label: "posix_irq_unlock\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/posix_soc_if.h:32:6" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_state_change_callback_legacy_handler" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_state_change_callback_legacy_handler" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:151:3" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_msgq_put" label: "can_msgq_put\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:105:13\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_impl_k_msgq_put" label: "z_impl_k_msgq_put\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1177:12" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:can_msgq_put" targetname: "z_impl_k_msgq_put" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1190:9" }
+node: { title: "z_impl_can_send" label: "z_impl_can_send\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:34:5\n128 bytes (dynamic,bounded)\n0 dynamic objects" }
+node: { title: "z_impl_k_sem_init" label: "z_impl_k_sem_init\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1080:12" shape : ellipse }
+edge: { sourcename: "z_impl_can_send" targetname: "z_impl_k_sem_init" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1093:9" }
+edge: { sourcename: "z_impl_can_send" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:65:9" }
+node: { title: "z_impl_k_sem_take" label: "z_impl_k_sem_take\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1097:12" shape : ellipse }
+edge: { sourcename: "z_impl_can_send" targetname: "z_impl_k_sem_take" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/kernel.h:1109:9" }
+edge: { sourcename: "z_impl_can_send" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:75:9" }
+node: { title: "__stack_chk_fail" label: "__stack_chk_fail\n<built-in>" shape : ellipse }
+edge: { sourcename: "z_impl_can_send" targetname: "__stack_chk_fail" }
+edge: { sourcename: "z_impl_can_send" targetname: "__stack_chk_fail" }
+node: { title: "can_add_rx_filter" label: "can_add_rx_filter\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:78:5\n12 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "can_add_rx_filter" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:102:9" }
+node: { title: "z_impl_can_add_rx_filter_msgq" label: "z_impl_can_add_rx_filter_msgq\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:122:5\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_can_add_rx_filter_msgq" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:131:9" }
+node: { title: "can_add_state_change_callback" label: "can_add_state_change_callback\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:179:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "can_add_state_change_callback" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "can_add_state_change_callback" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:194:10" }
+edge: { sourcename: "can_add_state_change_callback" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:sys_slist_find_and_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:198:8" }
+edge: { sourcename: "can_add_state_change_callback" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "can_remove_state_change_callback" label: "can_remove_state_change_callback\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:206:5\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "can_remove_state_change_callback" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "can_remove_state_change_callback" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:sys_slist_find_and_remove" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:218:7" }
+edge: { sourcename: "can_remove_state_change_callback" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:225:10" }
+edge: { sourcename: "can_remove_state_change_callback" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "can_set_state_change_callback" label: "can_set_state_change_callback\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:156:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "can_set_state_change_callback" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "can_set_state_change_callback" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+edge: { sourcename: "can_set_state_change_callback" targetname: "can_add_state_change_callback" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:173:9" }
+edge: { sourcename: "can_set_state_change_callback" targetname: "can_remove_state_change_callback" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:175:9" }
+node: { title: "can_fire_state_change_callbacks" label: "can_fire_state_change_callbacks\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:235:6\n64 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "can_fire_state_change_callbacks" targetname: "posix_irq_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:68:9" }
+edge: { sourcename: "can_fire_state_change_callbacks" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:247:3" }
+edge: { sourcename: "can_fire_state_change_callbacks" targetname: "posix_irq_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/posix/arch.h:74:2" }
+node: { title: "z_impl_can_calc_timing" label: "z_impl_can_calc_timing\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:446:5\n112 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_can_calc_timing" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/can.h:956:9" }
+edge: { sourcename: "z_impl_can_calc_timing" targetname: "__stack_chk_fail" }
+node: { title: "z_impl_can_set_timing" label: "z_impl_can_set_timing\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:493:5\n48 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_can_set_timing" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:505:9" }
+node: { title: "z_impl_can_set_bitrate" label: "z_impl_can_set_bitrate\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/can/can_common.c:508:5\n48 bytes (dynamic,bounded)\n0 dynamic objects" }
+edge: { sourcename: "z_impl_can_set_bitrate" targetname: "z_impl_can_calc_timing" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/can.h:148:9" }
+edge: { sourcename: "z_impl_can_set_bitrate" targetname: "z_impl_can_set_timing" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/include/generated/zephyr/syscalls/can.h:286:9" }
+edge: { sourcename: "z_impl_can_set_bitrate" targetname: "__stack_chk_fail" }
+}

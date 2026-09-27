@@ -1,0 +1,5 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/init.c:209:13:z_sys_init_run_level	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/init.c:268:13:bg_thread_main	80	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/init.c:391:6:z_init_cpu	80	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/init.c:493:13:z_early_rand_get	64	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/init.c:537:20:z_cstart	64	dynamic,bounded

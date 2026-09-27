@@ -1,0 +1,5 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/cbprintf.h:723:5:cbvprintf	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:52:6:z_shell_fprintf_buffer_flush	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:33:6:z_shell_fprintf_fmt	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:11:12:out_func	32	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_fprintf.c:43:6:z_shell_cbpprintf_fmt	32	dynamic,bounded

@@ -1,0 +1,4 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/condvar.c:21:5:z_impl_k_condvar_init	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/condvar.c:44:5:z_impl_k_condvar_signal	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/condvar.c:71:5:z_impl_k_condvar_broadcast	48	dynamic,bounded
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/condvar.c:105:5:z_impl_k_condvar_wait	64	dynamic,bounded
