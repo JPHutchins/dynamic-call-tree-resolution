@@ -16,13 +16,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dynamic_call_tree_resolution.points_to import pointer_at
+from dynamic_call_tree_resolution.points_to import pointer_at, unresolved_slots
 from dynamic_call_tree_resolution.vsa import analyze
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from dynamic_call_tree_resolution.model import Address, CallSite, Program, SlotAssignment
+	from dynamic_call_tree_resolution.model import (
+		Address,
+		CallSite,
+		FunctionSignature,
+		Program,
+		SlotAssignment,
+	)
 
 
 def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
@@ -35,26 +41,52 @@ def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
 	return analyze(program)
 
 
+def matching_targets(program: Program, signature: FunctionSignature) -> frozenset[Address]:
+	"""Functions whose DWARF signature exactly matches the given one.
+
+	The loader strips qualifiers when rendering signatures, so equality
+	holds across translation units; a cast in the image can violate the
+	match, and the consumers' resolved-target fallback covers that.
+	"""
+	return frozenset(
+		function.address
+		for function in program.functions.values()
+		if function.signature == signature
+	)
+
+
 def call_site_candidates(
-	program: Program, site: CallSite, resolved_by_slot: Mapping[Address, SlotAssignment]
+	program: Program,
+	site: CallSite,
+	resolved_by_slot: Mapping[Address, SlotAssignment],
+	signatures_by_slot: Mapping[Address, FunctionSignature] = {},
 ) -> frozenset[Address]:
 	"""Candidate target functions of one call site.
 
 	Every address tracked into the site is chased through the loaded
-	image; an empty result means the site could not be resolved and
-	consumers fall back to the union of all resolved targets.
+	image; a chase that ends in an unreadable slot with a known signature
+	narrows to the matching functions. An empty result means the site
+	could not be resolved and consumers fall back to the union of all
+	resolved targets.
 	"""
-	return frozenset(
+	chased = frozenset(
 		address
 		for candidate in site.candidates
-		for address in _chase_target(program, candidate, resolved_by_slot, frozenset())
+		for address in _chase_target(
+			program, candidate, resolved_by_slot, signatures_by_slot, frozenset()
+		)
 	)
+	if chased:
+		return chased
+	signature = signatures_by_slot.get(site.slot) if site.slot is not None else None
+	return matching_targets(program, signature) if signature is not None else frozenset()
 
 
 def _chase_target(
 	program: Program,
 	address: Address,
 	resolved_by_slot: Mapping[Address, SlotAssignment],
+	signatures_by_slot: Mapping[Address, FunctionSignature],
 	visited: frozenset[Address],
 ) -> frozenset[Address]:
 	if address in visited:
@@ -66,8 +98,20 @@ def _chase_target(
 		return assignment.candidates
 	target = pointer_at(program, address)
 	if target is None:
-		return frozenset()
-	return _chase_target(program, target, resolved_by_slot, visited | {address})
+		signature = signatures_by_slot.get(address)
+		return matching_targets(program, signature) if signature is not None else frozenset()
+	return _chase_target(program, target, resolved_by_slot, signatures_by_slot, visited | {address})
+
+
+def _signatures_by_slot(
+	program: Program, resolved: tuple[SlotAssignment, ...]
+) -> Mapping[Address, FunctionSignature]:
+	"""Signatures of the unresolved slot universe, keyed by slot address."""
+	return {
+		slot.slot: slot.signature
+		for slot in unresolved_slots(program, resolved)
+		if slot.signature is not None
+	}
 
 
 def per_caller_candidates(
@@ -82,13 +126,17 @@ def per_caller_candidates(
 	with no extracted sites; both keep the expansion a sound upper bound.
 	"""
 	resolved_by_slot = {assignment.slot: assignment for assignment in resolved}
+	signatures_by_slot = _signatures_by_slot(program, resolved)
 	fallback_addresses = frozenset(
 		address for assignment in resolved for address in assignment.candidates
 	)
 	by_caller: dict[str, set[str]] = {}
 	for site in sites:
 		caller = program.functions[site.caller_address].name
-		candidates = call_site_candidates(program, site, resolved_by_slot) or fallback_addresses
+		candidates = (
+			call_site_candidates(program, site, resolved_by_slot, signatures_by_slot)
+			or fallback_addresses
+		)
 		by_caller.setdefault(caller, set()).update(
 			program.functions[address].name for address in candidates
 		)
