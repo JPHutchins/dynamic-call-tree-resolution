@@ -1,0 +1,19 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c"
+node: { title: "z_arm_fatal_error" label: "z_arm_fatal_error\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:95:6\n16 bytes (static)\n0 dynamic objects" }
+node: { title: "printk_panic" label: "printk_panic\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk.h:113:6" shape : ellipse }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk_panic" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:26:2" }
+node: { title: "printk" label: "printk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk.h:58:26" shape : ellipse }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:26:2" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk_panic" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:28:2" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:28:2" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk_panic" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:30:2" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:30:2" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk_panic" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:90:2" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:90:2" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk_panic" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:108:3" }
+edge: { sourcename: "z_arm_fatal_error" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:108:3" }
+node: { title: "z_fatal_error" label: "z_fatal_error\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/fatal.h:84:6" shape : ellipse }
+edge: { sourcename: "z_arm_fatal_error" targetname: "z_fatal_error" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:116:2" }
+node: { title: "z_do_kernel_oops" label: "z_do_kernel_oops\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:136:6\n0 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "z_do_kernel_oops" targetname: "z_arm_fatal_error" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/fatal.c:164:2" }
+}

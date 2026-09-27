@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/ti/lm3s6965/sys_arch_reboot.c"
+node: { title: "sys_arch_reboot" label: "sys_arch_reboot\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/ti/lm3s6965/sys_arch_reboot.c:20:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_do_software_reboot" label: "z_do_software_reboot\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/ti/lm3s6965/sys_arch_reboot.c:30:14" shape : ellipse }
+edge: { sourcename: "sys_arch_reboot" targetname: "z_do_software_reboot" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/ti/lm3s6965/sys_arch_reboot.c:39:3" }
+}

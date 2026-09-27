@@ -1,0 +1,12 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c"
+node: { title: "arm_irq_enable" label: "arm_irq_enable\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:56:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "arm_irq_disable" label: "arm_irq_disable\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:61:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "arm_irq_is_enabled" label: "arm_irq_is_enabled\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:66:5\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "arm_irq_clear_pending" label: "arm_irq_clear_pending\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:72:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "arm_irq_set_pending" label: "arm_irq_set_pending\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:79:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "arm_irq_is_pending" label: "arm_irq_is_pending\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:86:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "arm_irq_priority_set" label: "arm_irq_priority_set\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:103:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_irq_spurious" label: "z_irq_spurious\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:148:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_arm_fatal_error" label: "z_arm_fatal_error\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:138:6" shape : ellipse }
+edge: { sourcename: "z_irq_spurious" targetname: "z_arm_fatal_error" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:152:2" }
+}

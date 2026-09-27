@@ -1,0 +1,28 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c"
+node: { title: "__retarget_lock_init_recursive" label: "__retarget_lock_init_recursive\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:35:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "malloc" label: "malloc\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:183:7" shape : ellipse }
+edge: { sourcename: "__retarget_lock_init_recursive" targetname: "malloc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:45:10" }
+node: { title: "z_impl_k_mutex_init" label: "z_impl_k_mutex_init\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:972:12" shape : ellipse }
+edge: { sourcename: "__retarget_lock_init_recursive" targetname: "z_impl_k_mutex_init" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:983:9" }
+node: { title: "__retarget_lock_init" label: "__retarget_lock_init\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:34:6\n0 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "__retarget_lock_init" targetname: "__retarget_lock_init_recursive" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:57:2" }
+node: { title: "__retarget_lock_close_recursive" label: "__retarget_lock_close_recursive\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:37:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "free" label: "free\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:147:6" shape : ellipse }
+edge: { sourcename: "__retarget_lock_close_recursive" targetname: "free" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:65:2" }
+node: { title: "__retarget_lock_close" label: "__retarget_lock_close\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:36:6\n0 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "__retarget_lock_close" targetname: "free" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:65:2" }
+node: { title: "__retarget_lock_acquire_recursive" label: "__retarget_lock_acquire_recursive\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:39:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_mutex_lock" label: "z_impl_k_mutex_lock\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:987:12" shape : ellipse }
+edge: { sourcename: "__retarget_lock_acquire_recursive" targetname: "z_impl_k_mutex_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:999:9" }
+node: { title: "__retarget_lock_acquire" label: "__retarget_lock_acquire\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:38:6\n0 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "__retarget_lock_acquire" targetname: "__retarget_lock_acquire_recursive" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:87:2" }
+node: { title: "__retarget_lock_try_acquire_recursive" label: "__retarget_lock_try_acquire_recursive\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:91:5\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "__retarget_lock_try_acquire_recursive" targetname: "z_impl_k_mutex_lock" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:999:9" }
+node: { title: "__retarget_lock_try_acquire" label: "__retarget_lock_try_acquire\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:98:5\n0 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "__retarget_lock_try_acquire" targetname: "__retarget_lock_try_acquire_recursive" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/locks.c:100:9" }
+node: { title: "__retarget_lock_release_recursive" label: "__retarget_lock_release_recursive\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:41:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_mutex_unlock" label: "z_impl_k_mutex_unlock\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:1003:12" shape : ellipse }
+edge: { sourcename: "__retarget_lock_release_recursive" targetname: "z_impl_k_mutex_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:1014:9" }
+node: { title: "__retarget_lock_release" label: "__retarget_lock_release\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/sys/lock.h:40:6\n0 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "__retarget_lock_release" targetname: "z_impl_k_mutex_unlock" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:1014:9" }
+}

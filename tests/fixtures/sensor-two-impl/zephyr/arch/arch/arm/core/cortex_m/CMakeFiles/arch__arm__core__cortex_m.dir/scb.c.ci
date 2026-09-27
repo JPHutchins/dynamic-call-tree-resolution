@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c:sys_arch_reboot" label: "sys_arch_reboot\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c:41:13\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_arm_save_scb_context" label: "z_arm_save_scb_context\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c:169:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_arm_restore_scb_context" label: "z_arm_restore_scb_context\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c:211:6\n0 bytes (static)\n0 dynamic objects" }
+}

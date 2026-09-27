@@ -207,6 +207,7 @@ def stack(build_directory: Path, elf: Path | None = None) -> None:
 	reports = worst_case_depths(
 		expansion.expanded if expansion is not None else edges,
 		load_stack_usages(build_directory),
+		entry_edges=expansion.original if expansion is not None else None,
 	)
 	for report in reports:
 		flags = (
@@ -225,7 +226,11 @@ def summary(build_directory: Path, elf: Path) -> None:
 	edges = load_callgraph(build_directory)
 	expansion = _expand_from_elf(edges, elf)
 	_warn_dropped_indirect_edges(expansion)
-	reports = worst_case_depths(expansion.expanded, load_stack_usages(build_directory))
+	reports = worst_case_depths(
+		expansion.expanded,
+		load_stack_usages(build_directory),
+		entry_edges=expansion.original,
+	)
 	deepest = max(reports, key=_depth, default=None)
 	unresolved = unresolved_slots(program, resolved)
 	counts = slot_counts(resolved, unresolved)

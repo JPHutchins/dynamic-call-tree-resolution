@@ -1,0 +1,4 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/float.c"
+node: { title: "z_impl_k_float_disable" label: "z_impl_k_float_disable\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/float.c:11:5\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_impl_k_float_enable" label: "z_impl_k_float_enable\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/float.c:21:5\n0 bytes (static)\n0 dynamic objects" }
+}

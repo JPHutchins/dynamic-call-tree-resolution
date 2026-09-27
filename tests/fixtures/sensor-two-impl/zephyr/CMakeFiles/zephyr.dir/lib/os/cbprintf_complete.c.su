@@ -1,0 +1,2 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:788:14:encode_uint	40	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1367:5:z_cbvprintf_impl	120	static

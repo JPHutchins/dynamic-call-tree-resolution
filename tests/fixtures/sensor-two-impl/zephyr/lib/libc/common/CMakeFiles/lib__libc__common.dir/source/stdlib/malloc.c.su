@@ -1,0 +1,7 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/malloc.c:198:12:malloc_prepare	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/malloc.c:128:1:malloc_lock	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/malloc.c:136:1:malloc_unlock	0	static
+/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:183:7:malloc	16	static
+/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:110:9:aligned_alloc	16	static
+/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:243:7:realloc	16	static
+/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:147:6:free	8	static

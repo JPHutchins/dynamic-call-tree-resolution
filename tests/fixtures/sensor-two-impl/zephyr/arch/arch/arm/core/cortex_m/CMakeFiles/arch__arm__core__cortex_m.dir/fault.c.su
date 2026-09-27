@@ -1,0 +1,5 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/fault.c:501:17:usage_fault.isra	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/fault.c:345:12:bus_fault.isra	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/fault.c:189:17:mem_manage_fault.isra	24	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/fault.c:1106:6:z_arm_fault	64	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/fault.c:1262:6:z_arm_fault_init	0	static

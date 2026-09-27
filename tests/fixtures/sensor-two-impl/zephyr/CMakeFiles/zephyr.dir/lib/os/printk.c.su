@@ -1,0 +1,11 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:46:27:arch_printk_char_out	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:109:12:char_out	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:120:13:vprintk_core	32	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:57:6:__printk_hook_install	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:62:18:__printk_get_hook	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:75:6:printk_panic	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:157:6:vprintk_unlocked	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:168:6:printk_unlocked	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:180:6:vprintk	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:214:6:z_impl_k_str_out	16	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/printk.c:261:6:printk	16	static

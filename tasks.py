@@ -168,6 +168,31 @@ zswatch_build = Task(
 )
 zswatch = Sequential(zswatch_patch, zswatch_build)
 
+sensor_two_impl = Task(
+	(
+		"uv",
+		"run",
+		"--group",
+		"build",
+		"west",
+		"build",
+		"-b",
+		"qemu_cortex_m3",
+		"-d",
+		"../.camas/build/sensor-two-impl",
+		"-s",
+		"/home/jp/repos/dynamic-call-tree-resolution/tests/fixtures/sensor-two-impl-app",
+		"--",
+		"-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da",
+	),
+	cwd=Path("testbeds"),
+	env={
+		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
+		"DTC": str(zephyr_sdk / "hosttools/sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
+	},
+	help="build the two-impl sensor fixture (qemu_cortex_m3) with stack/callgraph artifacts",
+)
+
 pexplorer_testdata = Task(
 	(
 		"uv",

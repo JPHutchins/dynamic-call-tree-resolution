@@ -1,0 +1,4 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/fatal.c:22:27:arch_system_halt	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/fatal.c:38:13:k_sys_fatal_error_handler	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/fatal.c:86:20:k_fatal_halt	8	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/fatal.c:92:6:z_fatal_error	24	static

@@ -1,0 +1,5 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/time/time.c"
+node: { title: "time" label: "time\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/time.h:271:11\n24 bytes (static)\n0 dynamic objects" }
+node: { title: "sys_clock_gettime" label: "sys_clock_gettime\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/clock.h:459:5" shape : ellipse }
+edge: { sourcename: "time" targetname: "sys_clock_gettime" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/time/time.c:17:8" }
+}

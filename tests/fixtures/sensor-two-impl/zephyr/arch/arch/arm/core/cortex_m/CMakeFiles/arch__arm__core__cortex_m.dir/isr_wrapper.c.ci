@@ -1,0 +1,7 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/isr_wrapper.c"
+node: { title: "_isr_wrapper" label: "_isr_wrapper\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/isr_wrapper.c:33:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
+edge: { sourcename: "_isr_wrapper" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/isr_wrapper.c:81:8" }
+node: { title: "z_arm_exc_exit" label: "z_arm_exc_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/arm/cortex_m/exception.h:151:13" shape : ellipse }
+edge: { sourcename: "_isr_wrapper" targetname: "z_arm_exc_exit" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/isr_wrapper.c:97:2" }
+}

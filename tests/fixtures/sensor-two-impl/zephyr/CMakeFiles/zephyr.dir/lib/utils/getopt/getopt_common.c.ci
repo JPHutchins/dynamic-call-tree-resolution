@@ -1,0 +1,6 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.c"
+node: { title: "z_getopt_global_state_update" label: "z_getopt_global_state_update\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.c:50:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "z_getopt_global_state_update_shim" label: "z_getopt_global_state_update_shim\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.c:45:13" shape : ellipse }
+edge: { sourcename: "z_getopt_global_state_update" targetname: "z_getopt_global_state_update_shim" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.c:59:3" }
+node: { title: "sys_getopt_state_get" label: "sys_getopt_state_get\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.c:64:26\n0 bytes (static)\n0 dynamic objects" }
+}

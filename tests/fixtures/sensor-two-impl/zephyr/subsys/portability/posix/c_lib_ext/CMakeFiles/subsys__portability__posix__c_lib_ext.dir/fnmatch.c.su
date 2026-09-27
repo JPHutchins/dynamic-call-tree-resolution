@@ -1,0 +1,3 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/fnmatch.c:156:19:foldcase	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/fnmatch.c:255:12:fnmatchx	104	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/fnmatch.c:379:5:fnmatch	16	static

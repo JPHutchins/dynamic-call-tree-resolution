@@ -1,0 +1,3 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:265:12:uart_stellaris_poll_in	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:288:13:uart_stellaris_poll_out	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:223:12:uart_stellaris_init	20	static

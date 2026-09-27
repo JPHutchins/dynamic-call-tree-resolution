@@ -1,0 +1,3 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/sw_isr_common.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/sw_isr_common.c:z_get_sw_isr_table_idx" label: "z_get_sw_isr_table_idx\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/sw_isr_common.c:16:21\n0 bytes (static)\n0 dynamic objects" }
+}

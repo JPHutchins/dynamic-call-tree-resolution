@@ -1,0 +1,5 @@
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/tracing/tracing_none.c:9:13:sys_trace_isr_enter	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/tracing/tracing_none.c:21:13:sys_trace_isr_exit	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/tracing/tracing_none.c:23:13:sys_trace_isr_exit_to_scheduler	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/tracing/tracing_none.c:25:13:sys_trace_idle	0	static
+/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/tracing/tracing_none.c:32:13:sys_trace_idle_exit	0	static

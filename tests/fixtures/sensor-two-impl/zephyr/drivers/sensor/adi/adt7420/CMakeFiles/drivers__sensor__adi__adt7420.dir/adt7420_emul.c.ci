@@ -1,0 +1,17 @@
+graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c"
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_set_channel" label: "adt7420_emul_set_channel\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:110:12\n24 bytes (static)\n0 dynamic objects" }
+node: { title: "__aeabi_ldivmod" label: "__aeabi_ldivmod\n<built-in>" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_set_channel" targetname: "__aeabi_ldivmod" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_set_channel" targetname: "__aeabi_ldivmod" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_get_sample_range" label: "adt7420_emul_get_sample_range\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:146:12\n32 bytes (static)\n0 dynamic objects" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_transfer_i2c" label: "adt7420_emul_transfer_i2c\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:53:12\n32 bytes (static)\n0 dynamic objects" }
+node: { title: "i2c_dump_msgs_rw" label: "i2c_dump_msgs_rw\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/i2c.h:698:6" shape : ellipse }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_transfer_i2c" targetname: "i2c_dump_msgs_rw" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:60:2" }
+node: { title: "adt7420_emul_set_reg" label: "adt7420_emul_set_reg\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:28:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "adt7420_emul_get_reg" label: "adt7420_emul_get_reg\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:37:6\n0 bytes (static)\n0 dynamic objects" }
+node: { title: "adt7420_emul_reset" label: "adt7420_emul_reset\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:45:6\n8 bytes (static)\n0 dynamic objects" }
+node: { title: "memset" label: "__builtin_memset\n<built-in>" shape : ellipse }
+edge: { sourcename: "adt7420_emul_reset" targetname: "memset" }
+node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_init" label: "adt7420_emul_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:97:12\n8 bytes (static)\n0 dynamic objects" }
+edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:adt7420_emul_init" targetname: "adt7420_emul_reset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:102:2" }
+}
