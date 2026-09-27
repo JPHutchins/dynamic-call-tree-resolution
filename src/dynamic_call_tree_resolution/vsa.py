@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from collections.abc import Callable, Hashable
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from capstone import (
 	CS_ARCH_ARM,
@@ -38,14 +38,15 @@ from capstone import (
 	arm_const,
 	x86_const,
 )
+from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, CallSite, Machine, aligned
-from dynamic_call_tree_resolution.points_to import memory_at
+from dynamic_call_tree_resolution.points_to import memory_at, read_pointer
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from capstone import CsInsn
+	from capstone import ArmCsOperand, CsInsn, CsMemOperand, CsOperand
 
 	from dynamic_call_tree_resolution.model import Function, Program
 
@@ -156,41 +157,7 @@ type ValueSet = frozenset[Address] | None
 type OffsetSet = frozenset[int] | None
 
 
-class _MemoryOperand(Protocol):
-	@property
-	def base(self) -> int: ...  # pragma: no cover
-	@property
-	def index(self) -> int: ...  # pragma: no cover
-	@property
-	def scale(self) -> int: ...  # pragma: no cover
-	@property
-	def disp(self) -> int: ...  # pragma: no cover
-
-
-class _Operand(Protocol):
-	@property
-	def type(self) -> int: ...  # pragma: no cover
-	@property
-	def reg(self) -> int: ...  # pragma: no cover
-	@property
-	def imm(self) -> int: ...  # pragma: no cover
-	@property
-	def mem(self) -> _MemoryOperand: ...  # pragma: no cover
-
-
-class _ShiftOperand(Protocol):
-	@property
-	def type(self) -> int: ...  # pragma: no cover
-	@property
-	def value(self) -> int: ...  # pragma: no cover
-
-
-class _ArmOperand(_Operand, Protocol):
-	@property
-	def shift(self) -> _ShiftOperand: ...  # pragma: no cover
-
-
-class State(NamedTuple):
+class State(Struct):
 	"""Abstract state at one block entry.
 
 	Absent map entries mean Top (unknown); empty sets mean Bottom (no
@@ -206,20 +173,20 @@ class State(NamedTuple):
 	globals: Mapping[int, frozenset[Address]]
 
 
-class _Block(NamedTuple):
+class _Block(Struct):
 	start: Address
 	instructions: tuple[CsInsn, ...]
 	successors: tuple[Address, ...]
 
 
-class _CallObservation(NamedTuple):
+class _CallObservation(Struct):
 	"""One direct call's argument value sets, by ABI position."""
 
 	callee: Address
 	arguments: Mapping[int, ValueSet]
 
 
-class _Context(NamedTuple):
+class _Context(Struct):
 	program: Program
 	object_spans: tuple[tuple[int, int], ...]
 	object_starts: tuple[int, ...]
@@ -314,13 +281,17 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 	)
 
 
+def _function_address(function: Function) -> Address:
+	return function.address
+
+
 def _blocks_by_function(
 	program: Program, disassembler: Cs
 ) -> dict[Address, tuple[Function, tuple[_Block, ...]]]:
 	"""Per-function CFGs, keyed by the normalized function address."""
 	seen: set[Address] = set()
 	blocks: dict[Address, tuple[Function, tuple[_Block, ...]]] = {}
-	for function in sorted(program.functions.values(), key=lambda function: function.address):
+	for function in sorted(program.functions.values(), key=_function_address):
 		# ARM symbol addresses carry the Thumb bit; strip it so the code
 		# decodes from the aligned start, and skip the symbol/DWARF twin.
 		start = aligned(function.address) if program.machine is Machine.EM_ARM else function.address
@@ -420,13 +391,7 @@ def _span_at(context: _Context, address: Address) -> tuple[int, int] | None:
 def _pointer_value(context: _Context, address: Address) -> Address | None:
 	"""One pointer read with the object-coverage bounds the slot layer applies."""
 	span = _span_at(context, address)
-	pointer_size = context.program.pointer_size
-	if span is not None and address + pointer_size > span[1]:
-		return None
-	data = memory_at(context.program, address, pointer_size)
-	if len(data) != pointer_size:
-		return None
-	return Address(int.from_bytes(data, context.program.byte_order))
+	return read_pointer(context.program, address, span[1] if span is not None else None)
 
 
 def _object_slots(context: _Context, start: Address, stride: int) -> ValueSet:
@@ -668,7 +633,7 @@ def _union_write(
 	return written
 
 
-def _stack_offsets(state: State, memory: _MemoryOperand, base_register: int) -> OffsetSet:
+def _stack_offsets(state: State, memory: CsMemOperand, base_register: int) -> OffsetSet:
 	"""Frame offsets of a stack-relative operand."""
 	offsets = state.sp_offsets.get(base_register)
 	if memory.index == 0:
@@ -693,7 +658,7 @@ def _scaled_addresses(
 	return _indexed(base, index, scale, disp)
 
 
-def _memory_addresses(context: _Context, state: State, memory: _MemoryOperand) -> ValueSet:
+def _memory_addresses(context: _Context, state: State, memory: CsMemOperand) -> ValueSet:
 	"""Address set of a non-frame memory operand; Top when uncomputable."""
 	base = frozenset({Address(0)}) if memory.base == 0 else state.registers.get(memory.base)
 	if memory.index == 0:
@@ -704,7 +669,7 @@ def _memory_addresses(context: _Context, state: State, memory: _MemoryOperand) -
 
 
 def _load_value(
-	context: _Context, state: State, instruction: CsInsn, operand: _Operand
+	context: _Context, state: State, instruction: CsInsn, operand: CsOperand
 ) -> ValueSet:
 	"""Value loaded from a memory operand; frame slots read through offsets."""
 	machine = context.program.machine
@@ -725,7 +690,7 @@ def _load_value(
 
 
 def _store_value(
-	context: _Context, state: State, instruction: CsInsn, operand: _Operand, value: ValueSet
+	context: _Context, state: State, instruction: CsInsn, operand: CsOperand, value: ValueSet
 ) -> State:
 	"""Write a value through a memory operand.
 
@@ -766,7 +731,7 @@ def _store_value(
 
 
 def _store_addresses(
-	context: _Context, state: State, instruction: CsInsn, memory: _MemoryOperand
+	context: _Context, state: State, instruction: CsInsn, memory: CsMemOperand
 ) -> ValueSet:
 	"""Address set of a non-frame store; Top when the store cannot be placed."""
 	machine = context.program.machine
@@ -783,7 +748,7 @@ def _copy_register(state: State, destination: int, source: int) -> State:
 	return _set_register(state, destination, state.registers.get(source))
 
 
-class _BranchTarget(NamedTuple):
+class _BranchTarget(Struct):
 	target: int
 	conditional: bool
 
@@ -804,7 +769,9 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | Non
 		operand = instruction.operands[0]
 		if operand.type != x86_const.X86_OP_IMM:
 			return None
-		return _BranchTarget(operand.imm, conditional)  # capstone reports the absolute target
+		return _BranchTarget(
+			target=operand.imm, conditional=conditional
+		)  # capstone reports the absolute target
 	base = instruction.mnemonic.split(".")[0]
 	if base == "b":
 		conditional = False
@@ -814,14 +781,14 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | Non
 		return None
 	if base in ("cbz", "cbnz"):
 		imm5 = (instruction.bytes[1] >> 3) & 0x1F
-		return _BranchTarget(instruction.address + 4 + 2 * imm5, conditional)
+		return _BranchTarget(target=instruction.address + 4 + 2 * imm5, conditional=conditional)
 	operand = instruction.operands[0]
 	if operand.type != arm_const.ARM_OP_IMM:
 		return None  # pragma: no cover
 	# capstone's imm is unaligned PC-relative; b-family encodings align PC to 4
 	pc = instruction.address + 4
 	displacement = operand.imm - pc
-	return _BranchTarget((pc & ~3) + displacement, conditional)
+	return _BranchTarget(target=(pc & ~3) + displacement, conditional=conditional)
 
 
 def _call_target(instruction: CsInsn, machine: Machine) -> int | None:
@@ -849,7 +816,7 @@ def _is_control_transfer(instruction: CsInsn, machine: Machine) -> bool:
 
 def _site_operand(
 	instruction: CsInsn, machine: Machine
-) -> tuple[Literal["memory", "register"], _Operand] | None:
+) -> tuple[Literal["memory", "register"], CsOperand] | None:
 	if instruction.mnemonic == ".byte":
 		return None
 	if not instruction.operands:
@@ -1078,14 +1045,14 @@ def _pop(state: State, sp: int, pointer_size: int, destination: int) -> State:
 	)
 
 
-def _arm_operands(instruction: CsInsn) -> tuple[_ArmOperand, ...]:
-	"""Operands of an ARM instruction, narrowed to the shift-carrying protocol.
+def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
+	"""Operands of an ARM instruction, narrowed to the shift-carrying stub type.
 
 	ARM disassembly yields operands with a shift member on every operand;
-	the capstone stub models one operand class for both machines, so the
-	narrowing is a cast away from the shared stub type.
+	the capstone stub models the arm operand as a subclass, so the
+	narrowing is a single downcast from the shared operand type.
 	"""
-	return tuple(cast("_ArmOperand", cast("Any", operand)) for operand in instruction.operands)
+	return tuple(cast("ArmCsOperand", operand) for operand in instruction.operands)
 
 
 def _apply_arm(context: _Context, instruction: CsInsn, state: State) -> State:
@@ -1142,7 +1109,7 @@ def _apply_arm(context: _Context, instruction: CsInsn, state: State) -> State:
 	return _top_written(instruction, state)
 
 
-def _advance_post_index(context: _Context, state: State, operand: _Operand, delta: int) -> State:
+def _advance_post_index(context: _Context, state: State, operand: CsOperand, delta: int) -> State:
 	"""Write back a post-indexed load's base register (``ldr rN, [rM], #imm``)."""
 	base = operand.mem.base
 	if base == arm_const.ARM_REG_SP:
@@ -1150,7 +1117,7 @@ def _advance_post_index(context: _Context, state: State, operand: _Operand, delt
 	return _set_register(state, base, _shift_addresses(state.registers.get(base), delta))
 
 
-def _arm_shift_scale(operand: _ArmOperand) -> int | None:
+def _arm_shift_scale(operand: ArmCsOperand) -> int | None:
 	"""Multiplier of a shifted register operand; 1 when unshifted."""
 	if operand.shift.type == arm_const.ARM_SFT_LSL:
 		return 1 << operand.shift.value
@@ -1194,7 +1161,6 @@ def _arm_arithmetic(
 
 
 def _arm_shift_destination(state: State, destination: int, source: int, delta: int) -> State:
-	"""Shift a register's set by an immediate, staying in its domain."""
 	if destination == arm_const.ARM_REG_SP:
 		return _set_offsets(
 			state, destination, _shift_offsets(state.sp_offsets.get(destination), delta)
@@ -1244,7 +1210,7 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 	)
 
 
-class _FunctionResult(NamedTuple):
+class _FunctionResult(Struct):
 	sites: tuple[CallSite, ...]
 	writes: Mapping[int, frozenset[Address]]
 	observations: tuple[_CallObservation, ...]
@@ -1272,8 +1238,9 @@ def _analyze_function(
 			outgoing = _transfer(context, instruction, outgoing)
 		writes = _accumulate_writes(writes, [outgoing.globals])
 		for successor in block.successors:
-			joined = _join_states(in_states.get(successor), outgoing)
-			if joined != in_states.get(successor):
+			existing = in_states.get(successor)
+			joined = _join_states(existing, outgoing)
+			if joined != existing:
 				in_states[successor] = joined
 				worklist.append(successor)
 	observations: list[_CallObservation] = []
@@ -1339,7 +1306,7 @@ def _call_arguments(context: _Context, state: State, instruction: CsInsn) -> Map
 
 
 def _site_operand_addresses(
-	context: _Context, state: State, instruction: CsInsn, operand: _Operand
+	context: _Context, state: State, instruction: CsInsn, operand: CsOperand
 ) -> ValueSet:
 	"""Effective-address set of a memory site's operand, for the slot field.
 

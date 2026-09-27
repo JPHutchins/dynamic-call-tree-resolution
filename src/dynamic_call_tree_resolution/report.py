@@ -3,9 +3,11 @@
 
 """JSON-serializable analysis reports."""
 
-from typing import TYPE_CHECKING, NamedTuple
+from itertools import groupby
+from typing import TYPE_CHECKING
 
 from msgspec import Struct
+from salix import Struct as SalixStruct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, extract_call_sites
 from dynamic_call_tree_resolution.model import (
@@ -126,7 +128,7 @@ class AnalysisSummary(Struct):
 	worst_case_entry: str
 
 
-class SlotCounts(NamedTuple):
+class SlotCounts(SalixStruct):
 	"""Slot and target counts shared by every report builder."""
 
 	resolved_slots: int
@@ -149,6 +151,10 @@ def slot_counts(
 def resolved_by_slot(resolved: tuple[SlotAssignment, ...]) -> Mapping[Address, SlotAssignment]:
 	"""Resolved assignments keyed by slot address."""
 	return {assignment.slot: assignment for assignment in resolved}
+
+
+def _site_address(site: CallSite) -> Address:
+	return aligned(site.caller_address)
 
 
 def _candidates(program: Program, addresses: frozenset[Address]) -> tuple[Candidate, ...]:
@@ -238,11 +244,12 @@ def build_comparison(
 	dynamic_by_caller: Mapping[Address, DynamicSites] = (
 		dynamic_sites_by_caller(pexplorer) if pexplorer is not None else {}
 	)
-	sites_by_caller: dict[Address, list[frozenset[Address]]] = {}
-	for site in sites:
-		sites_by_caller.setdefault(aligned(site.caller_address), []).append(
-			call_site_candidates(program, site, resolved_map, signatures)
-		)
+	sites_by_caller = {
+		caller_address: [
+			call_site_candidates(program, site, resolved_map, signatures) for site in group
+		]
+		for caller_address, group in groupby(sorted(sites, key=_site_address), key=_site_address)
+	}
 	rows = [
 		FunctionComparison(
 			address=caller_address,
@@ -279,15 +286,19 @@ def build_comparison(
 		resolved_call_sites=sum(size > 0 for size in candidate_sizes),
 		exact_call_sites=sum(size == 1 for size in candidate_sizes),
 		candidate_size_counts=tuple(
-			(size, candidate_sizes.count(size)) for size in dict.fromkeys(candidate_sizes)
+			(size, candidate_sizes.count(size)) for size in dict.fromkeys(candidate_sizes, 0)
 		),
 		pexplorer_dynamic_sites=(
 			sum(sites.total for sites in dynamic_by_caller.values())
 			if pexplorer is not None
 			else None
 		),
-		function_comparisons=tuple(sorted(rows, key=lambda row: row.caller)),
+		function_comparisons=tuple(sorted(rows, key=_row_caller)),
 	)
+
+
+def _row_caller(row: FunctionComparison) -> str:
+	return row.caller
 
 
 def _caller_name(program: Program, caller_address: Address) -> str:

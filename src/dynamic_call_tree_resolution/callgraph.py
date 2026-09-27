@@ -47,14 +47,14 @@ def load_callgraph(build_directory: Path) -> tuple[CallEdge, ...]:
 def _parse_vcg(text: str) -> tuple[_VcgEdge, ...]:
 	tokens = _tokenize(text)
 	entries, _ = _parse_body(tokens, 0, "graph")
-	return tuple(_edge(entry) for entry in entries.get("edge", ()))
+	return tuple(_edge(entry) for entry in entries.get("edge", []))
 
 
 def _edge(entry: dict[str, str]) -> _VcgEdge:
-	try:
-		return _VcgEdge(sourcename=entry["sourcename"], targetname=entry["targetname"])
-	except KeyError as missing:
-		raise ValueError(f"edge entry is missing {missing.args[0]!r}") from None
+	missing = next((key for key in ("sourcename", "targetname") if key not in entry), None)
+	if missing is not None:
+		raise ValueError(f"edge entry is missing {missing!r}")
+	return _VcgEdge(sourcename=entry["sourcename"], targetname=entry["targetname"])
 
 
 def _tokenize(text: str) -> tuple[str, ...]:

@@ -28,7 +28,7 @@ def test_readme_usage_runs() -> None:
 def _usage_block(readme: Path) -> list[str]:
 	block = re.search(r"```console\n(.*?)```", readme.read_text(), re.DOTALL)
 	assert block is not None
-	return block.group(1).splitlines()
+	return str(block[1]).splitlines()
 
 
 def _matches(expected: list[str], actual: list[str]) -> bool:

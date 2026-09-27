@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from typing import Any, Literal, overload
+from typing import Literal, overload
 
 class SectionHeader:
 	sh_addr: int
@@ -12,12 +12,10 @@ class Section:
 	header: SectionHeader
 	@overload
 	def __getitem__(
-		self, name: Literal["sh_addr", "sh_entsize", "sh_link", "sh_offset", "sh_size"]
+		self, name: Literal["sh_addr", "sh_entsize", "sh_info", "sh_link", "sh_offset", "sh_size"]
 	) -> int: ...
 	@overload
 	def __getitem__(self, name: Literal["sh_type"]) -> str: ...
-	@overload
-	def __getitem__(self, name: str) -> Any: ...
 	def data(self) -> bytes: ...
 
 class Symbol:
@@ -28,8 +26,6 @@ class Symbol:
 	def __getitem__(self, name: Literal["st_shndx"]) -> int | str: ...
 	@overload
 	def __getitem__(self, name: Literal["st_info"]) -> dict[str, str]: ...
-	@overload
-	def __getitem__(self, name: str) -> Any: ...
 
 class SymbolTableSection(Section):
 	def get_symbol(self, n: int) -> Symbol: ...

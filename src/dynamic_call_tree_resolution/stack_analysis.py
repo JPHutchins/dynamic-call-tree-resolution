@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from itertools import groupby
 from typing import TYPE_CHECKING
 
 from salix import Struct
@@ -71,10 +72,11 @@ def worst_case_depths(
 	"""
 	frames_tuple = tuple(frames)
 	frame_by_name = _frames_by_bare_name(frames_tuple)
-	callees_by_name: dict[str, set[str]] = {}
-	for edge in edges:
-		callees_by_name.setdefault(edge.caller, set()).add(edge.callee)
-	adjacency = {caller: frozenset(callees) for caller, callees in callees_by_name.items()}
+	edges_tuple = tuple(edges)
+	adjacency = {
+		caller: frozenset(edge.callee for edge in group)
+		for caller, group in groupby(sorted(edges_tuple, key=_caller), key=_caller)
+	}
 	depths = _depths_by_component(adjacency, frame_by_name)
 	callees = _callees(adjacency)
 	bare_graph_nodes = {frame_key(node) for node in set(adjacency) | callees}
@@ -89,7 +91,7 @@ def worst_case_depths(
 				depths[entry] if entry in depths else _leaf_report(entry, frame_by_name)
 				for entry in roots
 			),
-			key=lambda report: report.depth,
+			key=_report_depth,
 			reverse=True,
 		)
 	)
@@ -166,7 +168,7 @@ def _depth(
 		)
 	deepest = max(
 		children,
-		key=lambda report: report.depth,
+		key=_report_depth,
 		default=StackReport(
 			entry=function, depth=0, recursive=False, has_dynamic=False, unmeasured=0
 		),
@@ -182,6 +184,22 @@ def _depth(
 	)
 	within[key] = report
 	return report
+
+
+def _report_depth(report: StackReport) -> int:
+	return report.depth
+
+
+def _frame_bytes(usage: StackUsage) -> int:
+	return usage.bytes
+
+
+def _caller(edge: CallEdge) -> str:
+	return edge.caller
+
+
+def _frame_name(usage: StackUsage) -> str:
+	return frame_key(usage.function)
 
 
 def _callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
@@ -251,14 +269,13 @@ def _frames_by_bare_name(frames: Iterable[StackUsage]) -> Mapping[str, StackUsag
 
 
 def _grouped_frames(frames: Iterable[StackUsage]) -> dict[str, list[StackUsage]]:
-	grouped: dict[str, list[StackUsage]] = {}
-	for usage in frames:
-		grouped.setdefault(frame_key(usage.function), []).append(usage)
-	return grouped
+	return {
+		key: list(group) for key, group in groupby(sorted(frames, key=_frame_name), key=_frame_name)
+	}
 
 
 def _merge_frame_records(records: list[StackUsage]) -> StackUsage:
-	largest = max(records, key=lambda usage: usage.bytes)
+	largest = max(records, key=_frame_bytes)
 	return StackUsage(
 		function=largest.function,
 		bytes=largest.bytes,

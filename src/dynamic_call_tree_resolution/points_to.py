@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING
+
+from salix import Struct
 
 from dynamic_call_tree_resolution.model import (
 	ARRAY_SUFFIX,
@@ -51,7 +53,7 @@ def assignments(program: Program) -> tuple[SlotAssignment, ...]:
 				)
 				for (slot, path, candidates), provenance in by_key.items()
 			),
-			key=lambda assignment: assignment.slot,
+			key=_assignment_slot,
 		)
 	)
 
@@ -210,9 +212,17 @@ def _member_assignments(
 				)
 
 
-class _SlotUniverseEntry(NamedTuple):
+class _SlotUniverseEntry(Struct):
 	path: tuple[str | None, ...]
 	signature: FunctionSignature | None
+
+
+def _assignment_slot(assignment: SlotAssignment) -> Address:
+	return assignment.slot
+
+
+def _slot_address(slot: UnresolvedSlot) -> Address:
+	return slot.slot
 
 
 def unresolved_slots(
@@ -233,7 +243,7 @@ def unresolved_slots(
 			if data_object.type_name == FUNCTION_POINTER:
 				universe.setdefault(
 					data_object.address,
-					_SlotUniverseEntry((data_object.name,), data_object.signature),
+					_SlotUniverseEntry(path=(data_object.name,), signature=data_object.signature),
 				)
 			elif data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
 				_array_element_slots(program, data_object, (data_object.name,), universe)
@@ -243,7 +253,8 @@ def unresolved_slots(
 		if relocation.target not in program.functions:
 			continue
 		universe.setdefault(
-			relocation.slot, _SlotUniverseEntry(_slot_path(program, relocation.slot), None)
+			relocation.slot,
+			_SlotUniverseEntry(path=_slot_path(program, relocation.slot), signature=None),
 		)
 	return tuple(
 		sorted(
@@ -252,7 +263,7 @@ def unresolved_slots(
 				for slot, entry in universe.items()
 				if slot not in resolved_by_slot
 			),
-			key=lambda slot: slot.slot,
+			key=_slot_address,
 		)
 	)
 
@@ -270,7 +281,7 @@ def _array_element_slots(
 			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
 				universe.setdefault(
 					Address(data_object.address + base_offset),
-					_SlotUniverseEntry((*path, f"[{index}]"), data_object.signature),
+					_SlotUniverseEntry(path=(*path, f"[{index}]"), signature=data_object.signature),
 				)
 		return
 	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
@@ -296,7 +307,7 @@ def _collect_member_slots(
 			case FunctionPointerMember(offset=offset, signature=signature):
 				universe.setdefault(
 					Address(data_object.address + base_offset + offset),
-					_SlotUniverseEntry(member_path, signature),
+					_SlotUniverseEntry(path=member_path, signature=signature),
 				)
 			case EmbeddedStructMember(offset=offset, members=inner_members):
 				_collect_member_slots(
@@ -364,15 +375,20 @@ def memory_at(program: Program, address: Address, size: int) -> bytes:
 
 
 def pointer_at(program: Program, address: Address) -> Address | None:
-	"""Read the pointer stored at ``address`` in the loaded image.
+	"""Read the pointer stored at ``address`` in the loaded image."""
+	covering = _object_covering(program, address)
+	bound = covering.address + max(covering.size, 1) if covering is not None else None
+	return read_pointer(program, address, bound)
 
-	Reads are bounded by any object covering the address, so a pointer
-	that would extend past its object is not readable.
+
+def read_pointer(program: Program, address: Address, bound: int | None) -> Address | None:
+	"""One pointer read bounded by its enclosing object's exclusive end.
+
+	The bound comes from ``_object_covering`` on the cold path or vsa's
+	span bisect, so a pointer that would extend past its object is not
+	readable.
 	"""
-	data_object = _object_covering(program, address)
-	if data_object is not None and (
-		address + program.pointer_size > data_object.address + max(data_object.size, 1)
-	):
+	if bound is not None and address + program.pointer_size > bound:
 		return None
 	data = memory_at(program, address, program.pointer_size)
 	if len(data) != program.pointer_size:

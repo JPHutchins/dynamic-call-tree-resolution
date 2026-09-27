@@ -1,16 +1,13 @@
 from collections.abc import Iterator
-from typing import Any, BinaryIO, Literal, overload
+from typing import BinaryIO, Literal
 
 from elftools.dwarf.dwarfinfo import DWARFInfo
 from elftools.elf.sections import Section
 
 class ELFHeader:
 	e_machine: str
-	e_ident: dict[str, Any]
-	@overload
-	def __getitem__(self, name: Literal["e_machine"]) -> str: ...
-	@overload
-	def __getitem__(self, name: str) -> Any: ...
+	e_ident: dict[str, int]
+	def __getitem__(self, name: Literal["e_machine", "e_type"]) -> str: ...
 
 class ELFFile:
 	header: ELFHeader

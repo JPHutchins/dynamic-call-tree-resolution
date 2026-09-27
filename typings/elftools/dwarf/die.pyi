@@ -1,10 +1,9 @@
 from collections.abc import Iterator
-from typing import Any
 
 class AttributeValue:
 	name: str
 	form: str
-	value: Any
+	value: int | str | bytes | list[int]
 	raw_value: int
 	offset: int
 	indirection_length: int

@@ -8,7 +8,7 @@ CS_MODE_THUMB: int
 
 class CsError(Exception): ...
 
-class _CsMemOperand:
+class CsMemOperand:
 	base: int
 	index: int
 	scale: int
@@ -18,7 +18,14 @@ class CsOperand:
 	type: int
 	reg: int
 	imm: int
-	mem: _CsMemOperand
+	mem: CsMemOperand
+
+class CsShiftOperand:
+	type: int
+	value: int
+
+class ArmCsOperand(CsOperand):
+	shift: CsShiftOperand
 
 class CsInsn:
 	id: int

@@ -160,8 +160,10 @@ indent-style = "tab"
 [tool.mypy]
 strict = true
 warn_unused_ignores = true
+disallow_any_explicit = true
+disallow_any_expr = true
 mypy_path = "typings"
-exclude = ["testbeds", "references", "typings", "build", "dist", ".camas"]
+exclude = ["tasks.py", "testbeds", "references", "typings", "build", "dist", ".camas"]
 
 [tool.pyright]
 typeCheckingMode = "strict"

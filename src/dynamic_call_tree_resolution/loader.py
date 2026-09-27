@@ -5,14 +5,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, cast
 
 from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import Relocation as ElfRelocation
 from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import SymbolTableSection
-from salix import replace
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import (
 	ANONYMOUS,
@@ -37,13 +37,13 @@ if TYPE_CHECKING:
 	from pathlib import Path
 	from typing import BinaryIO
 
-	from elftools.dwarf.die import DIE
+	from elftools.dwarf.die import DIE, AttributeValue
 	from elftools.dwarf.dwarfinfo import DWARFInfo
 
 	from dynamic_call_tree_resolution.model import ByteOrder, Member
 
 
-class _SectionBytes(NamedTuple):
+class _SectionBytes(Struct):
 	address: int
 	size: int
 	data: bytes
@@ -152,55 +152,46 @@ def _patched(section: _SectionBytes, patches: Mapping[Address, bytes], pointer_s
 def _functions_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, Function]:
 	if symtab is None:
 		return {}  # pragma: no cover
-	functions: dict[Address, Function] = {}
-	for symbol in symtab.iter_symbols():
-		if symbol["st_info"]["type"] != "STT_FUNC":
-			continue
-		if symbol["st_shndx"] == "SHN_UNDEF":
-			continue
-		address = Address(symbol["st_value"])
-		if address & ~1 == 0:
-			continue
-		functions[address] = Function(
+	return {
+		address: Function(
 			name=symbol.name,
 			address=address,
 			size=symbol["st_size"],
 			signature=None,
 		)
-	return functions
+		for symbol in symtab.iter_symbols()
+		if symbol["st_info"]["type"] == "STT_FUNC"
+		if symbol["st_shndx"] != "SHN_UNDEF"
+		if (address := Address(symbol["st_value"])) & ~1
+	}
 
 
 def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 	if dwarf is None:
 		return {}  # pragma: no cover
-	functions: dict[Address, Function] = {}
-	for compilation_unit in dwarf.iter_CUs():
-		for die in _iter_dies(compilation_unit.get_top_DIE()):
-			if die.tag != "DW_TAG_subprogram":
-				continue
-			low_pc = die.attributes.get("DW_AT_low_pc")
-			if low_pc is None:
-				continue
-			address = Address(int(low_pc.value))
-			if address & ~1 == 0:
-				continue
-			functions[address] = Function(
-				name=_die_name(die),
-				address=address,
-				size=_subprogram_size(die),
-				signature=_signature(die),
-			)
-	return functions
+	return {
+		address: Function(
+			name=_die_name(die),
+			address=address,
+			size=_subprogram_size(die),
+			signature=_signature(die),
+		)
+		for compilation_unit in dwarf.iter_CUs()
+		for die in _iter_dies(compilation_unit.get_top_DIE())
+		if die.tag == "DW_TAG_subprogram"
+		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
+		if (address := Address(_int_value(low_pc))) & ~1
+	}
 
 
 def _subprogram_size(die: DIE) -> int:
-	low_pc = int(die.attributes["DW_AT_low_pc"].value)
+	low_pc = _int_value(die.attributes["DW_AT_low_pc"])
 	high_pc = die.attributes.get("DW_AT_high_pc")
 	if high_pc is None:
 		return 0  # pragma: no cover
 	if high_pc.form == "DW_FORM_addr":  # pragma: no branch
-		return int(high_pc.value) - low_pc  # pragma: no cover
-	return int(high_pc.value)
+		return _int_value(high_pc) - low_pc  # pragma: no cover
+	return _int_value(high_pc)
 
 
 def _signature(die: DIE) -> FunctionSignature:
@@ -266,15 +257,15 @@ def _strip_qualifiers(die: DIE | None) -> DIE | None:
 	return _strip_qualifiers(_type_die(die))
 
 
-class _FunctionPointer(NamedTuple):
+class _FunctionPointer(Struct):
 	signature: FunctionSignature
 
 
-class _StructPointer(NamedTuple):
+class _StructPointer(Struct):
 	pointee: str | None
 
 
-class _EmbeddedStruct(NamedTuple):
+class _EmbeddedStruct(Struct):
 	members: tuple[Member, ...]
 
 
@@ -288,12 +279,12 @@ def _pointee_kind(type_die: DIE | None) -> _PointeeKind:
 		return None  # pragma: no cover
 	pointee = _strip_qualifiers(_type_die(underlying))
 	if pointee is None:
-		return _StructPointer(None)
+		return _StructPointer(pointee=None)
 	match pointee.tag:
 		case "DW_TAG_subroutine_type":
-			return _FunctionPointer(_signature(pointee))
+			return _FunctionPointer(signature=_signature(pointee))
 		case "DW_TAG_structure_type" | "DW_TAG_union_type" if "DW_AT_name" in pointee.attributes:
-			return _StructPointer(_type_name(pointee))
+			return _StructPointer(pointee=_type_name(pointee))
 		case _:
 			return None
 
@@ -305,7 +296,7 @@ def _member_kind(type_die: DIE | None) -> _MemberKind:
 	if underlying.tag == "DW_TAG_pointer_type":
 		return _pointee_kind(underlying)
 	if underlying.tag in ("DW_TAG_structure_type", "DW_TAG_union_type"):
-		return _EmbeddedStruct(tuple(_layout_members(underlying)))
+		return _EmbeddedStruct(members=tuple(_layout_members(underlying)))
 	return None
 
 
@@ -328,13 +319,13 @@ def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 			name_attribute = die.attributes.get("DW_AT_name")
 			if name_attribute is None:
 				continue  # pragma: no cover
-			name = _attr_string(name_attribute.value)
+			name = _string_value(name_attribute)
 			keyword = "union" if die.tag == "DW_TAG_union_type" else "struct"
 			key = layout_key(keyword, name)
 			byte_size = die.attributes.get("DW_AT_byte_size")
 			layout = StructureLayout(
 				members=tuple(_layout_members(die)),
-				size=int(byte_size.value) if byte_size is not None else 0,  # pragma: no branch
+				size=_int_value(byte_size) if byte_size is not None else 0,  # pragma: no branch
 			)
 			existing = layouts.get(key)
 			if existing is None or len(layout.members) > len(existing.members):
@@ -377,7 +368,7 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 
 def _member_name(member_die: DIE) -> str | None:
 	name_attribute = member_die.attributes.get("DW_AT_name")
-	return None if name_attribute is None else _attr_string(name_attribute.value)
+	return None if name_attribute is None else _string_value(name_attribute)
 
 
 def _member_offset(member_die: DIE) -> int | None:
@@ -393,7 +384,7 @@ def _member_offset(member_die: DIE) -> int | None:
 		"DW_FORM_implicit_const",
 	):
 		return None  # pragma: no cover
-	return int(location.value)
+	return _int_value(location)
 
 
 def _objects_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, DataObject]:
@@ -424,26 +415,21 @@ def _objects_from_dwarf(
 ) -> dict[Address, DataObject]:
 	if dwarf is None:
 		return {}  # pragma: no cover
-	objects: dict[Address, DataObject] = {}
-	for compilation_unit in dwarf.iter_CUs():
-		for die in _iter_dies(compilation_unit.get_top_DIE()):
-			if die.tag != "DW_TAG_variable":
-				continue
-			if "DW_AT_declaration" in die.attributes:
-				continue
-			name_attribute = die.attributes.get("DW_AT_name")
-			address = _location_address(die, pointer_size, byte_order)
-			if name_attribute is None or address is None:
-				continue  # pragma: no branch
-			size = _byte_size_of(die)
-			objects[address] = DataObject(
-				name=_attr_string(name_attribute.value),
-				address=address,
-				size=size,
-				type_name=_type_name(_type_die(die)),
-				signature=_object_signature(die),
-			)
-	return objects
+	return {
+		address: DataObject(
+			name=_string_value(name_attribute),
+			address=address,
+			size=_byte_size_of(die),
+			type_name=_type_name(_type_die(die)),
+			signature=_object_signature(die),
+		)
+		for compilation_unit in dwarf.iter_CUs()
+		for die in _iter_dies(compilation_unit.get_top_DIE())
+		if die.tag == "DW_TAG_variable"
+		if "DW_AT_declaration" not in die.attributes
+		if (name_attribute := die.attributes.get("DW_AT_name")) is not None
+		if (address := _location_address(die, pointer_size, byte_order)) is not None
+	}
 
 
 def _object_signature(die: DIE) -> FunctionSignature | None:
@@ -468,7 +454,7 @@ def _location_address(die: DIE, pointer_size: int, byte_order: ByteOrder) -> Add
 		"DW_FORM_block4",
 	):
 		return None  # pragma: no cover
-	operations = location.value
+	operations = _exprloc(location)
 	if not operations or operations[0] != _DW_OP_ADDR:
 		return None  # pragma: no cover
 	return Address(int.from_bytes(bytes(operations[1 : 1 + pointer_size]), byte_order))
@@ -479,24 +465,20 @@ def _byte_size_of(die: DIE) -> int:
 	if type_die is None:
 		return 0  # pragma: no cover
 	byte_size = type_die.attributes.get("DW_AT_byte_size")
-	return int(byte_size.value) if byte_size is not None else 0  # pragma: no branch
+	return _int_value(byte_size) if byte_size is not None else 0  # pragma: no branch
 
 
 def _declaration_types(dwarf: DWARFInfo | None) -> dict[str, str]:
 	if dwarf is None:
 		return {}  # pragma: no cover
-	declarations: dict[str, str] = {}
-	for compilation_unit in dwarf.iter_CUs():
-		for die in _iter_dies(compilation_unit.get_top_DIE()):
-			if die.tag != "DW_TAG_variable":
-				continue
-			if "DW_AT_declaration" not in die.attributes:
-				continue
-			name_attribute = die.attributes.get("DW_AT_name")
-			if name_attribute is None:
-				continue  # pragma: no cover
-			declarations[_attr_string(name_attribute.value)] = _type_name(_type_die(die))
-	return declarations
+	return {
+		_string_value(name_attribute): _type_name(_type_die(die))
+		for compilation_unit in dwarf.iter_CUs()
+		for die in _iter_dies(compilation_unit.get_top_DIE())
+		if die.tag == "DW_TAG_variable"
+		if "DW_AT_declaration" in die.attributes
+		if (name_attribute := die.attributes.get("DW_AT_name")) is not None
+	}
 
 
 def _merge_objects(
@@ -598,11 +580,23 @@ def _iter_dies(root: DIE) -> Iterator[DIE]:
 		yield from _iter_dies(child)
 
 
+def _int_value(attribute: AttributeValue) -> int:
+	return int(cast("int | str | bytes", attribute.value))
+
+
+def _string_value(attribute: AttributeValue) -> str:
+	return _attr_string(cast("str | bytes", attribute.value))
+
+
+def _exprloc(attribute: AttributeValue) -> list[int]:
+	return cast("list[int]", attribute.value)
+
+
 def _die_name(die: DIE) -> str:
 	for attribute_name in ("DW_AT_linkage_name", "DW_AT_name"):
 		attribute = die.attributes.get(attribute_name)
 		if attribute is not None:
-			return _attr_string(attribute.value)
+			return _string_value(attribute)
 	return ANONYMOUS
 
 
