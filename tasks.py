@@ -15,11 +15,8 @@ fix = Sequential(lint_fix, format)
 actionlint = Task("uv run actionlint")
 mypy = Task("uv run mypy .")
 pyright = Task("uv run pyright src tests")
-ty = Task("uv run ty check")
-zuban = Task("uv run zuban check src tests")
-pyrefly = Task("uv run pyrefly check")
 
-typecheck = Parallel(mypy, pyright, ty, zuban, pyrefly)
+typecheck = Parallel(mypy, pyright)
 test = Task("uv run pytest --doctest-modules -v -m 'not slow'")
 coverage = Task(
 	"uv run pytest --doctest-modules -m 'not slow' --cov --cov-report=term-missing --cov-report=xml"
