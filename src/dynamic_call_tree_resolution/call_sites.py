@@ -63,7 +63,7 @@ class _Operand(Protocol):
 	@property
 	def imm(self) -> int: ...  # pragma: no cover
 	@property
-	def mem(self) -> _MemoryOperand | None: ...  # pragma: no cover
+	def mem(self) -> _MemoryOperand: ...  # pragma: no cover
 
 
 _WINDOW = 10
@@ -428,8 +428,6 @@ def _x86_memory_address(
 	state: dict[int, Address],
 ) -> Address | None:
 	memory = operand.mem
-	if memory is None:
-		return None  # pragma: no cover
 	if memory.base == x86_const.X86_REG_RIP:
 		return Address(instruction.address + instruction.size + memory.disp)
 	if memory.base == 0:
@@ -446,8 +444,6 @@ def _arm_memory_address(
 	state: dict[int, Address],
 ) -> Address | None:
 	memory = operand.mem
-	if memory is None:
-		return None  # pragma: no cover
 	if memory.base == arm_const.ARM_REG_PC:
 		return Address(((instruction.address + 4) & ~3) + memory.disp)
 	if memory.base == arm_const.ARM_REG_SP or memory.index != 0:
