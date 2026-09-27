@@ -6,6 +6,7 @@
 from dynamic_call_tree_resolution.call_sites import (
 	call_site_candidates,
 	extract_call_sites,
+	matching_targets,
 	per_caller_candidates,
 )
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph, parse_callgraph
@@ -103,6 +104,7 @@ __all__ = [
 	"load_pexplorer",
 	"load_stack_usages",
 	"main",
+	"matching_targets",
 	"parse_callgraph",
 	"parse_stack_usage",
 	"per_caller_candidates",

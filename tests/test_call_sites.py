@@ -13,13 +13,16 @@ from dynamic_call_tree_resolution import (
 	Address,
 	DataObject,
 	Function,
+	FunctionSignature,
 	Program,
 	Provenance,
 	SlotAssignment,
 	assignments,
+	build_report,
 	call_site_candidates,
 	extract_call_sites,
 	load,
+	matching_targets,
 	per_caller_candidates,
 )
 
@@ -1633,3 +1636,156 @@ def test_x86_global_store_then_load_resolves_within_the_function() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1015
 	assert site.candidates == frozenset({Address(0x3000)})
+
+
+def _signature_program() -> Program:
+	"""Three functions and one signature-carrying BSS slot for filter tests."""
+	return Program(
+		byte_order="little",
+		pointer_size=8,
+		machine="EM_X86_64",
+		functions={
+			Address(0x1000): Function(
+				name="caller",
+				address=Address(0x1000),
+				size=12,
+				signature=FunctionSignature(return_type="int", parameters=("int",)),
+			),
+			Address(0x3000): Function(
+				name="matching_one",
+				address=Address(0x3000),
+				size=1,
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			),
+			Address(0x4000): Function(
+				name="matching_two",
+				address=Address(0x4000),
+				size=1,
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			),
+			Address(0x5000): Function(
+				name="non_matching",
+				address=Address(0x5000),
+				size=1,
+				signature=FunctionSignature(return_type="int", parameters=()),
+			),
+		},
+		objects={
+			Address(0x2000): DataObject(
+				name="bss_slot",
+				address=Address(0x2000),
+				size=8,
+				type_name=None,
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x1000): bytes.fromhex("48 c7 c0 00 20 00 00ff d0")},
+	)
+
+
+def test_matching_targets_filters_by_exact_signature() -> None:
+	program = _signature_program()
+	signature = FunctionSignature(return_type="void", parameters=("int",))
+	assert matching_targets(program, signature) == frozenset({Address(0x3000), Address(0x4000)})
+	assert matching_targets(
+		program, FunctionSignature(return_type="int", parameters=())
+	) == frozenset({Address(0x5000)})
+	assert (
+		matching_targets(program, FunctionSignature(return_type="void", parameters=()))
+		== frozenset()
+	)
+
+
+def test_chase_of_an_unreadable_slot_narrows_to_the_slot_signature() -> None:
+	program = _signature_program()
+	(site,) = extract_call_sites(program)
+	signatures_by_slot = {
+		Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))
+	}
+	assert site.candidates == frozenset({Address(0x2000)})
+	assert call_site_candidates(program, site, {}, signatures_by_slot) == frozenset(
+		{Address(0x3000), Address(0x4000)}
+	)
+
+
+def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
+	program = Program(
+		byte_order="little",
+		pointer_size=8,
+		machine="EM_X86_64",
+		functions={
+			Address(0x1000): Function(
+				name="caller", address=Address(0x1000), size=6, signature=None
+			),
+			Address(0x3000): Function(
+				name="matching",
+				address=Address(0x3000),
+				size=1,
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			),
+		},
+		objects={
+			Address(0x2000): DataObject(
+				name="bss_slot",
+				address=Address(0x2000),
+				size=8,
+				type_name=None,
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x1000): bytes.fromhex("ff 15 fa 0f 00 00")},
+	)
+	(site,) = extract_call_sites(program)
+	assert site.slot == 0x2000
+	assert site.candidates == frozenset()
+	signatures_by_slot = {
+		Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))
+	}
+	assert call_site_candidates(program, site, {}, signatures_by_slot) == frozenset(
+		{Address(0x3000)}
+	)
+
+
+def test_report_narrows_a_bss_site_to_its_slot_signature() -> None:
+	program = Program(
+		byte_order="little",
+		pointer_size=8,
+		machine="EM_X86_64",
+		functions={
+			Address(0x1000): Function(
+				name="caller", address=Address(0x1000), size=6, signature=None
+			),
+			Address(0x3000): Function(
+				name="matching",
+				address=Address(0x3000),
+				size=1,
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			),
+			Address(0x4000): Function(
+				name="non_matching",
+				address=Address(0x4000),
+				size=1,
+				signature=FunctionSignature(return_type="int", parameters=()),
+			),
+		},
+		objects={
+			Address(0x2000): DataObject(
+				name="bss_slot",
+				address=Address(0x2000),
+				size=8,
+				type_name="function pointer",
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x1000): bytes.fromhex("ff 15 fa 0f 00 00")},
+	)
+	sites = extract_call_sites(program)
+	report = build_report(program, (), sites)
+	(site_report,) = report.call_sites
+	assert {candidate.name for candidate in site_report.candidates} == {"matching"}
