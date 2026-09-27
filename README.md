@@ -69,7 +69,7 @@ the numbers below are pinned by `tests/test_counter_fixture.py`):
 | | puncover | dctr |
 |---|---|---|
 | indirect calls detected | 0 (assembly-text regex) | 98 call sites |
-| `poll_state_thread` worst case | 96 bytes | 460 bytes |
+| `poll_state_thread` worst case | 96 bytes | 460 bytes (static-only; 996 with indirect expansion) |
 | `shell_readline` worst case | not reported (symbol match fails) | 2108 bytes (upper bound; 1760 without indirect expansion) |
 | slots resolved/unresolved/total | — | 70/51/121 |
 | call sites resolved/exact/total | — | 6/6/98 |
@@ -91,7 +91,7 @@ puncover's report (`stack_report.poll_state_thread`, `call_stack` in full):
 poll_state_thread (96)
 ```
 
-dctr's deepest path over the committed artifacts (frame bytes; cumulative in
+dctr's deepest path over static `.ci` edges (frame bytes; cumulative in
 parentheses):
 
 ```
@@ -108,12 +108,14 @@ poll_state_thread (96, 96)
                                     └── hwtimer_set_tick_one_shot (0, 460)  [static]
 ```
 
-Every edge on the deepest path is a static `.ci` edge; the frames are the `.su`
-record bytes, so the 364-byte difference is static callee depth that puncover's
-report omits. The function's one indirect call site is resolved exactly by dctr to
+Every edge on this path is a static `.ci` edge; the frames are the `.su` record
+bytes, so the 364-byte difference is static callee depth that puncover's report
+omits. The function's one indirect call site is resolved exactly by dctr to
 `can_loopback_get_state` (8 bytes) — exact, but on a separate branch, not the
-deepest one. dctr's 460 expands indirect edges to per-caller candidate sets (a sound
-upper bound); along this path all edges are static.
+deepest one. With indirect expansion, dctr's upper bound for this entry is 996
+bytes: the expansion unions every resolved target into each indirect edge, so the
+deepest expanded path runs through the fallback targets rather than the all-static
+path shown above.
 
 </details>
 

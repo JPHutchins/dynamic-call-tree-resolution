@@ -143,6 +143,42 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	assert "main: 80 bytes" in output
 
 
+def test_cli_stack_warns_when_indirect_edges_are_dropped(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"
+	nested.mkdir(parents=True)
+	(nested / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	stack(build_directory, elf=fixture_elfs["null"])
+	output = capsys.readouterr()
+	assert "warning: 1 of 1 indirect call edges have no candidates and were dropped" in output.err
+
+
+def test_cli_summary_warns_when_indirect_edges_are_dropped(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"
+	nested.mkdir(parents=True)
+	(nested / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	summary(build_directory, fixture_elfs["null"])
+	output = capsys.readouterr()
+	assert "warning: 1 of 1 indirect call edges have no candidates and were dropped" in output.err
+	report = msgspec.json.decode(output.out, type=AnalysisSummary)
+	assert report.entry_points == 0
+
+
 def test_cli_summary_json(
 	tmp_path: Path,
 	fixture_elfs: dict[str, Path],

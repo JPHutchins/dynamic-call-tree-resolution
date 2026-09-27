@@ -37,15 +37,16 @@ def expand_indirect_calls(
 	"""Replace GCC ``__indirect_call`` placeholders with resolved targets.
 
 	Each caller's placeholders expand to the union of the candidates of the
-	call sites extracted from that caller's code; callers without extracted
-	sites expand to ``fallback`` (the union of all resolved targets). Both
-	expansions are sound upper bounds for worst-case stack depth.
+	call sites extracted from that caller's code and ``fallback`` (the union
+	of all resolved targets): per-caller candidates refine on top of the
+	fallback, never replace it, so sites the extractor missed cannot vanish
+	from the bound.
 	"""
 	return tuple(
 		CallEdge(caller=edge.caller, callee=callee)
 		for edge in edges
 		for callee in (
-			sorted(targets_by_caller.get(_frame_key(edge.caller), fallback))
+			sorted(targets_by_caller.get(frame_key(edge.caller), frozenset()) | fallback)
 			if edge.callee == "__indirect_call"
 			else (edge.callee,)
 		)
@@ -127,7 +128,7 @@ def _depth(
 	key = (function, path & in_component)
 	if key in within:
 		return within[key]
-	frame = frame_by_name.get(_frame_key(function))
+	frame = frame_by_name.get(frame_key(function))
 	current_path = path | {function}
 	children: list[StackReport] = []
 	for callee in sorted(adjacency.get(function, frozenset())):
@@ -145,7 +146,7 @@ def _depth(
 		default=StackReport(entry=function, depth=0, recursive=False, has_dynamic=False),
 	)
 	report = StackReport(
-		entry=_frame_key(function),
+		entry=frame_key(function),
 		depth=(frame.bytes if frame is not None else 0) + deepest.depth,
 		recursive=deepest.recursive
 		or any(callee in current_path for callee in adjacency.get(function, frozenset())),
@@ -193,7 +194,7 @@ def _strongly_connected_components(
 	return tuple(components)
 
 
-def _frame_key(name: str) -> str:
+def frame_key(name: str) -> str:
 	"""Reduce a VCG or ``.su`` function name to its bare assembly name.
 
 	GCC's ``.ci`` names for static functions are path-qualified
@@ -219,7 +220,7 @@ def _frames_by_bare_name(frames: Iterable[StackUsage]) -> Mapping[str, StackUsag
 def _grouped_frames(frames: Iterable[StackUsage]) -> dict[str, list[StackUsage]]:
 	grouped: dict[str, list[StackUsage]] = {}
 	for usage in frames:
-		grouped.setdefault(_frame_key(usage.function), []).append(usage)
+		grouped.setdefault(frame_key(usage.function), []).append(usage)
 	return grouped
 
 

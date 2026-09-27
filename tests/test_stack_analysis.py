@@ -251,7 +251,17 @@ def test_expand_indirect_calls_replaces_placeholders_with_candidates() -> None:
 		CallEdge(caller="main", callee="direct_fn"),
 		CallEdge(caller="main", callee="cb_a"),
 		CallEdge(caller="main", callee="cb_b"),
+		CallEdge(caller="main", callee="fallback_fn"),
 		CallEdge(caller="other", callee="fallback_fn"),
+	)
+
+
+def test_expand_indirect_calls_unions_the_fallback_into_caller_sets() -> None:
+	edges = (CallEdge(caller="main", callee="__indirect_call"),)
+	expanded = expand_indirect_calls(edges, {"main": frozenset({"cb"})}, frozenset({"fb"}))
+	assert expanded == (
+		CallEdge(caller="main", callee="cb"),
+		CallEdge(caller="main", callee="fb"),
 	)
 
 
@@ -264,4 +274,7 @@ def test_expand_indirect_calls_matches_path_qualified_callers() -> None:
 	edges = (CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="__indirect_call"),)
 	assert expand_indirect_calls(
 		edges, {"execute": frozenset({"cb"})}, frozenset({"fallback_fn"})
-	) == (CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="cb"),)
+	) == (
+		CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="cb"),
+		CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="fallback_fn"),
+	)
