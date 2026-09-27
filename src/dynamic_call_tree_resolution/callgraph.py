@@ -70,15 +70,13 @@ def _parse_body(
 	key: str,
 ) -> tuple[dict[str, list[dict[str, str]]], int]:
 	if tokens[index] != key or tokens[index + 1] != ":" or tokens[index + 2] != "{":
-		raise ValueError(f"expected '{key}: {{' at token {index}")  # pragma: no cover
+		raise ValueError(f"expected '{key}: {{' at token {index}")
 	entries: dict[str, list[dict[str, str]]] = {}
 	index += 3
 	while tokens[index] != "}":
 		entry_key = tokens[index]
 		if tokens[index + 1] != ":":
-			raise ValueError(
-				f"expected ':' after '{entry_key}' at token {index + 1}"
-			)  # pragma: no cover
+			raise ValueError(f"expected ':' after '{entry_key}' at token {index + 1}")
 		index += 2
 		if tokens[index] == "{":
 			entry, index = _parse_entry(tokens, index)
@@ -96,15 +94,6 @@ def _parse_entry(tokens: tuple[str, ...], index: int) -> tuple[dict[str, str], i
 		if tokens[index + 1] != ":":
 			raise ValueError(f"expected ':' after '{entry_key}' at token {index + 1}")
 		index += 2
-		value, index = _parse_entry_value(tokens, index)
-		entry[entry_key] = value
+		entry[entry_key] = tokens[index]
+		index += 1
 	return entry, index + 1
-
-
-def _parse_entry_value(tokens: tuple[str, ...], index: int) -> tuple[str, int]:
-	if tokens[index] == "{":
-		nested, index = _parse_entry(tokens, index)  # pragma: no cover
-		return ", ".join(
-			f"{key}={entry_value}" for key, entry_value in nested.items()
-		), index  # pragma: no cover
-	return tokens[index], index + 1

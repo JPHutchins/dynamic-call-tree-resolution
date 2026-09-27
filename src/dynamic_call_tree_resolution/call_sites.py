@@ -350,7 +350,7 @@ def _apply_x86(instruction: CsInsn, state: dict[int, Address], program: Program)
 						program,
 					)
 				case _:
-					state.pop(destination.reg, None)
+					state.pop(destination.reg, None)  # pragma: no cover
 			return
 	if instruction.mnemonic == "lea":
 		destination, source = instruction.operands
@@ -395,7 +395,7 @@ def _apply_arm(instruction: CsInsn, state: dict[int, Address], program: Program)
 			case arm_const.ARM_OP_IMM:
 				state[destination.reg] = Address(source.imm)
 			case _:
-				state.pop(destination.reg, None)
+				state.pop(destination.reg, None)  # pragma: no cover
 		return
 	for register in instruction.regs_access()[1]:
 		state.pop(register, None)

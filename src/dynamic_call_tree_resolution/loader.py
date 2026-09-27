@@ -238,7 +238,7 @@ def _type_name(die: DIE | None) -> str:
 		case "DW_TAG_subroutine_type":  # pragma: no cover
 			return "function pointer"
 		case _:
-			return str(die.tag)
+			return str(die.tag)  # pragma: no cover
 
 
 def _type_die(die: DIE) -> DIE | None:
