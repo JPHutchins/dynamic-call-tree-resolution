@@ -29,6 +29,12 @@ from dynamic_call_tree_resolution.model import (
 	UnresolvedSlot,
 	render_path,
 )
+from dynamic_call_tree_resolution.pexplorer import (
+	PexplorerCallee,
+	PexplorerFunction,
+	PexplorerReport,
+	load_pexplorer,
+)
 from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisReport,
@@ -36,6 +42,7 @@ from dynamic_call_tree_resolution.report import (
 	CallSiteReport,
 	Candidate,
 	ComparisonReport,
+	FunctionComparison,
 	SignatureReport,
 	SlotAssignmentReport,
 	UnresolvedSlotReport,
@@ -65,9 +72,13 @@ __all__ = [
 	"DataObject",
 	"EmbeddedStructMember",
 	"Function",
+	"FunctionComparison",
 	"FunctionPointerMember",
 	"FunctionSignature",
 	"Member",
+	"PexplorerCallee",
+	"PexplorerFunction",
+	"PexplorerReport",
 	"Program",
 	"Provenance",
 	"Relocation",
@@ -89,6 +100,7 @@ __all__ = [
 	"extract_call_sites",
 	"load",
 	"load_callgraph",
+	"load_pexplorer",
 	"load_stack_usages",
 	"main",
 	"parse_callgraph",

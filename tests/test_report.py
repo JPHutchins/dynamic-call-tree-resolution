@@ -12,6 +12,7 @@ import msgspec
 from dynamic_call_tree_resolution import (
 	AnalysisReport,
 	ComparisonReport,
+	FunctionComparison,
 	assignments,
 	build_comparison,
 	build_report,
@@ -69,5 +70,22 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 		resolved_call_sites=5,
 		exact_call_sites=5,
 		candidate_size_counts=((0, 2), (1, 5)),
+		pexplorer_dynamic_sites=None,
+		function_comparisons=(
+			FunctionComparison(
+				caller="_start",
+				pexplorer_dynamic_sites=0,
+				dctr_call_sites=1,
+				dctr_resolved_sites=0,
+				dctr_exact_sites=0,
+			),
+			FunctionComparison(
+				caller="main",
+				pexplorer_dynamic_sites=0,
+				dctr_call_sites=6,
+				dctr_resolved_sites=5,
+				dctr_exact_sites=5,
+			),
+		),
 	)
 	assert msgspec.json.decode(msgspec.json.encode(comparison), type=ComparisonReport) == comparison

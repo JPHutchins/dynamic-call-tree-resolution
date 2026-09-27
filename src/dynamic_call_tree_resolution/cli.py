@@ -12,6 +12,7 @@ from cyclopts import App, Parameter
 from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.loader import load
+from dynamic_call_tree_resolution.pexplorer import load_pexplorer
 from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 from dynamic_call_tree_resolution.report import AnalysisSummary, build_comparison, build_report
 from dynamic_call_tree_resolution.stack_analysis import expand_indirect_calls, worst_case_depths
@@ -50,12 +51,21 @@ def compare(
 	],
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
+	pexplorer: Annotated[
+		Path | None, Parameter(help="pexplorer JSON report to join per function")
+	] = None,
 ) -> None:
-	"""Print a resolution rollup per ELF for cross-tool comparison."""
+	"""Print a resolution rollup per ELF for cross-tool comparison.
+
+	With a pexplorer JSON report, every function with dynamic calls on
+	either side gets a row comparing pexplorer's dynamic-call count with
+	dctr's per-site candidate sets.
+	"""
 	paths = [
 		path for elf in elfs for path in (sorted(elf.glob("*.elf")) if elf.is_dir() else (elf,))
 	]
-	comparisons = [build_comparison(elf.name, load(elf)) for elf in paths]
+	pexplorer_report = load_pexplorer(pexplorer) if pexplorer is not None else None
+	comparisons = [build_comparison(elf.name, load(elf), pexplorer_report) for elf in paths]
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(comparisons).decode()))
 		return
@@ -66,6 +76,16 @@ def compare(
 			f"{f'{comparison.resolved_slots}/{comparison.unresolved_slots}/{comparison.total_slots}':>11} "
 			f"{f'{comparison.resolved_call_sites}/{comparison.exact_call_sites}/{comparison.call_sites}':>12}"
 		)
+	if pexplorer_report is None:
+		return
+	print()
+	print(f"{'function':<48} {'pexplorer':>9} {'dctr':>5} {'resolved':>8} {'exact':>5}")
+	for comparison in comparisons:
+		for row in comparison.function_comparisons:
+			print(
+				f"{row.caller:<48} {row.pexplorer_dynamic_sites:>9} "
+				f"{row.dctr_call_sites:>5} {row.dctr_resolved_sites:>8} {row.dctr_exact_sites:>5}"
+			)
 
 
 @app.command

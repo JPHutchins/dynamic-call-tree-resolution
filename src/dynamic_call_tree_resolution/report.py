@@ -8,10 +8,13 @@ from typing import TYPE_CHECKING
 from msgspec import Struct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, extract_call_sites
-from dynamic_call_tree_resolution.model import FunctionSignature, Provenance, render_path
+from dynamic_call_tree_resolution.model import Address, FunctionSignature, Provenance, render_path
+from dynamic_call_tree_resolution.pexplorer import PexplorerReport, dynamic_sites_by_caller
 from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 
 if TYPE_CHECKING:
+	from collections.abc import Mapping
+
 	from dynamic_call_tree_resolution.model import CallSite, Program, SlotAssignment
 
 
@@ -67,6 +70,16 @@ class AnalysisReport(Struct):
 	resolved_targets: int
 
 
+class FunctionComparison(Struct):
+	"""Per-function dynamic-call comparison between pexplorer and dctr."""
+
+	caller: str
+	pexplorer_dynamic_sites: int
+	dctr_call_sites: int
+	dctr_resolved_sites: int
+	dctr_exact_sites: int
+
+
 class ComparisonReport(Struct):
 	"""Resolution rollup of one ELF, for cross-tool comparison."""
 
@@ -80,6 +93,8 @@ class ComparisonReport(Struct):
 	resolved_call_sites: int
 	exact_call_sites: int
 	candidate_size_counts: tuple[tuple[int, int], ...]
+	pexplorer_dynamic_sites: int | None = None
+	function_comparisons: tuple[FunctionComparison, ...] = ()
 
 
 class AnalysisSummary(Struct):
@@ -156,14 +171,52 @@ def _render_signature(signature: FunctionSignature | None) -> SignatureReport | 
 	)
 
 
-def build_comparison(name: str, program: Program) -> ComparisonReport:
-	"""Resolution rollup of one ELF, for cross-tool comparison."""
+def build_comparison(
+	name: str, program: Program, pexplorer: PexplorerReport | None = None
+) -> ComparisonReport:
+	"""Resolution rollup of one ELF, for cross-tool comparison.
+
+	When a pexplorer report is given, each function with dynamic calls on
+	either side gets a row: pexplorer's dynamic-call count against dctr's
+	per-site candidate sets.
+	"""
 	resolved = assignments(program)
 	unresolved = unresolved_slots(program, resolved)
 	resolved_by_slot = {assignment.slot: assignment for assignment in resolved}
+	sites = extract_call_sites(program)
 	candidate_sizes = sorted(
-		len(call_site_candidates(program, site, resolved_by_slot))
-		for site in extract_call_sites(program)
+		len(call_site_candidates(program, site, resolved_by_slot)) for site in sites
+	)
+	dynamic_by_caller: Mapping[Address, tuple[str, int]] = (
+		dynamic_sites_by_caller(pexplorer) if pexplorer is not None else {}
+	)
+	sites_by_caller: dict[Address, list[frozenset[Address]]] = {}
+	for site in sites:
+		sites_by_caller.setdefault(Address(site.caller_address & ~1), []).append(
+			call_site_candidates(program, site, resolved_by_slot)
+		)
+	rows = [
+		FunctionComparison(
+			caller=_caller_name(program, caller_address),
+			pexplorer_dynamic_sites=dynamic_by_caller[caller_address][1]
+			if caller_address in dynamic_by_caller
+			else 0,
+			dctr_call_sites=len(candidates),
+			dctr_resolved_sites=sum(bool(candidate_set) for candidate_set in candidates),
+			dctr_exact_sites=sum(len(candidate_set) == 1 for candidate_set in candidates),
+		)
+		for caller_address, candidates in sites_by_caller.items()
+	]
+	rows.extend(
+		FunctionComparison(
+			caller=dynamic_by_caller[caller_address][0],
+			pexplorer_dynamic_sites=dynamic_by_caller[caller_address][1],
+			dctr_call_sites=0,
+			dctr_resolved_sites=0,
+			dctr_exact_sites=0,
+		)
+		for caller_address in dynamic_by_caller
+		if caller_address not in sites_by_caller
 	)
 	return ComparisonReport(
 		elf=name,
@@ -180,4 +233,16 @@ def build_comparison(name: str, program: Program) -> ComparisonReport:
 		candidate_size_counts=tuple(
 			(size, candidate_sizes.count(size)) for size in dict.fromkeys(candidate_sizes)
 		),
+		pexplorer_dynamic_sites=(
+			sum(count for _, count in dynamic_by_caller.values()) if pexplorer is not None else None
+		),
+		function_comparisons=tuple(sorted(rows, key=lambda row: row.caller)),
 	)
+
+
+def _caller_name(program: Program, caller_address: Address) -> str:
+	function = program.functions.get(caller_address) or program.functions.get(
+		Address(caller_address | 1)
+	)
+	assert function is not None
+	return function.name

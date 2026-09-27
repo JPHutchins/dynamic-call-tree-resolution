@@ -1,0 +1,157 @@
+# Copyright (c) 2026 JP Hutchins
+# SPDX-License-Identifier: MIT
+
+"""Tests for :mod:`dynamic_call_tree_resolution.pexplorer` and the comparison join."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import msgspec
+
+from dynamic_call_tree_resolution import (
+	Address,
+	ComparisonReport,
+	DataObject,
+	Function,
+	PexplorerCallee,
+	PexplorerFunction,
+	PexplorerReport,
+	Program,
+	build_comparison,
+	load,
+	load_pexplorer,
+)
+from dynamic_call_tree_resolution.cli import compare
+
+if TYPE_CHECKING:
+	from pathlib import Path
+
+	import pytest
+
+
+def _write_report(path: Path, report: PexplorerReport) -> Path:
+	path.write_bytes(msgspec.json.encode(report))
+	return path
+
+
+def test_load_pexplorer_parses_dynamic_callees(tmp_path: Path) -> None:
+	report = PexplorerReport(
+		functions=(
+			PexplorerFunction(
+				name="caller",
+				address=0x1001,
+				callees=(
+					PexplorerCallee(call_from=0x1001, call_to=0x2000, dynamic=False),
+					PexplorerCallee(call_from=0x1001, dynamic=True),
+				),
+			),
+			PexplorerFunction(name="leaf", address=0x2000),
+		)
+	)
+	loaded = load_pexplorer(_write_report(tmp_path / "report.json", report))
+	assert loaded == report
+	assert loaded.functions[1].callees == ()
+
+
+def _main_pexplorer_report(main_address: int) -> PexplorerReport:
+	return PexplorerReport(
+		functions=(
+			PexplorerFunction(
+				name="main",
+				address=main_address,
+				callees=(
+					PexplorerCallee(call_from=main_address, dynamic=True),
+					PexplorerCallee(call_from=main_address, dynamic=True),
+				),
+			),
+			PexplorerFunction(
+				name="runtime_hook",
+				address=0x9999,
+				callees=(PexplorerCallee(call_from=0x9999, dynamic=True),),
+			),
+		)
+	)
+
+
+def test_comparison_joins_pexplorer_per_function(
+	fixture_elfs: dict[str, Path], tmp_path: Path
+) -> None:
+	program = load(fixture_elfs["nopie"])
+	main_address = next(
+		function.address for function in program.functions.values() if function.name == "main"
+	)
+	report = load_pexplorer(
+		_write_report(tmp_path / "report.json", _main_pexplorer_report(main_address))
+	)
+	comparison = build_comparison("nopie.elf", program, report)
+	assert comparison.pexplorer_dynamic_sites == 3
+	rows = {row.caller: row for row in comparison.function_comparisons}
+	assert rows["main"].pexplorer_dynamic_sites == 2
+	assert rows["main"].dctr_call_sites == 6
+	assert rows["main"].dctr_resolved_sites == 5
+	assert rows["main"].dctr_exact_sites == 5
+	assert rows["runtime_hook"].pexplorer_dynamic_sites == 1
+	assert rows["runtime_hook"].dctr_call_sites == 0
+	assert rows["_start"].pexplorer_dynamic_sites == 0
+	assert rows["_start"].dctr_call_sites == 1
+
+
+def test_comparison_round_trip_with_pexplorer_fields(
+	fixture_elfs: dict[str, Path], tmp_path: Path
+) -> None:
+	program = load(fixture_elfs["nopie"])
+	main_address = next(
+		function.address for function in program.functions.values() if function.name == "main"
+	)
+	report = load_pexplorer(
+		_write_report(tmp_path / "report.json", _main_pexplorer_report(main_address))
+	)
+	comparison = build_comparison("nopie.elf", program, report)
+	assert msgspec.json.decode(msgspec.json.encode(comparison), type=ComparisonReport) == comparison
+
+
+def test_comparison_resolves_thumb_bit_only_callers() -> None:
+	body = bytes.fromhex("00 4b 98 47") + (0x2000).to_bytes(4, "little")
+	program = Program(
+		byte_order="little",
+		pointer_size=4,
+		machine="EM_ARM",
+		functions={
+			Address(0x1001): Function(
+				name="thumb_caller", address=Address(0x1001), size=8, signature=None
+			),
+			Address(0x2000): Function(
+				name="target", address=Address(0x2000), size=4, signature=None
+			),
+		},
+		objects={
+			Address(0x3000): DataObject(
+				name="slot", address=Address(0x3000), size=4, type_name=None, signature=None
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={Address(0x1000): body, Address(0x3000): (0x2000).to_bytes(4, "little")},
+	)
+	comparison = build_comparison("thumb.elf", program)
+	rows = {row.caller: row for row in comparison.function_comparisons}
+	assert rows["thumb_caller"].dctr_call_sites == 1
+
+
+def test_cli_compare_joins_pexplorer_report(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	program = load(fixture_elfs["nopie"])
+	main_address = next(
+		function.address for function in program.functions.values() if function.name == "main"
+	)
+	report_path = _write_report(tmp_path / "report.json", _main_pexplorer_report(main_address))
+	compare([fixture_elfs["nopie"]], pexplorer=report_path)
+	output = capsys.readouterr().out
+	assert "pexplorer" in output
+	assert "runtime_hook" in output
+	line = next(line for line in output.splitlines() if line.startswith("main "))
+	assert line.endswith("2     6        5     5")
