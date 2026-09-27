@@ -5,16 +5,16 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from salix import Struct
 
 from dynamic_call_tree_resolution.callgraph import CallEdge
+from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
-
-	from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 
 class StackReport(Struct):
@@ -42,7 +42,7 @@ def expand_indirect_calls(
 		CallEdge(caller=edge.caller, callee=callee)
 		for edge in edges
 		for callee in (
-			sorted(targets_by_caller.get(edge.caller, fallback))
+			sorted(targets_by_caller.get(_frame_key(edge.caller), fallback))
 			if edge.callee == "__indirect_call"
 			else (edge.callee,)
 		)
@@ -59,11 +59,12 @@ def worst_case_depths(
 	(recursion) are broken at the back edge and flagged. Frames using
 	``alloca``/VLAs are counted but flagged.
 	"""
-	frame_by_name: Mapping[str, StackUsage] = {
-		usage.function: usage for usage in sorted(frames, key=lambda usage: usage.function)
-	}
+	normalized_edges = tuple(
+		CallEdge(caller=_frame_key(edge.caller), callee=_frame_key(edge.callee)) for edge in edges
+	)
+	frame_by_name = _frames_by_bare_name(frames)
 	callees_by_name: dict[str, set[str]] = {}
-	for edge in edges:
+	for edge in normalized_edges:
 		callees_by_name.setdefault(edge.caller, set()).add(edge.callee)
 	adjacency = {caller: frozenset(callees) for caller, callees in callees_by_name.items()}
 	roots = sorted(
@@ -103,4 +104,43 @@ def _depth(
 		recursive=deepest.recursive
 		or any(callee in current_path for callee in adjacency.get(function, frozenset())),
 		has_dynamic=(frame.dynamic if frame is not None else False) or deepest.has_dynamic,
+	)
+
+
+def _frame_key(name: str) -> str:
+	"""Reduce a VCG or ``.su`` function name to its bare assembly name.
+
+	GCC's ``.ci`` names for static functions are path-qualified
+	(``"/abs/path/file.c:func"``) and clone-suffixed (``func.isra.0``) while
+	``.su`` records use bare names (``func.isra``); both sides are reduced to
+	``func`` so they meet in one key space.
+	"""
+	if "/" in name:
+		name = name.rsplit(":", 1)[-1]
+	return re.sub(r"\.(?:isra|constprop|part)(?:\.\d+)?$", "", name)
+
+
+def _frames_by_bare_name(frames: Iterable[StackUsage]) -> Mapping[str, StackUsage]:
+	"""Group ``.su`` records by bare name, keeping the largest frame.
+
+	Duplicate names (weak stubs overridden by real implementations, or
+	identically named statics across CUs) must not shadow the largest frame,
+	or paths through the real function under-report.
+	"""
+	return {key: _merge_frame_records(records) for key, records in _grouped_frames(frames).items()}
+
+
+def _grouped_frames(frames: Iterable[StackUsage]) -> dict[str, list[StackUsage]]:
+	grouped: dict[str, list[StackUsage]] = {}
+	for usage in frames:
+		grouped.setdefault(_frame_key(usage.function), []).append(usage)
+	return grouped
+
+
+def _merge_frame_records(records: list[StackUsage]) -> StackUsage:
+	largest = max(records, key=lambda usage: usage.bytes)
+	return StackUsage(
+		function=largest.function,
+		bytes=largest.bytes,
+		dynamic=any(usage.dynamic for usage in records),
 	)
