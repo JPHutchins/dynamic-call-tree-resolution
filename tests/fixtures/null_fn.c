@@ -2,7 +2,7 @@
 
 void (*null_cb)(void) = NULL;
 
-static int unused_function(void)
+static __attribute__((unused)) int unused_function(void)
 {
 	return 1;
 }

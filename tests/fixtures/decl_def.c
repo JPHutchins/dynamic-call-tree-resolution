@@ -9,7 +9,7 @@ struct shared instance = {.fn = target_fn};
 
 struct plain plain_instance = {.run = target_fn};
 
-extern void touch(struct shared *s);
+extern void touch(struct shared * s);
 
 int main(void)
 {
