@@ -3,6 +3,8 @@
 
 """Command line interface for analyzing ELF images."""
 
+import sys
+from collections.abc import Mapping  # noqa: TC003  # evaluated at runtime in _dropped_indirect_edges' signature
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
 from typing import Annotated
 
@@ -10,15 +12,32 @@ import msgspec
 from cyclopts import App, Parameter
 
 from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_caller_candidates
-from dynamic_call_tree_resolution.callgraph import load_callgraph
+from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
 from dynamic_call_tree_resolution.loader import load
 from dynamic_call_tree_resolution.pexplorer import load_pexplorer
 from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 from dynamic_call_tree_resolution.report import AnalysisSummary, build_comparison, build_report
-from dynamic_call_tree_resolution.stack_analysis import expand_indirect_calls, worst_case_depths
+from dynamic_call_tree_resolution.stack_analysis import (
+	expand_indirect_calls,
+	frame_key,
+	worst_case_depths,
+)
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 
 app = App(name="dctr")
+
+
+def _dropped_indirect_edges(
+	edges: tuple[CallEdge, ...],
+	targets_by_caller: Mapping[str, frozenset[str]],
+	fallback: frozenset[str],
+) -> int:
+	"""Indirect edges left with no candidates after expansion."""
+	return sum(
+		edge.callee == "__indirect_call"
+		and not (targets_by_caller.get(frame_key(edge.caller), frozenset()) | fallback)
+		for edge in edges
+	)
 
 
 @app.command
@@ -103,11 +122,18 @@ def stack(build_directory: Path, *, elf: Path | None = None) -> None:
 		targets_by_caller, fallback = per_caller_candidates(
 			program, extract_call_sites(program), resolved
 		)
-		edges = expand_indirect_calls(edges, targets_by_caller, fallback)
+		raw_edges = edges
+		edges = expand_indirect_calls(raw_edges, targets_by_caller, fallback)
 		print(
 			f"resolved slots: {len({assignment.slot for assignment in resolved})} "
 			f"| indirect call sites: {indirect_sites}"
 		)
+		if dropped := _dropped_indirect_edges(raw_edges, targets_by_caller, fallback):
+			print(
+				f"warning: {dropped} of {indirect_sites} indirect call edges "
+				"have no candidates and were dropped",
+				file=sys.stderr,
+			)
 	reports = worst_case_depths(edges, load_stack_usages(build_directory))
 	for report in reports:
 		flags = (" recursive" if report.recursive else "") + (
@@ -127,6 +153,12 @@ def summary(build_directory: Path, elf: Path) -> None:
 		program, extract_call_sites(program), resolved
 	)
 	expanded = expand_indirect_calls(edges, targets_by_caller, fallback)
+	if dropped := _dropped_indirect_edges(edges, targets_by_caller, fallback):
+		print(
+			f"warning: {dropped} of {indirect_sites} indirect call edges "
+			"have no candidates and were dropped",
+			file=sys.stderr,
+		)
 	reports = worst_case_depths(expanded, load_stack_usages(build_directory))
 	deepest = max(reports, key=lambda report: report.depth, default=None)
 	unresolved = unresolved_slots(program, resolved)
