@@ -12,6 +12,7 @@ from dynamic_call_tree_resolution.model import (
 	ANONYMOUS,
 	Address,
 	FunctionSignature,
+	Machine,
 	Provenance,
 	UnresolvedSlot,
 	aligned,
@@ -94,7 +95,7 @@ class ComparisonReport(Struct):
 	"""Resolution rollup of one ELF, for cross-tool comparison."""
 
 	elf: str
-	machine: str
+	machine: Machine
 	functions: int
 	total_slots: int
 	resolved_slots: int

@@ -5,7 +5,7 @@
 
 from typing import TYPE_CHECKING
 
-from dynamic_call_tree_resolution import Address, DataObject, Function, Program
+from dynamic_call_tree_resolution import Address, DataObject, Function, Machine, Program
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -23,7 +23,7 @@ def build_program(
 	return Program(
 		byte_order="little",
 		pointer_size=pointer_size,
-		machine=machine,
+		machine=Machine(machine),
 		functions={
 			Address(address): Function(
 				name=name, address=Address(address), size=size, signature=None

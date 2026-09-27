@@ -1,114 +1,154 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Static resolution of indirect calls in embedded firmware ELF images."""
+"""Static resolution of indirect calls in embedded firmware ELF images.
+
+Everything imported below is the public API; the ``as`` aliases are the
+explicit re-export marker, so there is no ``__all__`` second list to
+drift.
+"""
 
 from dynamic_call_tree_resolution.call_sites import (
-	call_site_candidates,
-	extract_call_sites,
-	matching_targets,
-	per_caller_candidates,
+	call_site_candidates as call_site_candidates,
 )
-from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph, parse_callgraph
-from dynamic_call_tree_resolution.cli import app, main
-from dynamic_call_tree_resolution.loader import load
+from dynamic_call_tree_resolution.call_sites import (
+	extract_call_sites as extract_call_sites,
+)
+from dynamic_call_tree_resolution.call_sites import (
+	matching_targets as matching_targets,
+)
+from dynamic_call_tree_resolution.call_sites import (
+	per_caller_candidates as per_caller_candidates,
+)
+from dynamic_call_tree_resolution.callgraph import (
+	CallEdge as CallEdge,
+)
+from dynamic_call_tree_resolution.callgraph import (
+	load_callgraph as load_callgraph,
+)
+from dynamic_call_tree_resolution.callgraph import (
+	parse_callgraph as parse_callgraph,
+)
+from dynamic_call_tree_resolution.cli import app as app
+from dynamic_call_tree_resolution.cli import main as main
+from dynamic_call_tree_resolution.loader import load as load
 from dynamic_call_tree_resolution.model import (
-	Address,
-	CallSite,
-	DataObject,
-	EmbeddedStructMember,
-	Function,
-	FunctionPointerMember,
-	FunctionSignature,
-	Member,
-	Program,
-	Provenance,
-	Relocation,
-	SlotAssignment,
-	StructPointerMember,
-	StructureLayout,
-	UnresolvedSlot,
-	render_path,
+	Address as Address,
+)
+from dynamic_call_tree_resolution.model import (
+	CallSite as CallSite,
+)
+from dynamic_call_tree_resolution.model import (
+	DataObject as DataObject,
+)
+from dynamic_call_tree_resolution.model import (
+	EmbeddedStructMember as EmbeddedStructMember,
+)
+from dynamic_call_tree_resolution.model import (
+	Function as Function,
+)
+from dynamic_call_tree_resolution.model import (
+	FunctionPointerMember as FunctionPointerMember,
+)
+from dynamic_call_tree_resolution.model import (
+	FunctionSignature as FunctionSignature,
+)
+from dynamic_call_tree_resolution.model import (
+	Machine as Machine,
+)
+from dynamic_call_tree_resolution.model import (
+	Member as Member,
+)
+from dynamic_call_tree_resolution.model import (
+	Program as Program,
+)
+from dynamic_call_tree_resolution.model import (
+	Provenance as Provenance,
+)
+from dynamic_call_tree_resolution.model import (
+	Relocation as Relocation,
+)
+from dynamic_call_tree_resolution.model import (
+	SlotAssignment as SlotAssignment,
+)
+from dynamic_call_tree_resolution.model import (
+	StructPointerMember as StructPointerMember,
+)
+from dynamic_call_tree_resolution.model import (
+	StructureLayout as StructureLayout,
+)
+from dynamic_call_tree_resolution.model import (
+	UnresolvedSlot as UnresolvedSlot,
+)
+from dynamic_call_tree_resolution.model import (
+	render_path as render_path,
 )
 from dynamic_call_tree_resolution.pexplorer import (
-	PexplorerCallee,
-	PexplorerFunction,
-	PexplorerReport,
-	load_pexplorer,
+	PexplorerCallee as PexplorerCallee,
 )
-from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
+from dynamic_call_tree_resolution.pexplorer import (
+	PexplorerFunction as PexplorerFunction,
+)
+from dynamic_call_tree_resolution.pexplorer import (
+	PexplorerReport as PexplorerReport,
+)
+from dynamic_call_tree_resolution.pexplorer import (
+	load_pexplorer as load_pexplorer,
+)
+from dynamic_call_tree_resolution.points_to import (
+	assignments as assignments,
+)
+from dynamic_call_tree_resolution.points_to import (
+	unresolved_slots as unresolved_slots,
+)
 from dynamic_call_tree_resolution.report import (
-	AnalysisReport,
-	AnalysisSummary,
-	CallSiteReport,
-	Candidate,
-	ComparisonReport,
-	FunctionComparison,
-	SignatureReport,
-	SlotAssignmentReport,
-	UnresolvedSlotReport,
-	build_comparison,
-	build_report,
+	AnalysisReport as AnalysisReport,
+)
+from dynamic_call_tree_resolution.report import (
+	AnalysisSummary as AnalysisSummary,
+)
+from dynamic_call_tree_resolution.report import (
+	CallSiteReport as CallSiteReport,
+)
+from dynamic_call_tree_resolution.report import (
+	Candidate as Candidate,
+)
+from dynamic_call_tree_resolution.report import (
+	ComparisonReport as ComparisonReport,
+)
+from dynamic_call_tree_resolution.report import (
+	FunctionComparison as FunctionComparison,
+)
+from dynamic_call_tree_resolution.report import (
+	SignatureReport as SignatureReport,
+)
+from dynamic_call_tree_resolution.report import (
+	SlotAssignmentReport as SlotAssignmentReport,
+)
+from dynamic_call_tree_resolution.report import (
+	UnresolvedSlotReport as UnresolvedSlotReport,
+)
+from dynamic_call_tree_resolution.report import (
+	build_comparison as build_comparison,
+)
+from dynamic_call_tree_resolution.report import (
+	build_report as build_report,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
-	StackReport,
-	expand_indirect_calls,
-	worst_case_depths,
+	StackReport as StackReport,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	expand_indirect_calls as expand_indirect_calls,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	worst_case_depths as worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import (
-	StackUsage,
-	load_stack_usages,
-	parse_stack_usage,
+	StackUsage as StackUsage,
 )
-
-__all__ = [
-	"Address",
-	"AnalysisReport",
-	"AnalysisSummary",
-	"CallEdge",
-	"CallSite",
-	"CallSiteReport",
-	"Candidate",
-	"ComparisonReport",
-	"DataObject",
-	"EmbeddedStructMember",
-	"Function",
-	"FunctionComparison",
-	"FunctionPointerMember",
-	"FunctionSignature",
-	"Member",
-	"PexplorerCallee",
-	"PexplorerFunction",
-	"PexplorerReport",
-	"Program",
-	"Provenance",
-	"Relocation",
-	"SignatureReport",
-	"SlotAssignment",
-	"SlotAssignmentReport",
-	"StackReport",
-	"StackUsage",
-	"StructPointerMember",
-	"StructureLayout",
-	"UnresolvedSlot",
-	"UnresolvedSlotReport",
-	"app",
-	"assignments",
-	"build_comparison",
-	"build_report",
-	"call_site_candidates",
-	"expand_indirect_calls",
-	"extract_call_sites",
-	"load",
-	"load_callgraph",
-	"load_pexplorer",
-	"load_stack_usages",
-	"main",
-	"matching_targets",
-	"parse_callgraph",
-	"parse_stack_usage",
-	"per_caller_candidates",
-	"render_path",
-	"unresolved_slots",
-	"worst_case_depths",
-]
+from dynamic_call_tree_resolution.stack_usage import (
+	load_stack_usages as load_stack_usages,
+)
+from dynamic_call_tree_resolution.stack_usage import (
+	parse_stack_usage as parse_stack_usage,
+)

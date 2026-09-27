@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 from typing import TYPE_CHECKING, Literal, NewType
 
 from salix import Struct
@@ -16,6 +16,18 @@ if TYPE_CHECKING:
 Address = NewType("Address", int)
 
 type ByteOrder = Literal["little", "big"]
+
+
+class Machine(StrEnum):
+	"""The ``e_machine`` values the analyzer can lift."""
+
+	EM_X86_64 = "EM_X86_64"
+	EM_386 = "EM_386"
+	EM_ARM = "EM_ARM"
+
+	@property
+	def is_x86(self) -> bool:
+		return self is Machine.EM_X86_64 or self is Machine.EM_386
 
 
 class FunctionSignature(Struct):
@@ -99,7 +111,7 @@ class Program(Struct):
 
 	byte_order: ByteOrder
 	pointer_size: int
-	machine: str
+	machine: Machine
 	functions: Mapping[Address, Function]
 	objects: Mapping[Address, DataObject]
 	layouts: Mapping[str, StructureLayout]
