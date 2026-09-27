@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from itertools import groupby
+from typing import TYPE_CHECKING
 
 import msgspec
 from msgspec import Struct, field
+from salix import Struct as SalixStruct
 
 from dynamic_call_tree_resolution.model import Address, aligned
 
@@ -46,7 +48,7 @@ def load_pexplorer(path: Path) -> PexplorerReport:
 	return msgspec.json.decode(path.read_bytes(), type=PexplorerReport)
 
 
-class DynamicSites(NamedTuple):
+class DynamicSites(SalixStruct):
 	"""One caller's aggregated pexplorer dynamic sites."""
 
 	names: tuple[str, ...]
@@ -60,17 +62,25 @@ def dynamic_sites_by_caller(report: PexplorerReport) -> Mapping[Address, Dynamic
 	aggregate instead of overwriting, so no caller's dynamic sites are
 	dropped by the join.
 	"""
-	by_caller: dict[Address, list[tuple[str, int]]] = {}
-	for function in report.functions:
-		count = sum(callee.dynamic for callee in function.callees)
-		if count:
-			by_caller.setdefault(aligned(Address(function.address)), []).append(
-				(function.name, count)
-			)
 	return {
 		address: DynamicSites(
-			names=tuple(name for name, _ in entries),
-			total=sum(total for _, total in entries),
+			names=tuple(function.name for function in functions),
+			total=sum(_dynamic_count(function) for function in functions),
 		)
-		for address, entries in by_caller.items()
+		for address, group in groupby(
+			sorted(
+				(function for function in report.functions if _dynamic_count(function)),
+				key=_aligned_address,
+			),
+			key=_aligned_address,
+		)
+		for functions in (tuple(group),)
 	}
+
+
+def _aligned_address(function: PexplorerFunction) -> Address:
+	return aligned(Address(function.address))
+
+
+def _dynamic_count(function: PexplorerFunction) -> int:
+	return sum(callee.dynamic for callee in function.callees)

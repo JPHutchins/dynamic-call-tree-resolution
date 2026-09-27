@@ -14,21 +14,17 @@ resolved targets, keeping stack-depth expansions a sound upper bound.
 
 from __future__ import annotations
 
+from itertools import groupby
 from typing import TYPE_CHECKING
 
+from dynamic_call_tree_resolution.model import Address, FunctionSignature
 from dynamic_call_tree_resolution.points_to import pointer_at, signatures_by_slot, unresolved_slots
 from dynamic_call_tree_resolution.vsa import analyze
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from dynamic_call_tree_resolution.model import (
-		Address,
-		CallSite,
-		FunctionSignature,
-		Program,
-		SlotAssignment,
-	)
+	from dynamic_call_tree_resolution.model import CallSite, Program, SlotAssignment
 
 
 def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
@@ -59,7 +55,7 @@ def call_site_candidates(
 	program: Program,
 	site: CallSite,
 	resolved_by_slot: Mapping[Address, SlotAssignment],
-	signatures_by_slot: Mapping[Address, FunctionSignature] = {},
+	signatures_by_slot: Mapping[Address, FunctionSignature] | None = None,
 ) -> frozenset[Address]:
 	"""Candidate target functions of one call site.
 
@@ -69,16 +65,17 @@ def call_site_candidates(
 	could not be resolved and consumers fall back to the union of all
 	resolved targets.
 	"""
+	signatures = (
+		signatures_by_slot if signatures_by_slot is not None else dict[Address, FunctionSignature]()
+	)
 	chased = frozenset(
 		address
 		for candidate in site.candidates
-		for address in _chase_target(
-			program, candidate, resolved_by_slot, signatures_by_slot, frozenset()
-		)
+		for address in _chase_target(program, candidate, resolved_by_slot, signatures, frozenset())
 	)
 	if chased:
 		return chased
-	signature = signatures_by_slot.get(site.slot) if site.slot is not None else None
+	signature = signatures.get(site.slot) if site.slot is not None else None
 	return matching_targets(program, signature) if signature is not None else frozenset()
 
 
@@ -119,16 +116,21 @@ def per_caller_candidates(
 	fallback_addresses = frozenset(
 		address for assignment in resolved for address in assignment.candidates
 	)
-	by_caller: dict[str, set[str]] = {}
-	for site in sites:
-		caller = program.functions[site.caller_address].name
-		candidates = (
-			call_site_candidates(program, site, resolved_map, signatures) or fallback_addresses
+
+	def caller_name(site: CallSite) -> str:
+		return program.functions[site.caller_address].name
+
+	targets_by_caller = {
+		caller: frozenset(
+			program.functions[address].name
+			for site in group
+			for address in (
+				call_site_candidates(program, site, resolved_map, signatures) or fallback_addresses
+			)
 		)
-		by_caller.setdefault(caller, set()).update(
-			program.functions[address].name for address in candidates
-		)
+		for caller, group in groupby(sorted(sites, key=caller_name), key=caller_name)
+	}
 	return (
-		{caller: frozenset(targets) for caller, targets in by_caller.items()},
+		targets_by_caller,
 		frozenset(program.functions[address].name for address in fallback_addresses),
 	)

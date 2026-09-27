@@ -22,7 +22,7 @@ from dynamic_call_tree_resolution import (
 	load_pexplorer,
 )
 from dynamic_call_tree_resolution.cli import compare
-from dynamic_call_tree_resolution.pexplorer import dynamic_sites_by_caller
+from dynamic_call_tree_resolution.pexplorer import DynamicSites, dynamic_sites_by_caller
 from tests.programs import build_program
 
 if TYPE_CHECKING:
@@ -133,7 +133,9 @@ def test_alias_callers_aggregate_instead_of_overwriting() -> None:
 			),
 		)
 	)
-	assert dynamic_sites_by_caller(report) == {Address(0x1000): (("alias_a", "alias_b"), 3)}
+	assert dynamic_sites_by_caller(report) == {
+		Address(0x1000): DynamicSites(names=("alias_a", "alias_b"), total=3)
+	}
 
 
 def test_missing_dynamic_flag_fails_loud(tmp_path: Path) -> None:
