@@ -154,6 +154,8 @@ def _functions_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, F
 		if symbol["st_shndx"] == "SHN_UNDEF":
 			continue
 		address = Address(symbol["st_value"])
+		if address & ~1 == 0:
+			continue
 		functions[address] = Function(
 			name=symbol.name,
 			address=address,

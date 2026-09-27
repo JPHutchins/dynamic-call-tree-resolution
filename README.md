@@ -42,9 +42,10 @@ _thread_dummy.base.timeout.fn: <unresolved>
 ...
 _stdout_hook: <unresolved>
 ...
-char_out@0x118: arch_printk_char_out
+char_out@0x118: console_out, arch_printk_char_out
 ...
 _isr_wrapper@0x884: z_irq_spurious
+z_impl_zephyr_fputc@0x8a6: console_out
 ...
 console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
@@ -76,7 +77,7 @@ the numbers below are pinned by `tests/test_counter_fixture.py`):
 | `poll_state_thread` worst case | 96 bytes | 460 bytes (static-only; 996 with indirect expansion) |
 | `shell_readline` worst case | not reported (symbol match fails) | 2108 bytes (upper bound; 1760 without indirect expansion) |
 | slots resolved/unresolved/total | — | 121/113/234 |
-| call sites resolved/exact/total | — | 10/9/98 |
+| call sites resolved/exact/total | — | 26/14/98 |
 
 puncover's indirect-call handling is an assembly-text detection flag, and its reported
 worst case for `poll_state_thread` contains only the function itself, omitting the

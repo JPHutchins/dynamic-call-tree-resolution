@@ -141,14 +141,14 @@ def test_load_rel_elf_reads_in_field_addends(tmp_path: Path) -> None:
 	assert program.sections[Address(0x1000)] == b"\x44\x10\x00\x00"
 
 
-def _rel_elf() -> bytes:
+def _rel_elf(symbol_value: int = 0x1000) -> bytes:
 	"""A minimal i386 REL executable with in-field, bss, and non-alloc relocs."""
 	shstrtab = b"\0.text\0.rel.text\0.symtab\0.shstrtab\0.strtab\0.bss\0.extra\0.rel.extra\0"
 	strtab = b"\0fn\0"
 	sections_data = (
 		b"\x44\0\0\0",
 		struct.pack("<II", 0x1000, (1 << 8) | 1) + struct.pack("<II", 0x2000, 8),
-		b"\0" * 16 + struct.pack("<IIIBBH", 1, 0x1000, 4, 0x12, 0, 1),
+		b"\0" * 16 + struct.pack("<IIIBBH", 1, symbol_value, 4, 0x12, 0, 1),
 		shstrtab,
 		strtab,
 		b"\0\0\0\0",
@@ -189,3 +189,11 @@ def _rel_elf() -> bytes:
 	)
 	shdrs = b"".join(struct.pack("<IIIIIIIIII", *section) for section in sections)
 	return header + b"".join(sections_data) + shdrs
+
+
+def test_load_skips_symtab_functions_at_address_zero_and_one(tmp_path: Path) -> None:
+	path = tmp_path / "phantom.elf"
+	path.write_bytes(_rel_elf(symbol_value=1))
+	program = load(path)
+	assert Address(1) not in program.functions
+	assert Address(0) not in program.functions

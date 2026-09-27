@@ -51,7 +51,7 @@ build = [
 ]
 dev = [
     "actionlint-py>=1.7.12.25",
-    "camas>=0.1.29",
+    "camas[mcp]>=0.1.29",
     "mypy>=2.3.1",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
