@@ -179,14 +179,12 @@ partial_branches = ["pragma: no branch"]
 exclude_lines = [
     "@overload",
     "assert_never",
-    "case _:",
     "pragma: no cover",
     "if __name__ == .__main__.:",
     "if (typing\\.)?TYPE_CHECKING",
     ':\\s*\\.\\.\\.\\s*$',
     '^\\s*\\.\\.\\.\\s*$',
     "raise AssertionError",
-    "@pytest.mark.slow",
 ]
 
 [tool.uv.sources]

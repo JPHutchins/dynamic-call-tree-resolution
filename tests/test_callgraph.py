@@ -48,6 +48,20 @@ def test_parse_callgraph_rejects_malformed_graph(tmp_path: Path) -> None:
 		parse_callgraph(callgraph_file)
 
 
+def test_parse_callgraph_rejects_graph_without_braces(tmp_path: Path) -> None:
+	callgraph_file = tmp_path / "bad.ci"
+	callgraph_file.write_text('graph: edge: { sourcename: "main" }\n')
+	with pytest.raises(ValueError, match=r"expected 'graph: {'"):
+		parse_callgraph(callgraph_file)
+
+
+def test_parse_callgraph_rejects_entry_without_colon(tmp_path: Path) -> None:
+	callgraph_file = tmp_path / "bad.ci"
+	callgraph_file.write_text('graph: { edge sourcename: "main" }\n')
+	with pytest.raises(ValueError, match="expected ':' after 'edge'"):
+		parse_callgraph(callgraph_file)
+
+
 def test_load_callgraph_collects_all_ci_files(tmp_path: Path) -> None:
 	build_directory = tmp_path / "build"
 	nested = build_directory / "CMakeFiles" / "app.dir"
