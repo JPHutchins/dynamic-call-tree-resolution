@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["nopie"])
 	report = build_report(program, assignments(program), extract_call_sites(program))
-	assert report.resolved_slots == 19
+	assert report.resolved_slots == 11
 	assert report.resolved_targets == 19
 	assert {assignment.member_path for assignment in report.assignments} == {
 		"ops_a.open",
@@ -53,6 +53,7 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 	assert any(site.caller == "main" and site.candidates for site in report.call_sites)
 	assert {slot.member_path for slot in report.unresolved_slots} == {"bss_cb", "bss_holder.run"}
 	assert report.total_slots == 13  # 11 distinct resolved slots + 2 unresolved
+	assert report.resolved_slots + len(report.unresolved_slots) == report.total_slots
 	assert msgspec.json.decode(msgspec.json.encode(report), type=AnalysisReport) == report
 
 
@@ -64,7 +65,7 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 		machine="EM_X86_64",
 		functions=21,
 		total_slots=13,
-		resolved_slots=19,
+		resolved_slots=11,
 		unresolved_slots=2,
 		call_sites=7,
 		resolved_call_sites=5,

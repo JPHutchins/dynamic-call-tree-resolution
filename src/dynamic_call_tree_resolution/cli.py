@@ -104,7 +104,10 @@ def stack(build_directory: Path, *, elf: Path | None = None) -> None:
 			program, extract_call_sites(program), resolved
 		)
 		edges = expand_indirect_calls(edges, targets_by_caller, fallback)
-		print(f"resolved slots: {len(resolved)} | indirect call sites: {indirect_sites}")
+		print(
+			f"resolved slots: {len({assignment.slot for assignment in resolved})} "
+			f"| indirect call sites: {indirect_sites}"
+		)
 	reports = worst_case_depths(edges, load_stack_usages(build_directory))
 	for report in reports:
 		flags = (" recursive" if report.recursive else "") + (
@@ -128,7 +131,7 @@ def summary(build_directory: Path, elf: Path) -> None:
 	deepest = max(reports, key=lambda report: report.depth, default=None)
 	unresolved = unresolved_slots(program, resolved)
 	report = AnalysisSummary(
-		resolved_slots=len(resolved),
+		resolved_slots=len({assignment.slot for assignment in resolved}),
 		total_slots=len(
 			{assignment.slot for assignment in resolved} | {slot.slot for slot in unresolved}
 		),
