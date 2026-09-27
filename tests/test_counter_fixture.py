@@ -39,10 +39,10 @@ def test_summary_pins_the_published_numbers() -> None:
 		_dctr("summary", str(ARTIFACTS), str(EXECUTABLE)), type=AnalysisSummary
 	)
 	assert summary == AnalysisSummary(
-		resolved_slots=70,
-		total_slots=121,
-		unresolved_slots=51,
-		resolved_targets=145,
+		resolved_slots=75,
+		total_slots=153,
+		unresolved_slots=78,
+		resolved_targets=157,
 		indirect_call_sites=100,
 		total_functions=734,
 		entry_points=287,
@@ -59,5 +59,5 @@ def test_stack_pins_the_published_depths() -> None:
 
 def test_compare_pins_the_published_rollup() -> None:
 	output = _dctr("compare", str(EXECUTABLE))
-	assert "70/51/121" in output
+	assert "75/78/153" in output
 	assert "6/6/98" in output

@@ -71,7 +71,7 @@ the numbers below are pinned by `tests/test_counter_fixture.py`):
 | indirect calls detected | 0 (assembly-text regex) | 98 call sites |
 | `poll_state_thread` worst case | 96 bytes | 460 bytes (static-only; 996 with indirect expansion) |
 | `shell_readline` worst case | not reported (symbol match fails) | 2108 bytes (upper bound; 1760 without indirect expansion) |
-| slots resolved/unresolved/total | — | 70/51/121 |
+| slots resolved/unresolved/total | — | 75/78/153 |
 | call sites resolved/exact/total | — | 6/6/98 |
 
 puncover's indirect-call handling is an assembly-text detection flag, and its reported

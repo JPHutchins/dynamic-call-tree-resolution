@@ -42,6 +42,35 @@ def _compile_object(source: Path, output: Path) -> Path:
 	return output
 
 
+def _compile_tus(
+	source_directory: Path,
+	build_directory: Path,
+	files: tuple[tuple[str, tuple[str, ...]], ...],
+	output_name: str,
+) -> Path:
+	objects: list[Path] = []
+	for name, flags in files:
+		output = build_directory / f"{name}.o"
+		subprocess.run(
+			[
+				"cc",
+				"-c",
+				"-g",
+				"-O0",
+				*flags,
+				str(source_directory / f"{name}.c"),
+				"-o",
+				str(output),
+			],
+			check=True,
+			capture_output=True,
+		)
+		objects.append(output)
+	output = build_directory / f"{output_name}.elf"
+	subprocess.run(["cc", "-no-pie", *objects, "-o", str(output)], check=True, capture_output=True)
+	return output
+
+
 def _compile_multi(source_directory: Path, build_directory: Path) -> Path:
 	definition_object = build_directory / "multi_def.o"
 	use_object = build_directory / "multi_use.o"
@@ -79,5 +108,11 @@ def fixture_elfs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
 	variants["multi"] = _compile_multi(FIXTURE_DIRECTORY, build_directory)
 	variants["object"] = _compile_object(
 		FIXTURE_DIRECTORY / "minimal.c", build_directory / "minimal.o"
+	)
+	variants["decl"] = _compile_tus(
+		FIXTURE_DIRECTORY,
+		build_directory,
+		(("decl_def", ()), ("decl_use", ("-DSECOND",)), ("decl_fwd", ())),
+		"decl",
 	)
 	return variants
