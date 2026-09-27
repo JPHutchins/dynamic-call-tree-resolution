@@ -1,11 +1,11 @@
 struct ops {
-	int (*open)(void *self, int flags);
-	int (*close)(void *self);
+	int (*open)(void * self, int flags);
+	int (*close)(void * self);
 };
 
 struct device {
-	const struct ops *api;
-	void *context;
+	struct ops const * api;
+	void * context;
 };
 
 extern struct device dev_x;

@@ -1,6 +1,6 @@
 struct shared;
 
-void touch(struct shared *s)
+void touch(struct shared * s)
 {
-	(void)s;
+	(void) s;
 }

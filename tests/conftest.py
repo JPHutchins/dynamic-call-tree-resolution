@@ -10,6 +10,14 @@ import pytest
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures"
 
+_CC_FLAGS = ("-std=gnu2x", "-Wall", "-Wextra", "-Werror", "-Wdouble-promotion")
+
+
+def _cc(*flags: str) -> tuple[str, ...]:
+	"""One cc invocation with the fixture warning regime, plus extra flags."""
+	return ("cc", *_CC_FLAGS, *flags)
+
+
 FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 	"pie": ("device_model.c", ("-g", "-O0")),
 	"nopie": ("device_model.c", ("-g", "-O0", "-no-pie")),
@@ -27,7 +35,7 @@ FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 
 def _compile(source: Path, output: Path, *flags: str) -> Path:
 	subprocess.run(
-		["cc", *flags, str(source), "-o", str(output)],
+		[*_cc(*flags), str(source), "-o", str(output)],
 		check=True,
 		capture_output=True,
 	)
@@ -36,7 +44,7 @@ def _compile(source: Path, output: Path, *flags: str) -> Path:
 
 def _compile_object(source: Path, output: Path) -> Path:
 	subprocess.run(
-		["cc", "-c", "-g", "-O0", str(source), "-o", str(output)],
+		[*_cc("-c", "-g", "-O0"), str(source), "-o", str(output)],
 		check=True,
 		capture_output=True,
 	)
@@ -54,11 +62,7 @@ def _compile_tus(
 		output = build_directory / f"{name}.o"
 		subprocess.run(
 			[
-				"cc",
-				"-c",
-				"-g",
-				"-O0",
-				*flags,
+				*_cc("-c", "-g", "-O0", *flags),
 				str(source_directory / f"{name}.c"),
 				"-o",
 				str(output),
@@ -68,7 +72,7 @@ def _compile_tus(
 		)
 		objects.append(output)
 	output = build_directory / f"{output_name}.elf"
-	subprocess.run(["cc", "-no-pie", *objects, "-o", str(output)], check=True, capture_output=True)
+	subprocess.run([*_cc("-no-pie"), *objects, "-o", str(output)], check=True, capture_output=True)
 	return output
 
 
@@ -77,17 +81,27 @@ def _compile_multi(source_directory: Path, build_directory: Path) -> Path:
 	use_object = build_directory / "multi_use.o"
 	output = build_directory / "multi.elf"
 	subprocess.run(
-		["cc", "-c", "-O0", str(source_directory / "multi_def.c"), "-o", str(definition_object)],
+		[
+			*_cc("-c", "-O0"),
+			str(source_directory / "multi_def.c"),
+			"-o",
+			str(definition_object),
+		],
 		check=True,
 		capture_output=True,
 	)
 	subprocess.run(
-		["cc", "-c", "-g", "-O0", str(source_directory / "multi_use.c"), "-o", str(use_object)],
+		[
+			*_cc("-c", "-g", "-O0"),
+			str(source_directory / "multi_use.c"),
+			"-o",
+			str(use_object),
+		],
 		check=True,
 		capture_output=True,
 	)
 	subprocess.run(
-		["cc", "-no-pie", str(definition_object), str(use_object), "-o", str(output)],
+		[*_cc("-no-pie"), str(definition_object), str(use_object), "-o", str(output)],
 		check=True,
 		capture_output=True,
 	)

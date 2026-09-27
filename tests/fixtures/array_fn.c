@@ -1,28 +1,29 @@
 #include <stddef.h>
 
 struct entry {
-	void *arg;
+	void * arg;
 	void (*isr)(void);
 };
 
+static int dummy_arg_a;
+static int dummy_arg_b;
+
 void handler_a(void)
-{
-}
+{}
 
 void handler_b(void)
-{
-}
+{}
 
 struct entry table[2] = {
-	{.arg = (void *)1, .isr = handler_a},
-	{.arg = (void *)2, .isr = handler_b},
+	{.arg = &dummy_arg_a, .isr = handler_a},
+	{.arg = &dummy_arg_b, .isr = handler_b},
 };
 
-void (*cbs[2])(void) = {handler_a, handler_b};
+void (*cbs[2])(void) = {[0] = handler_a, [1] = handler_b};
 
 void (*dynamic_cbs[2])(void);
 
-int counts[2] = {0, 0};
+int counts[2] = {[0] = 0, [1] = 0};
 
 __asm__(
 	".section .rodata.vector,\"a\"\n"
