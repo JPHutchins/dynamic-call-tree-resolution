@@ -153,15 +153,9 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
 "typings/**" = ["D", "N802"] # stub files mirror the external library's API names
-# the package __init__ IS the re-export surface: everything imported is public
-"src/dynamic_call_tree_resolution/__init__.py" = ["F401"]
 
 [tool.ruff.format]
 indent-style = "tab"
-
-[[tool.mypy.overrides]]
-module = "dynamic_call_tree_resolution"
-implicit_reexport = true
 
 [tool.mypy]
 strict = true
