@@ -19,6 +19,7 @@ from dynamic_call_tree_resolution import (
 	extract_call_sites,
 	load,
 )
+from tests.expected import EXPECTED_PATHS
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -29,27 +30,7 @@ def test_report_counts_and_json_round_trip(fixture_elfs: dict[str, Path]) -> Non
 	report = build_report(program, assignments(program), extract_call_sites(program))
 	assert report.resolved_slots == 11
 	assert report.resolved_targets == 19
-	assert {assignment.member_path for assignment in report.assignments} == {
-		"ops_a.open",
-		"ops_a.close",
-		"ops_b.open",
-		"ops_b.close",
-		"dev_a.api.open",
-		"dev_a.api.close",
-		"dev_b.api.open",
-		"dev_b.api.close",
-		"dev_c.api.open",
-		"dev_c.api.close",
-		"dev_c.context.open",
-		"dev_c.context.close",
-		"dev_a.ops.init",
-		"dev_b.ops.init",
-		"dev_c.ops.init",
-		"holder2.inner.fn",
-		"holder.run",
-		"node_a.fn",
-		"plain_cb",
-	}
+	assert {assignment.member_path for assignment in report.assignments} == EXPECTED_PATHS
 	assert any(site.caller == "main" and site.candidates for site in report.call_sites)
 	assert {slot.member_path for slot in report.unresolved_slots} == {"bss_cb", "bss_holder.run"}
 	assert report.total_slots == 13  # 11 distinct resolved slots + 2 unresolved

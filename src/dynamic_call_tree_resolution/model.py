@@ -107,6 +107,19 @@ class Program(Struct):
 	sections: Mapping[Address, bytes]
 
 
+def aligned(address: Address) -> Address:
+	"""The instruction-aligned form of an address; identity when already even."""
+	return Address(address & ~1)
+
+
+def thumb_twin(address: Address) -> Address:
+	"""The odd Thumb-bit form of an address, for symbol-table twins."""
+	return Address(address | 1)
+
+
+ANONYMOUS = "<anonymous>"
+
+
 class Provenance(Enum):
 	"""How a slot assignment was established."""
 

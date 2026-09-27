@@ -25,6 +25,7 @@ from dynamic_call_tree_resolution import (
 	matching_targets,
 	per_caller_candidates,
 )
+from tests.programs import build_program
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -38,31 +39,12 @@ def _program(
 	objects: tuple[tuple[str, int, bytes], ...] = (),
 	pointer_size: int = 8,
 ) -> Program:
-	return Program(
-		byte_order="little",
+	return build_program(
+		machine,
+		functions,
+		objects=objects,
+		sections={0x1000: code},
 		pointer_size=pointer_size,
-		machine=machine,
-		functions={
-			Address(address): Function(
-				name=name, address=Address(address), size=size, signature=None
-			)
-			for name, address, size in functions
-		},
-		objects={
-			Address(address): DataObject(
-				name=name,
-				address=Address(address),
-				size=len(data),
-				type_name=None,
-				signature=None,
-			)
-			for name, address, data in objects
-		},
-		layouts={},
-		relocations=(),
-		sections=(
-			{Address(0x1000): code} | {Address(address): data for _, address, data in objects}
-		),
 	)
 
 
@@ -1271,26 +1253,12 @@ def _multi_program(
 	objects: tuple[tuple[str, int, bytes], ...] = (),
 	pointer_size: int = 8,
 ) -> Program:
-	return Program(
-		byte_order="little",
+	return build_program(
+		machine,
+		functions,
+		objects=objects,
+		sections=code_by_address,
 		pointer_size=pointer_size,
-		machine=machine,
-		functions={
-			Address(address): Function(
-				name=name, address=Address(address), size=size, signature=None
-			)
-			for name, address, size in functions
-		},
-		objects={
-			Address(address): DataObject(
-				name=name, address=Address(address), size=len(data), type_name=None, signature=None
-			)
-			for name, address, data in objects
-		},
-		layouts={},
-		relocations=(),
-		sections={Address(address): code for address, code in code_by_address.items()}
-		| {Address(address): data for _, address, data in objects},
 	)
 
 

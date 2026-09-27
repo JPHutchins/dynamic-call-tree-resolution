@@ -3,20 +3,23 @@
 
 """JSON-serializable analysis reports."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from msgspec import Struct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, extract_call_sites
 from dynamic_call_tree_resolution.model import (
+	ANONYMOUS,
 	Address,
 	FunctionSignature,
 	Provenance,
 	UnresolvedSlot,
+	aligned,
 	render_path,
+	thumb_twin,
 )
 from dynamic_call_tree_resolution.pexplorer import PexplorerReport, dynamic_sites_by_caller
-from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
+from dynamic_call_tree_resolution.points_to import assignments, signatures_by_slot, unresolved_slots
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -118,24 +121,55 @@ class AnalysisSummary(Struct):
 	worst_case_entry: str
 
 
+class SlotCounts(NamedTuple):
+	"""Slot and target counts shared by every report builder."""
+
+	resolved_slots: int
+	total_slots: int
+	resolved_targets: int
+
+
+def slot_counts(
+	resolved: tuple[SlotAssignment, ...], unresolved: tuple[UnresolvedSlot, ...]
+) -> SlotCounts:
+	"""The resolution rollup shared by the report, comparison, and summary."""
+	slots = frozenset(assignment.slot for assignment in resolved)
+	return SlotCounts(
+		resolved_slots=len(slots),
+		total_slots=len(slots | {slot.slot for slot in unresolved}),
+		resolved_targets=sum(len(assignment.candidates) for assignment in resolved),
+	)
+
+
+def resolved_by_slot(resolved: tuple[SlotAssignment, ...]) -> Mapping[Address, SlotAssignment]:
+	"""Resolved assignments keyed by slot address."""
+	return {assignment.slot: assignment for assignment in resolved}
+
+
+def _candidates(program: Program, addresses: frozenset[Address]) -> tuple[Candidate, ...]:
+	"""Candidate records for the given target addresses."""
+	return tuple(
+		Candidate(name=program.functions[address].name, address=address)
+		for address in sorted(addresses)
+	)
+
+
 def build_report(
 	program: Program,
 	resolved: tuple[SlotAssignment, ...],
 	call_sites: tuple[CallSite, ...],
 ) -> AnalysisReport:
 	"""Render resolved assignments, per-site resolutions, and unresolved slots."""
-	resolved_by_slot = {assignment.slot: assignment for assignment in resolved}
 	unresolved = unresolved_slots(program, resolved)
-	signatures_by_slot = _signatures_by_slot(unresolved)
+	resolved_map = resolved_by_slot(resolved)
+	signatures = signatures_by_slot(unresolved)
+	counts = slot_counts(resolved, unresolved)
 	return AnalysisReport(
 		assignments=tuple(
 			SlotAssignmentReport(
 				slot_address=assignment.slot,
 				member_path=render_path(assignment.path),
-				candidates=tuple(
-					Candidate(name=program.functions[address].name, address=address)
-					for address in sorted(assignment.candidates)
-				),
+				candidates=_candidates(program, assignment.candidates),
 				provenance=assignment.provenance,
 			)
 			for assignment in resolved
@@ -146,15 +180,12 @@ def build_report(
 				site_address=site.site_address,
 				slot_address=site.slot,
 				member_path=(
-					render_path(resolved_by_slot[site.slot].path)
-					if site.slot is not None and site.slot in resolved_by_slot
+					render_path(resolved_map[site.slot].path)
+					if site.slot is not None and site.slot in resolved_map
 					else None
 				),
-				candidates=tuple(
-					Candidate(name=program.functions[address].name, address=address)
-					for address in sorted(
-						call_site_candidates(program, site, resolved_by_slot, signatures_by_slot)
-					)
+				candidates=_candidates(
+					program, call_site_candidates(program, site, resolved_map, signatures)
 				),
 			)
 			for site in call_sites
@@ -167,17 +198,10 @@ def build_report(
 			)
 			for slot in unresolved
 		),
-		total_slots=len(set(resolved_by_slot) | {slot.slot for slot in unresolved}),
-		resolved_slots=len(resolved_by_slot),
-		resolved_targets=sum(len(assignment.candidates) for assignment in resolved),
+		total_slots=counts.total_slots,
+		resolved_slots=counts.resolved_slots,
+		resolved_targets=counts.resolved_targets,
 	)
-
-
-def _signatures_by_slot(
-	unresolved: tuple[UnresolvedSlot, ...],
-) -> Mapping[Address, FunctionSignature]:
-	"""Signatures of the unresolved slot universe, keyed by slot address."""
-	return {slot.slot: slot.signature for slot in unresolved if slot.signature is not None}
 
 
 def _render_signature(signature: FunctionSignature | None) -> SignatureReport | None:
@@ -199,20 +223,20 @@ def build_comparison(
 	"""
 	resolved = assignments(program)
 	unresolved = unresolved_slots(program, resolved)
-	resolved_by_slot = {assignment.slot: assignment for assignment in resolved}
-	signatures_by_slot = _signatures_by_slot(unresolved)
+	resolved_map = resolved_by_slot(resolved)
+	signatures = signatures_by_slot(unresolved)
+	counts = slot_counts(resolved, unresolved)
 	sites = extract_call_sites(program)
 	candidate_sizes = sorted(
-		len(call_site_candidates(program, site, resolved_by_slot, signatures_by_slot))
-		for site in sites
+		len(call_site_candidates(program, site, resolved_map, signatures)) for site in sites
 	)
 	dynamic_by_caller: Mapping[Address, tuple[tuple[str, ...], int]] = (
 		dynamic_sites_by_caller(pexplorer) if pexplorer is not None else {}
 	)
 	sites_by_caller: dict[Address, list[frozenset[Address]]] = {}
 	for site in sites:
-		sites_by_caller.setdefault(Address(site.caller_address & ~1), []).append(
-			call_site_candidates(program, site, resolved_by_slot, signatures_by_slot)
+		sites_by_caller.setdefault(aligned(site.caller_address), []).append(
+			call_site_candidates(program, site, resolved_map, signatures)
 		)
 	rows = [
 		FunctionComparison(
@@ -243,8 +267,8 @@ def build_comparison(
 		elf=name,
 		machine=program.machine,
 		functions=len(program.functions),
-		total_slots=len(set(resolved_by_slot) | {slot.slot for slot in unresolved}),
-		resolved_slots=len(resolved_by_slot),
+		total_slots=counts.total_slots,
+		resolved_slots=counts.resolved_slots,
 		unresolved_slots=len(unresolved),
 		call_sites=len(candidate_sizes),
 		resolved_call_sites=sum(size > 0 for size in candidate_sizes),
@@ -261,7 +285,7 @@ def build_comparison(
 
 def _caller_name(program: Program, caller_address: Address) -> str:
 	function = program.functions.get(caller_address) or program.functions.get(
-		Address(caller_address | 1)
+		thumb_twin(caller_address)
 	)
 	if function is None:
 		raise ValueError(f"no function for caller address {caller_address:#x}")  # pragma: no cover
@@ -274,6 +298,6 @@ def _row_name(
 	dynamic_by_caller: Mapping[Address, tuple[tuple[str, ...], int]],
 ) -> str:
 	name = _caller_name(program, caller_address)
-	if name == "<anonymous>" and caller_address in dynamic_by_caller:
+	if name == ANONYMOUS and caller_address in dynamic_by_caller:
 		return ", ".join(dynamic_by_caller[caller_address][0])
 	return name

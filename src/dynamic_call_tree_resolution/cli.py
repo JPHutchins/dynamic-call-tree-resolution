@@ -6,7 +6,7 @@
 import sys
 from collections.abc import Mapping  # noqa: TC003  # evaluated at runtime in _dropped_indirect_edges' signature
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 import msgspec
 from cyclopts import App, Parameter
@@ -17,8 +17,14 @@ from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
 from dynamic_call_tree_resolution.loader import load
 from dynamic_call_tree_resolution.pexplorer import load_pexplorer
 from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
-from dynamic_call_tree_resolution.report import AnalysisSummary, build_comparison, build_report
+from dynamic_call_tree_resolution.report import (
+	AnalysisSummary,
+	build_comparison,
+	build_report,
+	slot_counts,
+)
 from dynamic_call_tree_resolution.stack_analysis import (
+	INDIRECT_CALLEE,
 	expand_indirect_calls,
 	frame_key,
 	worst_case_depths,
@@ -47,7 +53,7 @@ def _dropped_indirect_edges(
 ) -> int:
 	"""Indirect edges left with no candidates after expansion."""
 	return sum(
-		edge.callee == "__indirect_call"
+		edge.callee == INDIRECT_CALLEE
 		and not (targets_by_caller.get(frame_key(edge.caller), frozenset()) | fallback)
 		for edge in edges
 	)
@@ -127,6 +133,47 @@ def compare(
 			)
 
 
+class _Expansion(NamedTuple):
+	"""One ELF-expanded call-graph: the edges, the originals, and the resolution."""
+
+	expanded: tuple[CallEdge, ...]
+	original: tuple[CallEdge, ...]
+	targets_by_caller: Mapping[str, frozenset[str]]
+	fallback: frozenset[str]
+	indirect_sites: int
+	resolved_slots: int
+
+
+def _expand_from_elf(edges: tuple[CallEdge, ...], elf: Path) -> _Expansion:
+	"""Resolve and expand the indirect edges of ``edges`` against an ELF image."""
+	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
+	program = load(elf)
+	resolved = assignments(program)
+	targets_by_caller, fallback = per_caller_candidates(
+		program, extract_call_sites(program), resolved
+	)
+	return _Expansion(
+		expanded=expand_indirect_calls(edges, targets_by_caller, fallback),
+		original=edges,
+		targets_by_caller=targets_by_caller,
+		fallback=fallback,
+		indirect_sites=indirect_sites,
+		resolved_slots=slot_counts(resolved, unresolved_slots(program, resolved)).resolved_slots,
+	)
+
+
+def _warn_dropped_indirect_edges(expansion: _Expansion) -> None:
+	"""Warn when any indirect edge has no candidates and was dropped."""
+	if dropped := _dropped_indirect_edges(
+		expansion.original, expansion.targets_by_caller, expansion.fallback
+	):
+		print(
+			f"warning: {dropped} of {expansion.indirect_sites} indirect call edges "
+			"have no candidates and were dropped",
+			file=sys.stderr,
+		)
+
+
 @app.command
 def stack(build_directory: Path, elf: Path | None = None) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts).
@@ -135,26 +182,17 @@ def stack(build_directory: Path, elf: Path | None = None) -> None:
 	every resolved function-pointer target.
 	"""
 	edges = load_callgraph(build_directory)
-	indirect_sites = sum(edge.callee == "__indirect_call" for edge in edges)
-	if elf is not None:
-		program = load(elf)
-		resolved = assignments(program)
-		targets_by_caller, fallback = per_caller_candidates(
-			program, extract_call_sites(program), resolved
-		)
-		raw_edges = edges
-		edges = expand_indirect_calls(raw_edges, targets_by_caller, fallback)
+	expansion = _expand_from_elf(edges, elf) if elf is not None else None
+	if expansion is not None:
 		print(
-			f"resolved slots: {len({assignment.slot for assignment in resolved})} "
-			f"| indirect call sites: {indirect_sites}"
+			f"resolved slots: {expansion.resolved_slots} "
+			f"| indirect call sites: {expansion.indirect_sites}"
 		)
-		if dropped := _dropped_indirect_edges(raw_edges, targets_by_caller, fallback):
-			print(
-				f"warning: {dropped} of {indirect_sites} indirect call edges "
-				"have no candidates and were dropped",
-				file=sys.stderr,
-			)
-	reports = worst_case_depths(edges, load_stack_usages(build_directory))
+		_warn_dropped_indirect_edges(expansion)
+	reports = worst_case_depths(
+		expansion.expanded if expansion is not None else edges,
+		load_stack_usages(build_directory),
+	)
 	for report in reports:
 		flags = (
 			(" recursive" if report.recursive else "")
@@ -170,28 +208,18 @@ def summary(build_directory: Path, elf: Path) -> None:
 	program = load(elf)
 	resolved = assignments(program)
 	edges = load_callgraph(build_directory)
-	indirect_sites = sum(edge.callee == "__indirect_call" for edge in edges)
-	targets_by_caller, fallback = per_caller_candidates(
-		program, extract_call_sites(program), resolved
-	)
-	expanded = expand_indirect_calls(edges, targets_by_caller, fallback)
-	if dropped := _dropped_indirect_edges(edges, targets_by_caller, fallback):
-		print(
-			f"warning: {dropped} of {indirect_sites} indirect call edges "
-			"have no candidates and were dropped",
-			file=sys.stderr,
-		)
-	reports = worst_case_depths(expanded, load_stack_usages(build_directory))
+	expansion = _expand_from_elf(edges, elf)
+	_warn_dropped_indirect_edges(expansion)
+	reports = worst_case_depths(expansion.expanded, load_stack_usages(build_directory))
 	deepest = max(reports, key=lambda report: report.depth, default=None)
 	unresolved = unresolved_slots(program, resolved)
+	counts = slot_counts(resolved, unresolved)
 	report = AnalysisSummary(
-		resolved_slots=len({assignment.slot for assignment in resolved}),
-		total_slots=len(
-			{assignment.slot for assignment in resolved} | {slot.slot for slot in unresolved}
-		),
+		resolved_slots=counts.resolved_slots,
+		total_slots=counts.total_slots,
 		unresolved_slots=len(unresolved),
-		resolved_targets=sum(len(assignment.candidates) for assignment in resolved),
-		indirect_call_sites=indirect_sites,
+		resolved_targets=counts.resolved_targets,
+		indirect_call_sites=expansion.indirect_sites,
 		total_functions=len(program.functions),
 		entry_points=len(reports),
 		worst_case_bytes=deepest.depth if deepest is not None else 0,  # pragma: no branch

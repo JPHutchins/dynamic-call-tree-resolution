@@ -13,8 +13,6 @@ import pytest
 from dynamic_call_tree_resolution import (
 	Address,
 	ComparisonReport,
-	DataObject,
-	Function,
 	PexplorerCallee,
 	PexplorerFunction,
 	PexplorerReport,
@@ -25,6 +23,7 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.cli import compare
 from dynamic_call_tree_resolution.pexplorer import dynamic_sites_by_caller
+from tests.programs import build_program
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -147,29 +146,19 @@ def test_missing_dynamic_flag_fails_loud(tmp_path: Path) -> None:
 		load_pexplorer(report)
 
 
-def test_anonymous_rows_fall_back_to_the_pexplorer_name() -> None:
+def _arm_slot_program(caller_name: str) -> Program:
 	body = bytes.fromhex("00 4b 98 47") + (0x2000).to_bytes(4, "little")
-	program = Program(
-		byte_order="little",
+	return build_program(
+		"EM_ARM",
+		functions=((caller_name, 0x1001, 8), ("target", 0x2000, 4)),
+		objects=(("slot", 0x3000, (0x2000).to_bytes(4, "little")),),
+		sections={0x1000: body},
 		pointer_size=4,
-		machine="EM_ARM",
-		functions={
-			Address(0x1001): Function(
-				name="<anonymous>", address=Address(0x1001), size=8, signature=None
-			),
-			Address(0x2000): Function(
-				name="target", address=Address(0x2000), size=4, signature=None
-			),
-		},
-		objects={
-			Address(0x3000): DataObject(
-				name="slot", address=Address(0x3000), size=4, type_name=None, signature=None
-			)
-		},
-		layouts={},
-		relocations=(),
-		sections={Address(0x1000): body, Address(0x3000): (0x2000).to_bytes(4, "little")},
 	)
+
+
+def test_anonymous_rows_fall_back_to_the_pexplorer_name() -> None:
+	program = _arm_slot_program("<anonymous>")
 	report = PexplorerReport(
 		functions=(
 			PexplorerFunction(
@@ -186,28 +175,7 @@ def test_anonymous_rows_fall_back_to_the_pexplorer_name() -> None:
 
 
 def test_comparison_resolves_thumb_bit_only_callers() -> None:
-	body = bytes.fromhex("00 4b 98 47") + (0x2000).to_bytes(4, "little")
-	program = Program(
-		byte_order="little",
-		pointer_size=4,
-		machine="EM_ARM",
-		functions={
-			Address(0x1001): Function(
-				name="thumb_caller", address=Address(0x1001), size=8, signature=None
-			),
-			Address(0x2000): Function(
-				name="target", address=Address(0x2000), size=4, signature=None
-			),
-		},
-		objects={
-			Address(0x3000): DataObject(
-				name="slot", address=Address(0x3000), size=4, type_name=None, signature=None
-			)
-		},
-		layouts={},
-		relocations=(),
-		sections={Address(0x1000): body, Address(0x3000): (0x2000).to_bytes(4, "little")},
-	)
+	program = _arm_slot_program("thumb_caller")
 	comparison = build_comparison("thumb.elf", program)
 	rows = {row.caller: row for row in comparison.function_comparisons}
 	assert rows["thumb_caller"].dctr_call_sites == 1

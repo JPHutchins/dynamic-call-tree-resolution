@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import msgspec
 from msgspec import Struct, field
 
-from dynamic_call_tree_resolution.model import Address
+from dynamic_call_tree_resolution.model import Address, aligned
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -59,7 +59,9 @@ def dynamic_sites_by_caller(
 	for function in report.functions:
 		count = sum(callee.dynamic for callee in function.callees)
 		if count:
-			by_caller.setdefault(Address(function.address & ~1), []).append((function.name, count))
+			by_caller.setdefault(aligned(Address(function.address)), []).append(
+				(function.name, count)
+			)
 	return {
 		address: (
 			tuple(name for name, _ in entries),

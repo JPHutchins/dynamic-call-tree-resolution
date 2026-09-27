@@ -15,6 +15,7 @@ from elftools.elf.sections import SymbolTableSection
 from salix import replace
 
 from dynamic_call_tree_resolution.model import (
+	ANONYMOUS,
 	Address,
 	DataObject,
 	EmbeddedStructMember,
@@ -593,7 +594,7 @@ def _die_name(die: DIE) -> str:
 		attribute = die.attributes.get(attribute_name)
 		if attribute is not None:
 			return _attr_string(attribute.value)
-	return "<anonymous>"
+	return ANONYMOUS
 
 
 def _attr_string(value: str | bytes) -> str:
