@@ -56,12 +56,12 @@ console_out@0x960: <unresolved>
   through the `device->api` chain to its single target — the slot layer sees what the site
   alone cannot.
 
-## Where this beats the standard tools
+## Tool comparison
 
-[puncover](https://github.com/HBehrens/puncover) 0.8.0 in its non-interactive report mode
+[puncover](https://github.com/HBehrens/puncover) 0.8.0, non-interactive report mode
 (`puncover --elf <exe> --build_dir <build> --gcc-tools-base /usr/bin --non-interactive
---generate-report --report-type json`) on the same Zephyr CAN counter build that `dctr
-stack` analyzes, both fed by GCC's `-fstack-usage`/`-fcallgraph-info` artifacts:
+--generate-report --report-type json`), on the same Zephyr CAN counter build that `dctr
+stack` analyzes; both fed by GCC's `-fstack-usage`/`-fcallgraph-info` artifacts:
 
 | | puncover | dctr |
 |---|---|---|
@@ -69,14 +69,13 @@ stack` analyzes, both fed by GCC's `-fstack-usage`/`-fcallgraph-info` artifacts:
 | `poll_state_thread` worst case | 96 bytes | 340 bytes |
 | `shell_readline` worst case | not reported (symbol match fails) | 1100 bytes |
 
-puncover's indirect-call handling is a detection flag, not a resolution: its worst-case
-traversal dead-ends at indirect edges, so the 244-byte gap for `poll_state_thread` is the
-`can_loopback_get_state` device-API chain it cannot follow — exactly the chain the slot
-layer resolves. pexplorer has the same shape: dynamic edges detected, resolution deferred
-to a hand-maintained config file. That gap is this project's point: everything statically
-assigned resolves exactly (`dctr analyze`), the call sites get per-site candidate sets
-(`dctr compare --pexplorer`), and the runtime-assigned residue is enumerated with member
-paths and signatures instead of left to disassembly-hunting.
+puncover's indirect-call handling is an assembly-text detection flag, and its worst-case
+traversal does not follow indirect edges; the 244-byte difference for
+`poll_state_thread` corresponds to the `can_loopback_get_state` chain. pexplorer's
+dynamic edges are likewise detected, with resolution deferred to a hand-maintained
+config file. dctr resolves statically assigned function pointers exactly
+(`dctr analyze`), reports per-site candidate sets (`dctr compare --pexplorer`), and
+enumerates the runtime-assigned residue with member paths and signatures.
 
 ## References
 
