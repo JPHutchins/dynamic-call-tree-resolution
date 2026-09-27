@@ -39,6 +39,14 @@ def test_parse_stack_usage_rejects_malformed_records(tmp_path: Path) -> None:
 		parse_stack_usage(stack_file)
 
 
+def test_parse_stack_usage_flags_bounded_dynamic_frames(tmp_path: Path) -> None:
+	stack_file = tmp_path / "bounded.su"
+	stack_file.write_text("bounded.c:5:1:vla_frame\t48\tdynamic,bounded\n")
+	assert parse_stack_usage(stack_file) == (
+		StackUsage(function="vla_frame", bytes=48, dynamic=True),
+	)
+
+
 def test_load_stack_usages_collects_all_su_files(tmp_path: Path) -> None:
 	build_directory = tmp_path / "build"
 	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"

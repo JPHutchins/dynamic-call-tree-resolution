@@ -45,7 +45,7 @@ def test_summary_pins_the_published_numbers() -> None:
 		resolved_targets=157,
 		indirect_call_sites=100,
 		total_functions=734,
-		entry_points=287,
+		entry_points=353,
 		worst_case_bytes=2108,
 		worst_case_entry="shell_readline",
 	)

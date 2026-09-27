@@ -24,6 +24,7 @@ class StackReport(Struct):
 	depth: int
 	recursive: bool
 	has_dynamic: bool
+	unmeasured: int
 
 
 _MAX_CYCLE_SIZE = 20
@@ -59,26 +60,47 @@ def worst_case_depths(
 ) -> tuple[StackReport, ...]:
 	"""Compute worst-case stack depths for every entry point.
 
-	Entry points are functions with no incoming call edges. Cycles
-	(recursion) are broken at the back edge and flagged. Frames using
-	``alloca``/VLAs are counted but flagged.
+	Entry points are functions with no incoming call edges, plus
+	``.su``-recorded functions with no call edges at all (leaf callbacks
+	and ISRs). Cycles (recursion) are broken at the back edge and flagged;
+	the flags reflect any branch of the subtree, not only the deepest one.
+	Frames using ``alloca``/VLAs are counted but flagged, and path frames
+	without ``.su`` records are counted as unmeasured.
 	"""
-	frame_by_name = _frames_by_bare_name(frames)
+	frames_tuple = tuple(frames)
+	frame_by_name = _frames_by_bare_name(frames_tuple)
 	callees_by_name: dict[str, set[str]] = {}
 	for edge in edges:
 		callees_by_name.setdefault(edge.caller, set()).add(edge.callee)
 	adjacency = {caller: frozenset(callees) for caller, callees in callees_by_name.items()}
 	depths = _depths_by_component(adjacency, frame_by_name)
+	callees = {callee for callees in adjacency.values() for callee in callees}
+	bare_graph_nodes = {frame_key(node) for node in set(adjacency) | callees}
 	roots = sorted(
-		adjacency.keys() - {callee for callees in adjacency.values() for callee in callees}
+		(adjacency.keys() - callees)
+		| ({frame_key(usage.function) for usage in frames_tuple} - bare_graph_nodes)
 	)
 	return tuple(
 		report
 		for report in sorted(
-			(depths[entry] for entry in roots),
+			(
+				depths[entry] if entry in depths else _leaf_report(entry, frame_by_name)
+				for entry in roots
+			),
 			key=lambda report: report.depth,
 			reverse=True,
 		)
+	)
+
+
+def _leaf_report(function: str, frame_by_name: Mapping[str, StackUsage]) -> StackReport:
+	frame = frame_by_name.get(function)
+	return StackReport(
+		entry=function,
+		depth=frame.bytes if frame is not None else 0,
+		recursive=False,
+		has_dynamic=frame.dynamic if frame is not None else False,
+		unmeasured=0 if frame is not None else 1,
 	)
 
 
@@ -143,14 +165,18 @@ def _depth(
 	deepest = max(
 		children,
 		key=lambda report: report.depth,
-		default=StackReport(entry=function, depth=0, recursive=False, has_dynamic=False),
+		default=StackReport(
+			entry=function, depth=0, recursive=False, has_dynamic=False, unmeasured=0
+		),
 	)
 	report = StackReport(
 		entry=frame_key(function),
 		depth=(frame.bytes if frame is not None else 0) + deepest.depth,
-		recursive=deepest.recursive
+		recursive=any(child.recursive for child in children)
 		or any(callee in current_path for callee in adjacency.get(function, frozenset())),
-		has_dynamic=(frame.dynamic if frame is not None else False) or deepest.has_dynamic,
+		has_dynamic=(frame.dynamic if frame is not None else False)
+		or any(child.has_dynamic for child in children),
+		unmeasured=(0 if frame is not None else 1) + deepest.unmeasured,
 	)
 	within[key] = report
 	return report

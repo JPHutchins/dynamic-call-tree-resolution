@@ -136,8 +136,10 @@ def stack(build_directory: Path, *, elf: Path | None = None) -> None:
 			)
 	reports = worst_case_depths(edges, load_stack_usages(build_directory))
 	for report in reports:
-		flags = (" recursive" if report.recursive else "") + (
-			" dynamic" if report.has_dynamic else ""
+		flags = (
+			(" recursive" if report.recursive else "")
+			+ (" dynamic" if report.has_dynamic else "")
+			+ (f" unmeasured: {report.unmeasured}" if report.unmeasured else "")
 		)
 		print(f"{report.entry}: {report.depth} bytes{flags}")
 
