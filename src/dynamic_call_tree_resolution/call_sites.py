@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dynamic_call_tree_resolution.points_to import pointer_at, unresolved_slots
+from dynamic_call_tree_resolution.points_to import pointer_at, signatures_by_slot, unresolved_slots
 from dynamic_call_tree_resolution.vsa import analyze
 
 if TYPE_CHECKING:
@@ -103,17 +103,6 @@ def _chase_target(
 	return _chase_target(program, target, resolved_by_slot, signatures_by_slot, visited | {address})
 
 
-def _signatures_by_slot(
-	program: Program, resolved: tuple[SlotAssignment, ...]
-) -> Mapping[Address, FunctionSignature]:
-	"""Signatures of the unresolved slot universe, keyed by slot address."""
-	return {
-		slot.slot: slot.signature
-		for slot in unresolved_slots(program, resolved)
-		if slot.signature is not None
-	}
-
-
 def per_caller_candidates(
 	program: Program,
 	sites: tuple[CallSite, ...],
@@ -125,8 +114,8 @@ def per_caller_candidates(
 	so a caller with an unresolved site is indistinguishable from a caller
 	with no extracted sites; both keep the expansion a sound upper bound.
 	"""
-	resolved_by_slot = {assignment.slot: assignment for assignment in resolved}
-	signatures_by_slot = _signatures_by_slot(program, resolved)
+	resolved_map = {assignment.slot: assignment for assignment in resolved}
+	signatures = signatures_by_slot(unresolved_slots(program, resolved))
 	fallback_addresses = frozenset(
 		address for assignment in resolved for address in assignment.candidates
 	)
@@ -134,8 +123,7 @@ def per_caller_candidates(
 	for site in sites:
 		caller = program.functions[site.caller_address].name
 		candidates = (
-			call_site_candidates(program, site, resolved_by_slot, signatures_by_slot)
-			or fallback_addresses
+			call_site_candidates(program, site, resolved_map, signatures) or fallback_addresses
 		)
 		by_caller.setdefault(caller, set()).update(
 			program.functions[address].name for address in candidates

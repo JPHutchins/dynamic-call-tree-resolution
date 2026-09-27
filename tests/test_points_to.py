@@ -11,8 +11,6 @@ import pytest
 
 from dynamic_call_tree_resolution import (
 	Address,
-	DataObject,
-	Function,
 	FunctionPointerMember,
 	FunctionSignature,
 	Program,
@@ -23,31 +21,11 @@ from dynamic_call_tree_resolution import (
 	render_path,
 	unresolved_slots,
 )
+from tests.expected import EXPECTED_NOPIE
+from tests.programs import build_program
 
 if TYPE_CHECKING:
 	from pathlib import Path
-
-EXPECTED_NOPIE: dict[str, tuple[str, ...]] = {
-	"ops_a.open": ("driver_a_open",),
-	"ops_a.close": ("driver_a_close",),
-	"ops_b.open": ("driver_b_open",),
-	"ops_b.close": ("driver_b_close",),
-	"dev_a.api.open": ("driver_a_open",),
-	"dev_a.api.close": ("driver_a_close",),
-	"dev_b.api.open": ("driver_b_open",),
-	"dev_b.api.close": ("driver_b_close",),
-	"holder.run": ("undef_ptr_target",),
-	"node_a.fn": ("node_fn",),
-	"plain_cb": ("plain_target",),
-	"dev_c.api.open": ("driver_b_open",),
-	"dev_c.api.close": ("driver_b_close",),
-	"dev_c.context.open": ("driver_a_open",),
-	"dev_c.context.close": ("driver_a_close",),
-	"dev_a.ops.init": ("dev_init",),
-	"dev_b.ops.init": ("dev_init",),
-	"dev_c.ops.init": ("dev_init",),
-	"holder2.inner.fn": ("anon_fn",),
-}
 
 
 def _resolved(elf: Path) -> tuple[dict[str, SlotAssignment], Program]:
@@ -181,24 +159,10 @@ def test_null_fixture_resolves_nothing(fixture_elfs: dict[str, Path]) -> None:
 
 
 def _program_with_slot(stored: int) -> Program:
-	return Program(
-		byte_order="little",
-		pointer_size=8,
-		machine="EM_X86_64",
-		functions={
-			Address(0): Function(name="phantom", address=Address(0), size=8, signature=None),
-			Address(0x1000): Function(
-				name="real_target", address=Address(0x1000), size=8, signature=None
-			),
-		},
-		objects={
-			Address(0x2000): DataObject(
-				name="fp_slot", address=Address(0x2000), size=8, type_name=None, signature=None
-			)
-		},
-		layouts={},
-		relocations=(),
-		sections={Address(0x2000): stored.to_bytes(8, "little")},
+	return build_program(
+		"EM_X86_64",
+		functions=(("phantom", 0, 8), ("real_target", 0x1000, 8)),
+		objects=(("fp_slot", 0x2000, stored.to_bytes(8, "little")),),
 	)
 
 

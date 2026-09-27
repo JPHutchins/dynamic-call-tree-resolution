@@ -20,7 +20,7 @@ from dynamic_call_tree_resolution.model import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable
+	from collections.abc import Iterable, Mapping
 
 	from dynamic_call_tree_resolution.model import DataObject, Member, StructureLayout
 
@@ -329,6 +329,13 @@ def _object_covering(program: Program, address: Address | None) -> DataObject | 
 		),
 		None,
 	)
+
+
+def signatures_by_slot(
+	unresolved: tuple[UnresolvedSlot, ...],
+) -> Mapping[Address, FunctionSignature]:
+	"""Signatures of the unresolved slot universe, keyed by slot address."""
+	return {slot.slot: slot.signature for slot in unresolved if slot.signature is not None}
 
 
 def memory_at(program: Program, address: Address, size: int) -> bytes:

@@ -29,6 +29,8 @@ class StackReport(Struct):
 
 _MAX_CYCLE_SIZE = 20
 
+INDIRECT_CALLEE = "__indirect_call"
+
 
 def expand_indirect_calls(
 	edges: Iterable[CallEdge],
@@ -48,7 +50,7 @@ def expand_indirect_calls(
 		for edge in edges
 		for callee in (
 			sorted(targets_by_caller.get(frame_key(edge.caller), frozenset()) | fallback)
-			if edge.callee == "__indirect_call"
+			if edge.callee == INDIRECT_CALLEE
 			else (edge.callee,)
 		)
 	)
@@ -74,7 +76,7 @@ def worst_case_depths(
 		callees_by_name.setdefault(edge.caller, set()).add(edge.callee)
 	adjacency = {caller: frozenset(callees) for caller, callees in callees_by_name.items()}
 	depths = _depths_by_component(adjacency, frame_by_name)
-	callees = {callee for callees in adjacency.values() for callee in callees}
+	callees = _callees(adjacency)
 	bare_graph_nodes = {frame_key(node) for node in set(adjacency) | callees}
 	roots = sorted(
 		(adjacency.keys() - callees)
@@ -127,7 +129,7 @@ def _depths_by_component(
 			f"{max(len(component) for component in components)} functions"
 		)
 	known = {node for component in components for node in component}
-	all_nodes = set(adjacency) | {callee for callees in adjacency.values() for callee in callees}
+	all_nodes = set(adjacency) | _callees(adjacency)
 	for component in (*components, *((node,) for node in sorted(all_nodes - known))):
 		in_component = frozenset(component)
 		within: dict[tuple[str, frozenset[str]], StackReport] = {}
@@ -180,6 +182,11 @@ def _depth(
 	)
 	within[key] = report
 	return report
+
+
+def _callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
+	"""Every callee in the call graph."""
+	return frozenset(callee for callees in adjacency.values() for callee in callees)
 
 
 def _strongly_connected_components(

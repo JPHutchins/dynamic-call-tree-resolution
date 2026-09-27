@@ -39,7 +39,7 @@ from capstone import (
 	x86_const,
 )
 
-from dynamic_call_tree_resolution.model import Address, CallSite
+from dynamic_call_tree_resolution.model import Address, CallSite, aligned
 from dynamic_call_tree_resolution.points_to import memory_at
 
 if TYPE_CHECKING:
@@ -326,7 +326,7 @@ def _blocks_by_function(
 	for function in sorted(program.functions.values(), key=lambda function: function.address):
 		# ARM symbol addresses carry the Thumb bit; strip it so the code
 		# decodes from the aligned start, and skip the symbol/DWARF twin.
-		start = Address(function.address & ~1) if program.machine == "EM_ARM" else function.address
+		start = aligned(function.address) if program.machine == "EM_ARM" else function.address
 		if start in seen:
 			continue
 		seen.add(start)
@@ -340,7 +340,7 @@ def _blocks_by_function(
 
 def _normalized(address: Address, machine: str) -> Address:
 	"""The aligned address a function's code and call targets share."""
-	return Address(address & ~1) if machine == "EM_ARM" else address
+	return aligned(address) if machine == "EM_ARM" else address
 
 
 def _seed(base: State | None, machine: str) -> State:
@@ -1301,7 +1301,7 @@ def _call_observation(context: _Context, block: _Block, state: State) -> _CallOb
 	target = _call_target(instruction, context.program.machine)
 	if target is None:
 		return None
-	callee = Address(target & ~1) if context.program.machine == "EM_ARM" else Address(target)
+	callee = aligned(Address(target)) if context.program.machine == "EM_ARM" else Address(target)
 	if callee not in context.program.functions:
 		return None
 	return _CallObservation(callee=callee, arguments=_call_arguments(context, state, instruction))

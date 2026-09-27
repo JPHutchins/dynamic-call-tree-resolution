@@ -12,28 +12,7 @@ import pytest
 
 from dynamic_call_tree_resolution import AnalysisReport, AnalysisSummary, ComparisonReport
 from dynamic_call_tree_resolution.cli import analyze, compare, main, stack, summary
-
-EXPECTED_PATHS = {
-	"ops_a.open",
-	"ops_a.close",
-	"ops_b.open",
-	"ops_b.close",
-	"dev_a.api.open",
-	"dev_a.api.close",
-	"dev_b.api.open",
-	"dev_b.api.close",
-	"dev_c.api.open",
-	"dev_c.api.close",
-	"dev_c.context.open",
-	"dev_c.context.close",
-	"dev_a.ops.init",
-	"dev_b.ops.init",
-	"dev_c.ops.init",
-	"holder2.inner.fn",
-	"holder.run",
-	"node_a.fn",
-	"plain_cb",
-}
+from tests.expected import EXPECTED_PATHS
 
 
 def test_cli_analyze_json(fixture_elfs: dict[str, Path]) -> None:
