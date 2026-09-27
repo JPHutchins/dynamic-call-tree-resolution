@@ -113,6 +113,102 @@ def test_x86_direct_call_in_window_clears_registers() -> None:
 	assert site.slot is None
 
 
+def test_x86_callee_saved_register_survives_a_direct_call() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 00e8 00 00 00 00ff d3")
+	program = _x86(code)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x100C
+	assert site.slot == 0x3000
+
+
+def test_x86_jump_to_the_site_carries_state() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 00eb 00ff d3")
+	program = _x86(code)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1009
+	assert site.slot == 0x3000
+
+
+def test_x86_indirect_jump_in_window_kills_the_stream() -> None:
+	code = bytes.fromhex("48 b8 00 30 00 00 00 00 00 00ff e0ff d0")
+	program = _x86(code)
+	jmp_site, call_site = extract_call_sites(program)
+	assert jmp_site.site_address == 0x100A
+	assert jmp_site.slot == 0x3000
+	assert call_site.site_address == 0x100C
+	assert call_site.slot is None
+
+
+def test_x86_branch_before_the_window_restarts_it() -> None:
+	code = b"\x90" * 11 + bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 e9ff d3")
+	program = _x86(code)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1017
+	assert site.slot == 0x3000
+
+
+def test_x86_unresolvable_lea_clears_the_destination() -> None:
+	code = bytes.fromhex("48 8d 45 f8ff d0")
+	program = _x86(code)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1004
+	assert site.slot is None
+
+
+def test_x86_loop_back_edge_carries_state() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c075 0548 ff c8eb f6ff d3")
+	program = _x86(code)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1011
+	assert site.slot == 0x3000
+
+
+def test_x86_conditional_taken_path_to_the_site_conflicts_to_unresolved() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00ff d3")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(
+			("caller", 0x1000, len(code)),
+			("target_a", 0x3000, 1),
+			("target_b", 0x4000, 1),
+		),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1013
+	assert site.slot is None
+
+
+def test_conflicting_paths_fall_back_to_the_resolved_union() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00ff d3")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(
+			("caller", 0x1000, len(code)),
+			("target_a", 0x3000, 1),
+			("target_b", 0x4000, 1),
+		),
+	)
+	resolved = (
+		SlotAssignment(
+			slot=Address(0x3000),
+			path=("target_a",),
+			candidates=frozenset({Address(0x3000)}),
+			provenance=Provenance.CONSTANT_DATA,
+		),
+		SlotAssignment(
+			slot=Address(0x4000),
+			path=("target_b",),
+			candidates=frozenset({Address(0x4000)}),
+			provenance=Provenance.CONSTANT_DATA,
+		),
+	)
+	by_caller, fallback = per_caller_candidates(program, extract_call_sites(program), resolved)
+	assert by_caller == {"caller": frozenset({"target_a", "target_b"})}
+	assert fallback == frozenset({"target_a", "target_b"})
+
+
 def test_x86_conditional_branch_keeps_registers() -> None:
 	program = _x86(
 		bytes.fromhex("48 8b 05 f9 0f 00 0048 85 c074 02ff d0"),
@@ -334,6 +430,66 @@ def test_arm_indexed_load_is_unresolved() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot is None
+
+
+def test_arm_callee_saved_register_survives_a_bl() -> None:
+	body = bytes.fromhex("02 4c00 f0 00 f8a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
+		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1006
+	assert site.slot == 0x3000
+	assert call_site_candidates(program, site, {}) == frozenset({Address(0x2000)})
+
+
+def test_arm_direct_branch_to_the_site_carries_state() -> None:
+	body = bytes.fromhex("02 4c00 e0a0 47") + b"\x00\xbf" * 3 + _pointer(0x3000, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
+		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1004
+	assert site.slot == 0x3000
+	assert call_site_candidates(program, site, {}) == frozenset({Address(0x2000)})
+
+
+def test_arm_conditional_branch_past_the_site_keeps_fallthrough_state() -> None:
+	body = bytes.fromhex("02 4ca4 4201 d0a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
+		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1006
+	assert site.slot == 0x3000
+	assert call_site_candidates(program, site, {}) == frozenset({Address(0x2000)})
+
+
+def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
+	body = bytes.fromhex("02 4c0c b3a0 47") + b"\x00\xbf" * 3 + _pointer(0x3000, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
+		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1004
+	assert site.slot == 0x3000
+	assert call_site_candidates(program, site, {}) == frozenset({Address(0x2000)})
 
 
 def test_arm_call_in_window_clears_registers() -> None:

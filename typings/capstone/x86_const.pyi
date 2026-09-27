@@ -1,6 +1,15 @@
 X86_OP_IMM: int
 X86_OP_MEM: int
 X86_OP_REG: int
+X86_REG_R8: int
+X86_REG_R9: int
+X86_REG_R10: int
+X86_REG_R11: int
+X86_REG_RAX: int
 X86_REG_RBP: int
+X86_REG_RCX: int
+X86_REG_RDI: int
+X86_REG_RDX: int
 X86_REG_RIP: int
+X86_REG_RSI: int
 X86_REG_RSP: int
