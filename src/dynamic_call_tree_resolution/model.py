@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Literal, NewType
+from typing import TYPE_CHECKING, Final, Literal, NewType
 
 from salix import Struct
 
@@ -129,10 +129,10 @@ def thumb_twin(address: Address) -> Address:
 	return Address(address | 1)
 
 
-ANONYMOUS = "<anonymous>"
+ANONYMOUS: Final = "<anonymous>"
 
-FUNCTION_POINTER = "function pointer"
-ARRAY_SUFFIX = " []"
+FUNCTION_POINTER: Final = "function pointer"
+ARRAY_SUFFIX: Final = " []"
 
 
 def array_element_type(type_name: str) -> str:

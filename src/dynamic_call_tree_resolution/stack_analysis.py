@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from itertools import groupby
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
@@ -28,9 +28,9 @@ class StackReport(Struct):
 	unmeasured: int
 
 
-_MAX_CYCLE_SIZE = 20
+_MAX_CYCLE_SIZE: Final = 20
 
-INDIRECT_CALLEE = "__indirect_call"
+INDIRECT_CALLEE: Final = "__indirect_call"
 
 
 def expand_indirect_calls(

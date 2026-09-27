@@ -6,7 +6,7 @@
 import sys
 from collections.abc import Mapping  # noqa: TC003  # evaluated at runtime in _dropped_indirect_edges' signature
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
-from typing import Annotated
+from typing import Annotated, Final
 
 import msgspec
 from cyclopts import App, Parameter
@@ -35,7 +35,7 @@ from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 
 app = App(name="dctr")
 
-_MAX_ELF_SIZE = 50 * 1024 * 1024
+_MAX_ELF_SIZE: Final = 50 * 1024 * 1024
 
 
 def _oversized(path: Path) -> bool:
