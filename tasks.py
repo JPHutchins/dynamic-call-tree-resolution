@@ -4,12 +4,9 @@
 """Task definitions for dynamic-call-tree-resolution."""
 
 from pathlib import Path
-from shutil import which
 
-from camas import Claude, Config, Parallel, Sequential, Task
+from camas import Claude, Config, Parallel, Sequential, Task, by_suffix
 
-# cargo install jphfmt lands it in ~/.cargo/bin, which is not always on PATH
-jphfmt = which("jphfmt") or str(Path.home() / ".cargo/bin/jphfmt")
 fixture_directory = Path(__file__).parent / "tests/fixtures"
 fixture_c_files = " ".join(
 	str(candidate)
@@ -21,17 +18,23 @@ format_check = Task("uv run ruff format --check {paths}", paths=".")
 lint = Task("uv run ruff check {paths}", paths=".")
 lint_fix = Task("uv run ruff check --fix {paths}", mutates=True, paths=".")
 c_format = Task(
-	f"{jphfmt} -i {fixture_c_files}",
+	f"jphfmt -i {fixture_c_files}",
 	mutates=True,
 	when="tests/fixtures/",
-	help="format the C fixtures with jphfmt (cargo install jphfmt)",
+	help="format the C fixtures with jphfmt",
 )
 c_format_check = Task(
-	f"{jphfmt} --check {fixture_c_files}",
+	f"jphfmt --check {fixture_c_files}",
 	when="tests/fixtures/",
-	help="the C fixtures must stay jphfmt-canonical (cargo install jphfmt)",
+	help="the C fixtures must stay jphfmt-canonical",
 )
-fix = Sequential(lint_fix, format, c_format)
+nix_format = Task(
+	"nixfmt {paths}", mutates=True, paths=by_suffix((".nix",), default=("flake.nix",))
+)
+nix_format_check = Task(
+	"nixfmt --check {paths}", paths=by_suffix((".nix",), default=("flake.nix",))
+)
+fix = Sequential(lint_fix, format, c_format, nix_format)
 actionlint = Task("uv run actionlint")
 mypy = Task("uv run mypy .")
 pyright = Task("uv run pyright src tests")
@@ -41,8 +44,10 @@ test = Task("uv run pytest -v -m 'not slow'")
 coverage = Task("uv run pytest -m 'not slow' --cov --cov-report=term-missing --cov-report=xml")
 
 all = Sequential(fix, Parallel(actionlint, typecheck, coverage))
-check = Parallel(format_check, c_format_check, lint, actionlint, typecheck, test)
-gate = Parallel(format_check, c_format_check, lint, actionlint, typecheck, coverage)
+check = Parallel(format_check, c_format_check, nix_format_check, lint, actionlint, typecheck, test)
+gate = Parallel(
+	format_check, c_format_check, nix_format_check, lint, actionlint, typecheck, coverage
+)
 
 matrix = Sequential(
 	Task("uv sync"),
