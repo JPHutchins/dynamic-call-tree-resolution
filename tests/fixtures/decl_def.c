@@ -1,7 +1,6 @@
 #include "shared.h"
 
-int target_fn(void)
-{
+int target_fn(void) {
 	return 1;
 }
 
@@ -11,8 +10,7 @@ struct plain plain_instance = {.run = target_fn};
 
 extern void touch(struct shared * s);
 
-int main(void)
-{
+int main(void) {
 	touch(&instance);
 	return 0;
 }

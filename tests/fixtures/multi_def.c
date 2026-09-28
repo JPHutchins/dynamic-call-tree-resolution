@@ -8,14 +8,12 @@ struct device {
 	void * context;
 };
 
-static int hidden_open(void * self, int flags)
-{
+static int hidden_open(void * self, int flags) {
 	(void) self;
 	return flags;
 }
 
-static int hidden_close(void * self)
-{
+static int hidden_close(void * self) {
 	(void) self;
 	return 0;
 }

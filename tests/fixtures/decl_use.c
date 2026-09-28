@@ -1,7 +1,6 @@
 #include "shared.h"
 
-int second_fn(void)
-{
+int second_fn(void) {
 	return 2;
 }
 

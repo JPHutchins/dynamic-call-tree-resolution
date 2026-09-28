@@ -98,13 +98,11 @@ volatile int volatile_count;
 
 static int const folded = 42;
 
-int use_folded(void)
-{
+int use_folded(void) {
 	return folded;
 }
 
-int main(void)
-{
+int main(void) {
 	int result = 0;
 
 	plain_cb(1);
@@ -125,55 +123,44 @@ int main(void)
 	return result + use_folded();
 }
 
-void plain_target(int value)
-{
+void plain_target(int value) {
 	volatile_count = value;
 }
 
-ret_t typedef_target(void)
-{
+ret_t typedef_target(void) {
 	return FLAG_ONE;
 }
 
-void undef_ptr_target(void)
-{}
+void undef_ptr_target(void) {}
 
-static int driver_a_open(void * self, int flags)
-{
+static int driver_a_open(void * self, int flags) {
 	return flags + (self != 0);
 }
 
-static int driver_a_close(void * self)
-{
+static int driver_a_close(void * self) {
 	return self != 0;
 }
 
-static int driver_b_open(void * self, int flags)
-{
+static int driver_b_open(void * self, int flags) {
 	return (self != 0) - flags;
 }
 
-static int driver_b_close(void * self)
-{
+static int driver_b_close(void * self) {
 	return -(self != 0);
 }
 
-static int node_fn(void)
-{
+static int node_fn(void) {
 	return 7;
 }
 
-static int dev_init(void)
-{
+static int dev_init(void) {
 	return 9;
 }
 
-static int anon_fn(void)
-{
+static int anon_fn(void) {
 	return 3;
 }
 
-static int enum_target(enum flags value)
-{
+static int enum_target(enum flags value) {
 	return value;
 }
