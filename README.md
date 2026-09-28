@@ -177,7 +177,6 @@ contradicts does not hold.
   expansion used in the tests ([#58]).
 - `recursive`, `dynamic`, and `unmeasured: N` results are not bounded at all ([#64]).
 - Entry points come from `.ci`, including functions the linker discarded ([#64], [#78]).
-- Frame names are keyed by stripping `.isra`/`.constprop`/`.part` suffixes only ([#68]).
 - Interrupt, exception, context-switch, and FPU stacking are not modeled.
 
 ### Residue
@@ -205,7 +204,6 @@ storage are not enumerated ([#69]).
 [#64]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/64
 [#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
 [#67]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/67
-[#68]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/68
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
 [#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
 [#74]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/74
