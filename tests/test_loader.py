@@ -6,23 +6,23 @@
 from __future__ import annotations
 
 import struct
-from typing import TYPE_CHECKING
+from itertools import accumulate
+from pathlib import Path
 
 import pytest
 from elftools.common.exceptions import ELFError
+from salix import Struct
 
 from dynamic_call_tree_resolution import (
 	Address,
 	EmbeddedStructMember,
+	Function,
 	FunctionPointerMember,
 	FunctionSignature,
 	Relocation,
 	StructPointerMember,
 	load,
 )
-
-if TYPE_CHECKING:
-	from pathlib import Path
 
 
 def test_load_functions_from_dwarf_and_symtab(fixture_elfs: dict[str, Path]) -> None:
@@ -158,14 +158,37 @@ def test_load_rel_elf_reads_in_field_addends(tmp_path: Path) -> None:
 	assert program.sections[Address(0x1000)] == b"\x44\x10\x00\x00"
 
 
-def _rel_elf(symbol_value: int = 0x1000) -> bytes:
+_GLOBAL_FUNCTION = 0x12
+_GLOBAL_OBJECT = 0x11
+_SHN_ABS = 0xFFF1
+
+
+class _Symbol(Struct):
+	name: str
+	value: int
+	size: int
+	info: int = _GLOBAL_FUNCTION
+	section_index: int = 1
+
+
+def _rel_elf(symbols: tuple[_Symbol, ...] = (_Symbol(name="fn", value=0x1000, size=4),)) -> bytes:
 	"""A minimal i386 REL executable with in-field, bss, and non-alloc relocs."""
 	shstrtab = b"\0.text\0.rel.text\0.symtab\0.shstrtab\0.strtab\0.bss\0.extra\0.rel.extra\0"
-	strtab = b"\0fn\0"
+	strtab = b"\0" + b"".join(symbol.name.encode() + b"\0" for symbol in symbols)
 	sections_data = (
 		b"\x44\0\0\0",
 		struct.pack("<II", 0x1000, (1 << 8) | 1) + struct.pack("<II", 0x2000, 8),
-		b"\0" * 16 + struct.pack("<IIIBBH", 1, symbol_value, 4, 0x12, 0, 1),
+		b"\0" * 16
+		+ b"".join(
+			struct.pack(
+				"<IIIBBH", name, symbol.value, symbol.size, symbol.info, 0, symbol.section_index
+			)
+			for symbol, name in zip(
+				symbols,
+				accumulate((len(symbol.name) + 1 for symbol in symbols), initial=1),
+				strict=False,
+			)
+		),
 		shstrtab,
 		strtab,
 		b"\0\0\0\0",
@@ -197,7 +220,7 @@ def _rel_elf(symbol_value: int = 0x1000) -> bytes:
 		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
 		(1, 1, 0x6, 0x1000, offsets[0], 4, 0, 0, 4, 0),
 		(7, 9, 0, 0, offsets[1], 16, 3, 1, 4, 8),
-		(17, 2, 0, 0, offsets[2], 32, 5, 1, 4, 16),
+		(17, 2, 0, 0, offsets[2], 16 * (1 + len(symbols)), 5, 1, 4, 16),
 		(25, 3, 0, 0, offsets[3], len(shstrtab), 0, 0, 1, 0),
 		(34, 3, 0, 0, offsets[4], len(strtab), 0, 0, 1, 0),
 		(41, 8, 0x3, 0x2000, 0, 4, 0, 0, 4, 0),
@@ -210,7 +233,56 @@ def _rel_elf(symbol_value: int = 0x1000) -> bytes:
 
 def test_load_skips_symtab_functions_at_address_zero_and_one(tmp_path: Path) -> None:
 	path = tmp_path / "phantom.elf"
-	path.write_bytes(_rel_elf(symbol_value=1))
+	path.write_bytes(_rel_elf((_Symbol(name="fn", value=1, size=4),)))
 	program = load(path)
 	assert Address(1) not in program.functions
 	assert Address(0) not in program.functions
+
+
+@pytest.mark.parametrize(
+	"symbols",
+	[
+		(_Symbol(name="real", value=0x1000, size=4), _Symbol(name="alias", value=0x1000, size=0)),
+		(_Symbol(name="alias", value=0x1000, size=0), _Symbol(name="real", value=0x1000, size=4)),
+	],
+	ids=["alias-last", "alias-first"],
+)
+def test_load_keeps_the_largest_same_address_function_symbol(
+	tmp_path: Path, symbols: tuple[_Symbol, ...]
+) -> None:
+	path = tmp_path / "alias.elf"
+	path.write_bytes(_rel_elf(symbols))
+	assert load(path).functions[Address(0x1000)] == Function(
+		name="real", address=Address(0x1000), size=4, signature=None
+	)
+
+
+def test_load_skips_absolute_object_symbols(tmp_path: Path) -> None:
+	path = tmp_path / "absolute.elf"
+	path.write_bytes(
+		_rel_elf(
+			(
+				_Symbol(name="fn", value=0x1000, size=4),
+				_Symbol(
+					name="CONFIG_X",
+					value=0x2000,
+					size=0,
+					info=_GLOBAL_OBJECT,
+					section_index=_SHN_ABS,
+				),
+			)
+		)
+	)
+	assert Address(0x2000) not in load(path).objects
+
+
+@pytest.mark.parametrize(
+	"elf", ["hello_zephyr_qemu_cortex_m3.elf", "sensor-two-impl/zephyr/zephyr.elf"]
+)
+def test_load_arm_fixture_has_no_absolute_symbol_objects(elf: str) -> None:
+	program = load(Path(__file__).parent / "fixtures" / elf)
+	assert [
+		data_object.name
+		for data_object in program.objects.values()
+		if data_object.name.startswith(("CONFIG_", "___"))
+	] == []

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
@@ -28,8 +28,7 @@ from dynamic_call_tree_resolution import (
 )
 from tests.programs import build_program
 
-if TYPE_CHECKING:
-	from pathlib import Path
+ARM_FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _program(
@@ -560,6 +559,30 @@ def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
 	assert site.site_address == 0x1004
 	assert site.slot == 0x3000
 	assert call_site_candidates(program, site, {}) == frozenset({Address(0x2000)})
+
+
+def test_arm_empty_symbol_does_not_hide_its_sized_thumb_twin() -> None:
+	body = bytes.fromhex("98 47 00 bf")
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("stub", 0x1000, 0), ("caller", 0x1001, len(body))),
+		pointer_size=4,
+	)
+	assert [site.site_address for site in extract_call_sites(program)] == [0x1000]
+
+
+@pytest.mark.parametrize(
+	("elf", "register_indirect_branches"),
+	[
+		("hello_zephyr_qemu_cortex_m3.elf", 23),
+		("sensor-two-impl/zephyr/zephyr.elf", 38),
+	],
+)
+def test_arm_fixture_extracts_every_register_indirect_branch(
+	elf: str, register_indirect_branches: int
+) -> None:
+	assert len(extract_call_sites(load(ARM_FIXTURES / elf))) == register_indirect_branches
 
 
 def test_arm_call_in_window_clears_registers() -> None:
