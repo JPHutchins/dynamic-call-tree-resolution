@@ -149,8 +149,7 @@ contradicts does not hold.
 - A linked ELF executable with DWARF; relocatable objects are rejected. Stack depths
   also need GCC's `-fstack-usage` (`.su`) and `-fcallgraph-info` (`.ci`) artifacts.
 - `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
-  decoded as Thumb only, with no A32 detection, and direct-branch targets are
-  mis-decoded ([#60]).
+  decoded as Thumb only, with no A32 detection.
 - Zephyr is the only RTOS modeled, and its knowledge is not isolated ([#71]).
 
 ### Call targets
@@ -200,7 +199,6 @@ storage are not enumerated ([#69]).
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
 [#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
-[#60]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/60
 [#61]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/61
 [#62]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/62
 [#63]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/63

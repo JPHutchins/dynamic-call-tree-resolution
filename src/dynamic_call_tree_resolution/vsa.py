@@ -787,7 +787,8 @@ class _BranchTarget(Struct):
 def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | None:
 	"""(target address, conditional) of a direct branch, or ``None``.
 
-	Capstone reports x86 branch immediates as absolute targets.
+	Capstone reports branch immediates as absolute targets, the Thumb
+	b-family and ``cbz``/``cbnz`` included.
 	"""
 	if machine.is_x86:
 		if instruction.mnemonic == "jmp":
@@ -811,24 +812,17 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | Non
 		conditional = True
 	else:
 		return None
-	if base in ("cbz", "cbnz"):
-		imm5 = (instruction.bytes[1] >> 3) & 0x1F
-		return _BranchTarget(target=instruction.address + 4 + 2 * imm5, conditional=conditional)
-	operand = instruction.operands[0]
+	operand = instruction.operands[1 if base in ("cbz", "cbnz") else 0]
 	if operand.type != arm_const.ARM_OP_IMM:
 		return None  # pragma: no cover
-	# capstone's imm is unaligned PC-relative; b-family encodings align PC to 4
-	pc = instruction.address + 4
-	displacement = operand.imm - pc
-	return _BranchTarget(target=(pc & ~3) + displacement, conditional=conditional)
+	return _BranchTarget(target=operand.imm, conditional=conditional)
 
 
 def _call_target(instruction: CsInsn, machine: Machine) -> int | None:
 	"""Absolute target of a direct call, or ``None``.
 
-	Capstone reports call immediates as absolute targets (bl and blx
-	included — unlike b-family branch immediates, which are unaligned
-	PC-relative and recomputed where they are read).
+	Capstone reports call immediates as absolute targets, Thumb ``bl``
+	included.
 	"""
 	if machine.is_x86:
 		if instruction.mnemonic != "call":
