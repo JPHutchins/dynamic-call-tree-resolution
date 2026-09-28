@@ -476,7 +476,7 @@ def test_arm_callee_saved_register_survives_a_bl() -> None:
 
 
 def test_arm_direct_branch_to_the_site_carries_state() -> None:
-	body = bytes.fromhex("02 4c00 e0a0 47") + b"\x00\xbf" * 3 + _pointer(0x3000, 4)
+	body = bytes.fromhex("02 4c00 e000 24a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
 	program = _program(
 		"EM_ARM",
 		body,
@@ -485,9 +485,23 @@ def test_arm_direct_branch_to_the_site_carries_state() -> None:
 		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
-	assert site.site_address == 0x1004
+	assert site.site_address == 0x1006
 	assert site.slot == 0x3000
 	assert call_site_candidates(program, site, {}) == frozenset({Address(0x2000)})
+
+
+def test_arm_cbz_to_the_site_joins_the_taken_state() -> None:
+	body = bytes.fromhex("02 4c00 b100 24a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
+		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.site_address == 0x1006
+	assert site.candidates == frozenset({Address(0), Address(0x3000)})
 
 
 def test_arm_conditional_branch_past_the_site_keeps_fallthrough_state() -> None:

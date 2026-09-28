@@ -1,12 +1,14 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Capstone's Thumb branch immediates are absolute targets.
+"""Thumb direct-branch targets, from capstone to the VSA's CFG.
 
-Cross-checked against a decoder of the raw ARMv7-M encodings (B T1-T4,
-BL T1, CBZ/CBNZ T1; target is the instruction address + 4 + offset, with
-no word alignment) over every direct branch in the committed ARM
-fixtures.
+The VSA reads direct-branch and call targets straight from capstone's
+immediate operand. That contract is cross-checked against a decoder of
+the raw ARMv7-M encodings (B T1-T4, BL T1, CBZ/CBNZ T1; target is the
+instruction address + 4 + offset, with no word alignment) over every
+direct branch in the committed ARM fixtures, and fixture sites whose
+candidates depend on the decoded CFG are pinned.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from typing import TYPE_CHECKING, Literal
 
 from capstone import CS_ARCH_ARM, CS_MODE_THUMB, Cs
 
-from dynamic_call_tree_resolution import load
+from dynamic_call_tree_resolution import assignments, call_site_candidates, extract_call_sites, load
 from dynamic_call_tree_resolution.model import aligned
 from dynamic_call_tree_resolution.points_to import memory_at
 
@@ -111,3 +113,10 @@ def test_capstone_reports_every_direct_branch_target_absolute() -> None:
 		for instruction, (_, target) in branches
 		if instruction.operands[-1].imm != target
 	] == []
+
+
+def test_hello_z_cstart_loop_site_has_no_candidates() -> None:
+	program = load(ARM_ELFS[0])
+	resolved = {assignment.slot: assignment for assignment in assignments(program)}
+	(site,) = (site for site in extract_call_sites(program) if site.site_address == 0xEB4)
+	assert call_site_candidates(program, site, resolved) == frozenset()
