@@ -3,6 +3,8 @@
 
 """Tests for :mod:`dynamic_call_tree_resolution.stack_analysis`."""
 
+from pathlib import Path
+
 import pytest
 
 from dynamic_call_tree_resolution import (
@@ -10,7 +12,15 @@ from dynamic_call_tree_resolution import (
 	StackReport,
 	StackUsage,
 	expand_indirect_calls,
+	load_callgraph,
+	load_stack_usages,
 	worst_case_depths,
+)
+from dynamic_call_tree_resolution.stack_analysis import frame_key
+
+ARTIFACT_DIRECTORIES = (
+	Path(__file__).parent / "fixtures" / "counter-su",
+	Path(__file__).parent / "fixtures" / "sensor-two-impl",
 )
 
 FRAMES = (
@@ -359,4 +369,24 @@ def test_expand_indirect_calls_matches_path_qualified_callers() -> None:
 	) == (
 		CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="cb"),
 		CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="fallback_fn"),
+	)
+
+
+@pytest.mark.parametrize(
+	"artifacts",
+	ARTIFACT_DIRECTORIES,
+	ids=[artifacts.name for artifacts in ARTIFACT_DIRECTORIES],
+)
+def test_every_callgraph_node_meets_its_stack_usage_record(artifacts: Path) -> None:
+	usages = load_stack_usages(artifacts)
+	keys = {frame_key(usage.function) for usage in usages}
+	roots = {usage.function.split(".")[0] for usage in usages}
+	assert (
+		sorted(
+			name
+			for edge in load_callgraph(artifacts)
+			for name in (edge.caller, edge.callee)
+			if frame_key(name).split(".")[0] in roots and frame_key(name) not in keys
+		)
+		== []
 	)

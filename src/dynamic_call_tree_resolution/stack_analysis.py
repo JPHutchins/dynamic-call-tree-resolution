@@ -292,10 +292,16 @@ def frame_key(name: str) -> str:
 	'func'
 	>>> frame_key("func.isra.0")
 	'func'
+	>>> frame_key("func.constprop.0.isra.0"), frame_key("func.constprop.isra")
+	('func', 'func')
+	>>> frame_key("func.localalias"), frame_key("func.cold"), frame_key("func.lto_priv.0")
+	('func', 'func', 'func')
+	>>> frame_key("func.part_of"), frame_key("func.isra.0.x")
+	('func.part_of', 'func.isra.0.x')
 	"""
 	if "/" in name:
 		name = name.rsplit(":", 1)[-1]
-	return re.sub(r"\.(?:isra|constprop|part)(?:\.\d+)?$", "", name)
+	return re.sub(r"(?:\.(?:isra|constprop|part|localalias|cold|lto_priv)(?:\.\d+)?)+$", "", name)
 
 
 def _frames_by_bare_name(frames: Iterable[StackUsage]) -> Mapping[str, StackUsage]:
