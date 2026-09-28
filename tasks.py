@@ -5,12 +5,18 @@
 
 from pathlib import Path
 
-from camas import Claude, Config, Parallel, Sequential, Task, by_suffix
+from camas import Claude, Config, Parallel, Sequential, Task, by_glob, by_suffix
 
-fixture_directory = Path(__file__).parent / "tests/fixtures"
-fixture_c_files = " ".join(
-	str(candidate)
-	for candidate in sorted([*fixture_directory.glob("*.c"), *fixture_directory.glob("*.h")])
+fixture_c_globs = ("tests/fixtures/**/*.c", "tests/fixtures/**/*.h")
+fixture_c_scope = by_glob(
+	fixture_c_globs,
+	default=tuple(
+		sorted(
+			path.relative_to(Path(__file__).parent).as_posix()
+			for glob in fixture_c_globs
+			for path in Path(__file__).parent.glob(glob)
+		)
+	),
 )
 
 format = Task("uv run ruff format {paths}", mutates=True, paths=".")
@@ -18,14 +24,14 @@ format_check = Task("uv run ruff format --check {paths}", paths=".")
 lint = Task("uv run ruff check {paths}", paths=".")
 lint_fix = Task("uv run ruff check --fix {paths}", mutates=True, paths=".")
 c_format = Task(
-	f"jphfmt -i {fixture_c_files}",
+	"jphfmt -i {paths}",
 	mutates=True,
-	when="tests/fixtures/",
+	paths=fixture_c_scope,
 	help="format the C fixtures with jphfmt",
 )
 c_format_check = Task(
-	f"jphfmt --check {fixture_c_files}",
-	when="tests/fixtures/",
+	"jphfmt --check {paths}",
+	paths=fixture_c_scope,
 	help="the C fixtures must stay jphfmt-canonical",
 )
 nix_format = Task(

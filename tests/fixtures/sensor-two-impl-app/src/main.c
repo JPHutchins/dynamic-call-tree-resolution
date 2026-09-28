@@ -17,26 +17,26 @@
 static struct sensor_value temperature_reading;
 static struct sensor_value acceleration_reading[3];
 
-void thermal_thread(void *unused1, void *unused2, void *unused3)
+void thermal_thread(void * unused1, void * unused2, void * unused3)
 {
-	const struct device *thermometer = DEVICE_DT_GET(DT_NODELABEL(adt7420));
+	const struct device * thermometer = DEVICE_DT_GET(DT_NODELABEL(adt7420));
 
-	(void)unused1;
-	(void)unused2;
-	(void)unused3;
+	(void) unused1;
+	(void) unused2;
+	(void) unused3;
 	while (1) {
 		sensor_sample_fetch(thermometer);
 		sensor_channel_get(thermometer, SENSOR_CHAN_AMBIENT_TEMP, &temperature_reading);
 	}
 }
 
-void motion_thread(void *unused1, void *unused2, void *unused3)
+void motion_thread(void * unused1, void * unused2, void * unused3)
 {
-	const struct device *imu = DEVICE_DT_GET(DT_NODELABEL(bmi160));
+	const struct device * imu = DEVICE_DT_GET(DT_NODELABEL(bmi160));
 
-	(void)unused1;
-	(void)unused2;
-	(void)unused3;
+	(void) unused1;
+	(void) unused2;
+	(void) unused3;
 	while (1) {
 		sensor_sample_fetch(imu);
 		sensor_channel_get(imu, SENSOR_CHAN_ACCEL_XYZ, acceleration_reading);
