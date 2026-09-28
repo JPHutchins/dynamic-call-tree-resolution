@@ -328,10 +328,10 @@ def _blocks_by_function(
 		start = aligned(function.address) if program.machine is Machine.EM_ARM else function.address
 		if start in seen:
 			continue
-		seen.add(start)
 		code = memory_at(program, start, function.size)
 		if not code:
 			continue
+		seen.add(start)
 		instructions = tuple(disassembler.disasm(code, start))
 		blocks[start] = (function, _build_blocks(instructions, program.machine))
 	return blocks

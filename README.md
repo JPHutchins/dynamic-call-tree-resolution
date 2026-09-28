@@ -155,7 +155,7 @@ contradicts does not hold.
 ### Call targets
 
 - A slot's value is its value in the image as linked. Writable-section slots report
-  their initializer, which runtime code may replace.
+  their initializer, which runtime code may replace ([#67]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - Value-set analysis per-site sets are refinements, not over-approximations: the
@@ -165,7 +165,6 @@ contradicts does not hold.
   functions whose DWARF name renders as `<anonymous>` never match ([#63]).
 - The fallback for sites with no candidates is the union of data-slot targets; it
   misses functions whose address appears only in code ([#62]).
-- Call sites in a function shadowed by a size-0 alias symbol are missed ([#67]).
 - Code without `.ci` records (assembly, `native_sim` host code) is absent from the
   stack call graph ([#78]).
 

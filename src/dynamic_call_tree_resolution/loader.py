@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 	from elftools.dwarf.die import DIE, AttributeValue
 	from elftools.dwarf.dwarfinfo import DWARFInfo
+	from elftools.elf.sections import Symbol
 
 	from dynamic_call_tree_resolution.model import ByteOrder, Member
 
@@ -159,11 +160,15 @@ def _functions_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, F
 			size=symbol["st_size"],
 			signature=None,
 		)
-		for symbol in symtab.iter_symbols()
+		for symbol in sorted(symtab.iter_symbols(), key=_symbol_size)
 		if symbol["st_info"]["type"] == "STT_FUNC"
 		if symbol["st_shndx"] != "SHN_UNDEF"
 		if (address := Address(symbol["st_value"])) & ~1
 	}
+
+
+def _symbol_size(symbol: Symbol) -> int:
+	return symbol["st_size"]
 
 
 def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
@@ -396,6 +401,8 @@ def _objects_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, Dat
 			continue
 		if symbol["st_shndx"] == "SHN_UNDEF":
 			continue  # pragma: no cover
+		if symbol["st_shndx"] == "SHN_ABS":
+			continue
 		address = Address(symbol["st_value"])
 		if objects.get(address) is None or symbol["st_size"] > objects[address].size:
 			objects[address] = DataObject(
