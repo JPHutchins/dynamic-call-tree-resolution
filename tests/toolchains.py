@@ -1,12 +1,14 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""C compiler invocations for the fixture programs, and the Cortex-M3 QEMU runner."""
+"""C compiler invocations for the fixture programs, and their runners."""
 
 import subprocess
 from pathlib import Path
 
-CORTEX_M3_HARNESS = Path(__file__).parent / "fixtures" / "cortex-m3"
+FIXTURES = Path(__file__).parent / "fixtures"
+CORTEX_M3_HARNESS = FIXTURES / "cortex-m3"
+HOST_HARNESS = FIXTURES / "host"
 
 _CC_FLAGS = ("-std=gnu2x", "-Wall", "-Wextra", "-Werror", "-Wdouble-promotion")
 
@@ -25,7 +27,7 @@ def cortex_m3_cc(*flags: str) -> tuple[str, ...]:
 		*_CC_FLAGS,
 		"-ffreestanding",
 		"-nostdlib",
-		f"-I{CORTEX_M3_HARNESS}",
+		f"-I{FIXTURES}",
 		f"-T{CORTEX_M3_HARNESS / 'cortex_m3.ld'}",
 		str(CORTEX_M3_HARNESS / "harness.c"),
 		*flags,
@@ -40,6 +42,32 @@ def build_cortex_m3(sources: tuple[Path, ...], output: Path, *flags: str) -> Pat
 		capture_output=True,
 	)
 	return output
+
+
+def build_host(sources: tuple[Path, ...], output: Path, *flags: str) -> Path:
+	"""Link ``sources`` with the host harness into a host executable."""
+	subprocess.run(
+		[
+			*host_cc(f"-I{FIXTURES}", str(HOST_HARNESS / "harness.c"), *flags),
+			*map(str, sources),
+			"-o",
+			str(output),
+		],
+		check=True,
+		capture_output=True,
+	)
+	return output
+
+
+def run_host(executable: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+	"""Run a host harness executable with ``arguments``."""
+	return subprocess.run(
+		[str(executable), *arguments],
+		check=False,
+		capture_output=True,
+		text=True,
+		timeout=30,
+	)
 
 
 def run_cortex_m3(elf: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
