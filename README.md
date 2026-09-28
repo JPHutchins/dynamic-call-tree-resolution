@@ -3,27 +3,35 @@
 Static resolution of indirect calls in embedded firmware ELF images, in service of
 worst-case stack usage analysis.
 
+> [!CAUTION]
+> dctr's stack depths are **not** sound worst-case bounds, and its call-target sets are
+> **not** guaranteed complete. Do not use either for safety or certification
+> sign-off. See [Limitations and soundness](#limitations-and-soundness).
+
 ## Problem
 
 Worst-case stack analysis needs the call graph. C function pointers break it, and Zephyr
 firmware is full of them: every driver API call is `device->api->fn(...)`, and every
-`SYS_INIT` entry, ISR, thread entry point, and callback is an indirect call. Standard
-tools report hundreds of "unresolved dynamic calls" and stop there.
+`SYS_INIT` entry, ISR, thread entry point, and callback is an indirect call. GCC's
+`-fcallgraph-info` records each of them as an edge to the placeholder `__indirect_call`,
+with no target.
 
 ## Strategy
 
-1. **Static points-to (exact).** Every constant function pointer in a linked image is a
-   baked data value or a relocation against a function symbol. Combined with DWARF
-   structure layouts, `dev->api->open()` resolves to *exactly* the driver's `open`
-   implementation.
-2. **Init-system enumeration (exact).** Zephyr `SYS_INIT`/`DEVICE_DEFINE` entries are
-   static data in linker sections — including device structs synthesized by the linker
-   itself — so the init call graph is fully enumerable from the image.
-3. **Candidate narrowing (sets).** The residue — runtime-assigned callbacks — is narrowed
-   by matching the function-pointer type's DWARF signature and by value-set analysis
-   rooted at the init functions.
+1. **Static points-to.** A function pointer stored in initialized data is either a baked
+   value or a relocation against a function symbol. Combined with DWARF structure
+   layouts, every such slot is read from the image as linked. A slot in a writable
+   section holds its initializer, which code may overwrite at runtime.
+2. **Init-system enumeration.** Zephyr `SYS_INIT`/`DEVICE_DEFINE` entries are static
+   data that the linker places in dedicated sections, so their slots are enumerated
+   from the image. The dispatch sites that call through them (`z_sys_init_run_level`,
+   `do_device_init`) are not resolved.
+3. **Candidate narrowing.** Indirect call sites are narrowed by a value-set analysis
+   over every function's machine code, seeded from observed direct calls, and by
+   matching the function-pointer type's DWARF signature. The narrowed sets are
+   refinements, not over-approximations.
 
-Worst-case stack usage follows from the resolved call graph combined with GCC's
+Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts.
 
 ## Usage
@@ -37,6 +45,8 @@ __init_uart_stellaris_init.init_fn: uart_stellaris_init
 ...
 __device_dts_ord_22.ops.init: uart_stellaris_init
 ...
+uart_stellaris_driver_api.configure: <unresolved>
+...
 z_main_thread.base.timeout.fn: <unresolved>
 _thread_dummy.base.timeout.fn: <unresolved>
 ...
@@ -49,116 +59,133 @@ z_impl_zephyr_fputc@0x8a6: console_out
 ...
 console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
+z_sys_init_run_level@0xcd0: <unresolved>
+...
+do_device_init@0x1dca: <unresolved>
 ```
 
-- `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, enumerated exactly from their
-  linker sections; `__device_dts_ord_22.ops.init` is the linker-synthesized device struct's
-  init function.
-- The `<unresolved>` lines are the runtime-assigned residue — thread timeout callbacks and
-  the console output hook — enumerated with member paths for manual review.
-- `console_out@0x956` and `console_out@0x960` are indirect call sites (`blx r3`) resolved
-  through the `device->api` chain to their single target.
-- `_isr_wrapper@0x884` resolves to `z_irq_spurious` through the indexed load over the baked
-  `_sw_isr_table`: every static entry's handler points there.
+- `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, read from their linker
+  sections; `__device_dts_ord_22.ops.init` is the device struct's init function.
+- `<unresolved>` means the slot holds no function address in the image as linked. That
+  covers slots assigned at runtime (the thread timeout callbacks and `_stdout_hook`
+  above), constant `NULL` members (`uart_stellaris_driver_api.configure`), and union
+  arms that are not function pointers; they are listed with member paths for manual
+  review.
+- `console_out@0x956` and `console_out@0x960` are indirect call sites (`blx r3`) whose
+  value-set analysis through the `device->api` chain yields one candidate.
+- `_isr_wrapper@0x884` resolves to `z_irq_spurious` through the indexed load over
+  `_sw_isr_table`, which is read-only in this image: every entry's handler points there.
 
-## Tool comparison
+## Counter build
 
-[puncover](https://github.com/HBehrens/puncover) 0.8.0, non-interactive report mode
-(`puncover --elf <exe> --build_dir <build> --gcc-tools-base /usr/bin --non-interactive
---generate-report --report-type json`), on the Zephyr CAN counter build whose linked
-executable and `-fstack-usage`/`-fcallgraph-info` artifacts are committed at
-`tests/fixtures/counter-su` (`dctr stack tests/fixtures/counter-su` and `dctr
-summary tests/fixtures/counter-su tests/fixtures/counter-su/zephyr/zephyr.exe`;
-the numbers below are pinned by `tests/test_counter_fixture.py`):
+The Zephyr CAN counter sample for `native_sim` (an x86 host executable), with its
+`-fstack-usage`/`-fcallgraph-info` artifacts, at `tests/fixtures/counter-su`:
 
-| | puncover | dctr |
-|---|---|---|
-| indirect calls detected | 0 (assembly-text regex) | 98 call sites |
-| `poll_state_thread` worst case | 96 bytes | 460 bytes (static-only; 996 with indirect expansion) |
-| `shell_readline` worst case | not reported (symbol match fails) | 2108 bytes (upper bound; 1760 without indirect expansion) |
-| slots resolved/unresolved/total | — | 121/113/234 |
-| call sites resolved/exact/total | — | 26/14/98 |
-
-puncover's indirect-call handling is an assembly-text detection flag, and its reported
-worst case for `poll_state_thread` contains only the function itself, omitting the
-static callee depth the same artifacts yield (details below). pexplorer's dynamic
-edges are likewise detected, with resolution deferred to a hand-maintained config
-file. dctr resolves statically assigned function pointers exactly (`dctr analyze`),
-reports per-site candidate sets (`dctr compare --pexplorer`), and enumerates the
-runtime-assigned residue with member paths and signatures.
-
-<details>
-<summary>poll_state_thread trees — puncover 0.8.0 report vs dctr</summary>
-
-puncover's report (`stack_report.poll_state_thread`, `call_stack` in full):
-
-```
-poll_state_thread (96)
+```console
+$ dctr compare tests/fixtures/counter-su/zephyr/zephyr.exe
+elf                                            machine    functions slots r/u/t  sites r/e/t
+zephyr.exe                                     EM_386           734 121/113/234     26/14/98
 ```
 
-dctr's deepest path over static `.ci` edges (frame bytes; cumulative in
-parentheses):
-
-```
-poll_state_thread (96, 96)
-└── k_sleep_ticks (32, 128)                  [static]
-    └── z_impl_k_sleep_ticks (64, 192)       [static]
-        └── z_impl_k_yield (4, 196)          [static]
-            └── z_sched_yield (48, 244)      [static]
-                └── z_time_slice_reset (16, 260)  [static]
-                    └── slice_reset (64, 324)     [static]
-                        └── z_add_timeout (80, 404)  [static]
-                            └── sys_clock_set_timeout (8, 412)  [static]
-                                └── timer_core_arm (48, 460)    [static]
-                                    └── hwtimer_set_tick_one_shot (0, 460)  [static]
+```console
+$ dctr analyze tests/fixtures/counter-su/zephyr/zephyr.exe
+...
+poll_state_thread@0x8049dad: can_loopback_get_state
+...
+outs@0x804a8fa: <unresolved>
+...
 ```
 
-Every edge on this path is a static `.ci` edge; the frames are the `.su` record
-bytes, so the 364-byte difference is static callee depth that puncover's report
-omits. The function's one indirect call site is resolved exactly by dctr to
-`can_loopback_get_state` (8 bytes) — exact, but on a separate branch, not the
-deepest one. With indirect expansion, dctr's upper bound for this entry is 996
-bytes: the expansion unions every resolved target into each indirect edge, so the
-deepest expanded path runs through the fallback targets rather than the all-static
-path shown above.
-
-</details>
-
-<details>
-<summary>shell_readline deepest path — the one genuinely indirect edge</summary>
-
-dctr's deepest path over the committed artifacts (frame bytes; cumulative in
-parentheses):
-
-```
-shell_readline (96, 96)
-└── state_collect (96, 192)                      [static]
-    └── tab_handle (480, 672)                    [static]
-        └── z_shell_op_char_insert (64, 736)     [static]
-            └── data_insert (64, 800)            [static]
-                └── reprint_from_cursor (80, 880)     [static]
-                    └── z_shell_fprintf (32, 912)     [static]
-                        └── z_shell_vfprintf (8, 920) [static]
-                            └── z_shell_print (80, 1000)  [static]
-                                └── z_shell_vt100_colors_restore (32, 1032)  [static]
-                                    └── z_shell_vt100_color_set (32, 1064)   [static]
-                                        └── z_shell_raw_fprintf (32, 1096)   [static]
-                                            └── z_shell_fprintf_fmt (32, 1128)  [static]
-                                                └── cbvprintf (48, 1176)     [static]
-                                                    └── z_cbvprintf_impl (160, 1336)  [static]
-                                                        └── outs (64, 1400)  [static]
-                                                            └── z_shell_print_stream (4, 1404)  [indirect]
-                                                                └── z_shell_write (80, 1484)  [static]
-                                                                    ... (kernel wait, fatal, scheduler frames — all [static])
-                                                                    └── timer_core_arm (48, 2108)  [static]
-                                                                        └── hwtimer_set_tick_one_shot (0, 2108)  [static]
+```console
+$ dctr stack tests/fixtures/counter-su
+shell_readline: 1760 bytes recursive dynamic unmeasured: 1
+...
+poll_state_thread: 460 bytes dynamic unmeasured: 1
+...
 ```
 
-The only indirect edge on the path is `outs → z_shell_print_stream`: the shell's
-print-stream hook, which dctr resolves to a single candidate. dctr reports 2108 with
-indirect expansion and 1760 over static `.ci` edges alone.
+```console
+$ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe
+resolved slots: 121 | indirect call sites: 100
+shell_readline: 2108 bytes recursive dynamic unmeasured: 1
+...
+poll_state_thread: 1012 bytes recursive dynamic
+...
+```
 
-</details>
+- A *resolved* site or slot has at least one candidate, and an *exact* site has
+  exactly one, in the image as linked.
+- `compare` counts the indirect instructions it extracts; `stack --elf` counts the
+  `__indirect_call` edges in the `.ci` files.
+- `stack --elf` expands every indirect edge to its site candidates plus the fallback
+  union of all resolved slot targets. `outs` has no candidates, so its edge is the
+  fallback alone.
+- None of these depths is a worst-case bound. `recursive` (a cycle was broken) and
+  `dynamic` (a frame uses `alloca` or a VLA) describe any branch of the entry's
+  subtree; `unmeasured: N` counts frames on the deepest path that have no `.su` record
+  and count as 0 bytes.
+- `shell_readline` is not in the linked executable: the linker discarded it, but its
+  `.ci` graph survives, and entry points come from the `.ci` graph.
+
+## Related tools
+
+- [puncover](https://github.com/HBehrens/puncover) 0.8.0 reads `-fstack-usage` but not
+  `-fcallgraph-info`; it recovers calls and indirect calls from disassembly with
+  ARM-only regexes (`BLX\s+(\w+)$` in `gcc_tools.py`), so on an x86 build such as the
+  counter it sees no calls at all. A like-for-like comparison on an ARM build is
+  tracked in [#74].
+- [pexplorer](https://paulwuertz.github.io/pexplorer/) detects dynamic edges and
+  defers their resolution to a hand-maintained config file. `dctr compare --pexplorer`
+  joins its report per function, comparing pexplorer's dynamic-call count with dctr's
+  resolved and exact site counts; the per-site sets come from `dctr analyze`.
+
+## Limitations and soundness
+
+Known soundness bugs are tracked under [#59]. Until each is closed, the claim it
+contradicts does not hold.
+
+### Supported inputs
+
+- A linked ELF executable with DWARF; relocatable objects are rejected. Stack depths
+  also need GCC's `-fstack-usage` (`.su`) and `-fcallgraph-info` (`.ci`) artifacts.
+- `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
+  decoded as Thumb only, with no A32 detection, and direct-branch targets are
+  mis-decoded ([#60]).
+- Zephyr is the only RTOS modeled, and its knowledge is not isolated ([#71]).
+
+### Call targets
+
+- A slot's value is its value in the image as linked. Writable-section slots report
+  their initializer, which runtime code may replace.
+- *Exact* means one candidate in the image as linked, not the only function the site
+  can call at runtime.
+- Value-set analysis per-site sets are refinements, not over-approximations: the
+  analysis drops unknown values and does not model every write ([#61]), and its
+  control-flow graph has gaps ([#66]).
+- Signature narrowing compares DWARF signatures for equality: a cast defeats it, and
+  functions whose DWARF name renders as `<anonymous>` never match ([#63]).
+- The fallback for sites with no candidates is the union of data-slot targets; it
+  misses functions whose address appears only in code ([#62]).
+- Call sites in a function shadowed by a size-0 alias symbol are missed ([#67]).
+- Code without `.ci` records (assembly, `native_sim` host code) is absent from the
+  stack call graph ([#78]).
+
+### Stack depths
+
+- A depth is the deepest path the search found over the call graph; it is a bound
+  only if that graph is complete, and today it is not (above).
+- Expanding indirect edges (`stack --elf`) can report less than the subset-only
+  expansion used in the tests ([#58]).
+- `recursive`, `dynamic`, and `unmeasured: N` results are not bounded at all ([#64]).
+- Entry points come from `.ci`, including functions the linker discarded ([#64], [#78]).
+- Frame names are keyed by stripping `.isra`/`.constprop`/`.part` suffixes only ([#68]).
+- Interrupt, exception, context-switch, and FPU stacking are not modeled.
+
+### Residue
+
+`<unresolved>` slots are enumerated from DWARF-typed data objects. Array members,
+pointer-to-pointer members, anonymous structs, location lists ([#17]), and heap or stack
+storage are not enumerated ([#69]).
 
 ## References
 
@@ -169,3 +196,19 @@ indirect expansion and 1760 over static `.ci` edges alone.
 - AdaCore, *Compile-time stack requirements analysis with GCC* — introduced
   `-fstack-usage`/`-fcallgraph-info`
 - [avstack](https://github.com/JPHutchins/avstack) — avr stack "worst case usage" tooling
+
+[#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
+[#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
+[#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
+[#60]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/60
+[#61]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/61
+[#62]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/62
+[#63]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/63
+[#64]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/64
+[#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
+[#67]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/67
+[#68]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/68
+[#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
+[#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
+[#74]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/74
+[#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
