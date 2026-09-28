@@ -1,12 +1,12 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""The counter build artifacts pin the README's published numbers.
+"""The counter build artifacts pin the summary and the README's claims.
 
 ``tests/fixtures/counter-su`` holds the Zephyr CAN counter build's linked
 executable and its ``-fstack-usage``/``-fcallgraph-info`` artifacts
-(produced by the ``counter_su`` task); the README's comparison numbers
-are the outputs asserted here.
+(produced by the ``counter_su`` task); the README's transcripts of them
+run in ``test_readme``.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import msgspec
 
-from dynamic_call_tree_resolution import AnalysisSummary
+from dynamic_call_tree_resolution import AnalysisSummary, load
 
 ARTIFACTS = Path(__file__).parent / "fixtures" / "counter-su"
 EXECUTABLE = ARTIFACTS / "zephyr" / "zephyr.exe"
@@ -51,13 +51,7 @@ def test_summary_pins_the_published_numbers() -> None:
 	)
 
 
-def test_stack_pins_the_published_depths() -> None:
-	output = _dctr("stack", str(ARTIFACTS))
-	assert "poll_state_thread: 460 bytes" in output
-	assert "shell_readline: 1760 bytes recursive" in output
-
-
-def test_compare_pins_the_published_rollup() -> None:
-	output = _dctr("compare", str(EXECUTABLE))
-	assert "121/113/234" in output
-	assert "26/14/98" in output
+def test_the_worst_case_entry_is_not_in_the_linked_executable() -> None:
+	assert "shell_readline" not in {
+		function.name for function in load(EXECUTABLE).functions.values()
+	}
