@@ -13,47 +13,45 @@ jobs:
     outputs:
       matrix: ${{ steps.emit.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
       # The shape is pinned so a tasks.py refactor fails here rather than handing
       # the downstream jobs a differently-shaped object.
       - id: emit
-        run: echo "matrix=$(uv run camas matrix --github-matrix=axes)" >> "$GITHUB_OUTPUT"
+        run: echo "matrix=$(uvx camas --github-matrix=variants)" >> "$GITHUB_OUTPUT"
 
   check:
+    name: check (${{ matrix.PY }})
     needs: discover
     strategy:
-      matrix:
-        os: [ubuntu-latest]
-        python: ${{ fromJSON(needs.discover.outputs.matrix).PY }}
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
       fail-fast: false
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - &checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - &install-nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
 
-      - name: Install jphfmt (v0.2.2, crates.io prebuilt)
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl --fail --location --silent --show-error \
-            -o "$HOME/.local/bin/jphfmt" \
-            https://github.com/JPHutchins/jphfmt/releases/download/v0.2.2/jphfmt-x86_64-unknown-linux-gnu
-          chmod +x "$HOME/.local/bin/jphfmt"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          jphfmt --version
+      - &restore-nix-store
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 2G
 
-      - run: uv run camas
-        env:
-          UV_PYTHON: ${{ matrix.python }}
+      - run: nix develop --command uv run camas --PY="${{ matrix.PY }}"
 
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - *checkout
 
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - *install-nix
 
-      - run: uv run camas coverage --effects='(Status(output_mode="all"),)'
+      - *restore-nix-store
+
+      - run: nix develop --command uv run camas coverage --effects='(Status(output_mode="all"),)'

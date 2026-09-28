@@ -184,6 +184,17 @@ contradicts does not hold.
 pointer-to-pointer members, anonymous structs, location lists ([#17]), and heap or stack
 storage are not enumerated ([#69]).
 
+## Development
+
+```sh
+nix develop            # uv, the host C compiler, jphfmt, nixfmt, git-lfs
+uv run camas           # the checks CI runs
+uv run camas matrix    # the same checks on each interpreter in .python-version
+```
+
+uv manages the Python interpreters named in `.python-version`. Tools started from the
+shell, such as an editor or `camas mcp`, inherit its toolchain.
+
 ## References
 
 - [pexplorer](https://paulwuertz.github.io/pexplorer/) — Paul Würtz's browser-based
