@@ -92,21 +92,7 @@ counter = Task(
 	help="build the zephyr CAN counter testbed for native_sim (device API indirection)",
 )
 counter_su = Task(
-	(
-		"uv",
-		"run",
-		"--group",
-		"build",
-		"west",
-		"build",
-		"-b",
-		"native_sim",
-		"-d",
-		"../.camas/build/counter-su",
-		"zephyr/samples/drivers/can/counter",
-		"--",
-		"-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da",
-	),
+	"uv run --group build west build -b native_sim -d ../.camas/build/counter-su zephyr/samples/drivers/can/counter -- '-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da'",
 	cwd=Path("testbeds"),
 	env={
 		"ZEPHYR_TOOLCHAIN_VARIANT": "host",
@@ -117,22 +103,7 @@ counter_su = Task(
 
 zephyr_sdk_legacy = Path("/home/jp/zephyr-sdk-0.17.4")
 zmk = Task(
-	(
-		"uv",
-		"run",
-		"--group",
-		"build",
-		"west",
-		"build",
-		"-b",
-		"nice_nano",
-		"-d",
-		"../../.camas/build/zmk",
-		"-s",
-		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zmk/app",
-		"--",
-		"-DSHIELD=a_dux_left",
-	),
+	"uv run --group build west build -b nice_nano -d ../../.camas/build/zmk -s /home/jp/repos/dynamic-call-tree-resolution/testbeds/zmk/app -- -DSHIELD=a_dux_left",
 	cwd=Path("testbeds/zmk-workspace"),
 	env={
 		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
@@ -142,37 +113,12 @@ zmk = Task(
 	help="build the ZMK testbed for nice_nano",
 )
 zswatch_patch = Task(
-	(
-		"sed",
-		"-i",
-		"-e",
-		"/select DEPRECATED/d",
-		"-e",
-		"s/^    if kconf.warnings:/    if False and kconf.warnings:/",
-		"testbeds/zswatch-workspace/zephyr/subsys/usb/device/Kconfig",
-		"testbeds/zswatch-workspace/zephyr/drivers/usb/device/Kconfig",
-		"testbeds/zswatch-workspace/zephyr/scripts/kconfig/kconfig.py",
-	),
+	"sed -i -e '/select DEPRECATED/d' -e 's/^    if kconf.warnings:/    if False and kconf.warnings:/' testbeds/zswatch-workspace/zephyr/subsys/usb/device/Kconfig testbeds/zswatch-workspace/zephyr/drivers/usb/device/Kconfig testbeds/zswatch-workspace/zephyr/scripts/kconfig/kconfig.py",
 	mutates=True,
 	help="testbed-local fork patches: drop DEPRECATED selects, make kconfig warnings non-fatal",
 )
 zswatch_build = Task(
-	(
-		"uv",
-		"run",
-		"--group",
-		"build",
-		"west",
-		"build",
-		"-b",
-		"zswatch_legacy/nrf5340/cpuapp",
-		"-d",
-		"../../.camas/build/zswatch",
-		"-s",
-		"/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
-		"--",
-		"-DBOARD_ROOT=/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
-	),
+	"uv run --group build west build -b zswatch_legacy/nrf5340/cpuapp -d ../../.camas/build/zswatch -s /home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app -- -DBOARD_ROOT=/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
 	cwd=Path("testbeds/zswatch-workspace"),
 	env={
 		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk_legacy),
@@ -184,22 +130,7 @@ zswatch_build = Task(
 zswatch = Sequential(zswatch_patch, zswatch_build)
 
 sensor_two_impl = Task(
-	(
-		"uv",
-		"run",
-		"--group",
-		"build",
-		"west",
-		"build",
-		"-b",
-		"qemu_cortex_m3",
-		"-d",
-		"../.camas/build/sensor-two-impl",
-		"-s",
-		"/home/jp/repos/dynamic-call-tree-resolution/tests/fixtures/sensor-two-impl-app",
-		"--",
-		"-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da",
-	),
+	"uv run --group build west build -b qemu_cortex_m3 -d ../.camas/build/sensor-two-impl -s /home/jp/repos/dynamic-call-tree-resolution/tests/fixtures/sensor-two-impl-app -- '-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da'",
 	cwd=Path("testbeds"),
 	env={
 		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
