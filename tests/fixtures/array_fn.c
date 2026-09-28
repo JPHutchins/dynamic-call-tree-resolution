@@ -8,11 +8,9 @@ struct entry {
 static int dummy_arg_a;
 static int dummy_arg_b;
 
-void handler_a(void)
-{}
+void handler_a(void) {}
 
-void handler_b(void)
-{}
+void handler_b(void) {}
 
 struct entry table[2] = {
 	{.arg = &dummy_arg_a, .isr = handler_a},
@@ -35,8 +33,7 @@ __asm__(
 	"	.quad handler_b\n"
 );
 
-int main(void)
-{
+int main(void) {
 	table[0].isr();
 	cbs[1]();
 	return dynamic_cbs[0] == NULL;

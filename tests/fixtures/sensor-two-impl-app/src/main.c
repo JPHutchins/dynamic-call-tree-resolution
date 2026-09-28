@@ -17,8 +17,7 @@
 static struct sensor_value temperature_reading;
 static struct sensor_value acceleration_reading[3];
 
-void thermal_thread(void * unused1, void * unused2, void * unused3)
-{
+void thermal_thread(void * unused1, void * unused2, void * unused3) {
 	const struct device * thermometer = DEVICE_DT_GET(DT_NODELABEL(adt7420));
 
 	(void) unused1;
@@ -30,8 +29,7 @@ void thermal_thread(void * unused1, void * unused2, void * unused3)
 	}
 }
 
-void motion_thread(void * unused1, void * unused2, void * unused3)
-{
+void motion_thread(void * unused1, void * unused2, void * unused3) {
 	const struct device * imu = DEVICE_DT_GET(DT_NODELABEL(bmi160));
 
 	(void) unused1;
@@ -46,7 +44,6 @@ void motion_thread(void * unused1, void * unused2, void * unused3)
 K_THREAD_DEFINE(thermal_tid, 1024, thermal_thread, NULL, NULL, NULL, 5, 0, 0);
 K_THREAD_DEFINE(motion_tid, 1024, motion_thread, NULL, NULL, NULL, 5, 0, 0);
 
-int main(void)
-{
+int main(void) {
 	return 0;
 }

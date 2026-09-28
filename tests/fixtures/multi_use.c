@@ -10,7 +10,6 @@ struct device {
 
 extern struct device dev_x;
 
-int main(void)
-{
+int main(void) {
 	return dev_x.api->open(dev_x.context, 1);
 }
