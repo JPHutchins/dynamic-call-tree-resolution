@@ -20,16 +20,15 @@ jobs:
       # The shape is pinned so a tasks.py refactor fails here rather than handing
       # the downstream jobs a differently-shaped object.
       - id: emit
-        run: echo "matrix=$(uvx camas matrix --github-matrix=axes)" >> "$GITHUB_OUTPUT"
+        run: echo "matrix=$(uvx camas --github-matrix=variants)" >> "$GITHUB_OUTPUT"
 
   check:
+    name: check (${{ matrix.PY }})
     needs: discover
     strategy:
-      matrix:
-        os: [ubuntu-latest]
-        python: ${{ fromJSON(needs.discover.outputs.matrix).PY }}
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
       fail-fast: false
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - &checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -44,9 +43,7 @@ jobs:
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 2G
 
-      - run: nix develop --command uv run camas
-        env:
-          UV_PYTHON: ${{ matrix.python }}
+      - run: nix develop --command uv run camas --PY="${{ matrix.PY }}"
 
   coverage:
     runs-on: ubuntu-latest

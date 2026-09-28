@@ -50,16 +50,17 @@ gate = Parallel(
 )
 
 matrix = Sequential(
+	Task("uv python install --no-bin {PYTHON_DOWNLOAD}"),
 	Task("uv sync"),
 	check,
 	env={"UV_PROJECT_ENVIRONMENT": ".camas/.venv-{PY}", "UV_PYTHON": "{PY}"},
-	matrix={
-		"PY": tuple(
-			stripped
-			for line in (Path(__file__).parent / ".python-version").read_text().splitlines()
-			if (stripped := line.strip()) and not stripped.startswith("#")
-		)
-	},
+	variants=tuple(
+		{"PY": request, "PYTHON_DOWNLOAD": request.removesuffix("+gil")}
+		for line in (Path(__file__).parent / ".python-version").read_text().splitlines()
+		if (request := line.strip()) and not request.startswith("#")
+	),
+	help="check on each .python-version interpreter; uv cannot download a +gil request "
+	"(astral-sh/uv#17437), so the GIL build is installed by its downloadable name first",
 )
 
 zephyr_sdk = Path("/home/jp/zephyr-sdk-1.0.1")
@@ -213,4 +214,4 @@ pexplorer_testdata = Task(
 	help="run dctr's resolution rollup over pexplorer's shared testdata ELFs",
 )
 
-_ = Config(default_task=all, github_task=check, agent=Claude(fix=fix, check=gate))
+_ = Config(default_task=all, github_task=matrix, agent=Claude(fix=fix, check=gate))
