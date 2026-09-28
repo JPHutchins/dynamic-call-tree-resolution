@@ -28,6 +28,8 @@
             packages = [
               pkgs.uv
               pkgs.git-lfs
+              pkgs.gcc-arm-embedded-14
+              pkgs.qemu
               pkgs.nixfmt
               jphfmt.packages.${system}.default
             ];

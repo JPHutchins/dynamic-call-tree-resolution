@@ -187,7 +187,7 @@ storage are not enumerated ([#69]).
 ## Development
 
 ```sh
-nix develop            # uv, the host C compiler, jphfmt, nixfmt, git-lfs
+nix develop            # uv, the host and arm-none-eabi C compilers, QEMU, jphfmt, nixfmt, git-lfs
 uv run camas           # the checks CI runs
 uv run camas matrix    # the same checks on each interpreter in .python-version
 ```
