@@ -1,19 +1,34 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""The README usage block is a transcript: run it and match, in order."""
+"""Every README console block is a transcript: run it and match, in order."""
 
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPOSITORY_ROOT = Path(__file__).parent.parent
 
 
-def test_readme_usage_runs() -> None:
-	usage = _usage_block(REPOSITORY_ROOT / "README.md")
-	command = next(line for line in usage if line.startswith("$ "))
+def _transcripts(readme: Path) -> list[list[str]]:
+	return [
+		str(block[1]).splitlines()
+		for block in re.finditer(r"```console\n(.*?)```", readme.read_text(), re.DOTALL)
+	]
+
+
+@pytest.mark.parametrize(
+	"transcript",
+	[
+		pytest.param(transcript, id=transcript[0])
+		for transcript in _transcripts(REPOSITORY_ROOT / "README.md")
+	],
+)
+def test_readme_transcript_runs(transcript: list[str]) -> None:
+	command, *expected = transcript
 	executable = Path(sys.executable).with_name("dctr")
 	result = subprocess.run(
 		[str(executable), *command.removeprefix("$ ").split()[1:]],
@@ -22,13 +37,7 @@ def test_readme_usage_runs() -> None:
 		text=True,
 		cwd=REPOSITORY_ROOT,
 	)
-	assert _matches(usage[1:], result.stdout.splitlines())
-
-
-def _usage_block(readme: Path) -> list[str]:
-	block = re.search(r"```console\n(.*?)```", readme.read_text(), re.DOTALL)
-	assert block is not None
-	return str(block[1]).splitlines()
+	assert _matches(expected, result.stdout.splitlines())
 
 
 def _matches(expected: list[str], actual: list[str]) -> bool:
