@@ -21,7 +21,7 @@ fixture_c_scope = by_glob(
 
 format = Task("uv run ruff format {paths}", mutates=True, paths=".")
 format_check = Task("uv run ruff format --check {paths}", paths=".")
-lint = Task("uv run ruff check {paths}", paths=".")
+lint = Task("uv run ruff check {paths}", paths=".", agent_format=("--output-format sarif", "sarif"))
 lint_fix = Task("uv run ruff check --fix {paths}", mutates=True, paths=".")
 c_format = Task(
 	"jphfmt -i {paths}",
@@ -41,13 +41,16 @@ nix_format_check = Task(
 	"nixfmt --check {paths}", paths=by_suffix((".nix",), default=("flake.nix",))
 )
 fix = Sequential(lint_fix, format, c_format, nix_format)
-actionlint = Task("uv run actionlint")
+actionlint = Task("uv run actionlint", when=".github")
 mypy = Task("uv run mypy .")
 pyright = Task("uv run pyright src tests")
 
 typecheck = Parallel(mypy, pyright)
-test = Task("uv run pytest -v -m 'not slow'")
-coverage = Task("uv run pytest -m 'not slow' --cov --cov-report=term-missing --cov-report=xml")
+test = Task("uv run pytest -v -m 'not slow'", agent_format=("--junitxml {report}", "junit"))
+coverage = Task(
+	"uv run pytest -m 'not slow' --cov --cov-report=term-missing --cov-report=xml",
+	agent_format=("--junitxml {report}", "junit"),
+)
 
 all = Sequential(fix, Parallel(actionlint, typecheck, coverage))
 check = Parallel(format_check, c_format_check, nix_format_check, lint, actionlint, typecheck, test)
@@ -146,11 +149,11 @@ zswatch_patch = Task(
 		"/select DEPRECATED/d",
 		"-e",
 		"s/^    if kconf.warnings:/    if False and kconf.warnings:/",
-		"zephyr/subsys/usb/device/Kconfig",
-		"zephyr/drivers/usb/device/Kconfig",
-		"zephyr/scripts/kconfig/kconfig.py",
+		"testbeds/zswatch-workspace/zephyr/subsys/usb/device/Kconfig",
+		"testbeds/zswatch-workspace/zephyr/drivers/usb/device/Kconfig",
+		"testbeds/zswatch-workspace/zephyr/scripts/kconfig/kconfig.py",
 	),
-	cwd=Path("testbeds/zswatch-workspace"),
+	mutates=True,
 	help="testbed-local fork patches: drop DEPRECATED selects, make kconfig warnings non-fatal",
 )
 zswatch_build = Task(
@@ -206,18 +209,9 @@ sensor_two_impl = Task(
 )
 
 pexplorer_testdata = Task(
-	(
-		"uv",
-		"run",
-		"dctr",
-		"compare",
-		*(
-			str(elf)
-			for elf in sorted(Path("references/pexplorer/testdata/elf_testdata").glob("*.elf"))
-			if elf.name != "prusa_buddy_boot_64.elf"  # 127 MB of .debug_info exhausts memory
-		),
-	),
-	help="run dctr's resolution rollup over pexplorer's shared testdata ELFs",
+	"uv run dctr compare references/pexplorer/testdata/elf_testdata",
+	help="run dctr's resolution rollup over pexplorer's shared testdata ELFs "
+	"(needs the references/pexplorer submodule and its git-lfs objects)",
 )
 
 _ = Config(default_task=all, github_task=matrix, agent=Claude(fix=fix, check=gate))
