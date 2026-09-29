@@ -46,46 +46,13 @@ class State(Struct):
 	"""Values written to program-global addresses."""
 
 
-def entry_state(base: State | None, machine: Machine) -> State:
-	if base is None:
-		return State(
-			registers={},
-			sp_offsets={SP_REGISTERS[machine][0]: frozenset({0})},
-			stack={},
-			globals={},
-		)
-	return State(registers=base.registers, sp_offsets=base.sp_offsets, stack=base.stack, globals={})
-
-
-def join_seeds(current: State | None, incoming: State) -> State:
-	if current is None:
-		return incoming
+def top_seed(machine: Machine) -> State:
 	return State(
-		registers=_adopt_join(current.registers, incoming.registers),
-		sp_offsets=current.sp_offsets,
-		stack=_adopt_join(current.stack, incoming.stack),
-		globals=current.globals,
+		registers={},
+		sp_offsets={SP_REGISTERS[machine][0]: frozenset({0})},
+		stack={},
+		globals={},
 	)
-
-
-def _adopt_join(
-	current: Mapping[int, frozenset[Address]], incoming: Mapping[int, frozenset[Address]]
-) -> dict[int, frozenset[Address]]:
-	return {**current, **{key: _adopted(current, key, value) for key, value in incoming.items()}}
-
-
-def _adopted(
-	current: Mapping[int, frozenset[Address]], key: int, incoming: frozenset[Address]
-) -> frozenset[Address]:
-	if key not in current:
-		return incoming
-	match join_sets(current[key], incoming):
-		case Top():
-			return current[key]
-		case Known(values=joined):
-			return joined
-		case _ as unreachable:
-			assert_never(unreachable)
 
 
 def join_states(current: State | None, incoming: State) -> State:

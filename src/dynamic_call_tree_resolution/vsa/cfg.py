@@ -20,6 +20,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	X86_CALLS,
 	X86_RETURNING_TRAPS,
 	X86_TRANSFERS,
+	normalized,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ class _BranchTarget(Struct):
 	conditional: bool
 
 
-def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | None:
+def branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | None:
 	if machine.is_x86:
 		if instruction.mnemonic == "jmp":
 			conditional = False
@@ -94,6 +95,37 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | Non
 	if operand.type != arm_const.ARM_OP_IMM:
 		return None  # pragma: no cover
 	return _BranchTarget(target=operand.imm, conditional=conditional)
+
+
+class DirectCall(Struct):
+	"""A direct call to a function."""
+
+	target: Address
+
+
+class TailJump(Struct):
+	"""A direct branch into another function."""
+
+	target: Address
+
+
+type DirectTransfer = DirectCall | TailJump
+
+
+def direct_transfer(
+	instruction: CsInsn, machine: Machine, own_start: Address, starts: frozenset[Address]
+) -> DirectTransfer | None:
+	callee = call_target(instruction, machine)
+	if callee is not None:
+		target = normalized(Address(callee), machine)
+		return DirectCall(target=target) if target in starts else None
+	branch = branch_target(instruction, machine)
+	if branch is None:
+		return None
+	destination = normalized(Address(branch.target), machine)
+	return (
+		TailJump(target=destination) if destination in starts and destination != own_start else None
+	)
 
 
 def call_target(instruction: CsInsn, machine: Machine) -> int | None:
@@ -144,7 +176,7 @@ def indirect_operand(
 def _successors(
 	instruction: CsInsn, machine: Machine, by_address: Mapping[int, int], next_address: int | None
 ) -> tuple[Address, ...]:
-	branch = _branch_target(instruction, machine)
+	branch = branch_target(instruction, machine)
 	if branch is not None:
 		successors: list[Address] = []
 		if branch.conditional and next_address is not None:
@@ -180,7 +212,7 @@ def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
 def _block_ends(instruction: CsInsn, machine: Machine) -> bool:
 	return (
 		instruction.mnemonic == ".byte"
-		or _branch_target(instruction, machine) is not None
+		or branch_target(instruction, machine) is not None
 		or _is_control_transfer(instruction, machine)
 	)
 
@@ -190,7 +222,7 @@ def _build_blocks(instructions: tuple[CsInsn, ...], machine: Machine) -> tuple[B
 	targets = frozenset(
 		branch.target
 		for instruction in instructions
-		if (branch := _branch_target(instruction, machine)) is not None
+		if (branch := branch_target(instruction, machine)) is not None
 	)
 	blocks: list[Block] = []
 	current: list[CsInsn] = []
@@ -199,6 +231,10 @@ def _build_blocks(instructions: tuple[CsInsn, ...], machine: Machine) -> tuple[B
 			instruction.address in targets
 			or indirect_operand(instruction, machine) is not None
 			or call_target(instruction, machine) is not None
+			or (
+				(branch := branch_target(instruction, machine)) is not None
+				and branch.target not in by_address
+			)
 		) and current:
 			blocks.append(
 				Block(

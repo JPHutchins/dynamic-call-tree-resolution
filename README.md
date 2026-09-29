@@ -87,7 +87,7 @@ The Zephyr CAN counter sample for `native_sim` (an x86 host executable), with it
 ```console
 $ dctr compare tests/fixtures/counter-su/zephyr/zephyr.exe
 elf                                            machine    functions slots r/u/t  sites r/e/t
-zephyr.exe                                     EM_386           734 121/113/234     26/14/98
+zephyr.exe                                     EM_386           734 121/113/234     21/17/98
 ```
 
 ```console
