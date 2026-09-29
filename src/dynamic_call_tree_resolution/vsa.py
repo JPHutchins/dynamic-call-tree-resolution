@@ -11,8 +11,8 @@ offsets hold value sets, so frame-relative stores and reloads survive
 intervening calls and loop-carried pointers accumulate entry by entry.
 
 Soundness contract: every candidate set this analysis produces is a
-refinement layered on top of the resolved-target fallback union applied by
-the consumers, never a replacement for it. A site whose value set is
+refinement layered on top of the address-taken fallback applied by the
+consumers, never a replacement for it. A site whose value set is
 unknown (or unreachable) yields empty candidates, and the consumers union
 the fallback in — so no target that the former window walk would have
 admitted can vanish from a worst-case stack bound. Abstract states only
@@ -210,13 +210,13 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 	dispatch resolves through static const device pointers. The rounds
 	are capped at ``_MAX_ROUNDS`` and the write propagation after the
 	seeds settle at ``_GLOBAL_ROUNDS``; whatever a truncated fixpoint
-	misses stays Top and the consumers' resolved-target fallback keeps
+	misses stays Top and the consumers' address-taken fallback keeps
 	the stack bound sound. Sites carry the
 	address their target is taken from when the operand's value set is a
 	single address, and the pre-chase set of addresses the analysis
 	tracked into the operand. Unknown or unreachable operands yield empty
-	candidates, which consumers replace with the resolved-target
-	fallback union.
+	candidates, which consumers replace with the address-taken
+	fallback.
 
 	Each round's per-function interpretations run as one thread swarm
 	(``executor.map`` over the fixed function order), and the writes,
@@ -598,7 +598,7 @@ def _join_seeds(current: State | None, incoming: State) -> State:
 	Unlike path joins, an absent seed entry means nothing is known yet,
 	so incoming values are adopted rather than drowned by the Top
 	interpretation. An overflowing join keeps the accumulated value as
-	is: monotone, and sound by the consumers' resolved-target fallback.
+	is: monotone, and sound by the consumers' address-taken fallback.
 	"""
 	if current is None:
 		return incoming

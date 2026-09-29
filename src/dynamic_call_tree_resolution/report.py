@@ -208,10 +208,12 @@ def build_report(
 	program: Program,
 	resolved: tuple[SlotAssignment, ...],
 	call_sites: tuple[CallSite, ...],
+	*,
+	narrow_by_signature: bool = False,
 ) -> AnalysisReport:
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
-	signatures = signatures_by_slot(unresolved)
+	signatures = signatures_by_slot(unresolved) if narrow_by_signature else None
 	counts = slot_counts(resolved, unresolved)
 	return AnalysisReport(
 		assignments=tuple(
@@ -262,7 +264,11 @@ def _render_signature(signature: FunctionSignature | None) -> SignatureReport | 
 
 
 def build_comparison(
-	name: str, program: Program, pexplorer: PexplorerReport | None = None
+	name: str,
+	program: Program,
+	pexplorer: PexplorerReport | None = None,
+	*,
+	narrow_by_signature: bool = False,
 ) -> ComparisonReport:
 	"""Resolution rollup of one ELF, for cross-tool comparison.
 
@@ -274,7 +280,7 @@ def build_comparison(
 	resolved = assignments(program)
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
-	signatures = signatures_by_slot(unresolved)
+	signatures = signatures_by_slot(unresolved) if narrow_by_signature else None
 	counts = slot_counts(resolved, unresolved)
 	sites = extract_call_sites(program)
 	candidate_sizes = sorted(

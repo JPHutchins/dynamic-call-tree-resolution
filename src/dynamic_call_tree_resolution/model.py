@@ -169,7 +169,7 @@ class CallSite(Struct):
 	or the slot holding it — and ``None`` when the set could not be
 	narrowed to one. ``candidates`` is the pre-chase set of addresses the
 	value-set analysis tracked into the operand; an empty set means
-	unresolved and consumers fall back to the union of resolved targets.
+	unresolved and consumers fall back to every address-taken function.
 	"""
 
 	caller_address: Address

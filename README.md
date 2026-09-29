@@ -27,9 +27,10 @@ with no target.
    from the image. The dispatch sites that call through them (`z_sys_init_run_level`,
    `do_device_init`) are not resolved.
 3. **Candidate narrowing.** Indirect call sites are narrowed by a value-set analysis
-   over every function's machine code, seeded from observed direct calls, and by
-   matching the function-pointer type's DWARF signature. The narrowed sets are
-   refinements, not over-approximations.
+   over every function's machine code, seeded from observed direct calls. The narrowed
+   sets are refinements, not over-approximations. With `--narrow-by-signature`, a site
+   whose slot the image leaves unset also narrows to the functions of the slot's DWARF
+   signature.
 
 Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts. Each indirect call also expands to
@@ -129,7 +130,7 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
   - `dynamic`: frames GCC could not bound (`alloca` or a VLA);
   - `unresolved`: callers of an indirect call with no candidates.
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
-  incomplete ([#61], [#62]).
+  incomplete ([#61], [#96]).
 - Entry points come from the `.ci` graph, which also records functions the linker
   discarded, such as `shell_readline`. With an ELF, entries missing from the image are
   dropped and counted as `not in the image`; without one, every `.ci` entry is listed.
@@ -169,11 +170,11 @@ contradicts does not hold.
 - Value-set analysis per-site sets are refinements, not over-approximations: the
   analysis drops unknown values and does not model every write ([#61]), and its
   control-flow graph has gaps ([#66]).
-- Signature narrowing compares DWARF signatures for equality, so a cast defeats it
-  ([#62]).
-- The fallback holds every function address the image stores, or that one
-  instruction or a `movw`/`movt` pair computes. A function pointer built by other
-  arithmetic is missed ([#62]).
+- `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
+  it. It is off by default.
+- The fallback holds every function address the image stores, or that one instruction
+  or a `movw`/`movt` pair in a function symbol computes. A function pointer built by
+  other arithmetic, or in code outside every function symbol, is missed ([#96]).
 - Code without `.ci` records (assembly, `native_sim` host code) is absent from the
   stack call graph ([#78]).
 
@@ -219,10 +220,10 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
 [#61]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/61
-[#62]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/62
 [#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
 [#67]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/67
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
 [#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
 [#74]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/74
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
+[#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96

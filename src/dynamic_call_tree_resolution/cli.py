@@ -40,6 +40,11 @@ app = App(name="dctr")
 
 _MAX_ELF_SIZE: Final = 50 * 1024 * 1024
 
+_NARROW_BY_SIGNATURE: Final = Parameter(
+	help="narrow a site whose slot the image leaves unset to the functions of the "
+	"slot's DWARF signature; unsound, since a cast defeats it"
+)
+
 
 def _oversized(path: Path) -> bool:
 	return path.stat().st_size > _MAX_ELF_SIZE
@@ -86,10 +91,16 @@ def analyze(
 	elf: Annotated[Path, Parameter(help="ELF image to analyze")],
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
+	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
 	"""Print resolved function-pointer assignments and call sites of an ELF image."""
 	program = load(elf)
-	report = build_report(program, assignments(program), extract_call_sites(program))
+	report = build_report(
+		program,
+		assignments(program),
+		extract_call_sites(program),
+		narrow_by_signature=narrow_by_signature,
+	)
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(report).decode()))
 		return
@@ -114,6 +125,7 @@ def compare(
 	pexplorer: Annotated[
 		Path | None, Parameter(help="pexplorer JSON report to join per function")
 	] = None,
+	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
 	"""Print a resolution rollup per ELF for cross-tool comparison.
 
@@ -132,7 +144,12 @@ def compare(
 			paths.append(elf)
 	paths = [path for path in paths if _keep(path)]
 	pexplorer_report = load_pexplorer(pexplorer) if pexplorer is not None else None
-	comparisons = [build_comparison(elf.name, load(elf), pexplorer_report) for elf in paths]
+	comparisons = [
+		build_comparison(
+			elf.name, load(elf), pexplorer_report, narrow_by_signature=narrow_by_signature
+		)
+		for elf in paths
+	]
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(comparisons).decode()))
 		return
@@ -165,13 +182,15 @@ class _Expansion(Struct):
 	image_functions: frozenset[str]
 
 
-def _expand_from_elf(edges: tuple[CallEdge, ...], elf: Path) -> _Expansion:
+def _expand_from_elf(
+	edges: tuple[CallEdge, ...], elf: Path, *, narrow_by_signature: bool
+) -> _Expansion:
 	"""Resolve and expand the indirect edges of ``edges`` against an ELF image."""
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
 	resolved = assignments(program)
 	targets_by_caller, fallback = per_caller_candidates(
-		program, extract_call_sites(program), resolved
+		program, extract_call_sites(program), resolved, narrow_by_signature=narrow_by_signature
 	)
 	return _Expansion(
 		expanded=expand_indirect_calls(edges, targets_by_caller, fallback),
@@ -193,15 +212,19 @@ def stack(
 	elf: Path | None = None,
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
+	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts).
 
-	When an ELF is given, unresolved indirect call sites are expanded to
-	every resolved function-pointer target, and entries the linker
-	discarded are dropped and counted.
+	When an ELF is given, indirect call sites are expanded against it,
+	and entries the linker discarded are dropped and counted.
 	"""
 	edges = load_callgraph(build_directory)
-	expansion = _expand_from_elf(edges, elf) if elf is not None else None
+	expansion = (
+		_expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature)
+		if elf is not None
+		else None
+	)
 	reports = worst_case_depths(
 		expansion.expanded if expansion is not None else edges,
 		load_stack_usages(build_directory),
@@ -220,18 +243,24 @@ def stack(
 			f"resolved slots: {expansion.resolved_slots} "
 			f"| indirect call sites: {expansion.indirect_sites} "
 			f"| not in the image: {len(reports) - len(kept)}"
+			f"{' | narrowed by signature' if narrow_by_signature else ''}"
 		)
 	for report in kept:
 		print(_render(report))
 
 
 @app.command  # type: ignore[misc]
-def summary(build_directory: Path, elf: Path) -> None:
+def summary(
+	build_directory: Path,
+	elf: Path,
+	*,
+	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
 	program = load(elf)
 	resolved = assignments(program)
 	edges = load_callgraph(build_directory)
-	expansion = _expand_from_elf(edges, elf)
+	expansion = _expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature)
 	reports = worst_case_depths(
 		expansion.expanded,
 		load_stack_usages(build_directory),
