@@ -12,7 +12,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from itertools import groupby
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 import pytest
 from salix import Struct
@@ -193,16 +193,20 @@ def _build(image: Image, directory: Path) -> Path:
 	match image.platform:
 		case Platform.CORTEX_M3:
 			return build_cortex_m3((source,), directory / "image.elf", "-g", *image.flags)
-		case Platform.HOST:  # pragma: no branch
+		case Platform.HOST:
 			return build_host((source,), directory / "image.elf", "-g", *image.flags)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _run(platform: Platform, elf: Path) -> subprocess.CompletedProcess[str]:
 	match platform:
 		case Platform.CORTEX_M3:
 			return run_cortex_m3(elf, *ARGUMENTS)
-		case Platform.HOST:  # pragma: no branch
+		case Platform.HOST:
 			return run_host(elf, *ARGUMENTS)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _observations(result: subprocess.CompletedProcess[str]) -> Mapping[str, frozenset[str]]:
