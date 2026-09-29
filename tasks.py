@@ -43,7 +43,7 @@ nix_format_check = Task(
 fix = Sequential(lint_fix, format, c_format, nix_format)
 actionlint = Task("uv run actionlint", when=".github")
 mypy = Task("uv run mypy .")
-pyright = Task("uv run pyright src tests")
+pyright = Task("uv run pyright src tests tasks.py")
 
 typecheck = Parallel(mypy, pyright)
 test = Task("uv run pytest -v -m 'not slow'", agent_format=("--junitxml {report}", "junit"))
@@ -160,4 +160,4 @@ pexplorer_testdata = Task(
 	"(needs the references/pexplorer submodule and its git-lfs objects)",
 )
 
-_ = Config(default_task=all, github_task=matrix, agent=Claude(fix=fix, check=gate))
+_ = Config(default_task=all, github_task=matrix, agent=Claude(fix=fix, check=gate))  # type: ignore[misc]
