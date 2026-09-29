@@ -138,16 +138,16 @@ def _everywhere(*issues: int) -> Mapping[str, tuple[int, ...]]:
 
 
 CANDIDATES = (
-	*_cortex_m3("top_argument.c", "run", _everywhere(61)),
-	*_cortex_m3("unobserved_callers.c", "run", {"-O0": (61,), "-O2": (61, 66), "-Os": (61, 66)}),
+	*_cortex_m3("top_argument.c", "run", {}),
+	*_cortex_m3("unobserved_callers.c", "run", {}),
 	*_cortex_m3("top_stores.c", "call_bss", _everywhere(61)),
 	*_cortex_m3("top_stores.c", "call_data", _everywhere(61)),
 	*_cortex_m3("top_stores.c", "call_object", _everywhere(61)),
 	*_cortex_m3("predicated_store.c", "predicated_store_case", {"-O2": (61,), "-Os": (61,)}),
 	*_cortex_m3("call_clobbers.c", "stack_case", {"-O0": (61,), "-Os": (61,)}),
 	*_cortex_m3("call_clobbers.c", "global_case", _everywhere(61)),
-	*_cortex_m3("seed_overflow.c", "run", _everywhere(61)),
-	*_cortex_m3("round_cap.c", "w9", {"-O0": (61,), "-O2": (61, 66), "-Os": (61, 66)}),
+	*_cortex_m3("seed_overflow.c", "run", {}),
+	*_cortex_m3("round_cap.c", "w9", {}),
 	*_cortex_m3("jump_table.c", "switch_case", _everywhere(66)),
 	*_cortex_m3("writeback_walk.c", "walk", {"-O2": (66,)}),
 	*_cortex_m3("predicated_call.c", "predicated_call_case", _everywhere(66)),

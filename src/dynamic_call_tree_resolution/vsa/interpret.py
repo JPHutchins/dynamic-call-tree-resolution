@@ -26,7 +26,9 @@ from dynamic_call_tree_resolution.vsa.abi import (
 from dynamic_call_tree_resolution.vsa.arm import apply_arm
 from dynamic_call_tree_resolution.vsa.cfg import (
 	Block,
-	call_target,
+	DirectCall,
+	TailJump,
+	direct_transfer,
 	indirect_operand,
 	is_returning_trap,
 )
@@ -118,7 +120,9 @@ def analyze_function(
 		state = in_states.get(block.start)
 		if state is None:
 			continue
-		observation = _call_observation(context, block, state)
+		observation = _call_observation(
+			context, normalized(function.address, context.program.machine), block, state
+		)
 		if observation is not None:
 			observations.append(observation)
 	return FunctionResult(
@@ -137,18 +141,25 @@ def analyze_function(
 	)
 
 
-def _call_observation(context: Context, block: Block, state: State) -> CallObservation | None:
-	instruction = block.instructions[-1]
-	target = call_target(instruction, context.program.machine)
-	if target is None:
-		return None
-	callee = normalized(Address(target), context.program.machine)
-	if callee not in context.function_starts:
-		return None
-	return CallObservation(callee=callee, arguments=_call_arguments(context, state, instruction))
+def _call_observation(
+	context: Context, function_start: Address, block: Block, state: State
+) -> CallObservation | None:
+	match direct_transfer(
+		block.instructions[-1], context.program.machine, function_start, context.function_starts
+	):
+		case None:
+			return None
+		case DirectCall(target=callee):
+			return CallObservation(callee=callee, arguments=_call_arguments(context, state, 0))
+		case TailJump(target=callee):
+			return CallObservation(callee=callee, arguments=_call_arguments(context, state, 1))
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
-def _call_arguments(context: Context, state: State, instruction: CsInsn) -> Mapping[int, ValueSet]:
+def _call_arguments(
+	context: Context, state: State, pushed_return_addresses: int
+) -> Mapping[int, ValueSet]:
 	machine = context.program.machine
 	if machine is Machine.EM_X86_64:
 		return {
@@ -161,7 +172,10 @@ def _call_arguments(context: Context, state: State, instruction: CsInsn) -> Mapp
 		offsets = lookup(state.sp_offsets, SP_REGISTERS[machine][0])
 		return {
 			position: stack_read(
-				state.stack, shift_offsets(offsets, context.program.pointer_size * position)
+				state.stack,
+				shift_offsets(
+					offsets, context.program.pointer_size * (position + pushed_return_addresses)
+				),
 			)
 			for position in range(EM_386_STACK_ARGUMENTS)
 		}
