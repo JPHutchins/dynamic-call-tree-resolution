@@ -58,7 +58,7 @@ class _Reason(Enum):
 type _Reasons = frozenset[tuple[_Reason, str]]
 
 
-_MAX_CYCLE_SIZE: Final = 64
+_MAX_CYCLE_SIZE: Final = 16
 
 INDIRECT_CALLEE: Final = "__indirect_call"
 
@@ -73,11 +73,13 @@ def expand_indirect_calls(
 	"""Replace GCC ``__indirect_call`` placeholders with resolved targets.
 
 	Each caller's placeholders expand to the union of the candidates of the
-	call sites extracted from that caller's code and ``fallback`` (the union
-	of all resolved targets): per-caller candidates refine on top of the
+	call sites extracted from that caller's code and ``fallback`` (every
+	address-taken function): per-caller candidates refine on top of the
 	fallback, never replace it, so sites the extractor missed cannot vanish
-	from the bound. With ``exact`` the fallback union is dropped, trusting
-	the per-caller candidates alone. A placeholder left with no targets
+	from the bound. With ``exact`` the fallback is not added on top, so
+	a caller's placeholders expand to its per-caller candidates alone;
+	those still hold the fallback for its unresolved sites. A placeholder
+	left with no targets
 	stays, so its caller's entries report it as unresolved.
 
 	With ``exact``, candidate names are also translated to every raw ``.ci``
@@ -267,27 +269,88 @@ def _depths_by_component(
 	order of the condensation, so every callee outside a node's own
 	component is already computed when the node is reached. Only paths
 	within one component need the path-based recursion, which keeps the
-	search polynomial on diamond-heavy call graphs.
-
-	Raises:
-		ValueError: when a cycle exceeds ``_MAX_CYCLE_SIZE`` functions.
+	search polynomial on diamond-heavy call graphs. A component larger
+	than ``_MAX_CYCLE_SIZE`` is recursion either way and its longest
+	simple path is exponential to search, so its members take the longest
+	paths of an acyclic part of it instead.
 	"""
 	memo: dict[str, int] = {}
-	if any(len(component) > _MAX_CYCLE_SIZE for component in components):
-		raise ValueError(
-			f"call graph contains a cycle of "
-			f"{max(len(component) for component in components)} functions"
-		)
 	known = {node for component in components for node in component}
 	all_nodes = set(adjacency) | _callees(adjacency)
 	for component in (*components, *((node,) for node in sorted(all_nodes - known))):
 		in_component = frozenset(component)
 		within: dict[tuple[str, frozenset[str]], int] = {}
-		for node in component:
-			memo[node] = _depth(
-				node, adjacency, frame_by_name, frozenset(), memo, in_component, within
-			)
+		memo.update(
+			_rooted_depths(component, adjacency, frame_by_name, memo)
+			if len(component) > _MAX_CYCLE_SIZE
+			else {
+				node: _depth(
+					node, adjacency, frame_by_name, frozenset(), memo, in_component, within
+				)
+				for node in component
+			}
+		)
 	return memo
+
+
+def _rooted_depths(
+	component: tuple[str, ...],
+	adjacency: Mapping[str, frozenset[str]],
+	frame_by_name: Mapping[str, StackUsage],
+	memo: Mapping[str, int],
+) -> dict[str, int]:
+	"""Each member's longest path over its own depth-first walk's forward edges.
+
+	Edges toward nodes a walk from the member discovers later hold the
+	walk's tree and no cycle, so every path over them is a real simple path.
+	"""
+	members = frozenset(component)
+	return {
+		root: _forward_depth(
+			_preorder(root, members, adjacency), members, adjacency, frame_by_name, memo
+		)
+		for root in component
+	}
+
+
+def _preorder(
+	root: str, members: frozenset[str], adjacency: Mapping[str, frozenset[str]]
+) -> tuple[str, ...]:
+	"""A depth-first preorder of ``members`` from ``root``, callees in sorted order."""
+	order: list[str] = []
+	seen: set[str] = set()
+	stack = [root]
+	while stack:
+		node = stack.pop()
+		if node in seen:
+			continue
+		seen.add(node)
+		order.append(node)
+		stack.extend(sorted((adjacency.get(node, frozenset()) & members) - seen, reverse=True))
+	return tuple(order)
+
+
+def _forward_depth(
+	order: tuple[str, ...],
+	members: frozenset[str],
+	adjacency: Mapping[str, frozenset[str]],
+	frame_by_name: Mapping[str, StackUsage],
+	memo: Mapping[str, int],
+) -> int:
+	"""The longest path from ``order[0]`` over edges toward later nodes of ``order``."""
+	position = {node: index for index, node in enumerate(order)}
+	depths: dict[str, int] = {}
+	for node in reversed(order):
+		frame = frame_by_name.get(frame_key(node))
+		depths[node] = (frame.bytes if frame is not None else 0) + max(
+			(
+				memo[callee] if callee not in members else depths[callee]
+				for callee in adjacency.get(node, frozenset())
+				if callee not in members or position[callee] > position[node]
+			),
+			default=0,
+		)
+	return depths[order[0]]
 
 
 def _depth(
@@ -334,7 +397,11 @@ def _callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
 def _strongly_connected_components(
 	adjacency: Mapping[str, frozenset[str]],
 ) -> tuple[tuple[str, ...], ...]:
-	"""SCCs in reverse topological order of the condensation (sinks first)."""
+	"""SCCs in reverse topological order of the condensation (sinks first).
+
+	Nodes and neighbors are visited in sorted order, so each component's
+	member order is the same in every process.
+	"""
 	indices: dict[str, int] = {}
 	lowlinks: dict[str, int] = {}
 	stack: list[str] = []
@@ -347,7 +414,7 @@ def _strongly_connected_components(
 		lowlinks[node] = index
 		stack.append(node)
 		on_stack.add(node)
-		for neighbor in adjacency.get(node, frozenset()):
+		for neighbor in sorted(adjacency.get(node, frozenset())):
 			if neighbor not in indices:
 				strong_connect(neighbor)
 				lowlinks[node] = min(lowlinks[node], lowlinks[neighbor])
@@ -363,7 +430,7 @@ def _strongly_connected_components(
 					break
 			components.append(tuple(component))
 
-	for node in adjacency:
+	for node in sorted(adjacency):
 		if node not in indices:
 			strong_connect(node)
 	return tuple(components)

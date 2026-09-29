@@ -5,6 +5,10 @@ CS_ARCH_X86: int
 CS_MODE_32: int
 CS_MODE_64: int
 CS_MODE_THUMB: int
+CS_GRP_JUMP: int
+CS_GRP_CALL: int
+CS_GRP_RET: int
+CS_GRP_BRANCH_RELATIVE: int
 
 class CsError(Exception): ...
 
@@ -37,6 +41,7 @@ class CsInsn:
 	operands: list[CsOperand]
 
 	def regs_access(self) -> tuple[list[int], list[int]]: ...
+	def group(self, group_id: int) -> bool: ...
 
 class Cs:
 	detail: bool

@@ -32,6 +32,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
+from dynamic_call_tree_resolution.vsa import address_taken
 from tests.toolchains import FIXTURES, build_cortex_m3, build_host, run_cortex_m3, run_host
 
 if TYPE_CHECKING:
@@ -174,7 +175,9 @@ OBSERVED_CASES = (
 )
 
 
-IMAGES = tuple(frozenset((*(case.image for case, _ in CANDIDATES), *STACK_IMAGES)))
+IMAGES = tuple(
+	sorted(frozenset((*(case.image for case, _ in CANDIDATES), *STACK_IMAGES)), key=_image_id)
+)
 
 
 class Outcome(Struct):
@@ -301,8 +304,7 @@ def _reachable(edges: tuple[CallEdge, ...], entry: str) -> frozenset[str]:
 
 
 @pytest.mark.parametrize(
-	"image",
-	[pytest.param(image, id=_image_id(image), marks=_unsound((62,))) for image in STACK_IMAGES],
+	"image", [pytest.param(image, id=_image_id(image)) for image in STACK_IMAGES]
 )
 def test_the_expanded_graph_reaches_every_target_the_run_called(
 	image: Image, outcomes: Mapping[Image, Outcome]
@@ -333,3 +335,17 @@ def test_a_bounded_reset_covers_the_frames_on_the_path_the_run_took(
 	assert isinstance(reset.bound, Unbounded) or reset.bound.bytes >= sum(
 		bytes_by_function[function] for function in ("reset", "main", "deep")
 	)
+
+
+@pytest.mark.parametrize("image", [pytest.param(image, id=_image_id(image)) for image in IMAGES])
+def test_every_function_a_site_candidate_names_is_address_taken(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	program = load(outcomes[image].elf)
+	taken = address_taken(program)
+	assert [
+		program.functions[address].name
+		for site in extract_call_sites(program)
+		for address in site.candidates
+		if address in program.functions and address not in taken
+	] == []
