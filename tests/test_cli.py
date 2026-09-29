@@ -130,6 +130,23 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	]
 
 
+def test_cli_stack_header_says_when_sites_are_narrowed_by_signature(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(build_directory / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	stack(build_directory, elf=fixture_elfs["nopie"], narrow_by_signature=True)
+	assert capsys.readouterr().out.splitlines()[0] == (
+		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0 | narrowed by signature"
+	)
+
+
 def test_cli_stack_with_elf_drops_entries_the_linker_discarded(
 	tmp_path: Path,
 	fixture_elfs: dict[str, Path],

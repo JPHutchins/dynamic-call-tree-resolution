@@ -8,8 +8,7 @@ the whole-function value-set analysis in :mod:`dynamic_call_tree_resolution.vsa`
 Candidate sets are chased through the loaded image here: a function
 address is a target, a slot assignment contributes its candidates, and
 pointer chains dereference one slot at a time. An empty result means the
-site could not be resolved; consumers fall back to the union of all
-resolved targets, keeping stack-depth expansions a sound upper bound.
+site could not be resolved.
 """
 
 from __future__ import annotations
@@ -40,8 +39,7 @@ def matching_targets(program: Program, signature: FunctionSignature) -> frozense
 	"""Functions whose DWARF signature exactly matches the given one.
 
 	The loader strips qualifiers when rendering signatures, so equality
-	holds across translation units; a cast in the image can violate the
-	match, and the consumers' resolved-target fallback covers that.
+	holds across translation units; a cast in the image defeats the match.
 	"""
 	return frozenset(
 		function.address
@@ -56,13 +54,9 @@ def call_site_candidates(
 	resolved_by_slot: Mapping[Address, SlotAssignment],
 	signatures_by_slot: Mapping[Address, FunctionSignature] | None = None,
 ) -> frozenset[Address]:
-	"""Candidate target functions of one call site.
+	"""Candidate target functions of one call site, empty when it could not be resolved.
 
-	Every address tracked into the site is chased through the loaded
-	image; a chase that ends in an unreadable slot with a known signature
-	narrows to the matching functions. An empty result means the site
-	could not be resolved and consumers fall back to the union of all
-	resolved targets.
+	``signatures_by_slot`` opts in to narrowing by signature, which a cast defeats.
 	"""
 	signatures = (
 		signatures_by_slot if signatures_by_slot is not None else dict[Address, FunctionSignature]()
@@ -103,6 +97,8 @@ def per_caller_candidates(
 	program: Program,
 	sites: tuple[CallSite, ...],
 	resolved: tuple[SlotAssignment, ...],
+	*,
+	narrow_by_signature: bool = False,
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
 	"""Union, per caller, of each site's candidate target names, plus the fallback.
 
@@ -112,7 +108,9 @@ def per_caller_candidates(
 	site is indistinguishable from a caller with no extracted sites.
 	"""
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
-	signatures = signatures_by_slot(unresolved_slots(program, resolved))
+	signatures = (
+		signatures_by_slot(unresolved_slots(program, resolved)) if narrow_by_signature else None
+	)
 	fallback_addresses = address_taken(program)
 
 	def caller_name(site: CallSite) -> str:

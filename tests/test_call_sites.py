@@ -19,6 +19,7 @@ from dynamic_call_tree_resolution import (
 	Provenance,
 	SlotAssignment,
 	assignments,
+	build_comparison,
 	build_report,
 	call_site_candidates,
 	extract_call_sites,
@@ -1780,8 +1781,8 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 	)
 
 
-def test_report_narrows_a_bss_site_to_its_slot_signature() -> None:
-	program = Program(
+def _bss_slot_site_program() -> Program:
+	return Program(
 		byte_order="little",
 		pointer_size=8,
 		machine=Machine.EM_X86_64,
@@ -1813,12 +1814,47 @@ def test_report_narrows_a_bss_site_to_its_slot_signature() -> None:
 		},
 		layouts={},
 		relocations=(),
-		sections={Address(0x1000): bytes.fromhex("ff 15 fa 0f 00 00")},
+		sections={
+			Address(0x1000): bytes.fromhex("ff 15 fa 0f 00 00"),
+			Address(0x6000): (0x4000).to_bytes(8, "little"),
+		},
 	)
-	sites = extract_call_sites(program)
-	report = build_report(program, (), sites)
+
+
+@pytest.mark.parametrize(
+	("narrow_by_signature", "expected"),
+	[(False, frozenset[str]()), (True, frozenset({"matching"}))],
+)
+def test_report_narrows_a_bss_site_to_its_slot_signature_only_when_asked(
+	narrow_by_signature: bool, expected: frozenset[str]
+) -> None:
+	program = _bss_slot_site_program()
+	report = build_report(
+		program, (), extract_call_sites(program), narrow_by_signature=narrow_by_signature
+	)
 	(site_report,) = report.call_sites
-	assert {candidate.name for candidate in site_report.candidates} == {"matching"}
+	assert frozenset(candidate.name for candidate in site_report.candidates) == expected
+
+
+def test_stack_expansion_narrows_a_bss_site_to_its_slot_signature_only_when_asked() -> None:
+	program = _bss_slot_site_program()
+	sites = extract_call_sites(program)
+	assert per_caller_candidates(program, sites, ()) == (
+		{"caller": frozenset({"non_matching"})},
+		frozenset({"non_matching"}),
+	)
+	assert per_caller_candidates(program, sites, (), narrow_by_signature=True) == (
+		{"caller": frozenset({"matching"})},
+		frozenset({"non_matching"}),
+	)
+
+
+def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None:
+	program = _bss_slot_site_program()
+	assert (
+		build_comparison("bss.elf", program).resolved_call_sites,
+		build_comparison("bss.elf", program, narrow_by_signature=True).resolved_call_sites,
+	) == (0, 1)
 
 
 @pytest.mark.parametrize(
