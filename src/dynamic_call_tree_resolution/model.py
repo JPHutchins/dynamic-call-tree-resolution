@@ -66,11 +66,7 @@ class FunctionPointerMember(Struct):
 
 
 class StructPointerMember(Struct):
-	"""A structure member pointing at a statically allocated struct instance.
-
-	``pointee=None`` marks opaque (``void *``) pointers, which are followed
-	when their static value names an object of any known structure type.
-	"""
+	"""A structure member pointing at a statically allocated struct instance; ``pointee=None`` is ``void *``."""
 
 	kind: Literal["struct_pointer"]
 	name: str | None
@@ -120,12 +116,10 @@ class Program(Struct):
 
 
 def aligned(address: Address) -> Address:
-	"""The instruction-aligned form of an address; identity when already even."""
 	return Address(address & ~1)
 
 
 def thumb_twin(address: Address) -> Address:
-	"""The odd Thumb-bit form of an address, for symbol-table twins."""
 	return Address(address | 1)
 
 
@@ -136,12 +130,10 @@ ARRAY_SUFFIX: Final = " []"
 
 
 def array_element_type(type_name: str) -> str:
-	"""The element type name of an array type name; identity when not an array."""
 	return type_name.removesuffix(ARRAY_SUFFIX)
 
 
 def layout_key(keyword: str, name: str) -> str:
-	"""The layout-table key for a structure or union type name."""
 	return f"{keyword} {name}"
 
 
@@ -162,15 +154,7 @@ class SlotAssignment(Struct):
 
 
 class CallSite(Struct):
-	"""An indirect call or tail-branch instruction in one function's code.
-
-	``slot`` is the address the call target is taken from when the
-	operand's value set is a single address — the target function itself
-	or the slot holding it — and ``None`` when the set could not be
-	narrowed to one. ``candidates`` is the pre-chase set of addresses the
-	value-set analysis tracked into the operand; an empty set means
-	unresolved and consumers fall back to every address-taken function.
-	"""
+	"""An indirect call or tail-branch instruction in one function's code."""
 
 	caller_address: Address
 	site_address: Address

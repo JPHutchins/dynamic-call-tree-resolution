@@ -31,12 +31,6 @@ if TYPE_CHECKING:
 
 
 def assignments(program: Program) -> tuple[SlotAssignment, ...]:
-	"""Resolve every statically-known function-pointer slot in ``program``.
-
-	Covers direct function-pointer globals (via relocations and baked
-	constant data) and slots reached through constant struct-pointer
-	chains, such as Zephyr ``device->api->fn`` structures.
-	"""
 	by_key: dict[tuple[Address, tuple[str | None, ...], frozenset[Address]], Provenance] = {}
 	for assignment in _from_objects(program):
 		by_key[(assignment.slot, assignment.path, assignment.candidates)] = assignment.provenance
@@ -114,12 +108,6 @@ def _vector_table_assignments(
 	data_object: DataObject,
 	path: tuple[str | None, ...],
 ) -> Iterable[SlotAssignment]:
-	"""Typeless objects whose every element is a function: vector tables.
-
-	Assembly-defined vector tables (``_irq_vector_table`` and friends)
-	have no DWARF type; a typeless object whose elements are all known
-	function addresses is one.
-	"""
 	values = tuple(
 		pointer_at(program, Address(data_object.address + base_offset))
 		for base_offset in range(0, data_object.size, program.pointer_size)
@@ -230,13 +218,6 @@ def _slot_address(slot: UnresolvedSlot) -> Address:
 def unresolved_slots(
 	program: Program, resolved: tuple[SlotAssignment, ...]
 ) -> tuple[UnresolvedSlot, ...]:
-	"""Every function-pointer slot in the image with no resolved candidates.
-
-	The slot universe covers top-level function-pointer globals, every
-	function-pointer member of every object with a known structure layout
-	(including embedded structs), and relocation slots pointing at
-	functions.
-	"""
 	resolved_by_slot = {assignment.slot for assignment in resolved}
 	universe: dict[Address, _SlotUniverseEntry] = {}
 	for data_object in program.objects.values():
@@ -360,16 +341,10 @@ def _object_covering(program: Program, address: Address | None) -> DataObject | 
 def signatures_by_slot(
 	unresolved: tuple[UnresolvedSlot, ...],
 ) -> Mapping[Address, FunctionSignature]:
-	"""Signatures of the unresolved slot universe, keyed by slot address."""
 	return {slot.slot: slot.signature for slot in unresolved if slot.signature is not None}
 
 
 def memory_at(program: Program, address: Address, size: int) -> bytes:
-	"""Read ``size`` bytes of the loaded image at ``address``.
-
-	Returns a short (possibly empty) slice when the read extends past the
-	end of the covering allocated section.
-	"""
 	for section_address, data in program.sections.items():
 		if not section_address <= address < section_address + len(data):
 			continue
@@ -385,12 +360,6 @@ def pointer_at(program: Program, address: Address) -> Address | None:
 
 
 def read_pointer(program: Program, address: Address, bound: int | None) -> Address | None:
-	"""One pointer read bounded by its enclosing object's exclusive end.
-
-	The bound comes from ``_object_covering`` on the cold path or vsa's
-	span bisect, so a pointer that would extend past its object is not
-	readable.
-	"""
 	if bound is not None and address + program.pointer_size > bound:
 		return None
 	data = memory_at(program, address, program.pointer_size)
