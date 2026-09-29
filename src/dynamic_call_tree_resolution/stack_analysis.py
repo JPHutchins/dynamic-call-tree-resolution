@@ -40,7 +40,7 @@ class Unbounded(Struct):
 
 
 class StackReport(Struct):
-	"""Worst-case stack depth of one entry point."""
+	"""One worst-case stack depth."""
 
 	entry: str
 	bound: Bounded | Unbounded
@@ -372,7 +372,7 @@ def _strongly_connected_components(
 
 
 def frame_key(name: str) -> str:
-	"""Reduce a VCG or ``.su`` function name to its bare assembly name.
+	"""Reduce a VCG or ``.su`` symbol to its bare assembly form.
 
 	>>> frame_key("/abs/path/file.c:func")
 	'func'

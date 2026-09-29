@@ -77,21 +77,23 @@ class StructPointerMember(Struct):
 
 
 class EmbeddedStructMember(Struct):
-	"""A by-value structure member whose own members resolve in place."""
+	"""A by-value structure member."""
 
 	kind: Literal["embedded_struct"]
 	name: str | None
 	offset: int
 	members: tuple[Member, ...]
+	"""Resolved in place."""
 
 
 type Member = FunctionPointerMember | StructPointerMember | EmbeddedStructMember
 
 
 class StructureLayout(Struct):
-	"""One structure type's layout, reduced to its pointer-valued members."""
+	"""One structure type's layout."""
 
 	members: tuple[Member, ...]
+	"""Pointer-valued members only."""
 	size: int
 
 
@@ -179,7 +181,7 @@ class UnresolvedSlot(Struct):
 
 
 def render_path(path: tuple[str | None, ...]) -> str:
-	"""Render a member path, naming anonymous members ``<anonymous>``.
+	"""Dotted form, with anonymous members named ``<anonymous>``.
 
 	>>> render_path(("dev_a", "api", "open"))
 	'dev_a.api.open'
