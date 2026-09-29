@@ -148,6 +148,13 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 			assert_never(unreachable)
 
 
+class StackEntryReport(Struct):
+	"""One entry point's stack bound."""
+
+	entry: str
+	bound: BoundedStack | UnboundedStack
+
+
 class AnalysisSummary(Struct):
 	"""Cross-cutting resolution and stack summary for CI reporting."""
 
@@ -158,6 +165,7 @@ class AnalysisSummary(Struct):
 	indirect_call_sites: int
 	total_functions: int
 	entry_points: int
+	discarded_entry_points: int
 	worst_case_entry: str
 	worst_case: BoundedStack | UnboundedStack
 

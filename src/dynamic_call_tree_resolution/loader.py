@@ -64,6 +64,18 @@ def load(path: Path) -> Program:
 		return _load(stream)
 
 
+def defined_function_names(path: Path) -> frozenset[str]:
+	"""Every function symbol the image at ``path`` defines, locals and aliases included."""
+	with path.open("rb") as stream:
+		symtab = _symbol_table(ELFFile(stream))
+		return frozenset(
+			symbol.name
+			for symbol in (symtab.iter_symbols() if symtab is not None else ())
+			if symbol["st_info"]["type"] == "STT_FUNC"
+			if symbol["st_shndx"] != "SHN_UNDEF"
+		)
+
+
 def _load(stream: BinaryIO) -> Program:
 	elf = ELFFile(stream)
 	if elf.header["e_type"] == "ET_REL":

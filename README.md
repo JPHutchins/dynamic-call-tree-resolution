@@ -106,8 +106,8 @@ poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
 
 ```console
 $ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe
-resolved slots: 121 | indirect call sites: 100
-shell_readline: unbounded, at least 2108 bytes (recursion: 18, unmeasured: 45)
+resolved slots: 121 | indirect call sites: 100 | not in the image: 222
+shell_process: unbounded, at least 2028 bytes (recursion: 18, unmeasured: 44)
 ...
 poll_state_thread: unbounded, at least 1012 bytes (recursion: 18, unmeasured: 37)
 ...
@@ -128,8 +128,10 @@ poll_state_thread: unbounded, at least 1012 bytes (recursion: 18, unmeasured: 37
   - `unresolved`: callers of an indirect call with no candidates.
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
   incomplete ([#61], [#62]).
-- `shell_readline` is not in the linked executable: the linker discarded it, but its
-  `.ci` graph survives, and entry points come from the `.ci` graph.
+- Entry points come from the `.ci` graph, which also records functions the linker
+  discarded, such as `shell_readline`. With an ELF, entries missing from the image are
+  dropped and counted as `not in the image`; without one, every `.ci` entry is listed.
+- `stack --json` carries the full function names behind each count.
 
 ## Related tools
 
@@ -178,7 +180,8 @@ contradicts does not hold.
   only if that graph is complete, and today it is not (above).
 - Expanding indirect edges (`stack --elf`) can report less than the subset-only
   expansion used in the tests ([#58]).
-- Entry points come from `.ci`, including functions the linker discarded ([#64], [#78]).
+- Without an ELF, entry points come from `.ci`, including functions the linker
+  discarded ([#78]).
 - Interrupt, exception, context-switch, and FPU stacking are not modeled.
 
 ### Residue
@@ -215,7 +218,6 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#61]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/61
 [#62]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/62
 [#63]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/63
-[#64]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/64
 [#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
 [#67]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/67
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69

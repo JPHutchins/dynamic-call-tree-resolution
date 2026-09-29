@@ -14,11 +14,12 @@ from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
-from dynamic_call_tree_resolution.loader import load
+from dynamic_call_tree_resolution.loader import defined_function_names, load
 from dynamic_call_tree_resolution.pexplorer import load_pexplorer
 from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
+	StackEntryReport,
 	build_comparison,
 	build_report,
 	slot_counts,
@@ -30,6 +31,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	StackReport,
 	Unbounded,
 	expand_indirect_calls,
+	frame_key,
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
@@ -160,6 +162,7 @@ class _Expansion(Struct):
 	original: tuple[CallEdge, ...]
 	indirect_sites: int
 	resolved_slots: int
+	image_functions: frozenset[str]
 
 
 def _expand_from_elf(edges: tuple[CallEdge, ...], elf: Path) -> _Expansion:
@@ -175,29 +178,50 @@ def _expand_from_elf(edges: tuple[CallEdge, ...], elf: Path) -> _Expansion:
 		original=edges,
 		indirect_sites=indirect_sites,
 		resolved_slots=slot_counts(resolved, unresolved_slots(program, resolved)).resolved_slots,
+		image_functions=frozenset(frame_key(name) for name in defined_function_names(elf)),
 	)
 
 
+def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[StackReport, ...]:
+	"""The entries the linked image defines; ``.ci`` also records discarded functions."""
+	return tuple(report for report in reports if report.entry in expansion.image_functions)
+
+
 @app.command  # type: ignore[misc]
-def stack(build_directory: Path, elf: Path | None = None) -> None:
+def stack(
+	build_directory: Path,
+	elf: Path | None = None,
+	*,
+	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
+) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts).
 
 	When an ELF is given, unresolved indirect call sites are expanded to
-	every resolved function-pointer target.
+	every resolved function-pointer target, and entries the linker
+	discarded are dropped and counted.
 	"""
 	edges = load_callgraph(build_directory)
 	expansion = _expand_from_elf(edges, elf) if elf is not None else None
-	if expansion is not None:
-		print(
-			f"resolved slots: {expansion.resolved_slots} "
-			f"| indirect call sites: {expansion.indirect_sites}"
-		)
 	reports = worst_case_depths(
 		expansion.expanded if expansion is not None else edges,
 		load_stack_usages(build_directory),
 		entry_edges=expansion.original if expansion is not None else None,
 	)
-	for report in reports:
+	kept = _in_image(reports, expansion) if expansion is not None else reports
+	if json:
+		entries = tuple(
+			StackEntryReport(entry=report.entry, bound=stack_bound_report(report.bound))
+			for report in kept
+		)
+		print(msgspec.json.format(msgspec.json.encode(entries).decode()))
+		return
+	if expansion is not None:
+		print(
+			f"resolved slots: {expansion.resolved_slots} "
+			f"| indirect call sites: {expansion.indirect_sites} "
+			f"| not in the image: {len(reports) - len(kept)}"
+		)
+	for report in kept:
 		print(_render(report))
 
 
@@ -213,7 +237,8 @@ def summary(build_directory: Path, elf: Path) -> None:
 		load_stack_usages(build_directory),
 		entry_edges=expansion.original,
 	)
-	worst = next(iter(reports), StackReport(entry="", bound=Bounded(bytes=0)))
+	kept = _in_image(reports, expansion)
+	worst = next(iter(kept), StackReport(entry="", bound=Bounded(bytes=0)))
 	unresolved = unresolved_slots(program, resolved)
 	counts = slot_counts(resolved, unresolved)
 	report = AnalysisSummary(
@@ -223,7 +248,8 @@ def summary(build_directory: Path, elf: Path) -> None:
 		resolved_targets=counts.resolved_targets,
 		indirect_call_sites=expansion.indirect_sites,
 		total_functions=len(program.functions),
-		entry_points=len(reports),
+		entry_points=len(kept),
+		discarded_entry_points=len(reports) - len(kept),
 		worst_case_entry=worst.entry,
 		worst_case=stack_bound_report(worst.bound),
 	)

@@ -48,8 +48,9 @@ def test_summary_pins_the_published_numbers() -> None:
 		resolved_targets=215,
 		indirect_call_sites=100,
 		total_functions=734,
-		entry_points=368,
-		worst_case_entry="shell_readline",
+		entry_points=146,
+		discarded_entry_points=222,
+		worst_case_entry="shell_process",
 		worst_case=summary.worst_case,
 	)
 	assert isinstance(summary.worst_case, UnboundedStack)
@@ -59,10 +60,10 @@ def test_summary_pins_the_published_numbers() -> None:
 		len(summary.worst_case.unmeasured),
 		summary.worst_case.dynamic,
 		summary.worst_case.unresolved,
-	) == (2108, 18, 45, (), ())
+	) == (2028, 18, 44, (), ())
 
 
-def test_the_worst_case_entry_is_not_in_the_linked_executable() -> None:
+def test_shell_readline_is_not_in_the_linked_executable() -> None:
 	assert "shell_readline" not in {
 		function.name for function in load(EXECUTABLE).functions.values()
 	}
