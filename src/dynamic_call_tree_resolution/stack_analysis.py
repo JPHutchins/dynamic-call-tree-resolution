@@ -58,7 +58,7 @@ class _Reason(Enum):
 type _Reasons = frozenset[tuple[_Reason, str]]
 
 
-_MAX_CYCLE_SIZE: Final = 64
+_MAX_CYCLE_SIZE: Final = 16
 
 INDIRECT_CALLEE: Final = "__indirect_call"
 
@@ -279,7 +279,7 @@ def _depths_by_component(
 		in_component = frozenset(component)
 		within: dict[tuple[str, frozenset[str]], int] = {}
 		memo.update(
-			_discovery_depths(component, adjacency, frame_by_name, memo)
+			_rooted_depths(component, adjacency, frame_by_name, memo)
 			if len(component) > _MAX_CYCLE_SIZE
 			else {
 				node: _depth(
@@ -291,31 +291,62 @@ def _depths_by_component(
 	return memo
 
 
-def _discovery_depths(
+def _rooted_depths(
 	component: tuple[str, ...],
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, StackUsage],
 	memo: Mapping[str, int],
 ) -> dict[str, int]:
-	"""Longest paths over a component's edges toward later-discovered members.
+	"""Each member's longest path over its own depth-first walk's forward edges.
 
-	Tarjan lists a component latest-discovered first, so those edges hold
-	the depth-first tree and no cycle: every path they form is a real
-	simple path, computed in one pass in list order.
+	Edges toward nodes a walk from the member discovers later hold the
+	walk's tree and no cycle, so every path over them is a real simple path.
 	"""
-	position = {node: index for index, node in enumerate(component)}
+	members = frozenset(component)
+	return {
+		root: _forward_depth(_preorder(root, members, adjacency), members, adjacency, frame_by_name, memo)
+		for root in component
+	}
+
+
+def _preorder(
+	root: str, members: frozenset[str], adjacency: Mapping[str, frozenset[str]]
+) -> tuple[str, ...]:
+	"""A depth-first preorder of ``members`` from ``root``, callees in sorted order."""
+	order: list[str] = []
+	seen: set[str] = set()
+	stack = [root]
+	while stack:
+		node = stack.pop()
+		if node in seen:
+			continue
+		seen.add(node)
+		order.append(node)
+		stack.extend(sorted((adjacency.get(node, frozenset()) & members) - seen, reverse=True))
+	return tuple(order)
+
+
+def _forward_depth(
+	order: tuple[str, ...],
+	members: frozenset[str],
+	adjacency: Mapping[str, frozenset[str]],
+	frame_by_name: Mapping[str, StackUsage],
+	memo: Mapping[str, int],
+) -> int:
+	"""The longest path from ``order[0]`` over edges toward later nodes of ``order``."""
+	position = {node: index for index, node in enumerate(order)}
 	depths: dict[str, int] = {}
-	for node in component:
+	for node in reversed(order):
 		frame = frame_by_name.get(frame_key(node))
 		depths[node] = (frame.bytes if frame is not None else 0) + max(
 			(
-				memo[callee] if callee not in position else depths[callee]
+				memo[callee] if callee not in members else depths[callee]
 				for callee in adjacency.get(node, frozenset())
-				if callee not in position or position[callee] < position[node]
+				if callee not in members or position[callee] > position[node]
 			),
 			default=0,
 		)
-	return depths
+	return depths[order[0]]
 
 
 def _depth(
@@ -365,8 +396,7 @@ def _strongly_connected_components(
 	"""SCCs in reverse topological order of the condensation (sinks first).
 
 	Nodes and neighbors are visited in sorted order, so each component's
-	member order, which the oversized-component bound depends on, is the
-	same in every process.
+	member order is the same in every process.
 	"""
 	indices: dict[str, int] = {}
 	lowlinks: dict[str, int] = {}
