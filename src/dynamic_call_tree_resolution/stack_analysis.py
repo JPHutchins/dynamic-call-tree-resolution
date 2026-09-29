@@ -26,23 +26,21 @@ class Bounded(Struct):
 
 
 class Unbounded(Struct):
-	"""A depth that bounds only from below, with the functions that break the bound.
-
-	``recursion`` holds the reachable functions on a cycle, ``unmeasured``
-	the reachable functions without a ``.su`` record, ``dynamic`` the
-	reachable frames GCC could not bound, and ``unresolved`` the reachable
-	callers of an indirect call without candidates.
-	"""
+	"""A depth that bounds only from below."""
 
 	at_least: int
 	recursion: frozenset[str]
+	"""Reachable functions on a cycle."""
 	unmeasured: frozenset[str]
+	"""Reachable functions without a ``.su`` record."""
 	dynamic: frozenset[str]
+	"""Reachable frames GCC could not bound."""
 	unresolved: frozenset[str]
+	"""Reachable callers of an indirect call without candidates."""
 
 
 class StackReport(Struct):
-	"""Worst-case stack depth of one entry point."""
+	"""One worst-case stack depth."""
 
 	entry: str
 	bound: Bounded | Unbounded
@@ -70,26 +68,6 @@ def expand_indirect_calls(
 	*,
 	exact: bool = False,
 ) -> tuple[CallEdge, ...]:
-	"""Replace GCC ``__indirect_call`` placeholders with resolved targets.
-
-	Each caller's placeholders expand to the union of the candidates of the
-	call sites extracted from that caller's code and ``fallback`` (every
-	address-taken function): per-caller candidates refine on top of the
-	fallback, never replace it, so sites the extractor missed cannot vanish
-	from the bound. With ``exact`` the fallback is not added on top, so
-	a caller's placeholders expand to its per-caller candidates alone;
-	those still hold the fallback for its unresolved sites. A placeholder
-	left with no targets
-	stays, so its caller's entries report it as unresolved.
-
-	With ``exact``, candidate names are also translated to every raw ``.ci``
-	graph name with the same bare key — static functions are path-qualified
-	there — so an expanded edge lands on the node whose own outgoing edges
-	connect the deeper graph. (In the sound mode the bare names stay: the
-	translation connects the fallback union into real recursive cycles
-	through cbprintf-style output pointers, which the sound bound must
-	flag rather than silently drop.)
-	"""
 	edges_tuple = tuple(edges)
 	raw_names_by_key: dict[str, set[str]] = {}
 	for edge in edges_tuple:
@@ -127,20 +105,6 @@ def worst_case_depths(
 	*,
 	entry_edges: Iterable[CallEdge] | None = None,
 ) -> tuple[StackReport, ...]:
-	"""Compute worst-case stack depths for every entry point.
-
-	Entry points are functions with no incoming call edges, plus
-	``.su``-recorded functions with no call edges at all (leaf callbacks
-	and ISRs). When ``entry_edges`` (the unexpanded graph) is given, the
-	root test uses it while the depths still use the expanded ``edges``:
-	expansion adds only sound fallback edges, so a thread function whose
-	only incoming edges are fallback unions keeps its per-entry report.
-	The depth is the deepest path with each cycle broken at its back edge
-	and each frame without a ``.su`` record counted as 0 bytes; it is a
-	bound only when nothing the entry reaches is recursive, unmeasured,
-	unboundedly dynamic, or an unresolved indirect call. Unbounded entries
-	come first, then bounded ones, each deepest first.
-	"""
 	frames_tuple = tuple(frames)
 	frame_by_name = _frames_by_bare_name(frames_tuple)
 	adjacency = _adjacency(edges)
@@ -213,7 +177,6 @@ def _own_reasons(
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, StackUsage],
 ) -> _Reasons:
-	"""What breaks the bound at ``node`` itself: its frame and its indirect calls."""
 	frame = frame_by_name.get(frame_key(node))
 	return frozenset(
 		(reason, frame_key(node))
@@ -231,11 +194,6 @@ def _reasons_by_component(
 	frame_by_name: Mapping[str, StackUsage],
 	components: tuple[tuple[str, ...], ...],
 ) -> Mapping[str, _Reasons]:
-	"""Every node's reasons closed over all it reaches, one SCC at a time, sinks first.
-
-	Members of one component reach each other, so they share one set; a
-	component of several functions, or one calling itself, is recursion.
-	"""
 	closure: dict[str, _Reasons] = {}
 	for component in components:
 		members = frozenset(component)
@@ -263,17 +221,6 @@ def _depths_by_component(
 	frame_by_name: Mapping[str, StackUsage],
 	components: tuple[tuple[str, ...], ...],
 ) -> Mapping[str, int]:
-	"""Per-node depths, computed one SCC at a time, sinks first.
-
-	Tarjan emits strongly connected components in reverse topological
-	order of the condensation, so every callee outside a node's own
-	component is already computed when the node is reached. Only paths
-	within one component need the path-based recursion, which keeps the
-	search polynomial on diamond-heavy call graphs. A component larger
-	than ``_MAX_CYCLE_SIZE`` is recursion either way and its longest
-	simple path is exponential to search, so its members take the longest
-	paths of an acyclic part of it instead.
-	"""
 	memo: dict[str, int] = {}
 	known = {node for component in components for node in component}
 	all_nodes = set(adjacency) | _callees(adjacency)
@@ -299,11 +246,6 @@ def _rooted_depths(
 	frame_by_name: Mapping[str, StackUsage],
 	memo: Mapping[str, int],
 ) -> dict[str, int]:
-	"""Each member's longest path over its own depth-first walk's forward edges.
-
-	Edges toward nodes a walk from the member discovers later hold the
-	walk's tree and no cycle, so every path over them is a real simple path.
-	"""
 	members = frozenset(component)
 	return {
 		root: _forward_depth(
@@ -316,7 +258,6 @@ def _rooted_depths(
 def _preorder(
 	root: str, members: frozenset[str], adjacency: Mapping[str, frozenset[str]]
 ) -> tuple[str, ...]:
-	"""A depth-first preorder of ``members`` from ``root``, callees in sorted order."""
 	order: list[str] = []
 	seen: set[str] = set()
 	stack = [root]
@@ -337,7 +278,6 @@ def _forward_depth(
 	frame_by_name: Mapping[str, StackUsage],
 	memo: Mapping[str, int],
 ) -> int:
-	"""The longest path from ``order[0]`` over edges toward later nodes of ``order``."""
 	position = {node: index for index, node in enumerate(order)}
 	depths: dict[str, int] = {}
 	for node in reversed(order):
@@ -397,11 +337,6 @@ def _callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
 def _strongly_connected_components(
 	adjacency: Mapping[str, frozenset[str]],
 ) -> tuple[tuple[str, ...], ...]:
-	"""SCCs in reverse topological order of the condensation (sinks first).
-
-	Nodes and neighbors are visited in sorted order, so each component's
-	member order is the same in every process.
-	"""
 	indices: dict[str, int] = {}
 	lowlinks: dict[str, int] = {}
 	stack: list[str] = []
@@ -437,12 +372,7 @@ def _strongly_connected_components(
 
 
 def frame_key(name: str) -> str:
-	"""Reduce a VCG or ``.su`` function name to its bare assembly name.
-
-	GCC's ``.ci`` names for static functions are path-qualified
-	(``"/abs/path/file.c:func"``) and clone-suffixed (``func.isra.0``) while
-	``.su`` records use bare names (``func.isra``); both sides are reduced to
-	``func`` so they meet in one key space.
+	"""Reduce a VCG or ``.su`` symbol to its bare assembly form.
 
 	>>> frame_key("/abs/path/file.c:func")
 	'func'
@@ -461,12 +391,6 @@ def frame_key(name: str) -> str:
 
 
 def _frames_by_bare_name(frames: Iterable[StackUsage]) -> Mapping[str, StackUsage]:
-	"""Group ``.su`` records by bare name, keeping the largest frame.
-
-	Duplicate names (weak stubs overridden by real implementations, or
-	identically named statics across CUs) must not shadow the largest frame,
-	or paths through the real function under-report.
-	"""
 	return {key: _merge_frame_records(records) for key, records in _grouped_frames(frames).items()}
 
 
