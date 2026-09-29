@@ -1,12 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""The sensor-two-impl fixture: two threads on one emulated I2C bus, one sensor driver each.
-
-``tests/fixtures/sensor-two-impl-app`` builds the threads (ADT7420 and
-BMI160); the committed artifacts (produced by the ``sensor_two_impl``
-task) let the tests here replay the analysis.
-"""
+"""The sensor-two-impl fixture: two threads on one emulated I2C bus, one sensor driver each."""
 
 from __future__ import annotations
 

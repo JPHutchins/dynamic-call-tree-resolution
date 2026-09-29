@@ -1,11 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Soundness reproducers, checked against the targets their runs really call.
-
-Each reproducer's ``main`` observes ``@caller`` before calling a function
-under test, and each target observes its own name.
-"""
+"""Soundness reproducers, checked against the targets their runs really call."""
 
 from __future__ import annotations
 
@@ -244,7 +240,6 @@ def _outcome(image: Image, directory: Path) -> Outcome:
 
 @pytest.fixture(scope="session")
 def outcomes(tmp_path_factory: pytest.TempPathFactory) -> Mapping[Image, Outcome]:
-	"""Every image built, run and analyzed concurrently, each in its own directory."""
 	directories = tuple(
 		tmp_path_factory.mktemp(image.source.removesuffix(".c")) for image in IMAGES
 	)

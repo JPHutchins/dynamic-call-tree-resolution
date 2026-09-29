@@ -58,7 +58,6 @@ def _warn_skipped(path: Path) -> None:
 
 
 def _render(report: StackReport) -> str:
-	"""One ``stack`` line: the bytes when bounded, else the lower bound and reason counts."""
 	match report.bound:
 		case Bounded(bytes=depth):
 			return f"{report.entry}: {depth} bytes"
@@ -79,7 +78,6 @@ def _render(report: StackReport) -> str:
 
 
 def _keep(path: Path) -> bool:
-	"""Whether to analyze ``path``, warning on stderr when skipping it."""
 	if not _oversized(path):
 		return True
 	_warn_skipped(path)
@@ -185,7 +183,6 @@ class _Expansion(Struct):
 def _expand_from_elf(
 	edges: tuple[CallEdge, ...], elf: Path, *, narrow_by_signature: bool
 ) -> _Expansion:
-	"""Resolve and expand the indirect edges of ``edges`` against an ELF image."""
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
 	resolved = assignments(program)
@@ -202,7 +199,6 @@ def _expand_from_elf(
 
 
 def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[StackReport, ...]:
-	"""The entries the linked image defines; ``.ci`` also records discarded functions."""
 	return tuple(report for report in reports if report.entry in expansion.image_functions)
 
 

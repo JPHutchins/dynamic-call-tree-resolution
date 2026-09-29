@@ -131,7 +131,6 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
-	"""Render a stack bound with its function sets sorted."""
 	match bound:
 		case Bounded(bytes=depth):
 			return BoundedStack(bytes=depth)
@@ -180,7 +179,6 @@ class SlotCounts(SalixStruct):
 def slot_counts(
 	resolved: tuple[SlotAssignment, ...], unresolved: tuple[UnresolvedSlot, ...]
 ) -> SlotCounts:
-	"""The resolution rollup shared by the report, comparison, and summary."""
 	slots = frozenset(assignment.slot for assignment in resolved)
 	return SlotCounts(
 		resolved_slots=len(slots),
@@ -270,13 +268,6 @@ def build_comparison(
 	*,
 	narrow_by_signature: bool = False,
 ) -> ComparisonReport:
-	"""Resolution rollup of one ELF, for cross-tool comparison.
-
-	When a pexplorer report is given, each function with dynamic calls on
-	either side gets a row: pexplorer's dynamic-call count against dctr's
-	per-site candidate sets. Callers aggregate by aligned address, so
-	alias twins (ARM/Thumb) do not overwrite each other's counts.
-	"""
 	resolved = assignments(program)
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)

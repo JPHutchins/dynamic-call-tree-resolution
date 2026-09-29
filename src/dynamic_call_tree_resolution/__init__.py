@@ -1,12 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Static resolution of indirect calls in embedded firmware ELF images.
-
-Everything imported below is the public API; the ``as`` aliases are the
-explicit re-export marker, so there is no ``__all__`` second list to
-drift.
-"""
+"""Static resolution of indirect calls in embedded firmware ELF images."""
 
 from dynamic_call_tree_resolution.call_sites import (
 	call_site_candidates as call_site_candidates,

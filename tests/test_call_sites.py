@@ -1670,7 +1670,6 @@ def test_x86_global_store_then_load_resolves_within_the_function() -> None:
 
 
 def _signature_program() -> Program:
-	"""Three functions and one signature-carrying BSS slot for filter tests."""
 	return Program(
 		byte_order="little",
 		pointer_size=8,

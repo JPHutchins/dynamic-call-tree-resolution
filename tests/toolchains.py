@@ -14,12 +14,10 @@ _CC_FLAGS = ("-std=gnu2x", "-Wall", "-Wextra", "-Werror", "-Wdouble-promotion")
 
 
 def host_cc(*flags: str) -> tuple[str, ...]:
-	"""One host cc invocation with the fixture warning regime, plus extra flags."""
 	return ("cc", *_CC_FLAGS, *flags)
 
 
 def cortex_m3_cc(*flags: str) -> tuple[str, ...]:
-	"""One bare-metal Cortex-M3 link of the harness with the fixture warning regime."""
 	return (
 		"arm-none-eabi-gcc",
 		"-mcpu=cortex-m3",
@@ -35,7 +33,6 @@ def cortex_m3_cc(*flags: str) -> tuple[str, ...]:
 
 
 def build_cortex_m3(sources: tuple[Path, ...], output: Path, *flags: str) -> Path:
-	"""Link ``sources`` with the harness into a bare-metal Cortex-M3 image."""
 	subprocess.run(
 		[*cortex_m3_cc(*flags), *map(str, sources), "-o", str(output)],
 		check=True,
@@ -45,7 +42,6 @@ def build_cortex_m3(sources: tuple[Path, ...], output: Path, *flags: str) -> Pat
 
 
 def build_host(sources: tuple[Path, ...], output: Path, *flags: str) -> Path:
-	"""Link ``sources`` with the host harness into a host executable."""
 	subprocess.run(
 		[
 			*host_cc(f"-I{FIXTURES}", str(HOST_HARNESS / "harness.c"), *flags),
@@ -60,7 +56,6 @@ def build_host(sources: tuple[Path, ...], output: Path, *flags: str) -> Path:
 
 
 def run_host(executable: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-	"""Run a host harness executable with ``arguments``."""
 	return subprocess.run(
 		[str(executable), *arguments],
 		check=False,
@@ -71,11 +66,6 @@ def run_host(executable: Path, *arguments: str) -> subprocess.CompletedProcess[s
 
 
 def run_cortex_m3(elf: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-	"""Run a harness image on QEMU.
-
-	The semihosting command line becomes ``argv``, with the image's file name
-	as ``argv[0]``; ``main``'s return value becomes the exit status.
-	"""
 	return subprocess.run(
 		[
 			"qemu-system-arm",

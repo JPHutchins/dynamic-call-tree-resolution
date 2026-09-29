@@ -22,17 +22,11 @@ class StackUsage(Struct):
 
 
 def parse_stack_usage(path: Path) -> tuple[StackUsage, ...]:
-	"""Parse one GCC ``.su`` file; the record layout lives on :func:`parse_records`."""
 	return parse_records(path.read_text())
 
 
 def parse_records(text: str) -> tuple[StackUsage, ...]:
 	"""Parse ``.su`` lines into records.
-
-	Record layout: ``file:line:column:function<TAB>bytes<TAB>qualifier``.
-	The bytes bound a ``static`` or ``dynamic,bounded`` frame; a plain
-	``dynamic`` frame (``alloca`` or a variable-length array) can outgrow
-	them.
 
 	>>> parse_records(
 	...     "main.c:1:1:main" + chr(9) + "16" + chr(9) + "static" + chr(10)
@@ -47,7 +41,6 @@ def parse_records(text: str) -> tuple[StackUsage, ...]:
 
 
 def load_stack_usages(build_directory: Path) -> tuple[StackUsage, ...]:
-	"""Collect every ``.su`` record under a build directory."""
 	return tuple(
 		record
 		for stack_file in sorted(build_directory.glob("**/*.su"))

@@ -44,7 +44,6 @@ class PexplorerReport(Struct):
 
 
 def load_pexplorer(path: Path) -> PexplorerReport:
-	"""Parse pexplorer's JSON report from ``path``."""
 	return msgspec.json.decode(path.read_bytes(), type=PexplorerReport)
 
 
@@ -56,11 +55,6 @@ class DynamicSites(SalixStruct):
 
 
 def dynamic_sites_by_caller(report: PexplorerReport) -> Mapping[Address, DynamicSites]:
-	"""Per caller: names and summed dynamic-call count, keyed by aligned address.
-
-	Aliases sharing an aligned address aggregate instead of overwriting;
-	the join this feeds is documented on :func:`build_comparison`.
-	"""
 	return {
 		address: DynamicSites(
 			names=tuple(function.name for function in functions),

@@ -1,15 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Thumb direct-branch targets, from capstone to the VSA's CFG.
-
-The VSA reads direct-branch and call targets straight from capstone's
-immediate operand. That contract is cross-checked against a decoder of
-the raw ARMv7-M encodings (B T1-T4, BL T1, CBZ/CBNZ T1; target is the
-instruction address + 4 + offset, with no word alignment) over every
-direct branch in the committed ARM fixtures, and fixture sites whose
-candidates depend on the decoded CFG are pinned.
-"""
+"""Thumb direct-branch targets, from capstone to the VSA's CFG."""
 
 from __future__ import annotations
 
