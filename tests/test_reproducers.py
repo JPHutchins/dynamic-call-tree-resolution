@@ -60,7 +60,7 @@ class Image(Struct):
 
 
 class Case(Struct):
-	"""One caller under test in one image."""
+	"""One reproducer cell."""
 
 	image: Image
 	caller: str

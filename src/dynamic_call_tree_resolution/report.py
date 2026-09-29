@@ -147,7 +147,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 
 
 class StackEntryReport(Struct):
-	"""One entry point's stack bound."""
+	"""One row of ``stack --json``."""
 
 	entry: str
 	bound: BoundedStack | UnboundedStack

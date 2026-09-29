@@ -62,7 +62,7 @@ def _bounded(qualifier: str) -> bool:
 	"""Whether the bytes of a ``.su`` record bound its frame.
 
 	Raises:
-		ValueError: for a qualifier GCC does not emit.
+		ValueError: for anything GCC does not emit.
 	"""
 	match qualifier:
 		case "static" | "dynamic,bounded":
