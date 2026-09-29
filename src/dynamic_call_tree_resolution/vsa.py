@@ -149,8 +149,11 @@ class State(Struct):
 
 	registers: Mapping[int, frozenset[Address]]
 	sp_offsets: Mapping[int, frozenset[int]]
+	"""Stack-pointer registers, as offsets from the entry stack pointer."""
 	stack: Mapping[int, frozenset[Address]]
+	"""Frame slots, by entry-frame offset."""
 	globals: Mapping[int, frozenset[Address]]
+	"""Values written to program-global addresses."""
 
 
 class _Block(Struct):
@@ -160,10 +163,9 @@ class _Block(Struct):
 
 
 class _CallObservation(Struct):
-	"""One direct call's argument value sets, by ABI position."""
-
 	callee: Address
 	arguments: Mapping[int, ValueSet]
+	"""By ABI argument position."""
 
 
 class _Context(Struct):
