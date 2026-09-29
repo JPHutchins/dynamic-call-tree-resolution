@@ -39,7 +39,14 @@ from dynamic_call_tree_resolution.vsa.memory import (
 	load_value,
 	memory_addresses,
 )
-from dynamic_call_tree_resolution.vsa.state import State, join_states, stack_read, top_registers
+from dynamic_call_tree_resolution.vsa.state import (
+	NO_WRITES,
+	State,
+	Writes,
+	join_states,
+	stack_read,
+	top_registers,
+)
 from dynamic_call_tree_resolution.vsa.x86 import apply_x86
 
 if TYPE_CHECKING:
@@ -90,7 +97,7 @@ class FunctionResult(Struct):
 	"""One function's interpretation."""
 
 	sites: tuple[CallSite, ...]
-	writes: Mapping[Address, frozenset[Address]]
+	writes: Writes
 	observations: tuple[CallObservation, ...]
 
 
@@ -101,7 +108,7 @@ def analyze_function(
 	in_states: dict[Address, State] = {entry: seed}
 	worklist = [entry]
 	by_start = {block.start: block for block in blocks}
-	writes: dict[Address, frozenset[Address]] = {}
+	writes = NO_WRITES
 	while worklist:
 		block = by_start[worklist.pop()]
 		incoming = in_states[block.start]

@@ -1451,7 +1451,7 @@ def test_cross_function_global_write_propagates_between_rounds() -> None:
 	assert site.candidates == frozenset({Address(0x3000)})
 
 
-def test_global_write_chain_caps_at_three_rounds() -> None:
+def test_global_write_chain_propagates_to_a_fixpoint() -> None:
 	program = _multi_program(
 		"EM_X86_64",
 		{
@@ -1474,7 +1474,7 @@ def test_global_write_chain_caps_at_three_rounds() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1500
-	assert site.candidates == frozenset()
+	assert site.candidates == frozenset({Address(0x3000)})
 
 
 def test_global_write_union_overflow_is_top() -> None:

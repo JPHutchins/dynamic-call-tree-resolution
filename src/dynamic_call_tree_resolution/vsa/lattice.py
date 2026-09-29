@@ -82,6 +82,10 @@ def bind[T: Hashable, U: Hashable](
 			assert_never(unreachable)
 
 
+def join[T: Hashable](current: Lattice[T], incoming: Lattice[T]) -> Lattice[T]:
+	return bind(current, lambda known: bind(incoming, lambda other: capped(known | other)))
+
+
 def put_value[K: int, T: Hashable](
 	mapping: Mapping[K, frozenset[T]], key: K, value: Lattice[T]
 ) -> dict[K, frozenset[T]]:

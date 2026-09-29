@@ -140,9 +140,9 @@ def _everywhere(*issues: int) -> Mapping[str, tuple[int, ...]]:
 CANDIDATES = (
 	*_cortex_m3("top_argument.c", "run", {}),
 	*_cortex_m3("unobserved_callers.c", "run", {}),
-	*_cortex_m3("top_stores.c", "call_bss", _everywhere(61)),
-	*_cortex_m3("top_stores.c", "call_data", _everywhere(61)),
-	*_cortex_m3("top_stores.c", "call_object", _everywhere(61)),
+	*_cortex_m3("top_stores.c", "call_bss", {}),
+	*_cortex_m3("top_stores.c", "call_data", {}),
+	*_cortex_m3("top_stores.c", "call_object", {}),
 	*_cortex_m3("predicated_store.c", "predicated_store_case", {"-O2": (61,), "-Os": (61,)}),
 	*_cortex_m3("call_clobbers.c", "stack_case", {"-O0": (61,), "-Os": (61,)}),
 	*_cortex_m3("call_clobbers.c", "global_case", _everywhere(61)),
