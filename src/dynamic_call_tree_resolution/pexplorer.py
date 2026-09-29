@@ -23,7 +23,7 @@ class PexplorerCallee(Struct):
 	"""One call edge in pexplorer's report."""
 
 	dynamic: bool
-	"""A dynamic edge has no target."""
+	"""An indirect edge, which has no target."""
 	call_from: int | None = field(default=None, name="from")
 	call_from_function_name: str | None = field(default=None, name="from_function_name")
 	call_to: int | None = field(default=None, name="to")

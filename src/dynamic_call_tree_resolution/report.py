@@ -121,7 +121,7 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
-	"""A stack depth that bounds only from below."""
+	"""The JSON form of ``Unbounded``."""
 
 	at_least_bytes: int
 	recursion: tuple[str, ...]
