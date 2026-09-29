@@ -1,13 +1,11 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""The sensor-two-impl fixture pins the per-thread resolution proof.
+"""The sensor-two-impl fixture: two threads on one emulated I2C bus, one sensor driver each.
 
-``tests/fixtures/sensor-two-impl-app`` builds two identical threads,
-each bound to a different existing sensor driver (ADT7420 and BMI160)
-on one emulated I2C bus; the committed artifacts (produced by the
-``sensor_two_impl`` task) let the tests here replay the analysis and
-pin each thread's dispatch to its own impl.
+``tests/fixtures/sensor-two-impl-app`` builds the threads (ADT7420 and
+BMI160); the committed artifacts (produced by the ``sensor_two_impl``
+task) let the tests here replay the analysis.
 """
 
 from __future__ import annotations
@@ -128,23 +126,18 @@ def _lower_bound(report: StackReport) -> int:
 			assert_never(unreachable)
 
 
-def test_exact_expansion_gives_each_thread_its_impl_depth(
+def test_exact_expansion_joins_both_threads_in_the_i2c_emulator_cycle(
 	exact_depths: Mapping[str, StackReport],
 ) -> None:
-	assert exact_depths["thermal_thread"] == StackReport(
-		entry="thermal_thread",
-		bound=Unbounded(
-			at_least=72,
-			recursion=frozenset(),
-			unmeasured=frozenset({"__aeabi_ldivmod"}),
-			dynamic=frozenset(),
-			unresolved=frozenset({"i2c_write_read"}),
-		),
-	)
+	thermal = exact_depths["thermal_thread"].bound
 	motion = exact_depths["motion_thread"].bound
+	assert isinstance(thermal, Unbounded)
 	assert isinstance(motion, Unbounded)
-	assert motion.at_least == 648
-	assert "motion_thread" in motion.recursion
+	assert (thermal.at_least, motion.at_least) == (744, 736)
+	assert thermal.recursion == motion.recursion
+	assert {"thermal_thread", "motion_thread", "i2c_write_read", "i2c_emul_transfer"} <= (
+		thermal.recursion
+	)
 
 
 @pytest.mark.xfail(

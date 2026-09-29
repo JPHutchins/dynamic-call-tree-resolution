@@ -60,7 +60,7 @@ def test_summary_pins_the_published_numbers() -> None:
 		len(summary.worst_case.unmeasured),
 		summary.worst_case.dynamic,
 		summary.worst_case.unresolved,
-	) == (2028, 18, 44, (), ())
+	) == (2028, 18, 43, (), ())
 
 
 def test_shell_readline_is_not_in_the_linked_executable() -> None:

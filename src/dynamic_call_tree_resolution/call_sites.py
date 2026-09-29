@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from dynamic_call_tree_resolution.model import Address, FunctionSignature
 from dynamic_call_tree_resolution.points_to import pointer_at, signatures_by_slot, unresolved_slots
+from dynamic_call_tree_resolution.stack_analysis import frame_key
 from dynamic_call_tree_resolution.vsa import analyze
 
 if TYPE_CHECKING:
@@ -116,7 +117,7 @@ def per_caller_candidates(
 	)
 
 	def caller_name(site: CallSite) -> str:
-		return program.functions[site.caller_address].name
+		return frame_key(program.functions[site.caller_address].name)
 
 	targets_by_caller = {
 		caller: frozenset(

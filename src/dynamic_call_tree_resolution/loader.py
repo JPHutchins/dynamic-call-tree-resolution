@@ -91,7 +91,7 @@ def _load(stream: BinaryIO) -> Program:
 		byte_order=byte_order,
 		pointer_size=pointer_size,
 		machine=Machine(elf.header["e_machine"]),
-		functions={**_functions_from_symtab(symtab), **_functions_from_dwarf(dwarf)},
+		functions=_merge_functions(_functions_from_symtab(symtab), _functions_from_dwarf(dwarf)),
 		objects=_merge_objects(
 			_objects_from_symtab(symtab),
 			_objects_from_dwarf(dwarf, pointer_size, byte_order),
@@ -179,6 +179,24 @@ def _functions_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, F
 	}
 
 
+def _merge_functions(
+	from_symtab: Mapping[Address, Function], from_dwarf: Mapping[Address, Function]
+) -> dict[Address, Function]:
+	"""DWARF's functions over the symbol table's, each keeping its symbol's name."""
+	return {
+		**from_symtab,
+		**{
+			address: Function(
+				name=from_symtab[address].name if address in from_symtab else function.name,
+				address=address,
+				size=function.size,
+				signature=function.signature,
+			)
+			for address, function in from_dwarf.items()
+		},
+	}
+
+
 def _symbol_size(symbol: Symbol) -> int:
 	return symbol["st_size"]
 
@@ -191,7 +209,7 @@ def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 			name=_die_name(die),
 			address=address,
 			size=_subprogram_size(die),
-			signature=_signature(die),
+			signature=_signature(_declaration(die)),
 		)
 		for compilation_unit in dwarf.iter_CUs()
 		for die in _iter_dies(compilation_unit.get_top_DIE())
@@ -620,7 +638,26 @@ def _die_name(die: DIE) -> str:
 		attribute = die.attributes.get(attribute_name)
 		if attribute is not None:
 			return _string_value(attribute)
-	return ANONYMOUS
+	origin = _origin(die)
+	return ANONYMOUS if origin is None else _die_name(origin)
+
+
+def _origin(die: DIE) -> DIE | None:
+	"""The DIE an out-of-line instance, clone, or definition refers back to."""
+	return next(
+		(
+			die.get_DIE_from_attribute(attribute_name)
+			for attribute_name in ("DW_AT_abstract_origin", "DW_AT_specification")
+			if attribute_name in die.attributes
+		),
+		None,
+	)
+
+
+def _declaration(die: DIE) -> DIE:
+	"""The end of ``die``'s origin chain, which carries the declared types."""
+	origin = _origin(die)
+	return die if origin is None else _declaration(origin)
 
 
 def _attr_string(value: str | bytes) -> str:

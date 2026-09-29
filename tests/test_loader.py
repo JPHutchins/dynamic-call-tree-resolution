@@ -309,3 +309,22 @@ def test_defined_function_names_of_a_stripped_image_are_empty(
 		capture_output=True,
 	)
 	assert defined_function_names(stripped) == frozenset()
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	"elf",
+	[
+		"hello_zephyr_qemu_cortex_m3.elf",
+		"sensor-two-impl/zephyr/zephyr.elf",
+		"counter-su/zephyr/zephyr.exe",
+	],
+)
+def test_committed_images_name_every_function_and_parameter(elf: str) -> None:
+	functions = load(Path(__file__).parent / "fixtures" / elf).functions.values()
+	assert [function.address for function in functions if function.name == "<anonymous>"] == []
+	assert [
+		function.name
+		for function in functions
+		if function.signature is not None and "<unknown>" in function.signature.parameters
+	] == []

@@ -107,9 +107,9 @@ poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
 ```console
 $ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe
 resolved slots: 121 | indirect call sites: 100 | not in the image: 222
-shell_process: unbounded, at least 2028 bytes (recursion: 18, unmeasured: 44)
+shell_process: unbounded, at least 2028 bytes (recursion: 18, unmeasured: 43)
 ...
-poll_state_thread: unbounded, at least 1012 bytes (recursion: 18, unmeasured: 37)
+poll_state_thread: unbounded, at least 1012 bytes (recursion: 18, unmeasured: 36)
 ...
 ```
 
@@ -167,8 +167,8 @@ contradicts does not hold.
 - Value-set analysis per-site sets are refinements, not over-approximations: the
   analysis drops unknown values and does not model every write ([#61]), and its
   control-flow graph has gaps ([#66]).
-- Signature narrowing compares DWARF signatures for equality: a cast defeats it, and
-  functions whose DWARF name renders as `<anonymous>` never match ([#63]).
+- Signature narrowing compares DWARF signatures for equality, so a cast defeats it
+  ([#62]).
 - The fallback for sites with no candidates is the union of data-slot targets; it
   misses functions whose address appears only in code ([#62]).
 - Code without `.ci` records (assembly, `native_sim` host code) is absent from the
@@ -217,7 +217,6 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
 [#61]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/61
 [#62]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/62
-[#63]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/63
 [#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
 [#67]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/67
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
