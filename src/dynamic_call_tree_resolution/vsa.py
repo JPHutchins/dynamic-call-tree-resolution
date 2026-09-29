@@ -9,7 +9,7 @@ from bisect import bisect_right
 from collections.abc import Callable, Hashable
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import TYPE_CHECKING, Final, Literal, cast
+from typing import TYPE_CHECKING, Final, Literal, assert_never, cast
 
 from capstone import (
 	CS_ARCH_ARM,
@@ -140,8 +140,20 @@ _ARM_ARGUMENT_REGISTERS: Final = (
 )
 _EM_386_STACK_ARGUMENTS: Final = 8
 
-type ValueSet = frozenset[Address] | None
-type OffsetSet = frozenset[int] | None
+
+class Top(Struct):
+	"""The value set of anything."""
+
+
+class Known[T: Hashable](Struct):
+	"""A bounded value set."""
+
+	values: frozenset[T]
+
+
+type Lattice[T: Hashable] = Top | Known[T]
+type ValueSet = Lattice[Address]
+type OffsetSet = Lattice[int]
 
 
 class State(Struct):
@@ -152,7 +164,7 @@ class State(Struct):
 	"""Copies of the stack pointer, as offsets from its entry value."""
 	stack: Mapping[int, frozenset[Address]]
 	"""Frame slots, by entry-frame offset."""
-	globals: Mapping[int, frozenset[Address]]
+	globals: Mapping[Address, frozenset[Address]]
 	"""Values written to program-global addresses."""
 
 
@@ -172,7 +184,7 @@ class _Context(Struct):
 	program: Program
 	object_spans: tuple[tuple[int, int], ...]
 	object_starts: tuple[int, ...]
-	global_writes: Mapping[int, frozenset[Address]]
+	global_writes: Mapping[Address, frozenset[Address]]
 	function_starts: frozenset[Address]
 
 
@@ -184,13 +196,13 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 	functions = tuple(blocks_by_function.values())
 	_prewarm_instructions(functions, program.machine)
 	seeds: dict[Address, State] = {}
-	global_writes: dict[int, frozenset[Address]] = {}
+	global_writes: dict[Address, frozenset[Address]] = {}
 	stable_write_rounds = 0
 	with ThreadPoolExecutor() as executor:
 		for _ in range(_MAX_ROUNDS):
 			context = _context_for(program, global_writes)
 			observations: list[_CallObservation] = []
-			written: list[Mapping[int, frozenset[Address]]] = []
+			written: list[Mapping[Address, frozenset[Address]]] = []
 			for result in executor.map(
 				partial(_round_analysis, program, context, seeds), functions
 			):
@@ -386,14 +398,18 @@ def _seed_from_observation(observation: _CallObservation, program: Program) -> S
 	registers: dict[int, frozenset[Address]] = {}
 	stack: dict[int, frozenset[Address]] = {}
 	for position, value in observation.arguments.items():
-		if value is None:
-			continue
-		if program.machine is Machine.EM_386:
-			stack[program.pointer_size * (position + 1)] = value
-		elif program.machine is Machine.EM_X86_64:
-			registers[_X86_64_ARGUMENT_REGISTERS[position]] = value
-		else:
-			registers[_ARM_ARGUMENT_REGISTERS[position]] = value
+		match value:
+			case Top():
+				continue
+			case Known(values=values):
+				if program.machine is Machine.EM_386:
+					stack[program.pointer_size * (position + 1)] = values
+				elif program.machine is Machine.EM_X86_64:
+					registers[_X86_64_ARGUMENT_REGISTERS[position]] = values
+				else:
+					registers[_ARM_ARGUMENT_REGISTERS[position]] = values
+			case _ as unreachable:
+				assert_never(unreachable)
 	return State(
 		registers=registers,
 		sp_offsets={_SP_REGISTERS[program.machine][0]: frozenset({0})},
@@ -403,8 +419,9 @@ def _seed_from_observation(observation: _CallObservation, program: Program) -> S
 
 
 def _accumulate_writes(
-	current: Mapping[int, frozenset[Address]], written: list[Mapping[int, frozenset[Address]]]
-) -> dict[int, frozenset[Address]]:
+	current: Mapping[Address, frozenset[Address]],
+	written: list[Mapping[Address, frozenset[Address]]],
+) -> dict[Address, frozenset[Address]]:
 	accumulated = dict(current)
 	for function_writes in written:
 		for address, values in function_writes.items():
@@ -420,7 +437,7 @@ def _accumulate_writes(
 	return accumulated
 
 
-def _context_for(program: Program, global_writes: Mapping[int, frozenset[Address]]) -> _Context:
+def _context_for(program: Program, global_writes: Mapping[Address, frozenset[Address]]) -> _Context:
 	spans = tuple(
 		sorted(
 			(object_.address, object_.address + object_.size)
@@ -456,17 +473,19 @@ def _pointer_value(context: _Context, address: Address) -> Address | None:
 def _object_slots(context: _Context, start: Address, stride: int) -> ValueSet:
 	span = _span_at(context, start)
 	if span is None or stride <= 0:
-		return None
+		return Top()
 	_, object_end = span
 	count = (object_end - start) // stride
 	if count <= 0:
-		return None
-	return frozenset(Address(start + index * stride) for index in range(count))
+		return Top()
+	return Known(values=frozenset(Address(start + index * stride) for index in range(count)))
 
 
 def _image_value(context: _Context, state: State, addresses: ValueSet) -> ValueSet:
-	if addresses is None:
-		return None
+	return _bind(addresses, partial(_image_read, context, state))
+
+
+def _image_read(context: _Context, state: State, addresses: frozenset[Address]) -> ValueSet:
 	values: set[Address] = set()
 	for address in addresses:
 		written = state.globals.get(address)
@@ -478,50 +497,53 @@ def _image_value(context: _Context, state: State, addresses: ValueSet) -> ValueS
 		if value is not None:
 			values.add(value)
 		elif written is None and _span_at(context, address) is not None:
-			return None
-	return None if len(values) > _K_BOUND else frozenset(values)
+			return Top()
+	return _capped(frozenset(values))
 
 
-def _join_sets[T: Hashable](current: frozenset[T], incoming: frozenset[T]) -> frozenset[T] | None:
-	combined = current | incoming
-	return None if len(combined) > _K_BOUND else combined
+def _join_sets[T: Hashable](current: frozenset[T], incoming: frozenset[T]) -> Lattice[T]:
+	return _capped(current | incoming)
 
 
-def _join_maps[T: Hashable](
-	current: Mapping[int, frozenset[T]], incoming: Mapping[int, frozenset[T]]
-) -> dict[int, frozenset[T]]:
-	joined: dict[int, frozenset[T]] = {}
-	for key in set(current) | set(incoming):
-		if key not in current or key not in incoming:
-			continue
-		value = _join_sets(current[key], incoming[key])
-		if value is not None:
-			joined[key] = value
-	return joined
+def _join_maps[K: int, T: Hashable](
+	current: Mapping[K, frozenset[T]], incoming: Mapping[K, frozenset[T]]
+) -> dict[K, frozenset[T]]:
+	return {
+		key: joined
+		for key in current.keys() & incoming.keys()
+		if len(joined := current[key] | incoming[key]) <= _K_BOUND
+	}
 
 
 def _join_seeds(current: State | None, incoming: State) -> State:
 	if current is None:
 		return incoming
-	registers = dict(current.registers)
-	for register, value in incoming.registers.items():
-		if register not in current.registers:
-			registers[register] = value
-			continue
-		joined = _join_sets(current.registers[register], value)
-		if joined is not None:
-			registers[register] = joined
-	stack = dict(current.stack)
-	for offset, value in incoming.stack.items():
-		if offset not in current.stack:
-			stack[offset] = value
-			continue
-		joined = _join_sets(current.stack[offset], value)
-		if joined is not None:
-			stack[offset] = joined
 	return State(
-		registers=registers, sp_offsets=current.sp_offsets, stack=stack, globals=current.globals
+		registers=_adopt_join(current.registers, incoming.registers),
+		sp_offsets=current.sp_offsets,
+		stack=_adopt_join(current.stack, incoming.stack),
+		globals=current.globals,
 	)
+
+
+def _adopt_join(
+	current: Mapping[int, frozenset[Address]], incoming: Mapping[int, frozenset[Address]]
+) -> dict[int, frozenset[Address]]:
+	return {**current, **{key: _adopted(current, key, value) for key, value in incoming.items()}}
+
+
+def _adopted(
+	current: Mapping[int, frozenset[Address]], key: int, incoming: frozenset[Address]
+) -> frozenset[Address]:
+	if key not in current:
+		return incoming
+	match _join_sets(current[key], incoming):
+		case Top():
+			return current[key]
+		case Known(values=joined):
+			return joined
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _join_states(current: State | None, incoming: State) -> State:
@@ -535,21 +557,49 @@ def _join_states(current: State | None, incoming: State) -> State:
 	)
 
 
-def _put_value[T: Hashable](
-	mapping: Mapping[int, frozenset[T]], key: int, value: frozenset[T] | None
-) -> dict[int, frozenset[T]]:
+def _lookup[K: int, T: Hashable](mapping: Mapping[K, frozenset[T]], key: K) -> Lattice[T]:
+	return Known(values=mapping[key]) if key in mapping else Top()
+
+
+def _entry[K: int, T: Hashable](key: K, value: Lattice[T]) -> tuple[tuple[K, frozenset[T]], ...]:
+	match value:
+		case Top():
+			return ()
+		case Known(values=values):
+			return ((key, values),)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _capped[T: Hashable](values: frozenset[T]) -> Lattice[T]:
+	return Top() if len(values) > _K_BOUND else Known(values=values)
+
+
+def _bind[T: Hashable, U: Hashable](
+	value: Lattice[T], function: Callable[[frozenset[T]], Lattice[U]]
+) -> Lattice[U]:
+	match value:
+		case Top():
+			return Top()
+		case Known(values=values):
+			return function(values)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _put_value[K: int, T: Hashable](
+	mapping: Mapping[K, frozenset[T]], key: K, value: Lattice[T]
+) -> dict[K, frozenset[T]]:
 	copied = dict(mapping)
-	if value is None:
-		copied.pop(key, None)
-	else:
-		copied[key] = value
+	copied.pop(key, None)
+	copied.update(_entry(key, value))
 	return copied
 
 
 def _map_set[T: Hashable, U: Hashable](
-	values: frozenset[T] | None, function: Callable[[T], U]
-) -> frozenset[U] | None:
-	return None if values is None else frozenset(function(value) for value in values)
+	values: Lattice[T], function: Callable[[T], U]
+) -> Lattice[U]:
+	return _bind(values, lambda known: Known(values=frozenset(function(value) for value in known)))
 
 
 def _shift_addresses(values: ValueSet, delta: int) -> ValueSet:
@@ -561,17 +611,21 @@ def _shift_offsets(values: OffsetSet, delta: int) -> OffsetSet:
 
 
 def _indexed(base: ValueSet, index: ValueSet, scale: int, disp: int) -> ValueSet:
-	if base is None or index is None:
-		return None
-	addresses = frozenset(Address(b + i * scale + disp) for b in base for i in index)
-	return None if len(addresses) > _K_BOUND else addresses
+	return _bind(
+		base,
+		lambda bases: _bind(
+			index,
+			lambda indexes: _capped(
+				frozenset(Address(b + i * scale + disp) for b in bases for i in indexes)
+			),
+		),
+	)
 
 
 def _indexed_offsets(
 	base: frozenset[int], index: frozenset[Address], scale: int, disp: int
 ) -> OffsetSet:
-	offsets = frozenset(b + i * scale + disp for b in base for i in index)
-	return None if len(offsets) > _K_BOUND else offsets
+	return _capped(frozenset(b + i * scale + disp for b in base for i in index))
 
 
 def _set_register(state: State, register: int, value: ValueSet) -> State:
@@ -624,65 +678,81 @@ def _top_written(instruction: CsInsn, state: State) -> State:
 
 
 def _stack_read(stack: Mapping[int, frozenset[Address]], offsets: OffsetSet) -> ValueSet:
-	if offsets is None:
-		return None
-	values: set[Address] = set()
-	for offset in offsets:
-		value = stack.get(offset)
-		if value is None:
-			return None
-		values.update(value)
-	return None if len(values) > _K_BOUND else frozenset(values)
+	return _bind(offsets, partial(_frame_read, stack))
 
 
-def _union_write(
-	mapping: Mapping[int, frozenset[Address]], keys: OffsetSet, value: ValueSet
-) -> dict[int, frozenset[Address]]:
-	written = dict(mapping)
-	if keys is None:
-		return written
-	for offset in keys:
-		if value is None:
-			written.pop(offset, None)
-			continue
-		existing = written.get(offset)
-		joined = _join_sets(existing, value) if existing is not None else value
-		if joined is None:
-			written.pop(offset, None)
-		else:
-			written[offset] = joined
-	return written
+def _frame_read(stack: Mapping[int, frozenset[Address]], offsets: frozenset[int]) -> ValueSet:
+	if any(offset not in stack for offset in offsets):
+		return Top()
+	return _capped(frozenset(value for offset in offsets for value in stack[offset]))
+
+
+def _union_write[K: int](
+	mapping: Mapping[K, frozenset[Address]], keys: Lattice[K], value: ValueSet
+) -> dict[K, frozenset[Address]]:
+	match keys:
+		case Top():
+			return dict(mapping)
+		case Known(values=written):
+			return {
+				**{key: values for key, values in mapping.items() if key not in written},
+				**dict(
+					entry for key in written for entry in _entry(key, _updated(mapping, key, value))
+				),
+			}
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _updated[K: int](mapping: Mapping[K, frozenset[Address]], key: K, value: ValueSet) -> ValueSet:
+	return _bind(
+		value,
+		lambda values: _join_sets(mapping[key], values) if key in mapping else Known(values=values),
+	)
 
 
 def _stack_offsets(state: State, memory: CsMemOperand, base_register: int) -> OffsetSet:
-	offsets = state.sp_offsets.get(base_register)
+	offsets = _lookup(state.sp_offsets, base_register)
 	if memory.index == 0:
 		return _shift_offsets(offsets, memory.disp)
-	index = state.registers.get(memory.index)
-	if offsets is None or index is None:
-		return None
-	return _indexed_offsets(offsets, index, memory.scale, memory.disp)
+	return _bind(
+		offsets,
+		lambda bases: _bind(
+			_lookup(state.registers, memory.index),
+			lambda indexes: _indexed_offsets(bases, indexes, memory.scale, memory.disp),
+		),
+	)
 
 
 def _scaled_addresses(
 	context: _Context, base: ValueSet, index: ValueSet, scale: int, disp: int
 ) -> ValueSet:
-	if index is None:
-		if base is not None and len(base) == 1:
-			(base_address,) = base
-			slots = _object_slots(context, Address(base_address + disp), scale)
-			if slots is not None:
-				return slots
-		return None
-	return _indexed(base, index, scale, disp)
+	match index:
+		case Top():
+			return _bind(
+				base,
+				lambda bases: (
+					_object_slots(context, Address(next(iter(bases)) + disp), scale)
+					if len(bases) == 1
+					else Top()
+				),
+			)
+		case Known():
+			return _indexed(base, index, scale, disp)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _memory_addresses(context: _Context, state: State, memory: CsMemOperand) -> ValueSet:
-	base = frozenset({Address(0)}) if memory.base == 0 else state.registers.get(memory.base)
+	base = (
+		Known(values=frozenset({Address(0)}))
+		if memory.base == 0
+		else _lookup(state.registers, memory.base)
+	)
 	if memory.index == 0:
 		return _shift_addresses(base, memory.disp)
 	return _scaled_addresses(
-		context, base, state.registers.get(memory.index), memory.scale, memory.disp
+		context, base, _lookup(state.registers, memory.index), memory.scale, memory.disp
 	)
 
 
@@ -694,13 +764,13 @@ def _load_value(
 	if machine.is_x86:
 		if memory.base == x86_const.X86_REG_RIP:
 			address = Address(instruction.address + instruction.size + memory.disp)
-			return _image_value(context, state, frozenset({address}))
+			return _image_value(context, state, Known(values=frozenset({address})))
 		if memory.base in _SP_REGISTERS[machine] or memory.base in state.sp_offsets:
 			return _stack_read(state.stack, _stack_offsets(state, memory, memory.base))
 		return _image_value(context, state, _memory_addresses(context, state, memory))
 	if memory.base == arm_const.ARM_REG_PC:
 		address = Address(((instruction.address + 4) & ~3) + memory.disp)
-		return _image_value(context, state, frozenset({address}))
+		return _image_value(context, state, Known(values=frozenset({address})))
 	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
 		return _stack_read(state.stack, _stack_offsets(state, memory, memory.base))
 	return _image_value(context, state, _memory_addresses(context, state, memory))
@@ -747,7 +817,9 @@ def _store_addresses(
 ) -> ValueSet:
 	machine = context.program.machine
 	if machine.is_x86 and memory.base == x86_const.X86_REG_RIP:
-		return frozenset({Address(instruction.address + instruction.size + memory.disp)})
+		return Known(
+			values=frozenset({Address(instruction.address + instruction.size + memory.disp)})
+		)
 	return _memory_addresses(context, state, memory)
 
 
@@ -755,8 +827,8 @@ def _copy_register(state: State, destination: int, source: int) -> State:
 	if destination == source:
 		return state
 	if source in state.sp_offsets:
-		return _set_offsets(state, destination, state.sp_offsets[source])
-	return _set_register(state, destination, state.registers.get(source))
+		return _set_offsets(state, destination, Known(values=state.sp_offsets[source]))
+	return _set_register(state, destination, _lookup(state.registers, source))
 
 
 class _BranchTarget(Struct):
@@ -949,18 +1021,24 @@ def _apply_x86(context: _Context, instruction: CsInsn, state: State) -> State:
 			case (x86_const.X86_OP_REG, x86_const.X86_OP_REG):
 				return _copy_register(state, destination.reg, source.reg)
 			case (x86_const.X86_OP_REG, x86_const.X86_OP_IMM):
-				return _set_register(state, destination.reg, frozenset({Address(source.imm)}))
+				return _set_register(
+					state, destination.reg, Known(values=frozenset({Address(source.imm)}))
+				)
 			case (x86_const.X86_OP_REG, x86_const.X86_OP_MEM):
 				return _set_register(
 					state, destination.reg, _load_value(context, state, instruction, source)
 				)
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_REG):
 				return _store_value(
-					context, state, instruction, destination, state.registers.get(source.reg)
+					context, state, instruction, destination, _lookup(state.registers, source.reg)
 				)
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_IMM):
 				return _store_value(
-					context, state, instruction, destination, frozenset({Address(source.imm)})
+					context,
+					state,
+					instruction,
+					destination,
+					Known(values=frozenset({Address(source.imm)})),
 				)
 			case _:
 				return _top_written(instruction, state)  # pragma: no cover
@@ -969,7 +1047,7 @@ def _apply_x86(context: _Context, instruction: CsInsn, state: State) -> State:
 		memory = source.mem
 		if memory.base == x86_const.X86_REG_RIP:
 			address = Address(instruction.address + instruction.size + memory.disp)
-			return _set_register(state, destination.reg, frozenset({address}))
+			return _set_register(state, destination.reg, Known(values=frozenset({address})))
 		if memory.base in _SP_REGISTERS[machine]:
 			return _set_offsets(state, destination.reg, _stack_offsets(state, memory, memory.base))
 		return _set_register(state, destination.reg, _memory_addresses(context, state, memory))
@@ -997,14 +1075,14 @@ def _apply_x86(context: _Context, instruction: CsInsn, state: State) -> State:
 			and source.type == x86_const.X86_OP_REG
 			and destination.reg == source.reg
 		):
-			return _set_register(state, destination.reg, frozenset({Address(0)}))
+			return _set_register(state, destination.reg, Known(values=frozenset({Address(0)})))
 		return _top_written(instruction, state)
 	if instruction.mnemonic == "push":
 		operand = instruction.operands[0]
 		value = (
-			frozenset({Address(operand.imm)})
+			Known(values=frozenset({Address(operand.imm)}))
 			if operand.type == x86_const.X86_OP_IMM
-			else state.registers.get(operand.reg)
+			else _lookup(state.registers, operand.reg)
 			if operand.type == x86_const.X86_OP_REG
 			else _load_value(context, state, instruction, operand)
 		)
@@ -1020,13 +1098,15 @@ def _shift_x86_destination(
 ) -> State:
 	if destination in _SP_REGISTERS[machine]:
 		return _set_offsets(
-			state, destination, _shift_offsets(state.sp_offsets.get(destination), delta)
+			state, destination, _shift_offsets(_lookup(state.sp_offsets, destination), delta)
 		)
-	return _set_register(state, destination, _shift_addresses(state.registers.get(source), delta))
+	return _set_register(
+		state, destination, _shift_addresses(_lookup(state.registers, source), delta)
+	)
 
 
 def _push(state: State, sp: int, pointer_size: int, value: ValueSet) -> State:
-	offsets = _shift_offsets(state.sp_offsets.get(sp), -pointer_size)
+	offsets = _shift_offsets(_lookup(state.sp_offsets, sp), -pointer_size)
 	return State(
 		registers=state.registers,
 		sp_offsets=_put_value(state.sp_offsets, sp, offsets),
@@ -1036,7 +1116,7 @@ def _push(state: State, sp: int, pointer_size: int, value: ValueSet) -> State:
 
 
 def _pop(state: State, sp: int, pointer_size: int, destination: int) -> State:
-	offsets = state.sp_offsets.get(sp)
+	offsets = _lookup(state.sp_offsets, sp)
 	return State(
 		registers=_put_value(state.registers, destination, _stack_read(state.stack, offsets)),
 		sp_offsets=_put_value(state.sp_offsets, sp, _shift_offsets(offsets, pointer_size)),
@@ -1060,12 +1140,14 @@ def _apply_arm(context: _Context, instruction: CsInsn, state: State) -> State:
 		if source.type != arm_const.ARM_OP_IMM:  # pragma: no branch
 			return _top_written(instruction, state)  # pragma: no cover
 		if base_mnemonic == "movw":
-			return _set_register(state, destination.reg, frozenset({Address(source.imm)}))
+			return _set_register(
+				state, destination.reg, Known(values=frozenset({Address(source.imm)}))
+			)
 		return _set_register(
 			state,
 			destination.reg,
 			_map_set(
-				state.registers.get(destination.reg),
+				_lookup(state.registers, destination.reg),
 				lambda low: Address((source.imm << 16) | (low & 0xFFFF)),
 			),
 		)
@@ -1082,7 +1164,11 @@ def _apply_arm(context: _Context, instruction: CsInsn, state: State) -> State:
 		if store_source.type != arm_const.ARM_OP_REG:  # pragma: no branch
 			return _top_written(instruction, state)  # pragma: no cover
 		stored = _store_value(
-			context, state, instruction, store_destination, state.registers.get(store_source.reg)
+			context,
+			state,
+			instruction,
+			store_destination,
+			_lookup(state.registers, store_source.reg),
 		)
 		if len(instruction.operands) == 3:
 			return _advance_post_index(
@@ -1095,7 +1181,9 @@ def _apply_arm(context: _Context, instruction: CsInsn, state: State) -> State:
 			case arm_const.ARM_OP_REG:
 				return _copy_register(state, destination.reg, source.reg)
 			case arm_const.ARM_OP_IMM:
-				return _set_register(state, destination.reg, frozenset({Address(source.imm)}))
+				return _set_register(
+					state, destination.reg, Known(values=frozenset({Address(source.imm)}))
+				)
 			case _:
 				return _top_written(instruction, state)  # pragma: no cover
 	if base_mnemonic in ("add", "adds", "sub", "subs"):
@@ -1106,8 +1194,8 @@ def _apply_arm(context: _Context, instruction: CsInsn, state: State) -> State:
 def _advance_post_index(context: _Context, state: State, operand: CsOperand, delta: int) -> State:
 	base = operand.mem.base
 	if base == arm_const.ARM_REG_SP:
-		return _set_offsets(state, base, _shift_offsets(state.sp_offsets.get(base), delta))
-	return _set_register(state, base, _shift_addresses(state.registers.get(base), delta))
+		return _set_offsets(state, base, _shift_offsets(_lookup(state.sp_offsets, base), delta))
+	return _set_register(state, base, _shift_addresses(_lookup(state.registers, base), delta))
 
 
 def _arm_shift_scale(operand: ArmCsOperand) -> int | None:
@@ -1143,8 +1231,8 @@ def _arm_arithmetic(
 			destination.reg,
 			_scaled_addresses(
 				context,
-				state.registers.get(register_operand.reg),
-				state.registers.get(value_operand.reg),
+				_lookup(state.registers, register_operand.reg),
+				_lookup(state.registers, value_operand.reg),
 				scale,
 				0,
 			),
@@ -1155,21 +1243,25 @@ def _arm_arithmetic(
 def _arm_shift_destination(state: State, destination: int, source: int, delta: int) -> State:
 	if destination == arm_const.ARM_REG_SP:
 		return _set_offsets(
-			state, destination, _shift_offsets(state.sp_offsets.get(destination), delta)
+			state, destination, _shift_offsets(_lookup(state.sp_offsets, destination), delta)
 		)
 	if source == arm_const.ARM_REG_SP:
-		return _set_offsets(state, destination, _shift_offsets(state.sp_offsets.get(source), delta))
-	return _set_register(state, destination, _shift_addresses(state.registers.get(source), delta))
+		return _set_offsets(
+			state, destination, _shift_offsets(_lookup(state.sp_offsets, source), delta)
+		)
+	return _set_register(
+		state, destination, _shift_addresses(_lookup(state.registers, source), delta)
+	)
 
 
 def _arm_push(instruction: CsInsn, state: State) -> State:
 	operands = _arm_operands(instruction)
 	registers = tuple(operand.reg for operand in operands if operand.reg != arm_const.ARM_REG_SP)
-	offsets = _shift_offsets(state.sp_offsets.get(arm_const.ARM_REG_SP), -4 * len(registers))
+	offsets = _shift_offsets(_lookup(state.sp_offsets, arm_const.ARM_REG_SP), -4 * len(registers))
 	stack = state.stack
 	for index, register in enumerate(registers):
 		stack = _union_write(
-			stack, _shift_offsets(offsets, 4 * index), state.registers.get(register)
+			stack, _shift_offsets(offsets, 4 * index), _lookup(state.registers, register)
 		)
 	return State(
 		registers=state.registers,
@@ -1186,7 +1278,7 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 		for operand in operands
 		if operand.reg not in (arm_const.ARM_REG_SP, arm_const.ARM_REG_PC)
 	)
-	offsets = state.sp_offsets.get(arm_const.ARM_REG_SP)
+	offsets = _lookup(state.sp_offsets, arm_const.ARM_REG_SP)
 	registers_map = state.registers
 	for index, register in enumerate(registers):
 		registers_map = _put_value(
@@ -1204,7 +1296,7 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 
 class _FunctionResult(Struct):
 	sites: tuple[CallSite, ...]
-	writes: Mapping[int, frozenset[Address]]
+	writes: Mapping[Address, frozenset[Address]]
 	observations: tuple[_CallObservation, ...]
 
 
@@ -1215,7 +1307,7 @@ def _analyze_function(
 	in_states: dict[Address, State] = {entry: seed}
 	worklist = [entry]
 	by_start = {block.start: block for block in blocks}
-	writes: dict[int, frozenset[Address]] = {}
+	writes: dict[Address, frozenset[Address]] = {}
 	while worklist:
 		block = by_start[worklist.pop()]
 		incoming = in_states[block.start]
@@ -1268,13 +1360,13 @@ def _call_arguments(context: _Context, state: State, instruction: CsInsn) -> Map
 	machine = context.program.machine
 	if machine is Machine.EM_X86_64:
 		return {
-			position: state.registers.get(register)
+			position: _lookup(state.registers, register)
 			for position, register in enumerate(_X86_64_ARGUMENT_REGISTERS)
 		}
 	if machine is Machine.EM_386:
 		# at the call instruction the return address is not pushed yet, so
 		# the first argument sits at the top of the caller's stack
-		offsets = state.sp_offsets.get(_SP_REGISTERS[machine][0])
+		offsets = _lookup(state.sp_offsets, _SP_REGISTERS[machine][0])
 		return {
 			position: _stack_read(
 				state.stack, _shift_offsets(offsets, context.program.pointer_size * position)
@@ -1282,7 +1374,7 @@ def _call_arguments(context: _Context, state: State, instruction: CsInsn) -> Map
 			for position in range(_EM_386_STACK_ARGUMENTS)
 		}
 	return {
-		position: state.registers.get(register)
+		position: _lookup(state.registers, register)
 		for position, register in enumerate(_ARM_ARGUMENT_REGISTERS)
 	}
 
@@ -1292,9 +1384,11 @@ def _site_operand_addresses(
 ) -> ValueSet:
 	memory = operand.mem
 	if memory.base == x86_const.X86_REG_RIP:
-		return frozenset({Address(instruction.address + instruction.size + memory.disp)})
+		return Known(
+			values=frozenset({Address(instruction.address + instruction.size + memory.disp)})
+		)
 	if memory.base in _SP_REGISTERS[context.program.machine] or memory.base in state.sp_offsets:
-		return None
+		return Top()
 	return _memory_addresses(context, state, memory)
 
 
@@ -1314,20 +1408,36 @@ def _site_resolution(
 		)
 	kind, operand = site_operand
 	if kind == "register":
-		value = state.registers.get(operand.reg)
+		value = _lookup(state.registers, operand.reg)
 		return CallSite(
 			caller_address=caller_address,
 			site_address=Address(instruction.address),
-			slot=Address(next(iter(value))) if value is not None and len(value) == 1 else None,
-			candidates=frozenset() if value is None else value,
+			slot=_single(value),
+			candidates=_candidates(value),
 		)
-	addresses = _site_operand_addresses(context, state, instruction, operand)
-	value = _load_value(context, state, instruction, operand)
 	return CallSite(
 		caller_address=caller_address,
 		site_address=Address(instruction.address),
-		slot=Address(next(iter(addresses)))
-		if addresses is not None and len(addresses) == 1
-		else None,
-		candidates=frozenset() if value is None else value,
+		slot=_single(_site_operand_addresses(context, state, instruction, operand)),
+		candidates=_candidates(_load_value(context, state, instruction, operand)),
 	)
+
+
+def _single(value: ValueSet) -> Address | None:
+	match value:
+		case Top():
+			return None
+		case Known(values=values):
+			return next(iter(values)) if len(values) == 1 else None
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _candidates(value: ValueSet) -> frozenset[Address]:
+	match value:
+		case Top():
+			return frozenset()
+		case Known(values=values):
+			return values
+		case _ as unreachable:
+			assert_never(unreachable)
