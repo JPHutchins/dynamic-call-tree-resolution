@@ -73,11 +73,13 @@ def expand_indirect_calls(
 	"""Replace GCC ``__indirect_call`` placeholders with resolved targets.
 
 	Each caller's placeholders expand to the union of the candidates of the
-	call sites extracted from that caller's code and ``fallback`` (the union
-	of all resolved targets): per-caller candidates refine on top of the
+	call sites extracted from that caller's code and ``fallback`` (every
+	address-taken function): per-caller candidates refine on top of the
 	fallback, never replace it, so sites the extractor missed cannot vanish
-	from the bound. With ``exact`` the fallback union is dropped, trusting
-	the per-caller candidates alone. A placeholder left with no targets
+	from the bound. With ``exact`` the fallback is not added on top, so
+	a caller's placeholders expand to its per-caller candidates alone;
+	those still hold the fallback for its unresolved sites. A placeholder
+	left with no targets
 	stays, so its caller's entries report it as unresolved.
 
 	With ``exact``, candidate names are also translated to every raw ``.ci``
@@ -304,7 +306,9 @@ def _rooted_depths(
 	"""
 	members = frozenset(component)
 	return {
-		root: _forward_depth(_preorder(root, members, adjacency), members, adjacency, frame_by_name, memo)
+		root: _forward_depth(
+			_preorder(root, members, adjacency), members, adjacency, frame_by_name, memo
+		)
 		for root in component
 	}
 

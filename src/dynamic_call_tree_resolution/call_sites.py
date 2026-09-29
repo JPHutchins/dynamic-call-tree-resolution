@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from dynamic_call_tree_resolution.model import Address, FunctionSignature
 from dynamic_call_tree_resolution.points_to import pointer_at, signatures_by_slot, unresolved_slots
 from dynamic_call_tree_resolution.stack_analysis import frame_key
-from dynamic_call_tree_resolution.vsa import analyze
+from dynamic_call_tree_resolution.vsa import address_taken, analyze
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -106,15 +106,14 @@ def per_caller_candidates(
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
 	"""Union, per caller, of each site's candidate target names, plus the fallback.
 
-	Unresolved sites contribute the fallback union of all resolved targets,
-	so a caller with an unresolved site is indistinguishable from a caller
-	with no extracted sites; both keep the expansion a sound upper bound.
+	The fallback is every address-taken function
+	(:func:`~dynamic_call_tree_resolution.vsa.address_taken`); an
+	unresolved site contributes all of it, so a caller with an unresolved
+	site is indistinguishable from a caller with no extracted sites.
 	"""
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
 	signatures = signatures_by_slot(unresolved_slots(program, resolved))
-	fallback_addresses = frozenset(
-		address for assignment in resolved for address in assignment.candidates
-	)
+	fallback_addresses = address_taken(program)
 
 	def caller_name(site: CallSite) -> str:
 		return frame_key(program.functions[site.caller_address].name)

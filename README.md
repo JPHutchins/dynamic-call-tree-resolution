@@ -32,7 +32,9 @@ with no target.
    refinements, not over-approximations.
 
 Stack depths combine the resulting call graph with GCC's
-`-fstack-usage`/`-fcallgraph-info` build artifacts.
+`-fstack-usage`/`-fcallgraph-info` build artifacts. Each indirect call also expands to
+the fallback: every function whose address the image stores, or a non-branch
+instruction computes.
 
 ## Usage
 
@@ -107,9 +109,9 @@ poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
 ```console
 $ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe
 resolved slots: 121 | indirect call sites: 100 | not in the image: 222
-shell_process: unbounded, at least 2028 bytes (recursion: 18, unmeasured: 43)
+cmd_can_send: unbounded, at least 3196 bytes (recursion: 100, unmeasured: 130)
 ...
-poll_state_thread: unbounded, at least 1012 bytes (recursion: 18, unmeasured: 36)
+poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 129)
 ...
 ```
 
@@ -117,9 +119,9 @@ poll_state_thread: unbounded, at least 1012 bytes (recursion: 18, unmeasured: 36
   exactly one, in the image as linked.
 - `compare` counts the indirect instructions it extracts; `stack --elf` counts the
   `__indirect_call` edges in the `.ci` files.
-- `stack --elf` expands every indirect edge to its site candidates plus the fallback
-  union of all resolved slot targets. `outs` has no candidates, so its edge is the
-  fallback alone.
+- `stack --elf` expands every indirect edge to its site candidates plus the fallback,
+  every address-taken function. `outs` has no candidates, so its edge is the fallback
+  alone.
 - An `unbounded` entry's number is only a lower bound. The counts name what breaks the
   bound anywhere in the entry's subtree:
   - `recursion`: functions on a cycle;
@@ -169,8 +171,9 @@ contradicts does not hold.
   control-flow graph has gaps ([#66]).
 - Signature narrowing compares DWARF signatures for equality, so a cast defeats it
   ([#62]).
-- The fallback for sites with no candidates is the union of data-slot targets; it
-  misses functions whose address appears only in code ([#62]).
+- The fallback holds every function address the image stores, or that one
+  instruction or a `movw`/`movt` pair computes. A function pointer built by other
+  arithmetic is missed ([#62]).
 - Code without `.ci` records (assembly, `native_sim` host code) is absent from the
   stack call graph ([#78]).
 

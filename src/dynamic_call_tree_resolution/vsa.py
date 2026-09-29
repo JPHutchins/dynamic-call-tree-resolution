@@ -33,6 +33,10 @@ from typing import TYPE_CHECKING, Final, Literal, cast
 from capstone import (
 	CS_ARCH_ARM,
 	CS_ARCH_X86,
+	CS_GRP_BRANCH_RELATIVE,
+	CS_GRP_CALL,
+	CS_GRP_JUMP,
+	CS_GRP_RET,
 	CS_MODE_32,
 	CS_MODE_64,
 	CS_MODE_THUMB,
@@ -42,11 +46,11 @@ from capstone import (
 )
 from salix import Struct
 
-from dynamic_call_tree_resolution.model import Address, CallSite, Machine, aligned
+from dynamic_call_tree_resolution.model import Address, CallSite, Machine, aligned, thumb_twin
 from dynamic_call_tree_resolution.points_to import memory_at, read_pointer
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterator, Mapping
 
 	from capstone import ArmCsOperand, CsInsn, CsMemOperand, CsOperand
 
@@ -336,6 +340,97 @@ def _blocks_by_function(
 		instructions = tuple(disassembler.disasm(code, start))
 		blocks[start] = (function, _build_blocks(instructions, program.machine))
 	return blocks
+
+
+def address_taken(program: Program) -> frozenset[Address]:
+	"""Every function whose address the image holds other than as a branch target.
+
+	The sound fallback targets of an indirect call: function addresses
+	stored at any byte offset of an allocated section (data, literal pools,
+	absolute immediates in x86 code), and those a non-branch instruction
+	computes: an immediate operand, a ``movw``/``movt`` pair, a
+	PC-relative ``adr`` or ``add``/``sub``, or a RIP-relative ``lea``.
+	"""
+	functions = frozenset(program.functions)
+	return frozenset(
+		address
+		for address in functions
+		if any(
+			address.to_bytes(program.pointer_size, program.byte_order) in data
+			for data in program.sections.values()
+		)
+	) | frozenset(Address(value) for value in _computed_addresses(program) if value in functions)
+
+
+def _computed_addresses(program: Program) -> Iterator[int]:
+	disassembler = Cs(*_DISASSEMBLERS[program.machine])
+	disassembler.detail = True
+	disassembler.skipdata = True
+	for function in program.functions.values():
+		start = _normalized(function.address, program.machine)
+		instructions = tuple(
+			instruction
+			for instruction in disassembler.disasm(memory_at(program, start, function.size), start)
+			if instruction.id != 0 and not any(instruction.group(group) for group in _BRANCH_GROUPS)
+		)
+		for index, instruction in enumerate(instructions):
+			yield from (
+				_arm_addresses(instruction, instructions[:index])
+				if program.machine is Machine.EM_ARM
+				else _x86_addresses(instruction)
+			)
+
+
+_BRANCH_GROUPS: Final = (CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_GRP_BRANCH_RELATIVE)
+
+
+def _arm_addresses(instruction: CsInsn, preceding: tuple[CsInsn, ...]) -> Iterator[int]:
+	"""Values an ARM instruction materializes; an ``adr`` target counts as its Thumb twin."""
+	operands = instruction.operands
+	yield from (operand.imm for operand in operands if operand.type == arm_const.ARM_OP_IMM)
+	match instruction.mnemonic.split(".")[0], operands:
+		case "adr", [_, offset]:
+			yield thumb_twin(Address(_aligned_pc(instruction) + offset.imm))
+		case (("add" | "addw"), [_, base, offset]) if base.reg == arm_const.ARM_REG_PC:
+			yield thumb_twin(Address(_aligned_pc(instruction) + offset.imm))
+		case (("sub" | "subw"), [_, base, offset]) if base.reg == arm_const.ARM_REG_PC:
+			yield thumb_twin(Address(_aligned_pc(instruction) - offset.imm))
+		case "movt", [destination, high]:
+			yield from _movt_addresses(high.imm, destination.reg, preceding)
+		case _:
+			pass
+
+
+def _aligned_pc(instruction: CsInsn) -> int:
+	"""The Thumb PC a PC-relative operand is based on: the instruction plus 4, word-aligned."""
+	return (instruction.address + 4) & ~3
+
+
+def _movt_addresses(high: int, register: int, preceding: tuple[CsInsn, ...]) -> Iterator[int]:
+	"""A ``movt`` over the nearest preceding ``movw`` to the same register."""
+	low = next(
+		(
+			earlier.operands[1].imm
+			for earlier in reversed(preceding)
+			if earlier.mnemonic.split(".")[0] == "movw" and earlier.operands[0].reg == register
+		),
+		None,
+	)
+	if low is not None:
+		yield (high << 16) | (low & 0xFFFF)
+
+
+def _x86_addresses(instruction: CsInsn) -> Iterator[int]:
+	"""Values an x86 instruction materializes: immediates and RIP-relative ``lea`` targets."""
+	for operand in instruction.operands:
+		if operand.type == x86_const.X86_OP_IMM:
+			yield operand.imm
+		if (
+			instruction.mnemonic == "lea"
+			and operand.type == x86_const.X86_OP_MEM
+			and operand.mem.base == x86_const.X86_REG_RIP
+		):
+			yield instruction.address + instruction.size + operand.mem.disp
 
 
 def _normalized(address: Address, machine: Machine) -> Address:

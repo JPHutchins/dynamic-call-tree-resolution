@@ -26,6 +26,7 @@ from dynamic_call_tree_resolution import (
 	matching_targets,
 	per_caller_candidates,
 )
+from dynamic_call_tree_resolution.vsa import address_taken
 from tests.programs import build_program
 
 ARM_FIXTURES = Path(__file__).parent / "fixtures"
@@ -716,11 +717,12 @@ def test_per_caller_candidates_unions_sites_with_fallback(fixture_elfs: dict[str
 	by_caller, fallback = per_caller_candidates(program, extract_call_sites(program), resolved)
 	assert set(by_caller) <= {function.name for function in program.functions.values()}
 	assert by_caller["main"] == fallback  # main's bss_cb site pulls in the fallback union
-	assert fallback == {
+	assert fallback == {program.functions[address].name for address in address_taken(program)}
+	assert {
 		program.functions[address].name
 		for assignment in resolved
 		for address in assignment.candidates
-	}
+	} < fallback
 
 
 def test_x86_loop_merges_conditional_paths_into_a_union() -> None:
@@ -1817,3 +1819,133 @@ def test_report_narrows_a_bss_site_to_its_slot_signature() -> None:
 	report = build_report(program, (), sites)
 	(site_report,) = report.call_sites
 	assert {candidate.name for candidate in site_report.candidates} == {"matching"}
+
+
+@pytest.mark.parametrize(
+	("machine", "code", "functions", "objects", "taken"),
+	[
+		pytest.param(
+			"EM_X86_64",
+			"c3",
+			(("caller", 0x1000, 1), ("target", 0x3000, 1)),
+			(("slot", 0x2000, (0x3000).to_bytes(8, "little")),),
+			{"target"},
+			id="x86-64 data slot",
+		),
+		pytest.param(
+			"EM_386",
+			"68 00 30 00 00",
+			(("caller", 0x1000, 5), ("target", 0x3000, 1)),
+			(),
+			{"target"},
+			id="x86 push imm32 stored in code",
+		),
+		pytest.param(
+			"EM_X86_64",
+			"bf 00 30 00 00",
+			(("caller", 0x1000, 5), ("target", 0x3000, 1)),
+			(),
+			{"target"},
+			id="x86-64 mov imm32",
+		),
+		pytest.param(
+			"EM_X86_64",
+			"48 8d 3d f9 1f 00 00",
+			(("caller", 0x1000, 7), ("target", 0x3000, 1)),
+			(),
+			{"target"},
+			id="x86-64 rip-relative lea",
+		),
+		pytest.param(
+			"EM_X86_64",
+			"e8 fb 1f 00 00",
+			(("caller", 0x1000, 5), ("target", 0x3000, 1)),
+			(),
+			set[str](),
+			id="x86-64 call target",
+		),
+		pytest.param(
+			"EM_ARM",
+			"40 f2 01 00 c0 f2 01 00",
+			(("caller", 0x1001, 8), ("target", 0x10001, 2)),
+			(),
+			{"target"},
+			id="thumb movw movt",
+		),
+		pytest.param(
+			"EM_ARM",
+			"c0 f2 01 00",
+			(("caller", 0x1001, 4), ("target", 0x10001, 2)),
+			(),
+			set[str](),
+			id="thumb movt alone",
+		),
+		pytest.param(
+			"EM_ARM",
+			"01 a0",
+			(("caller", 0x1001, 2), ("target", 0x1009, 2)),
+			(),
+			{"target"},
+			id="thumb adr",
+		),
+		pytest.param(
+			"EM_ARM",
+			"0f f2 04 00",
+			(("caller", 0x1001, 4), ("target", 0x1009, 2)),
+			(),
+			{"target"},
+			id="thumb addw pc",
+		),
+		pytest.param(
+			"EM_ARM",
+			"af f2 08 00",
+			(("caller", 0x1001, 4), ("target", 0xFFD, 2)),
+			(),
+			{"target"},
+			id="thumb subw pc",
+		),
+		pytest.param(
+			"EM_ARM",
+			"00 f0 fe ff",
+			(("caller", 0x1001, 4), ("target", 0x2001, 2)),
+			(),
+			set[str](),
+			id="thumb bl target",
+		),
+	],
+)
+def test_address_taken_finds_stored_and_computed_function_addresses(
+	machine: str,
+	code: str,
+	functions: tuple[tuple[str, int, int], ...],
+	objects: tuple[tuple[str, int, bytes], ...],
+	taken: set[str],
+) -> None:
+	program = _program(
+		machine,
+		bytes.fromhex(code),
+		functions=functions,
+		objects=objects,
+		pointer_size=8 if machine == "EM_X86_64" else 4,
+	)
+	assert {program.functions[address].name for address in address_taken(program)} == taken
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	"elf",
+	[
+		"hello_zephyr_qemu_cortex_m3.elf",
+		"sensor-two-impl/zephyr/zephyr.elf",
+		"counter-su/zephyr/zephyr.exe",
+	],
+)
+def test_every_function_a_site_candidate_names_is_address_taken(elf: str) -> None:
+	program = load(ARM_FIXTURES / elf)
+	taken = address_taken(program)
+	assert [
+		program.functions[address].name
+		for site in extract_call_sites(program)
+		for address in site.candidates
+		if address in program.functions and address not in taken
+	] == []

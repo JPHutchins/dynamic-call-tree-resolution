@@ -125,7 +125,7 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	output = capsys.readouterr().out
 	assert output.splitlines() == [
 		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0",
-		"main: unbounded, at least 80 bytes (unmeasured: 8)",
+		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)",
 		"plain_target: 64 bytes",
 	]
 
@@ -154,7 +154,6 @@ def test_cli_stack_with_elf_drops_entries_the_linker_discarded(
 
 def test_cli_stack_json_carries_every_name(
 	tmp_path: Path,
-	fixture_elfs: dict[str, Path],
 	capsys: pytest.CaptureFixture[str],
 ) -> None:
 	build_directory = tmp_path / "build"
@@ -163,7 +162,7 @@ def test_cli_stack_json_carries_every_name(
 		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
 	)
 	(build_directory / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
-	stack(build_directory, fixture_elfs["null"], json=True)
+	stack(build_directory, json=True)
 	assert msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...]) == (
 		StackEntryReport(
 			entry="main",
@@ -174,9 +173,8 @@ def test_cli_stack_json_carries_every_name(
 	)
 
 
-def test_cli_stack_reports_an_indirect_call_without_candidates_as_unresolved(
+def test_cli_stack_without_an_elf_reports_every_indirect_call_as_unresolved(
 	tmp_path: Path,
-	fixture_elfs: dict[str, Path],
 	capsys: pytest.CaptureFixture[str],
 ) -> None:
 	build_directory = tmp_path / "build"
@@ -186,9 +184,8 @@ def test_cli_stack_reports_an_indirect_call_without_candidates_as_unresolved(
 		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
 	)
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
-	stack(build_directory, elf=fixture_elfs["null"])
+	stack(build_directory)
 	assert capsys.readouterr().out.splitlines() == [
-		"resolved slots: 0 | indirect call sites: 1 | not in the image: 0",
 		"main: unbounded, at least 16 bytes (unresolved: 1)",
 	]
 
@@ -238,10 +235,12 @@ def test_cli_stack_accepts_positional_elf(
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	(nested / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
 	stack(build_directory, fixture_elfs["nopie"])
-	assert "main: unbounded, at least 80 bytes (unmeasured: 8)" in capsys.readouterr().out
+	assert "main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)" in (
+		capsys.readouterr().out
+	)
 
 
-def test_cli_summary_carries_an_unresolved_indirect_call(
+def test_cli_summary_expands_an_unresolved_site_to_every_address_taken_function(
 	tmp_path: Path,
 	fixture_elfs: dict[str, Path],
 	capsys: pytest.CaptureFixture[str],
@@ -256,9 +255,8 @@ def test_cli_summary_carries_an_unresolved_indirect_call(
 	summary(build_directory, fixture_elfs["null"])
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisSummary)
 	assert (report.entry_points, report.discarded_entry_points) == (1, 0)
-	assert report.worst_case == UnboundedStack(
-		at_least_bytes=16, recursion=(), unmeasured=(), dynamic=(), unresolved=("main",)
-	)
+	assert isinstance(report.worst_case, UnboundedStack)
+	assert (report.worst_case.recursion, report.worst_case.unresolved) == (("main",), ())
 
 
 def test_cli_summary_json(

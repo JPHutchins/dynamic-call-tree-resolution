@@ -133,7 +133,7 @@ def test_exact_expansion_joins_both_threads_in_the_i2c_emulator_cycle(
 	motion = exact_depths["motion_thread"].bound
 	assert isinstance(thermal, Unbounded)
 	assert isinstance(motion, Unbounded)
-	assert (thermal.at_least, motion.at_least) == (744, 736)
+	assert (thermal.at_least, motion.at_least) == (848, 824)
 	assert thermal.recursion == motion.recursion
 	assert {"thermal_thread", "motion_thread", "i2c_write_read", "i2c_emul_transfer"} <= (
 		thermal.recursion
