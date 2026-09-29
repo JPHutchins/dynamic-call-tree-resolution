@@ -1633,6 +1633,27 @@ def test_the_round_budget_exhausts_on_a_deep_chain() -> None:
 	assert site.candidates == frozenset()
 
 
+def test_x86_32_tail_jump_seeds_the_callee_from_the_arguments_above_the_return_address() -> None:
+	program = _multi_program(
+		"EM_386",
+		{
+			0x1000: bytes.fromhex("68 00 30 00 00e8 f6 00 00 00c3"),
+			0x1100: bytes.fromhex("e9 fb 00 00 00"),
+			0x1200: bytes.fromhex("5589 e58b 45 08ff d05dc3"),
+		},
+		functions=(
+			("main", 0x1000, 11),
+			("forwarder", 0x1100, 5),
+			("callee", 0x1200, 10),
+			("target", 0x3000, 1),
+		),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x1200
+	assert site.candidates == frozenset({Address(0x3000)})
+
+
 def test_x86_32_seed_is_top_where_any_caller_passes_top() -> None:
 	program = _multi_program(
 		"EM_386",

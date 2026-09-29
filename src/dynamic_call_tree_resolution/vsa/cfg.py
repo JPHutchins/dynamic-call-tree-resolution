@@ -123,7 +123,9 @@ def direct_transfer(
 	if branch is None:
 		return None
 	destination = normalized(Address(branch.target), machine)
-	return TailJump(target=destination) if destination in starts - {own_start} else None
+	return (
+		TailJump(target=destination) if destination in starts and destination != own_start else None
+	)
 
 
 def call_target(instruction: CsInsn, machine: Machine) -> int | None:
