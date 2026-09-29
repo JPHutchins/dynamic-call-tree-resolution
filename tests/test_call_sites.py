@@ -1368,6 +1368,21 @@ def test_arm_callee_is_seeded_from_the_caller_register_argument() -> None:
 	assert site.candidates == frozenset({Address(0x3000)})
 
 
+def test_arm_callee_known_only_by_its_thumb_symbol_is_seeded() -> None:
+	program = _multi_program(
+		"EM_ARM",
+		{
+			0x1000: bytes.fromhex("43 f2 01 0000 f0 fc ff"),
+			0x2000: bytes.fromhex("80 47"),
+		},
+		functions=(("caller", 0x1001, 8), ("callee", 0x2001, 2), ("target", 0x3001, 4)),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.caller_address == 0x2001
+	assert site.candidates == frozenset({Address(0x3001)})
+
+
 def test_seeds_propagate_along_a_call_chain() -> None:
 	program = _multi_program(
 		"EM_X86_64",

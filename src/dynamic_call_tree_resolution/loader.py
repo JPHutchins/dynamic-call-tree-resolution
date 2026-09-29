@@ -30,6 +30,7 @@ from dynamic_call_tree_resolution.model import (
 	StructPointerMember,
 	StructureLayout,
 	layout_key,
+	thumb_twin,
 )
 
 if TYPE_CHECKING:
@@ -87,11 +88,14 @@ def _load(stream: BinaryIO) -> Program:
 	raw_sections = _sections(elf)
 	relocations = _relocations(elf, raw_sections, pointer_size, byte_order)
 	sections = _relocated_sections(raw_sections, relocations, pointer_size, byte_order)
+	machine = Machine(elf.header["e_machine"])
 	return Program(
 		byte_order=byte_order,
 		pointer_size=pointer_size,
-		machine=Machine(elf.header["e_machine"]),
-		functions=_merge_functions(_functions_from_symtab(symtab), _functions_from_dwarf(dwarf)),
+		machine=machine,
+		functions=_merge_functions(
+			_functions_from_symtab(symtab), _functions_from_dwarf(dwarf), machine
+		),
 		objects=_merge_objects(
 			_objects_from_symtab(symtab),
 			_objects_from_dwarf(dwarf, pointer_size, byte_order),
@@ -180,21 +184,38 @@ def _functions_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, F
 
 
 def _merge_functions(
-	from_symtab: Mapping[Address, Function], from_dwarf: Mapping[Address, Function]
+	from_symtab: Mapping[Address, Function],
+	from_dwarf: Mapping[Address, Function],
+	machine: Machine,
 ) -> dict[Address, Function]:
-	"""DWARF's functions over the symbol table's, each keeping its symbol's name."""
+	"""DWARF's functions over the symbol table's, each at its symbol's address and name."""
 	return {
 		**from_symtab,
 		**{
-			address: Function(
-				name=from_symtab[address].name if address in from_symtab else function.name,
-				address=address,
-				size=function.size,
-				signature=function.signature,
+			merged.address: merged
+			for merged in (
+				_at_symbol(function, from_symtab, machine) for function in from_dwarf.values()
 			)
-			for address, function in from_dwarf.items()
 		},
 	}
+
+
+def _at_symbol(
+	function: Function, from_symtab: Mapping[Address, Function], machine: Machine
+) -> Function:
+	"""A DWARF function moved onto its symbol: a Thumb symbol sits at the odd twin address."""
+	address = (
+		thumb_twin(function.address)
+		if machine is Machine.EM_ARM and thumb_twin(function.address) in from_symtab
+		else function.address
+	)
+	symbol = from_symtab.get(address)
+	return Function(
+		name=symbol.name if symbol is not None else function.name,
+		address=address,
+		size=function.size,
+		signature=function.signature,
+	)
 
 
 def _symbol_size(symbol: Symbol) -> int:
