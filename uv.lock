@@ -569,7 +569,7 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=5.0.0" },
     { name = "msgspec", specifier = ">=0.21.1" },
     { name = "pyelftools", specifier = ">=0.33" },
-    { name = "salix", git = "https://github.com/JPHutchins/salix" },
+    { name = "salix", git = "https://github.com/JPHutchins/salix?rev=21ded22dca2feb2af1ebefad69ea99c29b42507e" },
 ]
 
 [package.metadata.requires-dev]
@@ -1393,8 +1393,8 @@ wheels = [
 
 [[package]]
 name = "salix"
-version = "0.1.0"
-source = { git = "https://github.com/JPHutchins/salix#d2b43f1036dd2b853493c3836ca7130146b95aeb" }
+version = "0.1.0a1"
+source = { git = "https://github.com/JPHutchins/salix?rev=21ded22dca2feb2af1ebefad69ea99c29b42507e#21ded22dca2feb2af1ebefad69ea99c29b42507e" }
 
 [[package]]
 name = "semver"
