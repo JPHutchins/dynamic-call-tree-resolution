@@ -25,14 +25,21 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	capped,
 	indexed,
 	indexed_offsets,
+	join,
 	lookup,
 	shift_addresses,
 	shift_offsets,
 )
-from dynamic_call_tree_resolution.vsa.state import State, stack_read, union_write
+from dynamic_call_tree_resolution.vsa.state import (
+	State,
+	Writes,
+	stack_read,
+	store_global,
+	union_write,
+)
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable
 
 	from capstone import CsInsn, CsMemOperand, CsOperand
 
@@ -45,30 +52,25 @@ class Context(Struct):
 	program: Program
 	object_spans: tuple[tuple[int, int], ...]
 	object_starts: tuple[int, ...]
-	global_writes: Mapping[Address, frozenset[Address]]
+	section_spans: tuple[tuple[int, int], ...]
+	section_starts: tuple[int, ...]
+	read_only_spans: tuple[tuple[int, int], ...]
+	read_only_starts: tuple[int, ...]
+	global_writes: Writes
 	function_starts: frozenset[Address]
 
 
-def accumulate_writes(
-	current: Mapping[Address, frozenset[Address]],
-	written: list[Mapping[Address, frozenset[Address]]],
-) -> dict[Address, frozenset[Address]]:
-	accumulated = dict(current)
-	for function_writes in written:
-		for address, values in function_writes.items():
-			existing = accumulated.get(address)
-			if existing is None:
-				accumulated[address] = values
-				continue
-			combined = existing | values
-			if len(combined) > K_BOUND:
-				accumulated.pop(address, None)
-			else:
-				accumulated[address] = combined
-	return accumulated
+def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
+	values = dict(current.values)
+	wild = current.wild
+	for writes in written:
+		wild = wild or writes.wild
+		for address, value in writes.values.items():
+			values[address] = join(values[address], value) if address in values else value
+	return Writes(values=values, wild=wild)
 
 
-def context_for(program: Program, global_writes: Mapping[Address, frozenset[Address]]) -> Context:
+def context_for(program: Program, global_writes: Writes) -> Context:
 	spans = tuple(
 		sorted(
 			(object_.address, object_.address + object_.size)
@@ -76,10 +78,21 @@ def context_for(program: Program, global_writes: Mapping[Address, frozenset[Addr
 			if object_.size > 0
 		)
 	)
+	sections = tuple(
+		sorted(
+			(start, start + len(section.data), section.writable)
+			for start, section in program.sections.items()
+		)
+	)
+	read_only = tuple((start, end) for start, end, writable in sections if not writable)
 	return Context(
 		program=program,
 		object_spans=spans,
 		object_starts=tuple(span[0] for span in spans),
+		section_spans=tuple((start, end) for start, end, _ in sections),
+		section_starts=tuple(start for start, _, _ in sections),
+		read_only_spans=read_only,
+		read_only_starts=tuple(span[0] for span in read_only),
 		global_writes=global_writes,
 		function_starts=frozenset(
 			normalized(function.address, program.machine) for function in program.functions.values()
@@ -95,20 +108,24 @@ def _span_at(context: Context, address: Address) -> tuple[int, int] | None:
 	return span if span[0] <= address < span[1] else None
 
 
+def _read_only(context: Context, address: Address) -> bool:
+	index = bisect_right(context.read_only_starts, address) - 1
+	return index >= 0 and address < context.read_only_spans[index][1]
+
+
 def _pointer_value(context: Context, address: Address) -> Address | None:
 	span = _span_at(context, address)
 	return read_pointer(context.program, address, span[1] if span is not None else None)
 
 
-def _object_slots(context: Context, start: Address, stride: int) -> ValueSet:
-	span = _span_at(context, start)
-	if span is None or stride <= 0:
+def _section_slots(context: Context, start: Address, stride: int) -> ValueSet:
+	index = bisect_right(context.section_starts, start) - 1
+	if index < 0 or stride <= 0 or _span_at(context, start) is None:
 		return Top()
-	_, object_end = span
-	count = (object_end - start) // stride
-	if count <= 0:
+	count = (context.section_spans[index][1] - start) // stride
+	if not 0 < count <= K_BOUND:
 		return Top()
-	return Known(values=frozenset(Address(start + index * stride) for index in range(count)))
+	return Known(values=frozenset(Address(start + offset * stride) for offset in range(count)))
 
 
 def _image_value(context: Context, state: State, addresses: ValueSet) -> ValueSet:
@@ -118,11 +135,23 @@ def _image_value(context: Context, state: State, addresses: ValueSet) -> ValueSe
 def _image_read(context: Context, state: State, addresses: frozenset[Address]) -> ValueSet:
 	values: set[Address] = set()
 	for address in addresses:
-		written = state.globals.get(address)
-		if written is None:
-			written = context.global_writes.get(address)
-		if written is not None:
-			values.update(written)
+		local = state.globals.values.get(address)
+		written = local if local is not None else context.global_writes.values.get(address)
+		match written:
+			case Top():
+				return Top()
+			case Known(values=known):
+				values.update(known)
+			case None:
+				pass
+			case _ as unreachable:
+				assert_never(unreachable)
+		if (
+			local is None
+			and (state.globals.wild or context.global_writes.wild)
+			and not _read_only(context, address)
+		):
+			return Top()
 		value = _pointer_value(context, address)
 		if value is not None:
 			values.add(value)
@@ -152,7 +181,7 @@ def scaled_addresses(
 			return bind(
 				base,
 				lambda bases: (
-					_object_slots(context, Address(next(iter(bases)) + disp), scale)
+					_section_slots(context, Address(next(iter(bases)) + disp), scale)
 					if len(bases) == 1
 					else Top()
 				),
@@ -212,7 +241,7 @@ def store_value(
 			registers=state.registers,
 			sp_offsets=state.sp_offsets,
 			stack=state.stack,
-			globals=union_write(state.globals, addresses, value),
+			globals=store_global(state.globals, addresses, value),
 		)
 	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
 		return State(
@@ -226,7 +255,7 @@ def store_value(
 		registers=state.registers,
 		sp_offsets=state.sp_offsets,
 		stack=state.stack,
-		globals=union_write(state.globals, addresses, value),
+		globals=store_global(state.globals, addresses, value),
 	)
 
 

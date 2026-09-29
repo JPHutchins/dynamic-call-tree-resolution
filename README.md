@@ -55,10 +55,10 @@ _thread_dummy.base.timeout.fn: <unresolved>
 ...
 _stdout_hook: <unresolved>
 ...
-char_out@0x118: console_out, arch_printk_char_out
+char_out@0x118: <unresolved>
 ...
 _isr_wrapper@0x884: z_irq_spurious
-z_impl_zephyr_fputc@0x8a6: console_out
+z_impl_zephyr_fputc@0x8a6: <unresolved>
 ...
 console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
@@ -74,6 +74,10 @@ do_device_init@0x1dca: <unresolved>
   above), constant `NULL` members (`uart_stellaris_driver_api.configure`), and union
   arms that are not function pointers; they are listed with member paths for manual
   review.
+- `char_out@0x118` and `z_impl_zephyr_fputc@0x8a6` call through `_char_out`, a function
+  pointer in RAM. The image has stores whose address the analysis cannot compute, so any
+  writable slot may hold anything: `analyze` reports these sites unresolved, and
+  `stack --elf` expands them to every address-taken function.
 - `console_out@0x956` and `console_out@0x960` are indirect call sites (`blx r3`) whose
   value-set analysis through the `device->api` chain yields one candidate.
 - `_isr_wrapper@0x884` resolves to `z_irq_spurious` through the indexed load over
@@ -87,7 +91,7 @@ The Zephyr CAN counter sample for `native_sim` (an x86 host executable), with it
 ```console
 $ dctr compare tests/fixtures/counter-su/zephyr/zephyr.exe
 elf                                            machine    functions slots r/u/t  sites r/e/t
-zephyr.exe                                     EM_386           734 121/113/234     21/17/98
+zephyr.exe                                     EM_386           734 121/113/234     13/11/98
 ```
 
 ```console
@@ -167,6 +171,9 @@ contradicts does not hold.
   their initializer, which runtime code may replace ([#67]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
+- A store whose address the analysis cannot compute makes every writable address
+  unknown, so a site that reads its target from RAM is unresolved unless its own path
+  wrote that target.
 - Value-set analysis per-site sets are refinements, not over-approximations: the
   analysis drops unknown values and does not model every write ([#61]), and its
   control-flow graph has gaps ([#66]).

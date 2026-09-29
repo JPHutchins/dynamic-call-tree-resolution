@@ -29,7 +29,7 @@ from dynamic_call_tree_resolution.vsa.interpret import (
 )
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from dynamic_call_tree_resolution.vsa.memory import Context, accumulate_writes, context_for
-from dynamic_call_tree_resolution.vsa.state import State, join_states, top_seed
+from dynamic_call_tree_resolution.vsa.state import NO_WRITES, State, Writes, join_states, top_seed
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
@@ -37,8 +37,6 @@ if TYPE_CHECKING:
 	from capstone import ArmCsOperand
 
 	from dynamic_call_tree_resolution.model import Function, Program
-
-_GLOBAL_ROUNDS: Final = 3
 
 _WIDENING_ROUND: Final = 8
 
@@ -53,15 +51,14 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 	top = top_seed(program.machine)
 	roots = dict.fromkeys(_roots(program, functions), top)
 	seeds: Mapping[Address, State] = roots
-	global_writes: dict[Address, frozenset[Address]] = {}
-	stable_write_rounds = 0
+	global_writes = NO_WRITES
 	round_number = 0
 	with ThreadPoolExecutor() as executor:
 		while True:
 			round_number += 1
 			context = context_for(program, global_writes)
 			observations: list[CallObservation] = []
-			written: list[Mapping[Address, frozenset[Address]]] = []
+			written: list[Writes] = []
 			for result in executor.map(
 				partial(_round_analysis, program, context, seeds),
 				_reached(functions, seeds, program.machine),
@@ -73,17 +70,15 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 				**(observed if round_number < _WIDENING_ROUND else _widened(seeds, observed, top)),
 				**roots,
 			}
-			next_writes = accumulate_writes(global_writes, written)
+			accumulated = accumulate_writes(global_writes, written)
+			next_writes = (
+				accumulated
+				if round_number < _WIDENING_ROUND
+				else _widened_writes(global_writes, accumulated)
+			)
 			if next_seeds == seeds and next_writes == global_writes:
 				break
-			seeds_changed = next_seeds != seeds
 			seeds, global_writes = next_seeds, next_writes
-			if seeds_changed:
-				stable_write_rounds = 0
-			else:
-				stable_write_rounds += 1
-				if stable_write_rounds >= _GLOBAL_ROUNDS:
-					break
 		final_context = context_for(program, global_writes)
 		return tuple(
 			site
@@ -218,6 +213,18 @@ def _widened(
 	}
 
 
+def _widened_writes(previous: Writes, current: Writes) -> Writes:
+	return Writes(
+		values={
+			address: value
+			if address not in previous.values or previous.values[address] == value
+			else Top()
+			for address, value in current.values.items()
+		},
+		wild=current.wild,
+	)
+
+
 def _round_analysis(
 	program: Program,
 	context: Context,
@@ -277,5 +284,5 @@ def _seed_from_observation(observation: CallObservation, program: Program) -> St
 		registers=registers,
 		sp_offsets={SP_REGISTERS[program.machine][0]: frozenset({0})},
 		stack=stack,
-		globals={},
+		globals=NO_WRITES,
 	)
