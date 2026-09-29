@@ -14,6 +14,7 @@ from dynamic_call_tree_resolution import (
 	AnalysisReport,
 	AnalysisSummary,
 	ComparisonReport,
+	StackEntryReport,
 	UnboundedStack,
 )
 from dynamic_call_tree_resolution.cli import analyze, compare, main, stack, summary
@@ -123,10 +124,54 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	stack(build_directory, elf=fixture_elfs["nopie"])
 	output = capsys.readouterr().out
 	assert output.splitlines() == [
-		"resolved slots: 11 | indirect call sites: 1",
+		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0",
 		"main: unbounded, at least 80 bytes (unmeasured: 8)",
 		"plain_target: 64 bytes",
 	]
+
+
+def test_cli_stack_with_elf_drops_entries_the_linker_discarded(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "plain_target" } }\n'
+	)
+	(build_directory / "main.c.su").write_text(
+		"main.c:1:1:main\t16\tstatic\n"
+		"main.c:2:1:plain_target\t64\tstatic\n"
+		"main.c:3:1:discarded_helper\t512\tstatic\n"
+	)
+	stack(build_directory, fixture_elfs["nopie"])
+	assert capsys.readouterr().out.splitlines() == [
+		"resolved slots: 11 | indirect call sites: 0 | not in the image: 1",
+		"main: 80 bytes",
+	]
+
+
+def test_cli_stack_json_carries_every_name(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(build_directory / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	stack(build_directory, fixture_elfs["null"], json=True)
+	assert msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...]) == (
+		StackEntryReport(
+			entry="main",
+			bound=UnboundedStack(
+				at_least_bytes=16, recursion=(), unmeasured=(), dynamic=(), unresolved=("main",)
+			),
+		),
+	)
 
 
 def test_cli_stack_reports_an_indirect_call_without_candidates_as_unresolved(
@@ -143,7 +188,7 @@ def test_cli_stack_reports_an_indirect_call_without_candidates_as_unresolved(
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	stack(build_directory, elf=fixture_elfs["null"])
 	assert capsys.readouterr().out.splitlines() == [
-		"resolved slots: 0 | indirect call sites: 1",
+		"resolved slots: 0 | indirect call sites: 1 | not in the image: 0",
 		"main: unbounded, at least 16 bytes (unresolved: 1)",
 	]
 
@@ -210,7 +255,7 @@ def test_cli_summary_carries_an_unresolved_indirect_call(
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	summary(build_directory, fixture_elfs["null"])
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisSummary)
-	assert report.entry_points == 1
+	assert (report.entry_points, report.discarded_entry_points) == (1, 0)
 	assert report.worst_case == UnboundedStack(
 		at_least_bytes=16, recursion=(), unmeasured=(), dynamic=(), unresolved=("main",)
 	)

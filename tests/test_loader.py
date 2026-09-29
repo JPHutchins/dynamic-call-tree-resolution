@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import struct
+import subprocess
 from itertools import accumulate
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from dynamic_call_tree_resolution import (
 	StructPointerMember,
 	load,
 )
+from dynamic_call_tree_resolution.loader import defined_function_names
 
 
 def test_load_functions_from_dwarf_and_symtab(fixture_elfs: dict[str, Path]) -> None:
@@ -287,3 +289,23 @@ def test_load_arm_fixture_has_no_absolute_symbol_objects(elf: str) -> None:
 		for data_object in program.objects.values()
 		if data_object.name.startswith(("CONFIG_", "___"))
 	] == []
+
+
+def test_defined_function_names_include_locals_and_aliases() -> None:
+	names = defined_function_names(
+		Path(__file__).parent / "fixtures" / "sensor-two-impl" / "zephyr" / "zephyr.elf"
+	)
+	assert {"ready_thread", "z_sched_ready_locked", "memcpy", "vfprintf"} <= names
+	assert "__aeabi_uldivmod" not in names
+
+
+def test_defined_function_names_of_a_stripped_image_are_empty(
+	tmp_path: Path, fixture_elfs: dict[str, Path]
+) -> None:
+	stripped = tmp_path / "stripped.elf"
+	subprocess.run(
+		["strip", "--strip-all", "-o", str(stripped), str(fixture_elfs["nopie"])],
+		check=True,
+		capture_output=True,
+	)
+	assert defined_function_names(stripped) == frozenset()

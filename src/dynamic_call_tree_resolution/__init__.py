@@ -129,6 +129,9 @@ from dynamic_call_tree_resolution.report import (
 	SlotAssignmentReport as SlotAssignmentReport,
 )
 from dynamic_call_tree_resolution.report import (
+	StackEntryReport as StackEntryReport,
+)
+from dynamic_call_tree_resolution.report import (
 	UnboundedStack as UnboundedStack,
 )
 from dynamic_call_tree_resolution.report import (
