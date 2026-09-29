@@ -24,7 +24,12 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.arm import apply_arm
-from dynamic_call_tree_resolution.vsa.cfg import Block, call_target, indirect_operand
+from dynamic_call_tree_resolution.vsa.cfg import (
+	Block,
+	call_target,
+	indirect_operand,
+	is_returning_trap,
+)
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet, lookup, shift_offsets
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
@@ -66,7 +71,9 @@ def _transfer(context: Context, instruction: CsInsn, state: State) -> State:
 	machine = context.program.machine
 	if instruction.mnemonic == ".byte":
 		return state
-	if instruction.mnemonic in (X86_CALLS if machine.is_x86 else ARM_CALLS):
+	if instruction.mnemonic in (X86_CALLS if machine.is_x86 else ARM_CALLS) or is_returning_trap(
+		instruction, machine
+	):
 		return _clobber_caller_saved(state, machine)
 	if instruction.mnemonic in ("loop", "loope", "loopne"):
 		return top_registers(

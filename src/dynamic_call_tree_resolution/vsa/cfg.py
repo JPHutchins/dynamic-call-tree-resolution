@@ -15,8 +15,10 @@ from dynamic_call_tree_resolution.points_to import memory_at
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
 	ARM_CONDITIONAL,
+	ARM_RETURNING_TRAPS,
 	ARM_TRANSFERS,
 	X86_CALLS,
+	X86_RETURNING_TRAPS,
 	X86_TRANSFERS,
 )
 
@@ -161,8 +163,18 @@ def _successors(
 			and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
 		):
 			return fallthrough
+		if is_returning_trap(instruction, machine):
+			return fallthrough
 		return ()
 	raise AssertionError  # every block-ending instruction matches an arm above
+
+
+def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
+	return (
+		instruction.mnemonic in X86_RETURNING_TRAPS
+		if machine.is_x86
+		else instruction.mnemonic.split(".")[0] in ARM_RETURNING_TRAPS
+	)
 
 
 def _block_ends(instruction: CsInsn, machine: Machine) -> bool:
