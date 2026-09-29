@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -30,6 +31,9 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.vsa import address_taken
 from tests.programs import build_program
+
+if TYPE_CHECKING:
+	from collections.abc import Mapping
 
 ARM_FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -808,6 +812,48 @@ def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
 	assert site.candidates == frozenset()
 
 
+def _two_entry_table(objects: Mapping[Address, DataObject]) -> Program:
+	return Program(
+		byte_order="little",
+		pointer_size=8,
+		machine=Machine.EM_X86_64,
+		functions={
+			Address(0x1000): Function(
+				name="caller", address=Address(0x1000), size=13, signature=None
+			),
+		},
+		objects=objects,
+		layouts={},
+		relocations=(),
+		sections={
+			Address(0x1000): Section(
+				data=bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0"), writable=False
+			),
+			Address(0x2000): Section(
+				data=_pointer(0x3000, 8) + _pointer(0x4000, 8), writable=False
+			),
+		},
+	)
+
+
+def test_x86_top_index_ranges_over_the_enclosing_section() -> None:
+	program = _two_entry_table(
+		{
+			Address(address): DataObject(
+				name=name, address=Address(address), size=8, type_name=None, signature=None
+			)
+			for name, address in (("first_entry", 0x2000), ("second_entry", 0x2008))
+		}
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+
+
+def test_x86_top_index_into_a_section_without_an_enclosing_object_is_unresolved() -> None:
+	(site,) = extract_call_sites(_two_entry_table({}))
+	assert site.candidates == frozenset()
+
+
 def test_x86_bss_slot_read_is_unknown() -> None:
 	program = Program(
 		byte_order="little",
@@ -962,6 +1008,17 @@ def test_x86_indexed_stack_read_with_a_top_index_is_unresolved() -> None:
 		"EM_X86_64",
 		code,
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()
+
+
+def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
+	code = bytes.fromhex("48 c7 c3 00 30 00 0048 89 5c 24 0848 89 04 cc48 8b 44 24 08ff d0")
+	program = _program(
+		"EM_X86_64",
+		code,
+		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset()
