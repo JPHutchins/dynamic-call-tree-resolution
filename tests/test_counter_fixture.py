@@ -17,7 +17,7 @@ from pathlib import Path
 
 import msgspec
 
-from dynamic_call_tree_resolution import AnalysisSummary, load
+from dynamic_call_tree_resolution import AnalysisSummary, UnboundedStack, load
 
 ARTIFACTS = Path(__file__).parent / "fixtures" / "counter-su"
 EXECUTABLE = ARTIFACTS / "zephyr" / "zephyr.exe"
@@ -46,9 +46,17 @@ def test_summary_pins_the_published_numbers() -> None:
 		indirect_call_sites=100,
 		total_functions=734,
 		entry_points=368,
-		worst_case_bytes=2108,
 		worst_case_entry="shell_readline",
+		worst_case=summary.worst_case,
 	)
+	assert isinstance(summary.worst_case, UnboundedStack)
+	assert (
+		summary.worst_case.at_least_bytes,
+		len(summary.worst_case.recursion),
+		len(summary.worst_case.unmeasured),
+		summary.worst_case.dynamic,
+		summary.worst_case.unresolved,
+	) == (2108, 18, 45, (), ())
 
 
 def test_the_worst_case_entry_is_not_in_the_linked_executable() -> None:

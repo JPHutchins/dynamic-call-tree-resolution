@@ -108,6 +108,9 @@ from dynamic_call_tree_resolution.report import (
 	AnalysisSummary as AnalysisSummary,
 )
 from dynamic_call_tree_resolution.report import (
+	BoundedStack as BoundedStack,
+)
+from dynamic_call_tree_resolution.report import (
 	CallSiteReport as CallSiteReport,
 )
 from dynamic_call_tree_resolution.report import (
@@ -126,6 +129,9 @@ from dynamic_call_tree_resolution.report import (
 	SlotAssignmentReport as SlotAssignmentReport,
 )
 from dynamic_call_tree_resolution.report import (
+	UnboundedStack as UnboundedStack,
+)
+from dynamic_call_tree_resolution.report import (
 	UnresolvedSlotReport as UnresolvedSlotReport,
 )
 from dynamic_call_tree_resolution.report import (
@@ -135,7 +141,13 @@ from dynamic_call_tree_resolution.report import (
 	build_report as build_report,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
+	Bounded as Bounded,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
 	StackReport as StackReport,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	Unbounded as Unbounded,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
 	expand_indirect_calls as expand_indirect_calls,

@@ -18,7 +18,7 @@ class StackUsage(Struct):
 
 	function: str
 	bytes: int
-	dynamic: bool
+	bounded: bool
 
 
 def parse_stack_usage(path: Path) -> tuple[StackUsage, ...]:
@@ -29,12 +29,19 @@ def parse_stack_usage(path: Path) -> tuple[StackUsage, ...]:
 def parse_records(text: str) -> tuple[StackUsage, ...]:
 	"""Parse ``.su`` lines into records.
 
-	Record layout: ``file:line:column:function<TAB>bytes<TAB>qualifier``
-	where ``qualifier`` is ``static`` for fixed frames and ``dynamic`` for
-	frames using ``alloca`` or variable-length arrays.
+	Record layout: ``file:line:column:function<TAB>bytes<TAB>qualifier``.
+	The bytes bound a ``static`` or ``dynamic,bounded`` frame; a plain
+	``dynamic`` frame (``alloca`` or a variable-length array) can outgrow
+	them.
 
-	>>> parse_records("main.c:1:1:main" + chr(9) + "16" + chr(9) + "static" + chr(10) + "worker.c:2:1:worker" + chr(9) + "32" + chr(9) + "dynamic" + chr(10))
-	(StackUsage(function='main', bytes=16, dynamic=False), StackUsage(function='worker', bytes=32, dynamic=True))
+	>>> parse_records(
+	...     "main.c:1:1:main" + chr(9) + "16" + chr(9) + "static" + chr(10)
+	...     + "log.c:2:1:log" + chr(9) + "24" + chr(9) + "dynamic,bounded" + chr(10)
+	...     + "worker.c:3:1:worker" + chr(9) + "32" + chr(9) + "dynamic" + chr(10)
+	... )  # doctest: +NORMALIZE_WHITESPACE
+	(StackUsage(function='main', bytes=16, bounded=True),
+	 StackUsage(function='log', bytes=24, bounded=True),
+	 StackUsage(function='worker', bytes=32, bounded=False))
 	"""
 	return tuple(_parse_record(line) for line in text.splitlines() if line)
 
@@ -53,5 +60,20 @@ def _parse_record(line: str) -> StackUsage:
 	return StackUsage(
 		function=location.split(":", 3)[3],
 		bytes=int(byte_count),
-		dynamic=qualifier.startswith("dynamic"),
+		bounded=_bounded(qualifier),
 	)
+
+
+def _bounded(qualifier: str) -> bool:
+	"""Whether a ``.su`` qualifier's bytes bound the frame.
+
+	Raises:
+		ValueError: for a qualifier GCC does not emit.
+	"""
+	match qualifier:
+		case "static" | "dynamic,bounded":
+			return True
+		case "dynamic":
+			return False
+		case _:
+			raise ValueError(f"unknown .su qualifier {qualifier!r}")

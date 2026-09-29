@@ -4,7 +4,7 @@
 """JSON-serializable analysis reports."""
 
 from itertools import groupby
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 from msgspec import Struct
 from salix import Struct as SalixStruct
@@ -27,6 +27,7 @@ from dynamic_call_tree_resolution.pexplorer import (
 	dynamic_sites_by_caller,
 )
 from dynamic_call_tree_resolution.points_to import assignments, signatures_by_slot, unresolved_slots
+from dynamic_call_tree_resolution.stack_analysis import Bounded, Unbounded
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -114,6 +115,39 @@ class ComparisonReport(Struct):
 	function_comparisons: tuple[FunctionComparison, ...] = ()
 
 
+class BoundedStack(Struct, tag="bounded", tag_field="kind"):
+	"""A stack depth that bounds every path of the call graph."""
+
+	bytes: int
+
+
+class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
+	"""A stack depth that bounds only from below, with the functions breaking the bound."""
+
+	at_least_bytes: int
+	recursion: tuple[str, ...]
+	unmeasured: tuple[str, ...]
+	dynamic: tuple[str, ...]
+	unresolved: tuple[str, ...]
+
+
+def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
+	"""Render a stack bound with its function sets sorted."""
+	match bound:
+		case Bounded(bytes=depth):
+			return BoundedStack(bytes=depth)
+		case Unbounded():
+			return UnboundedStack(
+				at_least_bytes=bound.at_least,
+				recursion=tuple(sorted(bound.recursion)),
+				unmeasured=tuple(sorted(bound.unmeasured)),
+				dynamic=tuple(sorted(bound.dynamic)),
+				unresolved=tuple(sorted(bound.unresolved)),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 class AnalysisSummary(Struct):
 	"""Cross-cutting resolution and stack summary for CI reporting."""
 
@@ -124,8 +158,8 @@ class AnalysisSummary(Struct):
 	indirect_call_sites: int
 	total_functions: int
 	entry_points: int
-	worst_case_bytes: int
 	worst_case_entry: str
+	worst_case: BoundedStack | UnboundedStack
 
 
 class SlotCounts(SalixStruct):
