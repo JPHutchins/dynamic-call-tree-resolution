@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import struct
 import subprocess
+from collections import Counter
 from itertools import accumulate
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from dynamic_call_tree_resolution import (
 	load,
 )
 from dynamic_call_tree_resolution.loader import defined_function_names
+from dynamic_call_tree_resolution.model import aligned
 
 
 def test_load_functions_from_dwarf_and_symtab(fixture_elfs: dict[str, Path]) -> None:
@@ -309,3 +311,34 @@ def test_defined_function_names_of_a_stripped_image_are_empty(
 		capture_output=True,
 	)
 	assert defined_function_names(stripped) == frozenset()
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	"elf",
+	[
+		"hello_zephyr_qemu_cortex_m3.elf",
+		"sensor-two-impl/zephyr/zephyr.elf",
+		"counter-su/zephyr/zephyr.exe",
+	],
+)
+def test_committed_images_name_every_function_and_parameter(elf: str) -> None:
+	functions = load(Path(__file__).parent / "fixtures" / elf).functions.values()
+	assert [function.address for function in functions if function.name == "<anonymous>"] == []
+	assert [
+		function.name
+		for function in functions
+		if function.signature is not None and "<unknown>" in function.signature.parameters
+	] == []
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	"elf", ["hello_zephyr_qemu_cortex_m3.elf", "sensor-two-impl/zephyr/zephyr.elf"]
+)
+def test_committed_arm_images_hold_one_function_per_entry_point(elf: str) -> None:
+	entry_points = Counter(
+		aligned(function.address)
+		for function in load(Path(__file__).parent / "fixtures" / elf).functions.values()
+	)
+	assert [address for address, count in entry_points.items() if count > 1] == []

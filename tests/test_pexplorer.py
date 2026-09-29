@@ -159,23 +159,6 @@ def _arm_slot_program(caller_name: str) -> Program:
 	)
 
 
-def test_anonymous_rows_fall_back_to_the_pexplorer_name() -> None:
-	program = _arm_slot_program("<anonymous>")
-	report = PexplorerReport(
-		functions=(
-			PexplorerFunction(
-				name="pex_name",
-				address=0x1001,
-				callees=(PexplorerCallee(call_from=0x1001, dynamic=True),),
-			),
-		)
-	)
-	comparison = build_comparison("anon.elf", program, report)
-	rows = {row.caller: row for row in comparison.function_comparisons}
-	assert "pex_name" in rows
-	assert rows["pex_name"].address == 0x1000
-
-
 def test_comparison_resolves_thumb_bit_only_callers() -> None:
 	program = _arm_slot_program("thumb_caller")
 	comparison = build_comparison("thumb.elf", program)

@@ -30,6 +30,7 @@ from dynamic_call_tree_resolution.model import (
 	StructPointerMember,
 	StructureLayout,
 	layout_key,
+	thumb_twin,
 )
 
 if TYPE_CHECKING:
@@ -87,11 +88,14 @@ def _load(stream: BinaryIO) -> Program:
 	raw_sections = _sections(elf)
 	relocations = _relocations(elf, raw_sections, pointer_size, byte_order)
 	sections = _relocated_sections(raw_sections, relocations, pointer_size, byte_order)
+	machine = Machine(elf.header["e_machine"])
 	return Program(
 		byte_order=byte_order,
 		pointer_size=pointer_size,
-		machine=Machine(elf.header["e_machine"]),
-		functions={**_functions_from_symtab(symtab), **_functions_from_dwarf(dwarf)},
+		machine=machine,
+		functions=_merge_functions(
+			_functions_from_symtab(symtab), _functions_from_dwarf(dwarf), machine
+		),
 		objects=_merge_objects(
 			_objects_from_symtab(symtab),
 			_objects_from_dwarf(dwarf, pointer_size, byte_order),
@@ -179,6 +183,41 @@ def _functions_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, F
 	}
 
 
+def _merge_functions(
+	from_symtab: Mapping[Address, Function],
+	from_dwarf: Mapping[Address, Function],
+	machine: Machine,
+) -> dict[Address, Function]:
+	"""DWARF's functions over the symbol table's, each at its symbol's address and name."""
+	return {
+		**from_symtab,
+		**{
+			merged.address: merged
+			for merged in (
+				_at_symbol(function, from_symtab, machine) for function in from_dwarf.values()
+			)
+		},
+	}
+
+
+def _at_symbol(
+	function: Function, from_symtab: Mapping[Address, Function], machine: Machine
+) -> Function:
+	"""A DWARF function moved onto its symbol: a Thumb symbol sits at the odd twin address."""
+	address = (
+		thumb_twin(function.address)
+		if machine is Machine.EM_ARM and thumb_twin(function.address) in from_symtab
+		else function.address
+	)
+	symbol = from_symtab.get(address)
+	return Function(
+		name=symbol.name if symbol is not None else function.name,
+		address=address,
+		size=function.size,
+		signature=function.signature,
+	)
+
+
 def _symbol_size(symbol: Symbol) -> int:
 	return symbol["st_size"]
 
@@ -191,7 +230,7 @@ def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 			name=_die_name(die),
 			address=address,
 			size=_subprogram_size(die),
-			signature=_signature(die),
+			signature=_signature(_declaration(die)),
 		)
 		for compilation_unit in dwarf.iter_CUs()
 		for die in _iter_dies(compilation_unit.get_top_DIE())
@@ -620,7 +659,26 @@ def _die_name(die: DIE) -> str:
 		attribute = die.attributes.get(attribute_name)
 		if attribute is not None:
 			return _string_value(attribute)
-	return ANONYMOUS
+	origin = _origin(die)
+	return ANONYMOUS if origin is None else _die_name(origin)
+
+
+def _origin(die: DIE) -> DIE | None:
+	"""The DIE an out-of-line instance, clone, or definition refers back to."""
+	return next(
+		(
+			die.get_DIE_from_attribute(attribute_name)
+			for attribute_name in ("DW_AT_abstract_origin", "DW_AT_specification")
+			if attribute_name in die.attributes
+		),
+		None,
+	)
+
+
+def _declaration(die: DIE) -> DIE:
+	"""The end of ``die``'s origin chain, which carries the declared types."""
+	origin = _origin(die)
+	return die if origin is None else _declaration(origin)
 
 
 def _attr_string(value: str | bytes) -> str:

@@ -193,6 +193,7 @@ class _Context(Struct):
 	object_spans: tuple[tuple[int, int], ...]
 	object_starts: tuple[int, ...]
 	global_writes: Mapping[int, frozenset[Address]]
+	function_starts: frozenset[Address]
 
 
 def analyze(program: Program) -> tuple[CallSite, ...]:
@@ -407,6 +408,10 @@ def _context_for(program: Program, global_writes: Mapping[int, frozenset[Address
 		object_spans=spans,
 		object_starts=tuple(span[0] for span in spans),
 		global_writes=global_writes,
+		function_starts=frozenset(
+			_normalized(function.address, program.machine)
+			for function in program.functions.values()
+		),
 	)
 
 
@@ -1304,10 +1309,8 @@ def _call_observation(context: _Context, block: _Block, state: State) -> _CallOb
 	target = _call_target(instruction, context.program.machine)
 	if target is None:
 		return None
-	callee = (
-		aligned(Address(target)) if context.program.machine is Machine.EM_ARM else Address(target)
-	)
-	if callee not in context.program.functions:
+	callee = _normalized(Address(target), context.program.machine)
+	if callee not in context.function_starts:
 		return None
 	return _CallObservation(callee=callee, arguments=_call_arguments(context, state, instruction))
 

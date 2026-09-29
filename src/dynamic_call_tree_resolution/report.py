@@ -11,7 +11,6 @@ from salix import Struct as SalixStruct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, extract_call_sites
 from dynamic_call_tree_resolution.model import (
-	ANONYMOUS,
 	Address,
 	FunctionSignature,
 	Machine,
@@ -293,7 +292,7 @@ def build_comparison(
 	rows = [
 		FunctionComparison(
 			address=caller_address,
-			caller=_row_name(program, caller_address, dynamic_by_caller),
+			caller=_caller_name(program, caller_address),
 			pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total
 			if caller_address in dynamic_by_caller
 			else 0,
@@ -348,14 +347,3 @@ def _caller_name(program: Program, caller_address: Address) -> str:
 	if function is None:
 		raise ValueError(f"no function for caller address {caller_address:#x}")  # pragma: no cover
 	return function.name
-
-
-def _row_name(
-	program: Program,
-	caller_address: Address,
-	dynamic_by_caller: Mapping[Address, DynamicSites],
-) -> str:
-	name = _caller_name(program, caller_address)
-	if name == ANONYMOUS and caller_address in dynamic_by_caller:
-		return ", ".join(dynamic_by_caller[caller_address].names)
-	return name
