@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
@@ -367,8 +367,10 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 					offset=offset,
 					members=members,
 				)
-			case None:  # pragma: no branch
+			case None:
 				pass
+			case _ as unreachable:
+				assert_never(unreachable)
 
 
 def _member_name(member_die: DIE) -> str | None:
@@ -446,8 +448,10 @@ def _object_signature(die: DIE) -> FunctionSignature | None:
 	match _pointee_kind(type_die):
 		case _FunctionPointer(signature):
 			return signature
-		case _:
+		case _StructPointer() | None:
 			return None
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _location_address(die: DIE, pointer_size: int, byte_order: ByteOrder) -> Address | None:

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
@@ -190,7 +190,7 @@ def _member_assignments(
 						candidates=frozenset({target}),
 						provenance=Provenance.CONSTANT_DATA,
 					)
-			case StructPointerMember(offset=offset, pointee=pointee):  # pragma: no branch
+			case StructPointerMember(offset=offset, pointee=pointee):
 				target_object = _object_covering(
 					program,
 					pointer_at(program, Address(base_address + base_offset + offset)),
@@ -201,7 +201,7 @@ def _member_assignments(
 					or target_object.type_name == pointee
 				):
 					yield from _object_assignments(program, target_object, member_path, visited)
-			case EmbeddedStructMember(offset=offset, members=inner_members):  # pragma: no branch
+			case EmbeddedStructMember(offset=offset, members=inner_members):
 				yield from _member_assignments(
 					program,
 					base_address,
@@ -210,6 +210,8 @@ def _member_assignments(
 					member_path,
 					visited,
 				)
+			case _ as unreachable:
+				assert_never(unreachable)
 
 
 class _SlotUniverseEntry(Struct):
@@ -313,8 +315,10 @@ def _collect_member_slots(
 				_collect_member_slots(
 					data_object, base_offset + offset, inner_members, member_path, universe
 				)
-			case StructPointerMember():  # pragma: no branch
+			case StructPointerMember():
 				pass
+			case _ as unreachable:
+				assert_never(unreachable)
 
 
 def _slot_path(program: Program, address: Address) -> tuple[str | None, ...]:

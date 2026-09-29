@@ -163,6 +163,7 @@ strict = true
 warn_unused_ignores = true
 disallow_any_explicit = true
 disallow_any_expr = true
+enable_error_code = ["exhaustive-match"]
 mypy_path = "typings"
 exclude = ["tasks.py", "testbeds", "references", "typings", "build", "dist", ".camas"]
 
