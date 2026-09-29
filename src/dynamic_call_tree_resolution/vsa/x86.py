@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from capstone import (
-	x86_const,
-)
+from capstone import x86_const
 
 from dynamic_call_tree_resolution.model import Address, Machine
 from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, X86_MOVES

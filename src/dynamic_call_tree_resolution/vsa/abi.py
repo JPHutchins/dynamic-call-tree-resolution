@@ -29,13 +29,11 @@ DISASSEMBLERS: Final[Mapping[Machine, tuple[int, int]]] = {
 	Machine.EM_ARM: (CS_ARCH_ARM, CS_MODE_THUMB),
 }
 
-
 SP_REGISTERS: Final[Mapping[Machine, tuple[int, ...]]] = {
 	Machine.EM_X86_64: (x86_const.X86_REG_RSP, x86_const.X86_REG_RBP),
 	Machine.EM_386: (x86_const.X86_REG_ESP, x86_const.X86_REG_EBP),
 	Machine.EM_ARM: (arm_const.ARM_REG_SP,),
 }
-
 
 X86_TRANSFERS: Final = (
 	"call",
@@ -52,17 +50,9 @@ X86_TRANSFERS: Final = (
 	"ud2",
 	"hlt",
 )
-
-
 ARM_TRANSFERS: Final = ("bl", "blx", "bx", "b", "pop", "svc", "bkpt", "udf", "tbb", "tbh")
-
-
 X86_CALLS: Final = ("call",)
-
-
 ARM_CALLS: Final = ("bl", "blx")
-
-
 ARM_CONDITIONAL: Final = frozenset(
 	{
 		"beq",
@@ -85,8 +75,6 @@ ARM_CONDITIONAL: Final = frozenset(
 		"cbnz",
 	}
 )
-
-
 X86_CALLER_SAVED_64: Final = (
 	x86_const.X86_REG_RAX,
 	x86_const.X86_REG_RCX,
@@ -98,8 +86,6 @@ X86_CALLER_SAVED_64: Final = (
 	x86_const.X86_REG_R10,
 	x86_const.X86_REG_R11,
 )
-
-
 X86_CALLER_SAVED_32: Final = (
 	x86_const.X86_REG_EAX,
 	x86_const.X86_REG_ECX,
@@ -107,8 +93,6 @@ X86_CALLER_SAVED_32: Final = (
 	x86_const.X86_REG_ESI,
 	x86_const.X86_REG_EDI,
 )
-
-
 ARM_CALLER_SAVED: Final = (
 	arm_const.ARM_REG_R0,
 	arm_const.ARM_REG_R1,
@@ -117,17 +101,9 @@ ARM_CALLER_SAVED: Final = (
 	arm_const.ARM_REG_R12,
 	arm_const.ARM_REG_LR,
 )
-
-
 X86_MOVES: Final = ("mov", "movabs")
-
-
 ARM_LOADS: Final = ("ldr", "ldr.w", "ldr.n")
-
-
 ARM_MOVES: Final = ("mov", "movs", "mov.w")
-
-
 X86_64_ARGUMENT_REGISTERS: Final = (
 	x86_const.X86_REG_RDI,
 	x86_const.X86_REG_RSI,
@@ -136,16 +112,12 @@ X86_64_ARGUMENT_REGISTERS: Final = (
 	x86_const.X86_REG_R8,
 	x86_const.X86_REG_R9,
 )
-
-
 ARM_ARGUMENT_REGISTERS: Final = (
 	arm_const.ARM_REG_R0,
 	arm_const.ARM_REG_R1,
 	arm_const.ARM_REG_R2,
 	arm_const.ARM_REG_R3,
 )
-
-
 EM_386_STACK_ARGUMENTS: Final = 8
 
 

@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from capstone import (
-	arm_const,
-)
+from capstone import arm_const
 
 from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.vsa.abi import ARM_LOADS, ARM_MOVES

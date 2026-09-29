@@ -9,10 +9,7 @@ from bisect import bisect_right
 from functools import partial
 from typing import TYPE_CHECKING, assert_never
 
-from capstone import (
-	arm_const,
-	x86_const,
-)
+from capstone import arm_const, x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address

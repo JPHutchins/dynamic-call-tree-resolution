@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
-from capstone import (
-	x86_const,
-)
+from capstone import x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, CallSite, Machine

@@ -7,11 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from capstone import (
-	Cs,
-	arm_const,
-	x86_const,
-)
+from capstone import Cs, arm_const, x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, Machine, aligned

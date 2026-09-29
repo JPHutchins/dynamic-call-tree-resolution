@@ -9,9 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
-from capstone import (
-	Cs,
-)
+from capstone import Cs
 
 from dynamic_call_tree_resolution.model import Address, CallSite, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
@@ -39,7 +37,6 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import Function, Program
 
 _GLOBAL_ROUNDS: Final = 3
-
 
 _MAX_ROUNDS: Final = 8
 
