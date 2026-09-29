@@ -149,7 +149,7 @@ class Provenance(Enum):
 
 
 class SlotAssignment(Struct):
-	"""The static resolution of one function-pointer slot."""
+	"""The static resolution of one stored function pointer."""
 
 	slot: Address
 	path: tuple[str | None, ...]
@@ -173,7 +173,7 @@ class CallSite(Struct):
 
 
 class UnresolvedSlot(Struct):
-	"""A function-pointer slot with no statically resolved candidates."""
+	"""A stored function pointer that nothing resolves statically."""
 
 	slot: Address
 	path: tuple[str | None, ...]
