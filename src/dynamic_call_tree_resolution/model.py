@@ -93,7 +93,7 @@ class StructureLayout(Struct):
 	"""One structure type's layout."""
 
 	members: tuple[Member, ...]
-	"""Pointer-valued members only."""
+	"""Pointer-valued ones only."""
 	size: int
 
 
@@ -166,7 +166,7 @@ class CallSite(Struct):
 	"""Where the target is taken from, when the operand's value set is one address.
 
 	For a register operand this is the target itself; for an x86 memory operand
-	it is the slot holding the target.
+	it is the address the target is loaded from.
 	"""
 	candidates: frozenset[Address]
 	"""What the value-set analysis tracked into the operand, before chasing; empty when unresolved."""
