@@ -3,6 +3,9 @@
 
 """Tests for :mod:`dynamic_call_tree_resolution.stack_analysis`."""
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -363,10 +366,30 @@ def test_unbounded_entries_come_before_deeper_bounded_ones() -> None:
 	)
 
 
-def test_oversized_cycles_fail_loudly() -> None:
-	edges = tuple(CallEdge(caller=f"node_{i}", callee=f"node_{(i + 1) % 65}") for i in range(65))
-	with pytest.raises(ValueError, match="cycle"):
-		worst_case_depths(edges, ())
+def test_an_oversized_cycle_is_unbounded_recursion_over_a_real_path() -> None:
+	ring = tuple(f"node_{index}" for index in range(65))
+	edges = (
+		CallEdge(caller="main", callee="node_0"),
+		*(CallEdge(caller=node, callee=ring[(index + 1) % 65]) for index, node in enumerate(ring)),
+		CallEdge(caller="node_0", callee="leaf"),
+	)
+	frames = (
+		StackUsage(function="main", bytes=8, bounded=True),
+		StackUsage(function="leaf", bytes=16, bounded=True),
+		*(StackUsage(function=node, bytes=4, bounded=True) for node in ring),
+	)
+	assert worst_case_depths(edges, frames) == (
+		StackReport(
+			entry="main",
+			bound=Unbounded(
+				at_least=8 + 65 * 4,
+				recursion=frozenset(ring),
+				unmeasured=frozenset(),
+				dynamic=frozenset(),
+				unresolved=frozenset(),
+			),
+		),
+	)
 
 
 def test_within_cycle_diamonds_reuse_computed_states() -> None:
@@ -545,4 +568,34 @@ def test_every_callgraph_node_meets_its_stack_usage_record(artifacts: Path) -> N
 			if frame_key(name).split(".")[0] in roots and frame_key(name) not in keys
 		)
 		== []
+	)
+
+
+_CHORDED_RING = """
+from dynamic_call_tree_resolution import CallEdge, StackUsage, worst_case_depths
+ring = [f"node_{index}" for index in range(80)]
+edges = [CallEdge(caller="main", callee="node_0")]
+edges += [CallEdge(caller=node, callee=ring[(index + 1) % 80]) for index, node in enumerate(ring)]
+edges += [CallEdge(caller=node, callee=ring[(index * 7) % 80]) for index, node in enumerate(ring)]
+frames = [StackUsage(function="main", bytes=8, bounded=True)]
+frames += [StackUsage(function=node, bytes=4 + (index * 5) % 17, bounded=True) for index, node in enumerate(ring)]
+print([(report.entry, report.bound.at_least) for report in worst_case_depths(edges, frames)])
+"""
+
+
+def test_an_oversized_cycle_bound_does_not_depend_on_the_hash_seed() -> None:
+	assert (
+		len(
+			{
+				subprocess.run(
+					[sys.executable, "-c", _CHORDED_RING],
+					env={**os.environ, "PYTHONHASHSEED": seed},
+					capture_output=True,
+					text=True,
+					check=True,
+				).stdout
+				for seed in ("1", "2", "3", "4")
+			}
+		)
+		== 1
 	)

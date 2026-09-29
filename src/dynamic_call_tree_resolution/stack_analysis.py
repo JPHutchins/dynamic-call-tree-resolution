@@ -267,27 +267,55 @@ def _depths_by_component(
 	order of the condensation, so every callee outside a node's own
 	component is already computed when the node is reached. Only paths
 	within one component need the path-based recursion, which keeps the
-	search polynomial on diamond-heavy call graphs.
-
-	Raises:
-		ValueError: when a cycle exceeds ``_MAX_CYCLE_SIZE`` functions.
+	search polynomial on diamond-heavy call graphs. A component larger
+	than ``_MAX_CYCLE_SIZE`` is recursion either way and its longest
+	simple path is exponential to search, so its members take the longest
+	paths of an acyclic part of it instead.
 	"""
 	memo: dict[str, int] = {}
-	if any(len(component) > _MAX_CYCLE_SIZE for component in components):
-		raise ValueError(
-			f"call graph contains a cycle of "
-			f"{max(len(component) for component in components)} functions"
-		)
 	known = {node for component in components for node in component}
 	all_nodes = set(adjacency) | _callees(adjacency)
 	for component in (*components, *((node,) for node in sorted(all_nodes - known))):
 		in_component = frozenset(component)
 		within: dict[tuple[str, frozenset[str]], int] = {}
-		for node in component:
-			memo[node] = _depth(
-				node, adjacency, frame_by_name, frozenset(), memo, in_component, within
-			)
+		memo.update(
+			_discovery_depths(component, adjacency, frame_by_name, memo)
+			if len(component) > _MAX_CYCLE_SIZE
+			else {
+				node: _depth(
+					node, adjacency, frame_by_name, frozenset(), memo, in_component, within
+				)
+				for node in component
+			}
+		)
 	return memo
+
+
+def _discovery_depths(
+	component: tuple[str, ...],
+	adjacency: Mapping[str, frozenset[str]],
+	frame_by_name: Mapping[str, StackUsage],
+	memo: Mapping[str, int],
+) -> dict[str, int]:
+	"""Longest paths over a component's edges toward later-discovered members.
+
+	Tarjan lists a component latest-discovered first, so those edges hold
+	the depth-first tree and no cycle: every path they form is a real
+	simple path, computed in one pass in list order.
+	"""
+	position = {node: index for index, node in enumerate(component)}
+	depths: dict[str, int] = {}
+	for node in component:
+		frame = frame_by_name.get(frame_key(node))
+		depths[node] = (frame.bytes if frame is not None else 0) + max(
+			(
+				memo[callee] if callee not in position else depths[callee]
+				for callee in adjacency.get(node, frozenset())
+				if callee not in position or position[callee] < position[node]
+			),
+			default=0,
+		)
+	return depths
 
 
 def _depth(
@@ -334,7 +362,12 @@ def _callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
 def _strongly_connected_components(
 	adjacency: Mapping[str, frozenset[str]],
 ) -> tuple[tuple[str, ...], ...]:
-	"""SCCs in reverse topological order of the condensation (sinks first)."""
+	"""SCCs in reverse topological order of the condensation (sinks first).
+
+	Nodes and neighbors are visited in sorted order, so each component's
+	member order, which the oversized-component bound depends on, is the
+	same in every process.
+	"""
 	indices: dict[str, int] = {}
 	lowlinks: dict[str, int] = {}
 	stack: list[str] = []
@@ -347,7 +380,7 @@ def _strongly_connected_components(
 		lowlinks[node] = index
 		stack.append(node)
 		on_stack.add(node)
-		for neighbor in adjacency.get(node, frozenset()):
+		for neighbor in sorted(adjacency.get(node, frozenset())):
 			if neighbor not in indices:
 				strong_connect(neighbor)
 				lowlinks[node] = min(lowlinks[node], lowlinks[neighbor])
@@ -363,7 +396,7 @@ def _strongly_connected_components(
 					break
 			components.append(tuple(component))
 
-	for node in adjacency:
+	for node in sorted(adjacency):
 		if node not in indices:
 			strong_connect(node)
 	return tuple(components)
