@@ -64,6 +64,9 @@ from dynamic_call_tree_resolution.model import (
 	Relocation as Relocation,
 )
 from dynamic_call_tree_resolution.model import (
+	Section as Section,
+)
+from dynamic_call_tree_resolution.model import (
 	SlotAssignment as SlotAssignment,
 )
 from dynamic_call_tree_resolution.model import (

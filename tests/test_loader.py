@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from elftools.common.exceptions import ELFError
+from elftools.elf.elffile import ELFFile
 from salix import Struct
 
 from dynamic_call_tree_resolution import (
@@ -159,7 +160,7 @@ def test_load_rel_elf_reads_in_field_addends(tmp_path: Path) -> None:
 		Relocation(slot=Address(0x1000), target=Address(0x1044), addend=0x44, type_name="R_386_32"),
 		Relocation(slot=Address(0x2000), target=Address(0), addend=0, type_name="R_386_RELATIVE"),
 	)
-	assert program.sections[Address(0x1000)] == b"\x44\x10\x00\x00"
+	assert program.sections[Address(0x1000)].data == b"\x44\x10\x00\x00"
 
 
 _GLOBAL_FUNCTION = 0x12
@@ -341,3 +342,25 @@ def test_committed_arm_images_hold_one_function_per_entry_point(elf: str) -> Non
 		for function in load(Path(__file__).parent / "fixtures" / elf).functions.values()
 	)
 	assert [address for address, count in entry_points.items() if count > 1] == []
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("elf", "writable", "read_only"),
+	[
+		("hello_zephyr_qemu_cortex_m3.elf", "datas", ("text", "rodata", "device_area")),
+		("counter-su/zephyr/zephyr.exe", ".data", (".text", ".rodata", "device_area")),
+	],
+)
+def test_committed_images_mark_data_writable_and_code_read_only(
+	elf: str, writable: str, read_only: tuple[str, ...]
+) -> None:
+	path = Path(__file__).parent / "fixtures" / elf
+	with path.open("rb") as stream:
+		starts = {
+			section.name: Address(section.header.sh_addr)
+			for section in ELFFile(stream).iter_sections()
+		}
+	sections = load(path).sections
+	assert sections[starts[writable]].writable
+	assert [name for name in read_only if sections[starts[name]].writable] == []

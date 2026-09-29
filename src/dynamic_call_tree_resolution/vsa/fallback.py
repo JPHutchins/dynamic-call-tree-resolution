@@ -35,8 +35,8 @@ def address_taken(program: Program) -> frozenset[Address]:
 		address
 		for address in functions
 		if any(
-			address.to_bytes(program.pointer_size, program.byte_order) in data
-			for data in program.sections.values()
+			address.to_bytes(program.pointer_size, program.byte_order) in section.data
+			for section in program.sections.values()
 		)
 	) | frozenset(Address(value) for value in _computed_addresses(program) if value in functions)
 

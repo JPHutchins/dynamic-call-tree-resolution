@@ -345,11 +345,11 @@ def signatures_by_slot(
 
 
 def memory_at(program: Program, address: Address, size: int) -> bytes:
-	for section_address, data in program.sections.items():
-		if not section_address <= address < section_address + len(data):
+	for section_address, section in program.sections.items():
+		if not section_address <= address < section_address + len(section.data):
 			continue
 		offset = address - section_address
-		return data[offset : offset + size]
+		return section.data[offset : offset + size]
 	return b""
 
 

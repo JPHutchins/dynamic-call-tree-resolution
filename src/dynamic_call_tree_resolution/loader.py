@@ -27,6 +27,7 @@ from dynamic_call_tree_resolution.model import (
 	Machine,
 	Program,
 	Relocation,
+	Section,
 	StructPointerMember,
 	StructureLayout,
 	layout_key,
@@ -53,6 +54,7 @@ class _SectionBytes(Struct):
 
 
 _DW_OP_ADDR: Final = 0x03
+_SHF_WRITE: Final = 0x1
 _SHF_ALLOC: Final = 0x2
 
 
@@ -99,7 +101,9 @@ def _load(stream: BinaryIO) -> Program:
 		layouts=_layouts(dwarf),
 		relocations=relocations,
 		sections={
-			Address(section.address): section.data
+			Address(section.address): Section(
+				data=section.data, writable=bool(section.flags & _SHF_WRITE)
+			)
 			for section in sections.values()
 			if section.flags & _SHF_ALLOC
 		},
