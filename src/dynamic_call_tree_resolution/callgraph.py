@@ -28,7 +28,6 @@ class _VcgEdge(Struct):
 
 
 def parse_callgraph(path: Path) -> tuple[CallEdge, ...]:
-	"""Parse one GCC ``.ci`` VCG file into its call edges."""
 	return tuple(
 		CallEdge(caller=edge.sourcename, callee=edge.targetname)
 		for edge in _parse_vcg(path.read_text())
@@ -36,7 +35,6 @@ def parse_callgraph(path: Path) -> tuple[CallEdge, ...]:
 
 
 def load_callgraph(build_directory: Path) -> tuple[CallEdge, ...]:
-	"""Collect every ``.ci`` call edge under a build directory."""
 	return tuple(
 		edge
 		for callgraph_file in sorted(build_directory.glob("**/*.ci"))

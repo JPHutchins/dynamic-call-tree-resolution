@@ -176,7 +176,6 @@ class _Symbol(Struct):
 
 
 def _rel_elf(symbols: tuple[_Symbol, ...] = (_Symbol(name="fn", value=0x1000, size=4),)) -> bytes:
-	"""A minimal i386 REL executable with in-field, bss, and non-alloc relocs."""
 	shstrtab = b"\0.text\0.rel.text\0.symtab\0.shstrtab\0.strtab\0.bss\0.extra\0.rel.extra\0"
 	strtab = b"\0" + b"".join(symbol.name.encode() + b"\0" for symbol in symbols)
 	sections_data = (

@@ -58,7 +58,6 @@ def _warn_skipped(path: Path) -> None:
 
 
 def _render(report: StackReport) -> str:
-	"""One ``stack`` line: the bytes when bounded, else the lower bound and reason counts."""
 	match report.bound:
 		case Bounded(bytes=depth):
 			return f"{report.entry}: {depth} bytes"
@@ -79,7 +78,6 @@ def _render(report: StackReport) -> str:
 
 
 def _keep(path: Path) -> bool:
-	"""Whether to analyze ``path``, warning on stderr when skipping it."""
 	if not _oversized(path):
 		return True
 	_warn_skipped(path)
@@ -123,16 +121,16 @@ def compare(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	pexplorer: Annotated[
-		Path | None, Parameter(help="pexplorer JSON report to join per function")
+		Path | None,
+		Parameter(
+			help="pexplorer JSON report to join per function: every function with dynamic "
+			"calls on either side gets a row comparing pexplorer's dynamic-call count with "
+			"dctr's per-site candidate sets"
+		),
 	] = None,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
-	"""Print a resolution rollup per ELF for cross-tool comparison.
-
-	With a pexplorer JSON report, every function with dynamic calls on
-	either side gets a row comparing pexplorer's dynamic-call count with
-	dctr's per-site candidate sets.
-	"""
+	"""Print a resolution rollup per ELF for cross-tool comparison."""
 	paths: list[Path] = []
 	for elf in elfs:
 		if elf.is_dir():
@@ -173,8 +171,6 @@ def compare(
 
 
 class _Expansion(Struct):
-	"""One ELF-expanded call-graph: the edges, the originals, and the resolution."""
-
 	expanded: tuple[CallEdge, ...]
 	original: tuple[CallEdge, ...]
 	indirect_sites: int
@@ -185,7 +181,6 @@ class _Expansion(Struct):
 def _expand_from_elf(
 	edges: tuple[CallEdge, ...], elf: Path, *, narrow_by_signature: bool
 ) -> _Expansion:
-	"""Resolve and expand the indirect edges of ``edges`` against an ELF image."""
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
 	resolved = assignments(program)
@@ -202,23 +197,24 @@ def _expand_from_elf(
 
 
 def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[StackReport, ...]:
-	"""The entries the linked image defines; ``.ci`` also records discarded functions."""
 	return tuple(report for report in reports if report.entry in expansion.image_functions)
 
 
 @app.command  # type: ignore[misc]
 def stack(
 	build_directory: Path,
-	elf: Path | None = None,
+	elf: Annotated[
+		Path | None,
+		Parameter(
+			help="ELF image to expand indirect call sites against; entries the linker "
+			"discarded are dropped and counted"
+		),
+	] = None,
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
-	"""Print worst-case stack depths of a build directory (.su and .ci artifacts).
-
-	When an ELF is given, indirect call sites are expanded against it,
-	and entries the linker discarded are dropped and counted.
-	"""
+	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
 	edges = load_callgraph(build_directory)
 	expansion = (
 		_expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature)

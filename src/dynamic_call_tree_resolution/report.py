@@ -51,7 +51,7 @@ class SlotAssignmentReport(Struct):
 
 
 class CallSiteReport(Struct):
-	"""One extracted indirect call site with its resolved candidates."""
+	"""One extracted indirect call site, rendered for consumers."""
 
 	caller: str
 	site_address: int
@@ -76,7 +76,7 @@ class UnresolvedSlotReport(Struct):
 
 
 class AnalysisReport(Struct):
-	"""All resolved slots, call sites, and unresolved slots of one program."""
+	"""The analysis report of one program."""
 
 	assignments: tuple[SlotAssignmentReport, ...]
 	call_sites: tuple[CallSiteReport, ...]
@@ -121,7 +121,7 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
-	"""A stack depth that bounds only from below, with the functions breaking the bound."""
+	"""The JSON form of ``Unbounded``."""
 
 	at_least_bytes: int
 	recursion: tuple[str, ...]
@@ -131,7 +131,6 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
-	"""Render a stack bound with its function sets sorted."""
 	match bound:
 		case Bounded(bytes=depth):
 			return BoundedStack(bytes=depth)
@@ -148,7 +147,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 
 
 class StackEntryReport(Struct):
-	"""One entry point's stack bound."""
+	"""One row of ``stack --json``."""
 
 	entry: str
 	bound: BoundedStack | UnboundedStack
@@ -170,7 +169,7 @@ class AnalysisSummary(Struct):
 
 
 class SlotCounts(SalixStruct):
-	"""Slot and target counts shared by every report builder."""
+	"""The counts every report builder shares."""
 
 	resolved_slots: int
 	total_slots: int
@@ -180,7 +179,6 @@ class SlotCounts(SalixStruct):
 def slot_counts(
 	resolved: tuple[SlotAssignment, ...], unresolved: tuple[UnresolvedSlot, ...]
 ) -> SlotCounts:
-	"""The resolution rollup shared by the report, comparison, and summary."""
 	slots = frozenset(assignment.slot for assignment in resolved)
 	return SlotCounts(
 		resolved_slots=len(slots),
@@ -270,13 +268,6 @@ def build_comparison(
 	*,
 	narrow_by_signature: bool = False,
 ) -> ComparisonReport:
-	"""Resolution rollup of one ELF, for cross-tool comparison.
-
-	When a pexplorer report is given, each function with dynamic calls on
-	either side gets a row: pexplorer's dynamic-call count against dctr's
-	per-site candidate sets. Callers aggregate by aligned address, so
-	alias twins (ARM/Thumb) do not overwrite each other's counts.
-	"""
 	resolved = assignments(program)
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)

@@ -20,9 +20,10 @@ if TYPE_CHECKING:
 
 
 class PexplorerCallee(Struct):
-	"""One call edge in pexplorer's report; dynamic edges have no target."""
+	"""One call edge in pexplorer's report."""
 
 	dynamic: bool
+	"""An indirect edge, which has no target."""
 	call_from: int | None = field(default=None, name="from")
 	call_from_function_name: str | None = field(default=None, name="from_function_name")
 	call_to: int | None = field(default=None, name="to")
@@ -30,7 +31,7 @@ class PexplorerCallee(Struct):
 
 
 class PexplorerFunction(Struct):
-	"""A function in pexplorer's report, with its call edges."""
+	"""A function in pexplorer's report."""
 
 	name: str
 	address: int
@@ -44,7 +45,6 @@ class PexplorerReport(Struct):
 
 
 def load_pexplorer(path: Path) -> PexplorerReport:
-	"""Parse pexplorer's JSON report from ``path``."""
 	return msgspec.json.decode(path.read_bytes(), type=PexplorerReport)
 
 
@@ -56,11 +56,6 @@ class DynamicSites(SalixStruct):
 
 
 def dynamic_sites_by_caller(report: PexplorerReport) -> Mapping[Address, DynamicSites]:
-	"""Per caller: names and summed dynamic-call count, keyed by aligned address.
-
-	Aliases sharing an aligned address aggregate instead of overwriting;
-	the join this feeds is documented on :func:`build_comparison`.
-	"""
 	return {
 		address: DynamicSites(
 			names=tuple(function.name for function in functions),

@@ -107,7 +107,6 @@ def _compile_multi(source_directory: Path, build_directory: Path) -> Path:
 
 @pytest.fixture(scope="session")
 def fixture_elfs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
-	"""Compile every fixture variant once per session."""
 	build_directory = tmp_path_factory.mktemp("elfs")
 	variants = {
 		variant: _compile(

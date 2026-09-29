@@ -1,11 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Soundness reproducers, checked against the targets their runs really call.
-
-Each reproducer's ``main`` observes ``@caller`` before calling a function
-under test, and each target observes its own name.
-"""
+"""Soundness reproducers, checked against the targets their runs really call."""
 
 from __future__ import annotations
 
@@ -55,15 +51,16 @@ class Platform(Enum):
 
 
 class Image(Struct):
-	"""One reproducer build: a source under ``fixtures/reproducers`` or a generated one."""
+	"""One reproducer build."""
 
 	source: str
+	"""A file under ``fixtures/reproducers``, or a key of ``GENERATED_SOURCES``."""
 	platform: Platform
 	flags: tuple[str, ...]
 
 
 class Case(Struct):
-	"""One caller under test in one image."""
+	"""One reproducer cell."""
 
 	image: Image
 	caller: str
@@ -184,11 +181,13 @@ IMAGES = tuple(
 
 
 class Outcome(Struct):
-	"""One image: its path, what its run observed per caller, and dctr's sites per caller."""
+	"""One image, built, run and analyzed."""
 
 	elf: Path
 	observations: Mapping[str, frozenset[str]]
+	"""Target names the run observed, by caller."""
 	sites: tuple[tuple[str, frozenset[str]], ...]
+	"""Each call site's caller and dctr's candidate names."""
 
 
 def _build(image: Image, directory: Path) -> Path:
@@ -244,7 +243,6 @@ def _outcome(image: Image, directory: Path) -> Outcome:
 
 @pytest.fixture(scope="session")
 def outcomes(tmp_path_factory: pytest.TempPathFactory) -> Mapping[Image, Outcome]:
-	"""Every image built, run and analyzed concurrently, each in its own directory."""
 	directories = tuple(
 		tmp_path_factory.mktemp(image.source.removesuffix(".c")) for image in IMAGES
 	)

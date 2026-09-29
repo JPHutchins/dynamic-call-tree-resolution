@@ -19,7 +19,6 @@ def build_program(
 	sections: Mapping[int, bytes] | None = None,
 	pointer_size: int = 8,
 ) -> Program:
-	"""A hand-built Program: the given sections plus one section per data object."""
 	return Program(
 		byte_order="little",
 		pointer_size=pointer_size,

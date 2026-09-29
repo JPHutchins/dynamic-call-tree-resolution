@@ -57,16 +57,11 @@ _SHF_ALLOC: Final = 0x2
 
 
 def load(path: Path) -> Program:
-	"""Parse an ELF file at ``path`` into a :class:`Program`.
-
-	Malformed input propagates the underlying parser's errors unchanged.
-	"""
 	with path.open("rb") as stream:
 		return _load(stream)
 
 
 def defined_function_names(path: Path) -> frozenset[str]:
-	"""Every function symbol the image at ``path`` defines, locals and aliases included."""
 	with path.open("rb") as stream:
 		symtab = _symbol_table(ELFFile(stream))
 		return frozenset(
@@ -188,7 +183,6 @@ def _merge_functions(
 	from_dwarf: Mapping[Address, Function],
 	machine: Machine,
 ) -> dict[Address, Function]:
-	"""DWARF's functions over the symbol table's, each at its symbol's address and name."""
 	return {
 		**from_symtab,
 		**{
@@ -203,7 +197,6 @@ def _merge_functions(
 def _at_symbol(
 	function: Function, from_symtab: Mapping[Address, Function], machine: Machine
 ) -> Function:
-	"""A DWARF function moved onto its symbol: a Thumb symbol sits at the odd twin address."""
 	address = (
 		thumb_twin(function.address)
 		if machine is Machine.EM_ARM and thumb_twin(function.address) in from_symtab
@@ -357,12 +350,6 @@ def _member_kind(type_die: DIE | None) -> _MemberKind:
 
 
 def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
-	"""Structure layouts by type name, from the most complete definition.
-
-	Forward declarations (``DW_AT_declaration``) must not clobber a real
-	definition, and duplicate definitions across CUs keep the layout with
-	the most pointer-valued members.
-	"""
 	if dwarf is None:
 		return {}  # pragma: no cover
 	layouts: dict[str, StructureLayout] = {}
@@ -610,11 +597,6 @@ def _relocation_addend(
 	pointer_size: int,
 	byte_order: ByteOrder,
 ) -> int:
-	"""The relocation's addend, from the entry (RELA) or the field (REL).
-
-	REL addends live in the image at the slot; a slot in no loaded section
-	(bss) carries the zero addend the zero-filled section implies.
-	"""
 	if is_rela:
 		return int(entry["r_addend"])
 	target_section = next(
@@ -632,7 +614,6 @@ def _relocation_addend(
 
 
 def _relocation_target(symbol_index: int, symbol_value: int, addend: int) -> int:
-	"""The final target: the addend itself for symbol-less entries, else S + A."""
 	return addend if symbol_index == 0 else symbol_value + addend
 
 
@@ -664,7 +645,6 @@ def _die_name(die: DIE) -> str:
 
 
 def _origin(die: DIE) -> DIE | None:
-	"""The DIE an out-of-line instance, clone, or definition refers back to."""
 	return next(
 		(
 			die.get_DIE_from_attribute(attribute_name)
@@ -676,7 +656,6 @@ def _origin(die: DIE) -> DIE | None:
 
 
 def _declaration(die: DIE) -> DIE:
-	"""The end of ``die``'s origin chain, which carries the declared types."""
 	origin = _origin(die)
 	return die if origin is None else _declaration(origin)
 

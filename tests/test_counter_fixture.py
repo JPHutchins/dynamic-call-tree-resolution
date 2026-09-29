@@ -1,13 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""The counter build artifacts pin the summary and the README's claims.
-
-``tests/fixtures/counter-su`` holds the Zephyr CAN counter build's linked
-executable and its ``-fstack-usage``/``-fcallgraph-info`` artifacts
-(produced by the ``counter_su`` task); the README's transcripts of them
-run in ``test_readme``.
-"""
+"""The counter build artifacts pin the summary and the README's claims."""
 
 from __future__ import annotations
 
