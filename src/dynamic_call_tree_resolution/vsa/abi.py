@@ -52,6 +52,8 @@ X86_TRANSFERS: Final = (
 )
 ARM_TRANSFERS: Final = ("bl", "blx", "bx", "b", "pop", "svc", "bkpt", "udf", "tbb", "tbh")
 X86_CALLS: Final = ("call",)
+X86_RETURNING_TRAPS: Final = ("syscall", "int", "int3", "hlt")
+ARM_RETURNING_TRAPS: Final = ("svc", "bkpt")
 ARM_CALLS: Final = ("bl", "blx")
 ARM_CONDITIONAL: Final = frozenset(
 	{

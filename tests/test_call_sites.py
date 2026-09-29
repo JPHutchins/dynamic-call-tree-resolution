@@ -1984,3 +1984,52 @@ def test_every_function_a_site_candidate_names_is_address_taken(elf: str) -> Non
 		for address in site.candidates
 		if address in program.functions and address not in taken
 	] == []
+
+
+@pytest.mark.parametrize(
+	("machine", "code", "target", "candidates"),
+	[
+		pytest.param(
+			"EM_ARM", "42f20004 c0f20004 abbe a047", 0x2000, {0x2000}, id="thumb-bkpt-keeps-r4"
+		),
+		pytest.param(
+			"EM_ARM", "42f20004 c0f20004 03df a047", 0x2000, {0x2000}, id="thumb-svc-keeps-r4"
+		),
+		pytest.param(
+			"EM_ARM", "42f20000 c0f20000 abbe 8047", 0x2000, set[int](), id="thumb-bkpt-clobbers-r0"
+		),
+		pytest.param(
+			"EM_ARM", "42f20004 c0f20004 00de a047", 0x2000, set[int](), id="thumb-udf-is-terminal"
+		),
+		pytest.param(
+			"EM_X86_64", "48c7c300300000 cc ffd3", 0x3000, {0x3000}, id="x86-int3-keeps-rbx"
+		),
+		pytest.param(
+			"EM_X86_64", "48c7c300300000 0f05 ffd3", 0x3000, {0x3000}, id="x86-syscall-keeps-rbx"
+		),
+		pytest.param(
+			"EM_X86_64", "48c7c300300000 cd80 ffd3", 0x3000, {0x3000}, id="x86-int-keeps-rbx"
+		),
+		pytest.param(
+			"EM_X86_64", "48c7c300300000 f4 ffd3", 0x3000, {0x3000}, id="x86-hlt-keeps-rbx"
+		),
+		pytest.param(
+			"EM_X86_64", "48c7c000300000 cc ffd0", 0x3000, set[int](), id="x86-int3-clobbers-rax"
+		),
+		pytest.param(
+			"EM_X86_64", "48c7c300300000 0f0b ffd3", 0x3000, set[int](), id="x86-ud2-is-terminal"
+		),
+	],
+)
+def test_a_returning_trap_falls_through_and_clobbers_caller_saved_registers(
+	machine: str, code: str, target: int, candidates: set[int]
+) -> None:
+	body = bytes.fromhex(code)
+	program = _program(
+		machine,
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", target, 4)),
+		pointer_size=4 if machine == "EM_ARM" else 8,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
