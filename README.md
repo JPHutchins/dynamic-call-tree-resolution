@@ -192,6 +192,7 @@ storage are not enumerated ([#69]).
 ```sh
 nix develop            # uv, the host and arm-none-eabi C compilers, QEMU, jphfmt, nixfmt, git-lfs
 uv run camas           # the checks CI runs
+uv run camas check_fast   # the same checks, skipping the tests marked image
 uv run camas matrix    # the same checks on each interpreter in .python-version
 ```
 

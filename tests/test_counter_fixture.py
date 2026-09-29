@@ -16,8 +16,11 @@ import sys
 from pathlib import Path
 
 import msgspec
+import pytest
 
 from dynamic_call_tree_resolution import AnalysisSummary, UnboundedStack, load
+
+pytestmark = pytest.mark.image
 
 ARTIFACTS = Path(__file__).parent / "fixtures" / "counter-su"
 EXECUTABLE = ARTIFACTS / "zephyr" / "zephyr.exe"

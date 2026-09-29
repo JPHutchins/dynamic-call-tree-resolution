@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.image
+
 REPOSITORY_ROOT = Path(__file__).parent.parent
 
 

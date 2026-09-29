@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+import pytest
 from capstone import CS_ARCH_ARM, CS_MODE_THUMB, Cs
 
 from dynamic_call_tree_resolution import assignments, call_site_candidates, extract_call_sites, load
@@ -24,6 +25,8 @@ from dynamic_call_tree_resolution.points_to import memory_at
 
 if TYPE_CHECKING:
 	from capstone import CsInsn
+
+pytestmark = pytest.mark.image
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ARM_ELFS = (

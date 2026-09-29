@@ -63,7 +63,10 @@ dev = [
 addopts = ["--doctest-modules"]
 testpaths = ["src", "tests"]
 norecursedirs = ["fixtures"]
-markers = ["slow: tests excluded from the default check run"]
+markers = [
+    "slow: tests excluded from the default check run",
+    "image: analyzes a committed firmware image; check_fast skips it",
+]
 
 [tool.ruff]
 line-length = 100

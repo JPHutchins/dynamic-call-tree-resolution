@@ -44,6 +44,8 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.callgraph import CallEdge
 	from dynamic_call_tree_resolution.stack_usage import StackUsage
 
+pytestmark = pytest.mark.image
+
 ARTIFACTS = Path(__file__).parent / "fixtures" / "sensor-two-impl"
 EXECUTABLE = ARTIFACTS / "zephyr" / "zephyr.elf"
 
