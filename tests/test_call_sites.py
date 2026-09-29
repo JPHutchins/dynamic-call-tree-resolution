@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution import (
 	Machine,
 	Program,
 	Provenance,
+	Section,
 	SlotAssignment,
 	assignments,
 	build_comparison,
@@ -797,7 +798,11 @@ def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
 		},
 		layouts={},
 		relocations=(),
-		sections={Address(0x1000): bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0")},
+		sections={
+			Address(0x1000): Section(
+				data=bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0"), writable=False
+			)
+		},
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset()
@@ -820,7 +825,11 @@ def test_x86_bss_slot_read_is_unknown() -> None:
 		},
 		layouts={},
 		relocations=(),
-		sections={Address(0x1000): bytes.fromhex("48 8b 05 f9 0f 00 00ff d0")},
+		sections={
+			Address(0x1000): Section(
+				data=bytes.fromhex("48 8b 05 f9 0f 00 00ff d0"), writable=False
+			)
+		},
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset()
@@ -1730,7 +1739,11 @@ def _signature_program() -> Program:
 		},
 		layouts={},
 		relocations=(),
-		sections={Address(0x1000): bytes.fromhex("48 c7 c0 00 20 00 00ff d0")},
+		sections={
+			Address(0x1000): Section(
+				data=bytes.fromhex("48 c7 c0 00 20 00 00ff d0"), writable=False
+			)
+		},
 	)
 
 
@@ -1786,7 +1799,9 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 		},
 		layouts={},
 		relocations=(),
-		sections={Address(0x1000): bytes.fromhex("ff 15 fa 0f 00 00")},
+		sections={
+			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False)
+		},
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot == 0x2000
@@ -1833,8 +1848,8 @@ def _bss_slot_site_program() -> Program:
 		layouts={},
 		relocations=(),
 		sections={
-			Address(0x1000): bytes.fromhex("ff 15 fa 0f 00 00"),
-			Address(0x6000): (0x4000).to_bytes(8, "little"),
+			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False),
+			Address(0x6000): Section(data=(0x4000).to_bytes(8, "little"), writable=False),
 		},
 	)
 

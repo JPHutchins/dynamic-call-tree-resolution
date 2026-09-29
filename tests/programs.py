@@ -5,7 +5,7 @@
 
 from typing import TYPE_CHECKING
 
-from dynamic_call_tree_resolution import Address, DataObject, Function, Machine, Program
+from dynamic_call_tree_resolution import Address, DataObject, Function, Machine, Program, Section
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -17,6 +17,7 @@ def build_program(
 	*,
 	objects: tuple[tuple[str, int, bytes], ...] = (),
 	sections: Mapping[int, bytes] | None = None,
+	writable: frozenset[int] = frozenset(),
 	pointer_size: int = 8,
 ) -> Program:
 	return Program(
@@ -42,8 +43,10 @@ def build_program(
 		layouts={},
 		relocations=(),
 		sections={
-			Address(address): data
-			for address, data in (sections if sections is not None else dict[int, bytes]()).items()
-		}
-		| {Address(address): data for _, address, data in objects},
+			Address(address): Section(data=data, writable=address in writable)
+			for address, data in (
+				*(sections if sections is not None else dict[int, bytes]()).items(),
+				*((address, data) for _, address, data in objects),
+			)
+		},
 	)

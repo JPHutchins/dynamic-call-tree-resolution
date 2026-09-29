@@ -106,6 +106,13 @@ class Relocation(Struct):
 	type_name: str
 
 
+class Section(Struct):
+	"""One allocated section of the image, as linked."""
+
+	data: bytes
+	writable: bool
+
+
 class Program(Struct):
 	"""The immutable analysis model of one ELF image."""
 
@@ -116,7 +123,7 @@ class Program(Struct):
 	objects: Mapping[Address, DataObject]
 	layouts: Mapping[str, StructureLayout]
 	relocations: tuple[Relocation, ...]
-	sections: Mapping[Address, bytes]
+	sections: Mapping[Address, Section]
 
 
 def aligned(address: Address) -> Address:
