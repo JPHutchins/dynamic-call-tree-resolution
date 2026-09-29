@@ -31,19 +31,20 @@ class Machine(StrEnum):
 
 
 class FunctionSignature(Struct):
-	"""Return and parameter types of a function, as resolved type names."""
+	"""A function's type, as resolved type names."""
 
 	return_type: str
 	parameters: tuple[str, ...]
 
 
 class Function(Struct):
-	"""A named code region with an optional DWARF-derived signature."""
+	"""A code region of the image."""
 
 	name: str
 	address: Address
 	size: int
 	signature: FunctionSignature | None
+	"""From DWARF."""
 
 
 class DataObject(Struct):
@@ -66,12 +67,13 @@ class FunctionPointerMember(Struct):
 
 
 class StructPointerMember(Struct):
-	"""A structure member pointing at a statically allocated struct instance; ``pointee=None`` is ``void *``."""
+	"""A structure member pointing at a statically allocated struct instance."""
 
 	kind: Literal["struct_pointer"]
 	name: str | None
 	offset: int
 	pointee: str | None
+	"""``None`` for an opaque ``void *``."""
 
 
 class EmbeddedStructMember(Struct):
@@ -87,14 +89,14 @@ type Member = FunctionPointerMember | StructPointerMember | EmbeddedStructMember
 
 
 class StructureLayout(Struct):
-	"""Byte offsets of a structure's pointer-valued members, and its size."""
+	"""One structure type's layout, reduced to its pointer-valued members."""
 
 	members: tuple[Member, ...]
 	size: int
 
 
 class Relocation(Struct):
-	"""A link-time fixup: a slot address pointing at a target address."""
+	"""A link-time fixup."""
 
 	slot: Address
 	target: Address
@@ -145,7 +147,7 @@ class Provenance(Enum):
 
 
 class SlotAssignment(Struct):
-	"""Candidate target functions for one function-pointer slot."""
+	"""The static resolution of one function-pointer slot."""
 
 	slot: Address
 	path: tuple[str | None, ...]
@@ -159,7 +161,13 @@ class CallSite(Struct):
 	caller_address: Address
 	site_address: Address
 	slot: Address | None
+	"""Where the target is taken from, when the operand's value set is one address.
+
+	For a register operand this is the target itself; for an x86 memory operand
+	it is the slot holding the target.
+	"""
 	candidates: frozenset[Address]
+	"""What the value-set analysis tracked into the operand, before chasing; empty when unresolved."""
 
 
 class UnresolvedSlot(Struct):

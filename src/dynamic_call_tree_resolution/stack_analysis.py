@@ -26,13 +26,17 @@ class Bounded(Struct):
 
 
 class Unbounded(Struct):
-	"""A depth that bounds only from below, with the functions that break the bound."""
+	"""A depth that bounds only from below."""
 
 	at_least: int
 	recursion: frozenset[str]
+	"""Reachable functions on a cycle."""
 	unmeasured: frozenset[str]
+	"""Reachable functions without a ``.su`` record."""
 	dynamic: frozenset[str]
+	"""Reachable frames GCC could not bound."""
 	unresolved: frozenset[str]
+	"""Reachable callers of an indirect call without candidates."""
 
 
 class StackReport(Struct):
