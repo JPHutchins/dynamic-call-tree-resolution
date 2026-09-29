@@ -1,26 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Whole-function value-set analysis of indirect call sites.
-
-Each function's machine code is lifted into a control-flow graph and
-abstractly interpreted forward from its entry with a monotone worklist to
-a fixpoint. Registers hold bounded sets of addresses, stack-pointer
-registers hold sets of entry-frame offsets, and stack slots keyed by those
-offsets hold value sets, so frame-relative stores and reloads survive
-intervening calls and loop-carried pointers accumulate entry by entry.
-
-Soundness contract: every candidate set this analysis produces is a
-refinement layered on top of the address-taken fallback applied by the
-consumers, never a replacement for it. A site whose value set is
-unknown (or unreachable) yields empty candidates, and the consumers union
-the fallback in — so no target that the former window walk would have
-admitted can vanish from a worst-case stack bound. Abstract states only
-over-approximate concrete executions: image reads of relocation-patched
-data are exact, unreadable slots inside data objects mean "unknown"
-rather than a guess, and unmapped control flow simply leaves blocks
-unvisited, which the same fallback covers.
-"""
+"""Whole-function value-set analysis of indirect call sites."""
 
 from __future__ import annotations
 
@@ -164,19 +145,15 @@ type OffsetSet = frozenset[int] | None
 
 
 class State(Struct):
-	"""Abstract state at one block entry.
-
-	Absent map entries mean Top (unknown); empty sets mean Bottom (no
-	value flows). ``sp_offsets`` tracks stack-pointer registers as offsets
-	from the entry stack pointer, ``stack`` holds the value sets of frame
-	slots at those offsets, and ``globals`` holds value sets written to
-	program-global addresses.
-	"""
+	"""Abstract state at one block entry; an absent entry is Top, an empty set Bottom."""
 
 	registers: Mapping[int, frozenset[Address]]
 	sp_offsets: Mapping[int, frozenset[int]]
+	"""Copies of the stack pointer, as offsets from its entry value."""
 	stack: Mapping[int, frozenset[Address]]
+	"""Frame slots, by entry-frame offset."""
 	globals: Mapping[int, frozenset[Address]]
+	"""Values written to program-global addresses."""
 
 
 class _Block(Struct):
@@ -186,10 +163,9 @@ class _Block(Struct):
 
 
 class _CallObservation(Struct):
-	"""One direct call's argument value sets, by ABI position."""
-
 	callee: Address
 	arguments: Mapping[int, ValueSet]
+	"""By ABI argument position."""
 
 
 class _Context(Struct):
@@ -201,29 +177,6 @@ class _Context(Struct):
 
 
 def analyze(program: Program) -> tuple[CallSite, ...]:
-	"""Extract every indirect call and tail-branch site with its candidate set.
-
-	Functions are abstractly interpreted with their parameters seeded from
-	every caller's analyzed argument sets — register arguments per ABI,
-	stack arguments on EM_386 — and re-analyzed in bounded rounds until
-	the seeds and the program-global writes stabilize, so driver-class
-	dispatch resolves through static const device pointers. The rounds
-	are capped at ``_MAX_ROUNDS`` and the write propagation after the
-	seeds settle at ``_GLOBAL_ROUNDS``; whatever a truncated fixpoint
-	misses stays Top and the consumers' address-taken fallback keeps
-	the stack bound sound. Sites carry the
-	address their target is taken from when the operand's value set is a
-	single address, and the pre-chase set of addresses the analysis
-	tracked into the operand. Unknown or unreachable operands yield empty
-	candidates, which consumers replace with the address-taken
-	fallback.
-
-	Each round's per-function interpretations run as one thread swarm
-	(``executor.map`` over the fixed function order), and the writes,
-	seeds, and site results are joined in submission order afterwards —
-	the result is identical to the sequential analysis on any build; on
-	a free-threaded interpreter the rounds run in parallel.
-	"""
 	disassembler = Cs(*_DISASSEMBLERS[program.machine])
 	disassembler.detail = True
 	disassembler.skipdata = True
@@ -299,12 +252,6 @@ def _final_sites(
 def _prewarm_instructions(
 	functions: tuple[tuple[Function, tuple[_Block, ...]], ...], machine: Machine
 ) -> None:
-	"""Touch every lazy capstone detail once, in one thread.
-
-	Capstone fills operand details on first access; the round workers
-	read those fields in parallel, so the first touch must happen before
-	the swarm.
-	"""
 	for _, blocks in functions:
 		for block in blocks:
 			for instruction in block.instructions:
@@ -324,7 +271,6 @@ def _function_address(function: Function) -> Address:
 def _blocks_by_function(
 	program: Program, disassembler: Cs
 ) -> dict[Address, tuple[Function, tuple[_Block, ...]]]:
-	"""Per-function CFGs, keyed by the normalized function address."""
 	seen: set[Address] = set()
 	blocks: dict[Address, tuple[Function, tuple[_Block, ...]]] = {}
 	for function in sorted(program.functions.values(), key=_function_address):
@@ -343,14 +289,6 @@ def _blocks_by_function(
 
 
 def address_taken(program: Program) -> frozenset[Address]:
-	"""Every function whose address the image holds other than as a branch target.
-
-	The sound fallback targets of an indirect call: function addresses
-	stored at any byte offset of an allocated section (data, literal pools,
-	absolute immediates in x86 code), and those a non-branch instruction
-	computes: an immediate operand, a ``movw``/``movt`` pair, a
-	PC-relative ``adr`` or ``add``/``sub``, or a RIP-relative ``lea``.
-	"""
 	functions = frozenset(program.functions)
 	return frozenset(
 		address
@@ -385,7 +323,6 @@ _BRANCH_GROUPS: Final = (CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_GRP_BRANCH_REL
 
 
 def _arm_addresses(instruction: CsInsn, preceding: tuple[CsInsn, ...]) -> Iterator[int]:
-	"""Values an ARM instruction materializes; an ``adr`` target counts as its Thumb twin."""
 	operands = instruction.operands
 	yield from (operand.imm for operand in operands if operand.type == arm_const.ARM_OP_IMM)
 	match instruction.mnemonic.split(".")[0], operands:
@@ -402,12 +339,10 @@ def _arm_addresses(instruction: CsInsn, preceding: tuple[CsInsn, ...]) -> Iterat
 
 
 def _aligned_pc(instruction: CsInsn) -> int:
-	"""The Thumb PC a PC-relative operand is based on: the instruction plus 4, word-aligned."""
 	return (instruction.address + 4) & ~3
 
 
 def _movt_addresses(high: int, register: int, preceding: tuple[CsInsn, ...]) -> Iterator[int]:
-	"""A ``movt`` over the nearest preceding ``movw`` to the same register."""
 	low = next(
 		(
 			earlier.operands[1].imm
@@ -421,7 +356,6 @@ def _movt_addresses(high: int, register: int, preceding: tuple[CsInsn, ...]) -> 
 
 
 def _x86_addresses(instruction: CsInsn) -> Iterator[int]:
-	"""Values an x86 instruction materializes: immediates and RIP-relative ``lea`` targets."""
 	for operand in instruction.operands:
 		if operand.type == x86_const.X86_OP_IMM:
 			yield operand.imm
@@ -434,12 +368,10 @@ def _x86_addresses(instruction: CsInsn) -> Iterator[int]:
 
 
 def _normalized(address: Address, machine: Machine) -> Address:
-	"""The aligned address a function's code and call targets share."""
 	return aligned(address) if machine is Machine.EM_ARM else address
 
 
 def _seed(base: State | None, machine: Machine) -> State:
-	"""Entry state of one function: the seeded frame."""
 	if base is None:
 		return State(
 			registers={},
@@ -451,7 +383,6 @@ def _seed(base: State | None, machine: Machine) -> State:
 
 
 def _seed_from_observation(observation: _CallObservation, program: Program) -> State:
-	"""Callee entry state seeded from one call observation's argument sets."""
 	registers: dict[int, frozenset[Address]] = {}
 	stack: dict[int, frozenset[Address]] = {}
 	for position, value in observation.arguments.items():
@@ -474,7 +405,6 @@ def _seed_from_observation(observation: _CallObservation, program: Program) -> S
 def _accumulate_writes(
 	current: Mapping[int, frozenset[Address]], written: list[Mapping[int, frozenset[Address]]]
 ) -> dict[int, frozenset[Address]]:
-	"""Union per-function global-write maps into the program-global one."""
 	accumulated = dict(current)
 	for function_writes in written:
 		for address, values in function_writes.items():
@@ -511,7 +441,6 @@ def _context_for(program: Program, global_writes: Mapping[int, frozenset[Address
 
 
 def _span_at(context: _Context, address: Address) -> tuple[int, int] | None:
-	"""Tightest enclosing data-object span, by bisect over the sorted starts."""
 	index = bisect_right(context.object_starts, address) - 1
 	if index < 0:
 		return None
@@ -525,14 +454,6 @@ def _pointer_value(context: _Context, address: Address) -> Address | None:
 
 
 def _object_slots(context: _Context, start: Address, stride: int) -> ValueSet:
-	"""Slot addresses of the data object enclosing ``start``, stepped by ``stride``.
-
-	An indexed operand with an unknown index but a known base resolves to
-	the union over the enclosing object's slots; the index staying in
-	range is enforced by the image's own bounds checks, and the consumer
-	fallback covers the analysis if not. No enclosing object means the
-	index is truly unknown and the result is Top.
-	"""
 	span = _span_at(context, start)
 	if span is None or stride <= 0:
 		return None
@@ -544,14 +465,6 @@ def _object_slots(context: _Context, start: Address, stride: int) -> ValueSet:
 
 
 def _image_value(context: _Context, state: State, addresses: ValueSet) -> ValueSet:
-	"""Read each address from the loaded image, unioned with statically known writes.
-
-	Values written to the address anywhere in the analyzed program count
-	alongside the baked image value. An unreadable address inside a data
-	object (BSS) is a runtime value: the written set when one is known,
-	Top otherwise; addresses outside every object with no known writes
-	are invalid reads and drop out.
-	"""
 	if addresses is None:
 		return None
 	values: set[Address] = set()
@@ -570,10 +483,6 @@ def _image_value(context: _Context, state: State, addresses: ValueSet) -> ValueS
 
 
 def _join_sets[T: Hashable](current: frozenset[T], incoming: frozenset[T]) -> frozenset[T] | None:
-	"""Join two bounded sets; overflow yields Top.
-
-	States omit Top entries, so neither operand is ever Top here.
-	"""
 	combined = current | incoming
 	return None if len(combined) > _K_BOUND else combined
 
@@ -581,7 +490,6 @@ def _join_sets[T: Hashable](current: frozenset[T], incoming: frozenset[T]) -> fr
 def _join_maps[T: Hashable](
 	current: Mapping[int, frozenset[T]], incoming: Mapping[int, frozenset[T]]
 ) -> dict[int, frozenset[T]]:
-	"""Join two maps; a key absent from either side is Top and stays absent."""
 	joined: dict[int, frozenset[T]] = {}
 	for key in set(current) | set(incoming):
 		if key not in current or key not in incoming:
@@ -593,13 +501,6 @@ def _join_maps[T: Hashable](
 
 
 def _join_seeds(current: State | None, incoming: State) -> State:
-	"""Accumulate a call observation into a callee's entry seed.
-
-	Unlike path joins, an absent seed entry means nothing is known yet,
-	so incoming values are adopted rather than drowned by the Top
-	interpretation. An overflowing join keeps the accumulated value as
-	is: monotone, and sound by the consumers' address-taken fallback.
-	"""
 	if current is None:
 		return incoming
 	registers = dict(current.registers)
@@ -637,7 +538,6 @@ def _join_states(current: State | None, incoming: State) -> State:
 def _put_value[T: Hashable](
 	mapping: Mapping[int, frozenset[T]], key: int, value: frozenset[T] | None
 ) -> dict[int, frozenset[T]]:
-	"""Copy ``mapping`` with ``key`` set; a ``None`` value omits the key (Top)."""
 	copied = dict(mapping)
 	if value is None:
 		copied.pop(key, None)
@@ -649,7 +549,6 @@ def _put_value[T: Hashable](
 def _map_set[T: Hashable, U: Hashable](
 	values: frozenset[T] | None, function: Callable[[T], U]
 ) -> frozenset[U] | None:
-	"""Elementwise image of a set; Top stays Top."""
 	return None if values is None else frozenset(function(value) for value in values)
 
 
@@ -662,7 +561,6 @@ def _shift_offsets(values: OffsetSet, delta: int) -> OffsetSet:
 
 
 def _indexed(base: ValueSet, index: ValueSet, scale: int, disp: int) -> ValueSet:
-	"""Cartesian ``base + index * scale + disp``; Top operands or overflow yield Top."""
 	if base is None or index is None:
 		return None
 	addresses = frozenset(Address(b + i * scale + disp) for b in base for i in index)
@@ -672,10 +570,6 @@ def _indexed(base: ValueSet, index: ValueSet, scale: int, disp: int) -> ValueSet
 def _indexed_offsets(
 	base: frozenset[int], index: frozenset[Address], scale: int, disp: int
 ) -> OffsetSet:
-	"""Cartesian frame-offset sum; overflow yields Top.
-
-	The caller has already ruled out Top operands.
-	"""
 	offsets = frozenset(b + i * scale + disp for b in base for i in index)
 	return None if len(offsets) > _K_BOUND else offsets
 
@@ -712,7 +606,6 @@ def _top_registers(state: State, registers: tuple[int, ...]) -> State:
 
 
 def _top_written(instruction: CsInsn, state: State) -> State:
-	"""Omit every written register from the state (omission means Top)."""
 	written = set(instruction.regs_access()[1])
 	return State(
 		registers={
@@ -731,7 +624,6 @@ def _top_written(instruction: CsInsn, state: State) -> State:
 
 
 def _stack_read(stack: Mapping[int, frozenset[Address]], offsets: OffsetSet) -> ValueSet:
-	"""Value set of the frame slots; an unmodeled slot makes the read Top."""
 	if offsets is None:
 		return None
 	values: set[Address] = set()
@@ -746,7 +638,6 @@ def _stack_read(stack: Mapping[int, frozenset[Address]], offsets: OffsetSet) -> 
 def _union_write(
 	mapping: Mapping[int, frozenset[Address]], keys: OffsetSet, value: ValueSet
 ) -> dict[int, frozenset[Address]]:
-	"""Union-write a value into the keyed slots; a Top write Tops the slots."""
 	written = dict(mapping)
 	if keys is None:
 		return written
@@ -764,7 +655,6 @@ def _union_write(
 
 
 def _stack_offsets(state: State, memory: CsMemOperand, base_register: int) -> OffsetSet:
-	"""Frame offsets of a stack-relative operand."""
 	offsets = state.sp_offsets.get(base_register)
 	if memory.index == 0:
 		return _shift_offsets(offsets, memory.disp)
@@ -777,7 +667,6 @@ def _stack_offsets(state: State, memory: CsMemOperand, base_register: int) -> Of
 def _scaled_addresses(
 	context: _Context, base: ValueSet, index: ValueSet, scale: int, disp: int
 ) -> ValueSet:
-	"""Cartesian scaled sum, with the enclosing-object rule for a Top index."""
 	if index is None:
 		if base is not None and len(base) == 1:
 			(base_address,) = base
@@ -789,7 +678,6 @@ def _scaled_addresses(
 
 
 def _memory_addresses(context: _Context, state: State, memory: CsMemOperand) -> ValueSet:
-	"""Address set of a non-frame memory operand; Top when uncomputable."""
 	base = frozenset({Address(0)}) if memory.base == 0 else state.registers.get(memory.base)
 	if memory.index == 0:
 		return _shift_addresses(base, memory.disp)
@@ -801,7 +689,6 @@ def _memory_addresses(context: _Context, state: State, memory: CsMemOperand) -> 
 def _load_value(
 	context: _Context, state: State, instruction: CsInsn, operand: CsOperand
 ) -> ValueSet:
-	"""Value loaded from a memory operand; frame slots read through offsets."""
 	machine = context.program.machine
 	memory = operand.mem
 	if machine.is_x86:
@@ -822,12 +709,6 @@ def _load_value(
 def _store_value(
 	context: _Context, state: State, instruction: CsInsn, operand: CsOperand, value: ValueSet
 ) -> State:
-	"""Write a value through a memory operand.
-
-	Frame-slot stores join the stack map; other stores join the globals
-	map where they can be placed, and the rest drop out of this pass,
-	matching the loaded-image stance of the slot analysis.
-	"""
 	machine = context.program.machine
 	memory = operand.mem
 	if machine.is_x86:
@@ -864,7 +745,6 @@ def _store_value(
 def _store_addresses(
 	context: _Context, state: State, instruction: CsInsn, memory: CsMemOperand
 ) -> ValueSet:
-	"""Address set of a non-frame store; Top when the store cannot be placed."""
 	machine = context.program.machine
 	if machine.is_x86 and memory.base == x86_const.X86_REG_RIP:
 		return frozenset({Address(instruction.address + instruction.size + memory.disp)})
@@ -885,11 +765,6 @@ class _BranchTarget(Struct):
 
 
 def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | None:
-	"""(target address, conditional) of a direct branch, or ``None``.
-
-	Capstone reports branch immediates as absolute targets, the Thumb
-	b-family and ``cbz``/``cbnz`` included.
-	"""
 	if machine.is_x86:
 		if instruction.mnemonic == "jmp":
 			conditional = False
@@ -919,11 +794,6 @@ def _branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | Non
 
 
 def _call_target(instruction: CsInsn, machine: Machine) -> int | None:
-	"""Absolute target of a direct call, or ``None``.
-
-	Capstone reports call immediates as absolute targets, Thumb ``bl``
-	included.
-	"""
 	if machine.is_x86:
 		if instruction.mnemonic != "call":
 			return None
@@ -1148,7 +1018,6 @@ def _apply_x86(context: _Context, instruction: CsInsn, state: State) -> State:
 def _shift_x86_destination(
 	state: State, machine: Machine, destination: int, source: int, delta: int
 ) -> State:
-	"""Shift a register's set by an immediate, staying in its domain."""
 	if destination in _SP_REGISTERS[machine]:
 		return _set_offsets(
 			state, destination, _shift_offsets(state.sp_offsets.get(destination), delta)
@@ -1177,12 +1046,6 @@ def _pop(state: State, sp: int, pointer_size: int, destination: int) -> State:
 
 
 def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
-	"""Operands of an ARM instruction, narrowed to the shift-carrying stub type.
-
-	ARM disassembly yields operands with a shift member on every operand;
-	the capstone stub models the arm operand as a subclass, so the
-	narrowing is a single downcast from the shared operand type.
-	"""
 	return tuple(cast("ArmCsOperand", operand) for operand in instruction.operands)
 
 
@@ -1241,7 +1104,6 @@ def _apply_arm(context: _Context, instruction: CsInsn, state: State) -> State:
 
 
 def _advance_post_index(context: _Context, state: State, operand: CsOperand, delta: int) -> State:
-	"""Write back a post-indexed load's base register (``ldr rN, [rM], #imm``)."""
 	base = operand.mem.base
 	if base == arm_const.ARM_REG_SP:
 		return _set_offsets(state, base, _shift_offsets(state.sp_offsets.get(base), delta))
@@ -1249,7 +1111,6 @@ def _advance_post_index(context: _Context, state: State, operand: CsOperand, del
 
 
 def _arm_shift_scale(operand: ArmCsOperand) -> int | None:
-	"""Multiplier of a shifted register operand; 1 when unshifted."""
 	if operand.shift.type == arm_const.ARM_SFT_LSL:
 		return 1 << operand.shift.value
 	if operand.shift.type == arm_const.ARM_SFT_INVALID:
@@ -1350,12 +1211,6 @@ class _FunctionResult(Struct):
 def _analyze_function(
 	context: _Context, function: Function, blocks: tuple[_Block, ...], seed: State
 ) -> _FunctionResult:
-	"""Fixpoint interpretation of one function from its seeded entry state.
-
-	Returns the site resolutions, the program-global writes accumulated
-	over every reachable state, and one observation per direct call whose
-	callee is a known function.
-	"""
 	entry = blocks[0].start
 	in_states: dict[Address, State] = {entry: seed}
 	worklist = [entry]
@@ -1399,7 +1254,6 @@ def _analyze_function(
 
 
 def _call_observation(context: _Context, block: _Block, state: State) -> _CallObservation | None:
-	"""The direct call of a block, when its callee is a known function."""
 	instruction = block.instructions[-1]
 	target = _call_target(instruction, context.program.machine)
 	if target is None:
@@ -1411,7 +1265,6 @@ def _call_observation(context: _Context, block: _Block, state: State) -> _CallOb
 
 
 def _call_arguments(context: _Context, state: State, instruction: CsInsn) -> Mapping[int, ValueSet]:
-	"""Argument value sets of a direct call, by ABI position."""
 	machine = context.program.machine
 	if machine is Machine.EM_X86_64:
 		return {
@@ -1437,12 +1290,6 @@ def _call_arguments(context: _Context, state: State, instruction: CsInsn) -> Map
 def _site_operand_addresses(
 	context: _Context, state: State, instruction: CsInsn, operand: CsOperand
 ) -> ValueSet:
-	"""Effective-address set of a memory site's operand, for the slot field.
-
-	Memory sites exist only on x86 (ARM sites are register-only), so the
-	base register resolves against the x86 frame registers and any
-	offset-domain register means no single slot address.
-	"""
 	memory = operand.mem
 	if memory.base == x86_const.X86_REG_RIP:
 		return frozenset({Address(instruction.address + instruction.size + memory.disp)})
