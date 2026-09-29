@@ -76,8 +76,8 @@ do_device_init@0x1dca: <unresolved>
   review.
 - `char_out@0x118` and `z_impl_zephyr_fputc@0x8a6` call through `_char_out`, a function
   pointer in RAM. The image has stores whose address the analysis cannot compute, so any
-  writable slot may hold anything, and these sites fall back to every address-taken
-  function.
+  writable slot may hold anything: `analyze` reports these sites unresolved, and
+  `stack --elf` expands them to every address-taken function.
 - `console_out@0x956` and `console_out@0x960` are indirect call sites (`blx r3`) whose
   value-set analysis through the `device->api` chain yields one candidate.
 - `_isr_wrapper@0x884` resolves to `z_irq_spurious` through the indexed load over
@@ -172,7 +172,8 @@ contradicts does not hold.
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - A store whose address the analysis cannot compute makes every writable address
-  unknown, so a site that reads its target from RAM resolves only through the fallback.
+  unknown, so a site that reads its target from RAM is unresolved unless its own path
+  wrote that target.
 - Value-set analysis per-site sets are refinements, not over-approximations: the
   analysis drops unknown values and does not model every write ([#61]), and its
   control-flow graph has gaps ([#66]).

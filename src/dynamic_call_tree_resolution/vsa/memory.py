@@ -120,7 +120,7 @@ def _pointer_value(context: Context, address: Address) -> Address | None:
 
 def _section_slots(context: Context, start: Address, stride: int) -> ValueSet:
 	index = bisect_right(context.section_starts, start) - 1
-	if index < 0 or stride <= 0:
+	if index < 0 or stride <= 0 or _span_at(context, start) is None:
 		return Top()
 	count = (context.section_spans[index][1] - start) // stride
 	if not 0 < count <= K_BOUND:
