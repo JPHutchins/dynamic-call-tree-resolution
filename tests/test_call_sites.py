@@ -572,6 +572,7 @@ def test_arm_empty_symbol_does_not_hide_its_sized_thumb_twin() -> None:
 	assert [site.site_address for site in extract_call_sites(program)] == [0x1000]
 
 
+@pytest.mark.image
 @pytest.mark.parametrize(
 	("elf", "register_indirect_branches"),
 	[

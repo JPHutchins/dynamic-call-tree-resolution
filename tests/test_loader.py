@@ -276,6 +276,7 @@ def test_load_skips_absolute_object_symbols(tmp_path: Path) -> None:
 	assert Address(0x2000) not in load(path).objects
 
 
+@pytest.mark.image
 @pytest.mark.parametrize(
 	"elf", ["hello_zephyr_qemu_cortex_m3.elf", "sensor-two-impl/zephyr/zephyr.elf"]
 )

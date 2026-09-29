@@ -47,6 +47,11 @@ pyright = Task("uv run pyright src tests")
 
 typecheck = Parallel(mypy, pyright)
 test = Task("uv run pytest -v -m 'not slow'", agent_format=("--junitxml {report}", "junit"))
+test_fast = Task(
+	"uv run pytest -m 'not slow and not image'",
+	agent_format=("--junitxml {report}", "junit"),
+	help="the tests minus those analyzing a committed firmware image (marked image)",
+)
 coverage = Task(
 	"uv run pytest -m 'not slow' --cov --cov-report=term-missing --cov-report=xml",
 	agent_format=("--junitxml {report}", "junit"),
@@ -54,6 +59,16 @@ coverage = Task(
 
 all = Sequential(fix, Parallel(actionlint, typecheck, coverage))
 check = Parallel(format_check, c_format_check, nix_format_check, lint, actionlint, typecheck, test)
+check_fast = Parallel(
+	format_check,
+	c_format_check,
+	nix_format_check,
+	lint,
+	actionlint,
+	typecheck,
+	test_fast,
+	help="check for quick iteration: every leaf of check, with test_fast in place of test",
+)
 gate = Parallel(
 	format_check, c_format_check, nix_format_check, lint, actionlint, typecheck, coverage
 )
