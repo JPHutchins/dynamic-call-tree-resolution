@@ -149,7 +149,7 @@ class State(Struct):
 
 	registers: Mapping[int, frozenset[Address]]
 	sp_offsets: Mapping[int, frozenset[int]]
-	"""Stack-pointer registers, as offsets from the entry stack pointer."""
+	"""Copies of the stack pointer, as offsets from its entry value."""
 	stack: Mapping[int, frozenset[Address]]
 	"""Frame slots, by entry-frame offset."""
 	globals: Mapping[int, frozenset[Address]]
