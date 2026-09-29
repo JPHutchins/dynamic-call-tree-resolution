@@ -138,7 +138,6 @@ ignore = [
     "D103",    # code should document itself; a needed comment is a symptom
     "D105",    # magic method contracts are defined by the data model, not prose
     "D107",    # __init__ is documented by its class
-    "D205",    # summaries here are flowing paragraphs, not one-liners
     "D417",    # params belong to the type system, not prose (see DOC201/DOC402 above)
     "PLC0415", # imports are scoped as narrowly as possible, by design
     "PLR0911", # complexity thresholds reward fragmentation over clarity
