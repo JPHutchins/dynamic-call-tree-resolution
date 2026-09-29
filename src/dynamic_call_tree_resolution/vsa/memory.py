@@ -1,0 +1,241 @@
+# Copyright (c) 2026 JP Hutchins
+# SPDX-License-Identifier: MIT
+
+"""Loads and stores against the loaded image and the global writes."""
+
+from __future__ import annotations
+
+from bisect import bisect_right
+from functools import partial
+from typing import TYPE_CHECKING, assert_never
+
+from capstone import arm_const, x86_const
+from salix import Struct
+
+from dynamic_call_tree_resolution.model import Address
+from dynamic_call_tree_resolution.points_to import read_pointer
+from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized
+from dynamic_call_tree_resolution.vsa.lattice import (
+	K_BOUND,
+	Known,
+	OffsetSet,
+	Top,
+	ValueSet,
+	bind,
+	capped,
+	indexed,
+	indexed_offsets,
+	lookup,
+	shift_addresses,
+	shift_offsets,
+)
+from dynamic_call_tree_resolution.vsa.state import State, stack_read, union_write
+
+if TYPE_CHECKING:
+	from collections.abc import Mapping
+
+	from capstone import CsInsn, CsMemOperand, CsOperand
+
+	from dynamic_call_tree_resolution.model import Program
+
+
+class Context(Struct):
+	"""What every function's interpretation reads from the program."""
+
+	program: Program
+	object_spans: tuple[tuple[int, int], ...]
+	object_starts: tuple[int, ...]
+	global_writes: Mapping[Address, frozenset[Address]]
+	function_starts: frozenset[Address]
+
+
+def accumulate_writes(
+	current: Mapping[Address, frozenset[Address]],
+	written: list[Mapping[Address, frozenset[Address]]],
+) -> dict[Address, frozenset[Address]]:
+	accumulated = dict(current)
+	for function_writes in written:
+		for address, values in function_writes.items():
+			existing = accumulated.get(address)
+			if existing is None:
+				accumulated[address] = values
+				continue
+			combined = existing | values
+			if len(combined) > K_BOUND:
+				accumulated.pop(address, None)
+			else:
+				accumulated[address] = combined
+	return accumulated
+
+
+def context_for(program: Program, global_writes: Mapping[Address, frozenset[Address]]) -> Context:
+	spans = tuple(
+		sorted(
+			(object_.address, object_.address + object_.size)
+			for object_ in program.objects.values()
+			if object_.size > 0
+		)
+	)
+	return Context(
+		program=program,
+		object_spans=spans,
+		object_starts=tuple(span[0] for span in spans),
+		global_writes=global_writes,
+		function_starts=frozenset(
+			normalized(function.address, program.machine) for function in program.functions.values()
+		),
+	)
+
+
+def _span_at(context: Context, address: Address) -> tuple[int, int] | None:
+	index = bisect_right(context.object_starts, address) - 1
+	if index < 0:
+		return None
+	span = context.object_spans[index]
+	return span if span[0] <= address < span[1] else None
+
+
+def _pointer_value(context: Context, address: Address) -> Address | None:
+	span = _span_at(context, address)
+	return read_pointer(context.program, address, span[1] if span is not None else None)
+
+
+def _object_slots(context: Context, start: Address, stride: int) -> ValueSet:
+	span = _span_at(context, start)
+	if span is None or stride <= 0:
+		return Top()
+	_, object_end = span
+	count = (object_end - start) // stride
+	if count <= 0:
+		return Top()
+	return Known(values=frozenset(Address(start + index * stride) for index in range(count)))
+
+
+def _image_value(context: Context, state: State, addresses: ValueSet) -> ValueSet:
+	return bind(addresses, partial(_image_read, context, state))
+
+
+def _image_read(context: Context, state: State, addresses: frozenset[Address]) -> ValueSet:
+	values: set[Address] = set()
+	for address in addresses:
+		written = state.globals.get(address)
+		if written is None:
+			written = context.global_writes.get(address)
+		if written is not None:
+			values.update(written)
+		value = _pointer_value(context, address)
+		if value is not None:
+			values.add(value)
+		elif written is None and _span_at(context, address) is not None:
+			return Top()
+	return capped(frozenset(values))
+
+
+def stack_offsets(state: State, memory: CsMemOperand, base_register: int) -> OffsetSet:
+	offsets = lookup(state.sp_offsets, base_register)
+	if memory.index == 0:
+		return shift_offsets(offsets, memory.disp)
+	return bind(
+		offsets,
+		lambda bases: bind(
+			lookup(state.registers, memory.index),
+			lambda indexes: indexed_offsets(bases, indexes, memory.scale, memory.disp),
+		),
+	)
+
+
+def scaled_addresses(
+	context: Context, base: ValueSet, index: ValueSet, scale: int, disp: int
+) -> ValueSet:
+	match index:
+		case Top():
+			return bind(
+				base,
+				lambda bases: (
+					_object_slots(context, Address(next(iter(bases)) + disp), scale)
+					if len(bases) == 1
+					else Top()
+				),
+			)
+		case Known():
+			return indexed(base, index, scale, disp)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def memory_addresses(context: Context, state: State, memory: CsMemOperand) -> ValueSet:
+	base = (
+		Known(values=frozenset({Address(0)}))
+		if memory.base == 0
+		else lookup(state.registers, memory.base)
+	)
+	if memory.index == 0:
+		return shift_addresses(base, memory.disp)
+	return scaled_addresses(
+		context, base, lookup(state.registers, memory.index), memory.scale, memory.disp
+	)
+
+
+def load_value(context: Context, state: State, instruction: CsInsn, operand: CsOperand) -> ValueSet:
+	machine = context.program.machine
+	memory = operand.mem
+	if machine.is_x86:
+		if memory.base == x86_const.X86_REG_RIP:
+			address = Address(instruction.address + instruction.size + memory.disp)
+			return _image_value(context, state, Known(values=frozenset({address})))
+		if memory.base in SP_REGISTERS[machine] or memory.base in state.sp_offsets:
+			return stack_read(state.stack, stack_offsets(state, memory, memory.base))
+		return _image_value(context, state, memory_addresses(context, state, memory))
+	if memory.base == arm_const.ARM_REG_PC:
+		address = Address(((instruction.address + 4) & ~3) + memory.disp)
+		return _image_value(context, state, Known(values=frozenset({address})))
+	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
+		return stack_read(state.stack, stack_offsets(state, memory, memory.base))
+	return _image_value(context, state, memory_addresses(context, state, memory))
+
+
+def store_value(
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand, value: ValueSet
+) -> State:
+	machine = context.program.machine
+	memory = operand.mem
+	if machine.is_x86:
+		if memory.base in SP_REGISTERS[machine] or memory.base in state.sp_offsets:
+			return State(
+				registers=state.registers,
+				sp_offsets=state.sp_offsets,
+				stack=union_write(state.stack, stack_offsets(state, memory, memory.base), value),
+				globals=state.globals,
+			)
+		addresses = _store_addresses(context, state, instruction, memory)
+		return State(
+			registers=state.registers,
+			sp_offsets=state.sp_offsets,
+			stack=state.stack,
+			globals=union_write(state.globals, addresses, value),
+		)
+	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
+		return State(
+			registers=state.registers,
+			sp_offsets=state.sp_offsets,
+			stack=union_write(state.stack, stack_offsets(state, memory, memory.base), value),
+			globals=state.globals,
+		)
+	addresses = _store_addresses(context, state, instruction, memory)
+	return State(
+		registers=state.registers,
+		sp_offsets=state.sp_offsets,
+		stack=state.stack,
+		globals=union_write(state.globals, addresses, value),
+	)
+
+
+def _store_addresses(
+	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
+) -> ValueSet:
+	machine = context.program.machine
+	if machine.is_x86 and memory.base == x86_const.X86_REG_RIP:
+		return Known(
+			values=frozenset({Address(instruction.address + instruction.size + memory.disp)})
+		)
+	return memory_addresses(context, state, memory)
