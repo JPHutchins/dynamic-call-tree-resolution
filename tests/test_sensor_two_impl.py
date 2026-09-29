@@ -15,7 +15,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 import msgspec
 import pytest
@@ -23,6 +23,9 @@ from salix import Struct
 
 from dynamic_call_tree_resolution import (
 	AnalysisReport,
+	Bounded,
+	StackReport,
+	Unbounded,
 	assignments,
 	extract_call_sites,
 	load,
@@ -39,7 +42,6 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 
 	from dynamic_call_tree_resolution.callgraph import CallEdge
-	from dynamic_call_tree_resolution.stack_analysis import StackReport
 	from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 ARTIFACTS = Path(__file__).parent / "fixtures" / "sensor-two-impl"
@@ -114,13 +116,33 @@ def sound_depths(resolution: _Resolution) -> Mapping[str, StackReport]:
 	return _depths(resolution, exact=False)
 
 
+def _lower_bound(report: StackReport) -> int:
+	match report.bound:
+		case Bounded(bytes=depth):
+			return depth
+		case Unbounded(at_least=at_least):
+			return at_least
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 def test_exact_expansion_gives_each_thread_its_impl_depth(
 	exact_depths: Mapping[str, StackReport],
 ) -> None:
-	assert exact_depths["thermal_thread"].depth == 72
-	assert exact_depths["thermal_thread"].recursive is False
-	assert exact_depths["motion_thread"].depth == 648
-	assert exact_depths["motion_thread"].recursive is True
+	assert exact_depths["thermal_thread"] == StackReport(
+		entry="thermal_thread",
+		bound=Unbounded(
+			at_least=72,
+			recursion=frozenset(),
+			unmeasured=frozenset({"__aeabi_ldivmod"}),
+			dynamic=frozenset(),
+			unresolved=frozenset({"i2c_write_read"}),
+		),
+	)
+	motion = exact_depths["motion_thread"].bound
+	assert isinstance(motion, Unbounded)
+	assert motion.at_least == 648
+	assert "motion_thread" in motion.recursion
 
 
 @pytest.mark.xfail(
@@ -132,7 +154,7 @@ def test_no_entry_is_deeper_exact_than_sound(
 	exact_depths: Mapping[str, StackReport], sound_depths: Mapping[str, StackReport]
 ) -> None:
 	assert {
-		entry: (exact_depths[entry].depth, sound_depths[entry].depth)
+		entry: (_lower_bound(exact_depths[entry]), _lower_bound(sound_depths[entry]))
 		for entry in exact_depths.keys() & sound_depths.keys()
-		if exact_depths[entry].depth > sound_depths[entry].depth
+		if _lower_bound(exact_depths[entry]) > _lower_bound(sound_depths[entry])
 	} == {}

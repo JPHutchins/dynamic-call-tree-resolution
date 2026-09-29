@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import re
+from enum import Enum, auto
 from itertools import groupby
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
@@ -18,14 +19,43 @@ if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
 
 
+class Bounded(Struct):
+	"""A depth that bounds every path of the call graph as given."""
+
+	bytes: int
+
+
+class Unbounded(Struct):
+	"""A depth that bounds only from below, with the functions that break the bound.
+
+	``recursion`` holds the reachable functions on a cycle, ``unmeasured``
+	the reachable functions without a ``.su`` record, ``dynamic`` the
+	reachable frames GCC could not bound, and ``unresolved`` the reachable
+	callers of an indirect call without candidates.
+	"""
+
+	at_least: int
+	recursion: frozenset[str]
+	unmeasured: frozenset[str]
+	dynamic: frozenset[str]
+	unresolved: frozenset[str]
+
+
 class StackReport(Struct):
 	"""Worst-case stack depth of one entry point."""
 
 	entry: str
-	depth: int
-	recursive: bool
-	has_dynamic: bool
-	unmeasured: int
+	bound: Bounded | Unbounded
+
+
+class _Reason(Enum):
+	RECURSION = auto()
+	UNMEASURED = auto()
+	DYNAMIC = auto()
+	UNRESOLVED = auto()
+
+
+type _Reasons = frozenset[tuple[_Reason, str]]
 
 
 _MAX_CYCLE_SIZE: Final = 64
@@ -47,7 +77,8 @@ def expand_indirect_calls(
 	of all resolved targets): per-caller candidates refine on top of the
 	fallback, never replace it, so sites the extractor missed cannot vanish
 	from the bound. With ``exact`` the fallback union is dropped, trusting
-	the per-caller candidates alone.
+	the per-caller candidates alone. A placeholder left with no targets
+	stays, so its caller's entries report it as unresolved.
 
 	With ``exact``, candidate names are also translated to every raw ``.ci``
 	graph name with the same bare key — static functions are path-qualified
@@ -81,6 +112,7 @@ def expand_indirect_calls(
 				)
 				for graph_target in graph_targets(target)
 			)
+			or [INDIRECT_CALLEE]
 			if edge.callee == INDIRECT_CALLEE
 			else (edge.callee,)
 		)
@@ -101,16 +133,19 @@ def worst_case_depths(
 	root test uses it while the depths still use the expanded ``edges``:
 	expansion adds only sound fallback edges, so a thread function whose
 	only incoming edges are fallback unions keeps its per-entry report.
-	Cycles (recursion) are broken at the back edge and flagged; the flags
-	reflect any branch of the subtree, not only the deepest one. Frames
-	using ``alloca``/VLAs are counted but flagged, and path frames without
-	``.su`` records are counted as unmeasured.
+	The depth is the deepest path with each cycle broken at its back edge
+	and each frame without a ``.su`` record counted as 0 bytes; it is a
+	bound only when nothing the entry reaches is recursive, unmeasured,
+	unboundedly dynamic, or an unresolved indirect call. Unbounded entries
+	come first, then bounded ones, each deepest first.
 	"""
 	frames_tuple = tuple(frames)
 	frame_by_name = _frames_by_bare_name(frames_tuple)
 	adjacency = _adjacency(edges)
 	root_adjacency = _adjacency(entry_edges) if entry_edges is not None else adjacency
-	depths = _depths_by_component(adjacency, frame_by_name)
+	components = _strongly_connected_components(adjacency)
+	depths = _depths_by_component(adjacency, frame_by_name, components)
+	reasons = _reasons_by_component(adjacency, frame_by_name, components)
 	root_callees = _callees(root_adjacency)
 	root_graph_nodes = {frame_key(node) for node in set(root_adjacency) | root_callees}
 	roots = sorted(
@@ -118,14 +153,20 @@ def worst_case_depths(
 		| ({frame_key(usage.function) for usage in frames_tuple} - root_graph_nodes)
 	)
 	return tuple(
-		report
-		for report in sorted(
+		sorted(
 			(
-				depths[entry] if entry in depths else _leaf_report(entry, frame_by_name)
+				StackReport(
+					entry=frame_key(entry),
+					bound=_bound(
+						depths[entry] if entry in depths else frame_by_name[entry].bytes,
+						reasons[entry]
+						if entry in reasons
+						else _own_reasons(entry, adjacency, frame_by_name),
+					),
+				)
 				for entry in roots
 			),
-			key=_report_depth,
-			reverse=True,
+			key=_report_order,
 		)
 	)
 
@@ -137,22 +178,90 @@ def _adjacency(edges: Iterable[CallEdge]) -> dict[str, frozenset[str]]:
 	return {caller: frozenset(callees) for caller, callees in callees_by_name.items()}
 
 
-def _leaf_report(function: str, frame_by_name: Mapping[str, StackUsage]) -> StackReport:
-	frame = frame_by_name.get(function)
-	return StackReport(
-		entry=function,
-		depth=frame.bytes if frame is not None else 0,
-		recursive=False,
-		has_dynamic=frame.dynamic if frame is not None else False,
-		unmeasured=0 if frame is not None else 1,
+def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
+	return (
+		Unbounded(
+			at_least=depth,
+			recursion=_names(reasons, _Reason.RECURSION),
+			unmeasured=_names(reasons, _Reason.UNMEASURED),
+			dynamic=_names(reasons, _Reason.DYNAMIC),
+			unresolved=_names(reasons, _Reason.UNRESOLVED),
+		)
+		if reasons
+		else Bounded(bytes=depth)
 	)
+
+
+def _names(reasons: _Reasons, reason: _Reason) -> frozenset[str]:
+	return frozenset(name for kind, name in reasons if kind is reason)
+
+
+def _report_order(report: StackReport) -> tuple[bool, int]:
+	match report.bound:
+		case Unbounded(at_least=at_least):
+			return (False, -at_least)
+		case Bounded(bytes=depth):
+			return (True, -depth)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _own_reasons(
+	node: str,
+	adjacency: Mapping[str, frozenset[str]],
+	frame_by_name: Mapping[str, StackUsage],
+) -> _Reasons:
+	"""What breaks the bound at ``node`` itself: its frame and its indirect calls."""
+	frame = frame_by_name.get(frame_key(node))
+	return frozenset(
+		(reason, frame_key(node))
+		for reason, applies in (
+			(_Reason.UNMEASURED, frame is None and node != INDIRECT_CALLEE),
+			(_Reason.DYNAMIC, frame is not None and not frame.bounded),
+			(_Reason.UNRESOLVED, INDIRECT_CALLEE in adjacency.get(node, frozenset())),
+		)
+		if applies
+	)
+
+
+def _reasons_by_component(
+	adjacency: Mapping[str, frozenset[str]],
+	frame_by_name: Mapping[str, StackUsage],
+	components: tuple[tuple[str, ...], ...],
+) -> Mapping[str, _Reasons]:
+	"""Every node's reasons closed over all it reaches, one SCC at a time, sinks first.
+
+	Members of one component reach each other, so they share one set; a
+	component of several functions, or one calling itself, is recursion.
+	"""
+	closure: dict[str, _Reasons] = {}
+	for component in components:
+		members = frozenset(component)
+		reasons = frozenset[tuple[_Reason, str]]().union(
+			*(_own_reasons(member, adjacency, frame_by_name) for member in component),
+			*(
+				closure[callee]
+				for member in component
+				for callee in adjacency.get(member, frozenset())
+				if callee not in members
+			),
+			(
+				frozenset((_Reason.RECURSION, frame_key(member)) for member in component)
+				if len(component) > 1
+				or any(member in adjacency.get(member, frozenset()) for member in component)
+				else frozenset()
+			),
+		)
+		closure.update(dict.fromkeys(component, reasons))
+	return closure
 
 
 def _depths_by_component(
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, StackUsage],
-) -> Mapping[str, StackReport]:
-	"""Per-node depth reports, computed one SCC at a time, sinks first.
+	components: tuple[tuple[str, ...], ...],
+) -> Mapping[str, int]:
+	"""Per-node depths, computed one SCC at a time, sinks first.
 
 	Tarjan emits strongly connected components in reverse topological
 	order of the condensation, so every callee outside a node's own
@@ -163,8 +272,7 @@ def _depths_by_component(
 	Raises:
 		ValueError: when a cycle exceeds ``_MAX_CYCLE_SIZE`` functions.
 	"""
-	memo: dict[str, StackReport] = {}
-	components = _strongly_connected_components(adjacency)
+	memo: dict[str, int] = {}
 	if any(len(component) > _MAX_CYCLE_SIZE for component in components):
 		raise ValueError(
 			f"call graph contains a cycle of "
@@ -174,7 +282,7 @@ def _depths_by_component(
 	all_nodes = set(adjacency) | _callees(adjacency)
 	for component in (*components, *((node,) for node in sorted(all_nodes - known))):
 		in_component = frozenset(component)
-		within: dict[tuple[str, frozenset[str]], StackReport] = {}
+		within: dict[tuple[str, frozenset[str]], int] = {}
 		for node in component:
 			memo[node] = _depth(
 				node, adjacency, frame_by_name, frozenset(), memo, in_component, within
@@ -187,16 +295,16 @@ def _depth(
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, StackUsage],
 	path: frozenset[str],
-	memo: Mapping[str, StackReport],
+	memo: Mapping[str, int],
 	in_component: frozenset[str],
-	within: dict[tuple[str, frozenset[str]], StackReport],
-) -> StackReport:
+	within: dict[tuple[str, frozenset[str]], int],
+) -> int:
 	key = (function, path & in_component)
 	if key in within:
 		return within[key]
 	frame = frame_by_name.get(frame_key(function))
 	current_path = path | {function}
-	children: list[StackReport] = []
+	children: list[int] = []
 	for callee in sorted(adjacency.get(function, frozenset())):
 		if callee in current_path:
 			continue
@@ -206,28 +314,9 @@ def _depth(
 			if cached is not None
 			else _depth(callee, adjacency, frame_by_name, current_path, memo, in_component, within)
 		)
-	deepest = max(
-		children,
-		key=_report_depth,
-		default=StackReport(
-			entry=function, depth=0, recursive=False, has_dynamic=False, unmeasured=0
-		),
-	)
-	report = StackReport(
-		entry=frame_key(function),
-		depth=(frame.bytes if frame is not None else 0) + deepest.depth,
-		recursive=any(child.recursive for child in children)
-		or any(callee in current_path for callee in adjacency.get(function, frozenset())),
-		has_dynamic=(frame.dynamic if frame is not None else False)
-		or any(child.has_dynamic for child in children),
-		unmeasured=(0 if frame is not None else 1) + deepest.unmeasured,
-	)
-	within[key] = report
-	return report
-
-
-def _report_depth(report: StackReport) -> int:
-	return report.depth
+	depth = (frame.bytes if frame is not None else 0) + max(children, default=0)
+	within[key] = depth
+	return depth
 
 
 def _frame_bytes(usage: StackUsage) -> int:
@@ -325,5 +414,5 @@ def _merge_frame_records(records: list[StackUsage]) -> StackUsage:
 	return StackUsage(
 		function=largest.function,
 		bytes=largest.bytes,
-		dynamic=any(usage.dynamic for usage in records),
+		bounded=all(usage.bounded for usage in records),
 	)

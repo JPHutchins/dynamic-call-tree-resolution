@@ -98,18 +98,18 @@ outs@0x804a8fa: <unresolved>
 
 ```console
 $ dctr stack tests/fixtures/counter-su
-shell_readline: 1760 bytes recursive dynamic unmeasured: 1
+shell_readline: unbounded, at least 1760 bytes (recursion: 4, unmeasured: 22, unresolved: 10)
 ...
-poll_state_thread: 460 bytes dynamic unmeasured: 1
+poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
 ...
 ```
 
 ```console
 $ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe
 resolved slots: 121 | indirect call sites: 100
-shell_readline: 2108 bytes recursive dynamic unmeasured: 1
+shell_readline: unbounded, at least 2108 bytes (recursion: 18, unmeasured: 45)
 ...
-poll_state_thread: 1012 bytes recursive dynamic
+poll_state_thread: unbounded, at least 1012 bytes (recursion: 18, unmeasured: 37)
 ...
 ```
 
@@ -120,10 +120,14 @@ poll_state_thread: 1012 bytes recursive dynamic
 - `stack --elf` expands every indirect edge to its site candidates plus the fallback
   union of all resolved slot targets. `outs` has no candidates, so its edge is the
   fallback alone.
-- None of these depths is a worst-case bound. `recursive` (a cycle was broken) and
-  `dynamic` (a frame uses `alloca` or a VLA) describe any branch of the entry's
-  subtree; `unmeasured: N` counts frames on the deepest path that have no `.su` record
-  and count as 0 bytes.
+- An `unbounded` entry's number is only a lower bound. The counts name what breaks the
+  bound anywhere in the entry's subtree:
+  - `recursion`: functions on a cycle;
+  - `unmeasured`: functions with no `.su` record, counted as 0 bytes;
+  - `dynamic`: frames GCC could not bound (`alloca` or a VLA);
+  - `unresolved`: callers of an indirect call with no candidates.
+- A plain `N bytes` bounds every path of the call graph as given. That graph is still
+  incomplete ([#61], [#62]).
 - `shell_readline` is not in the linked executable: the linker discarded it, but its
   `.ci` graph survives, and entry points come from the `.ci` graph.
 
@@ -174,7 +178,6 @@ contradicts does not hold.
   only if that graph is complete, and today it is not (above).
 - Expanding indirect edges (`stack --elf`) can report less than the subset-only
   expansion used in the tests ([#58]).
-- `recursive`, `dynamic`, and `unmeasured: N` results are not bounded at all ([#64]).
 - Entry points come from `.ci`, including functions the linker discarded ([#64], [#78]).
 - Interrupt, exception, context-switch, and FPU stacking are not modeled.
 

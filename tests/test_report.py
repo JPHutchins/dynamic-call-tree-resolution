@@ -11,15 +11,19 @@ import msgspec
 
 from dynamic_call_tree_resolution import (
 	AnalysisReport,
+	Bounded,
 	ComparisonReport,
 	FunctionComparison,
 	Machine,
+	Unbounded,
+	UnboundedStack,
 	assignments,
 	build_comparison,
 	build_report,
 	extract_call_sites,
 	load,
 )
+from dynamic_call_tree_resolution.report import stack_bound_report
 from tests.expected import EXPECTED_PATHS
 
 if TYPE_CHECKING:
@@ -75,3 +79,27 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 		),
 	)
 	assert msgspec.json.decode(msgspec.json.encode(comparison), type=ComparisonReport) == comparison
+
+
+def test_a_bounded_stack_serializes_its_bytes() -> None:
+	assert msgspec.json.encode(stack_bound_report(Bounded(bytes=16))) == (
+		b'{"kind":"bounded","bytes":16}'
+	)
+
+
+def test_an_unbounded_stack_serializes_its_reasons_sorted() -> None:
+	assert stack_bound_report(
+		Unbounded(
+			at_least=8,
+			recursion=frozenset({"b", "a"}),
+			unmeasured=frozenset({"asm"}),
+			dynamic=frozenset(),
+			unresolved=frozenset({"main"}),
+		)
+	) == UnboundedStack(
+		at_least_bytes=8,
+		recursion=("a", "b"),
+		unmeasured=("asm",),
+		dynamic=(),
+		unresolved=("main",),
+	)

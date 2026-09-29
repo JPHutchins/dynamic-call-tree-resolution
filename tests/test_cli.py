@@ -10,7 +10,12 @@ from pathlib import Path
 import msgspec
 import pytest
 
-from dynamic_call_tree_resolution import AnalysisReport, AnalysisSummary, ComparisonReport
+from dynamic_call_tree_resolution import (
+	AnalysisReport,
+	AnalysisSummary,
+	ComparisonReport,
+	UnboundedStack,
+)
 from dynamic_call_tree_resolution.cli import analyze, compare, main, stack, summary
 from tests.expected import EXPECTED_PATHS
 
@@ -117,12 +122,14 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	(nested / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
 	stack(build_directory, elf=fixture_elfs["nopie"])
 	output = capsys.readouterr().out
-	assert "resolved slots: 11" in output
-	assert "indirect call sites: 1" in output
-	assert "main: 80 bytes" in output
+	assert output.splitlines() == [
+		"resolved slots: 11 | indirect call sites: 1",
+		"main: unbounded, at least 80 bytes (unmeasured: 8)",
+		"plain_target: 64 bytes",
+	]
 
 
-def test_cli_stack_warns_when_indirect_edges_are_dropped(
+def test_cli_stack_reports_an_indirect_call_without_candidates_as_unresolved(
 	tmp_path: Path,
 	fixture_elfs: dict[str, Path],
 	capsys: pytest.CaptureFixture[str],
@@ -135,8 +142,10 @@ def test_cli_stack_warns_when_indirect_edges_are_dropped(
 	)
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	stack(build_directory, elf=fixture_elfs["null"])
-	output = capsys.readouterr()
-	assert "warning: 1 of 1 indirect call edges have no candidates and were dropped" in output.err
+	assert capsys.readouterr().out.splitlines() == [
+		"resolved slots: 0 | indirect call sites: 1",
+		"main: unbounded, at least 16 bytes (unresolved: 1)",
+	]
 
 
 def test_cli_bad_input_prints_one_line(
@@ -184,12 +193,10 @@ def test_cli_stack_accepts_positional_elf(
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	(nested / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
 	stack(build_directory, fixture_elfs["nopie"])
-	output = capsys.readouterr().out
-	assert "resolved slots: 11" in output
-	assert "main: 80 bytes" in output
+	assert "main: unbounded, at least 80 bytes (unmeasured: 8)" in capsys.readouterr().out
 
 
-def test_cli_summary_warns_when_indirect_edges_are_dropped(
+def test_cli_summary_carries_an_unresolved_indirect_call(
 	tmp_path: Path,
 	fixture_elfs: dict[str, Path],
 	capsys: pytest.CaptureFixture[str],
@@ -202,10 +209,11 @@ def test_cli_summary_warns_when_indirect_edges_are_dropped(
 	)
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	summary(build_directory, fixture_elfs["null"])
-	output = capsys.readouterr()
-	assert "warning: 1 of 1 indirect call edges have no candidates and were dropped" in output.err
-	report = msgspec.json.decode(output.out, type=AnalysisSummary)
+	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisSummary)
 	assert report.entry_points == 1
+	assert report.worst_case == UnboundedStack(
+		at_least_bytes=16, recursion=(), unmeasured=(), dynamic=(), unresolved=("main",)
+	)
 
 
 def test_cli_summary_json(
@@ -227,4 +235,5 @@ def test_cli_summary_json(
 	assert report.unresolved_slots == 2
 	assert report.indirect_call_sites == 1
 	assert report.worst_case_entry == "main"
-	assert report.worst_case_bytes == 16
+	assert isinstance(report.worst_case, UnboundedStack)
+	assert report.worst_case.at_least_bytes == 16

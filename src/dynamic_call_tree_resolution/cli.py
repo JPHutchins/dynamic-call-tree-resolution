@@ -4,9 +4,8 @@
 """Command line interface for analyzing ELF images."""
 
 import sys
-from collections.abc import Mapping  # noqa: TC003  # evaluated at runtime in _dropped_indirect_edges' signature
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
-from typing import Annotated, Final
+from typing import Annotated, Final, assert_never
 
 import msgspec
 from cyclopts import App, Parameter
@@ -23,12 +22,14 @@ from dynamic_call_tree_resolution.report import (
 	build_comparison,
 	build_report,
 	slot_counts,
+	stack_bound_report,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
+	Bounded,
 	StackReport,
+	Unbounded,
 	expand_indirect_calls,
-	frame_key,
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
@@ -49,8 +50,25 @@ def _warn_skipped(path: Path) -> None:
 	)
 
 
-def _depth(report: StackReport) -> int:
-	return report.depth
+def _render(report: StackReport) -> str:
+	"""One ``stack`` line: the bytes when bounded, else the lower bound and reason counts."""
+	match report.bound:
+		case Bounded(bytes=depth):
+			return f"{report.entry}: {depth} bytes"
+		case Unbounded() as bound:
+			reasons = ", ".join(
+				f"{reason}: {len(functions)}"
+				for reason, functions in (
+					("recursion", bound.recursion),
+					("unmeasured", bound.unmeasured),
+					("dynamic", bound.dynamic),
+					("unresolved", bound.unresolved),
+				)
+				if functions
+			)
+			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({reasons})"
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _keep(path: Path) -> bool:
@@ -59,19 +77,6 @@ def _keep(path: Path) -> bool:
 		return True
 	_warn_skipped(path)
 	return False
-
-
-def _dropped_indirect_edges(
-	edges: tuple[CallEdge, ...],
-	targets_by_caller: Mapping[str, frozenset[str]],
-	fallback: frozenset[str],
-) -> int:
-	"""Indirect edges left with no candidates after expansion."""
-	return sum(
-		edge.callee == INDIRECT_CALLEE
-		and not (targets_by_caller.get(frame_key(edge.caller), frozenset()) | fallback)
-		for edge in edges
-	)
 
 
 @app.command  # type: ignore[misc]
@@ -153,8 +158,6 @@ class _Expansion(Struct):
 
 	expanded: tuple[CallEdge, ...]
 	original: tuple[CallEdge, ...]
-	targets_by_caller: Mapping[str, frozenset[str]]
-	fallback: frozenset[str]
 	indirect_sites: int
 	resolved_slots: int
 
@@ -170,23 +173,9 @@ def _expand_from_elf(edges: tuple[CallEdge, ...], elf: Path) -> _Expansion:
 	return _Expansion(
 		expanded=expand_indirect_calls(edges, targets_by_caller, fallback),
 		original=edges,
-		targets_by_caller=targets_by_caller,
-		fallback=fallback,
 		indirect_sites=indirect_sites,
 		resolved_slots=slot_counts(resolved, unresolved_slots(program, resolved)).resolved_slots,
 	)
-
-
-def _warn_dropped_indirect_edges(expansion: _Expansion) -> None:
-	"""Warn when any indirect edge has no candidates and was dropped."""
-	if dropped := _dropped_indirect_edges(
-		expansion.original, expansion.targets_by_caller, expansion.fallback
-	):
-		print(
-			f"warning: {dropped} of {expansion.indirect_sites} indirect call edges "
-			"have no candidates and were dropped",
-			file=sys.stderr,
-		)
 
 
 @app.command  # type: ignore[misc]
@@ -203,19 +192,13 @@ def stack(build_directory: Path, elf: Path | None = None) -> None:
 			f"resolved slots: {expansion.resolved_slots} "
 			f"| indirect call sites: {expansion.indirect_sites}"
 		)
-		_warn_dropped_indirect_edges(expansion)
 	reports = worst_case_depths(
 		expansion.expanded if expansion is not None else edges,
 		load_stack_usages(build_directory),
 		entry_edges=expansion.original if expansion is not None else None,
 	)
 	for report in reports:
-		flags = (
-			(" recursive" if report.recursive else "")
-			+ (" dynamic" if report.has_dynamic else "")
-			+ (f" unmeasured: {report.unmeasured}" if report.unmeasured else "")
-		)
-		print(f"{report.entry}: {report.depth} bytes{flags}")
+		print(_render(report))
 
 
 @app.command  # type: ignore[misc]
@@ -225,13 +208,12 @@ def summary(build_directory: Path, elf: Path) -> None:
 	resolved = assignments(program)
 	edges = load_callgraph(build_directory)
 	expansion = _expand_from_elf(edges, elf)
-	_warn_dropped_indirect_edges(expansion)
 	reports = worst_case_depths(
 		expansion.expanded,
 		load_stack_usages(build_directory),
 		entry_edges=expansion.original,
 	)
-	deepest = max(reports, key=_depth, default=None)
+	worst = next(iter(reports), StackReport(entry="", bound=Bounded(bytes=0)))
 	unresolved = unresolved_slots(program, resolved)
 	counts = slot_counts(resolved, unresolved)
 	report = AnalysisSummary(
@@ -242,8 +224,8 @@ def summary(build_directory: Path, elf: Path) -> None:
 		indirect_call_sites=expansion.indirect_sites,
 		total_functions=len(program.functions),
 		entry_points=len(reports),
-		worst_case_bytes=deepest.depth if deepest is not None else 0,  # pragma: no branch
-		worst_case_entry=deepest.entry if deepest is not None else "",  # pragma: no branch
+		worst_case_entry=worst.entry,
+		worst_case=stack_bound_report(worst.bound),
 	)
 	print(msgspec.json.format(msgspec.json.encode(report).decode()))
 

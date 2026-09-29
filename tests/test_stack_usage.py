@@ -26,9 +26,9 @@ def test_parse_stack_usage(tmp_path: Path) -> None:
 	stack_file = tmp_path / "canbus.c.su"
 	stack_file.write_text(SU_CONTENT)
 	assert parse_stack_usage(stack_file) == (
-		StackUsage(function="can_send", bytes=24, dynamic=False),
-		StackUsage(function="rx_cb", bytes=0, dynamic=False),
-		StackUsage(function="z_impl_can_send", bytes=16, dynamic=True),
+		StackUsage(function="can_send", bytes=24, bounded=True),
+		StackUsage(function="rx_cb", bytes=0, bounded=True),
+		StackUsage(function="z_impl_can_send", bytes=16, bounded=False),
 	)
 
 
@@ -39,12 +39,19 @@ def test_parse_stack_usage_rejects_malformed_records(tmp_path: Path) -> None:
 		parse_stack_usage(stack_file)
 
 
-def test_parse_stack_usage_flags_bounded_dynamic_frames(tmp_path: Path) -> None:
+def test_parse_stack_usage_keeps_bounded_dynamic_frames_bounded(tmp_path: Path) -> None:
 	stack_file = tmp_path / "bounded.su"
 	stack_file.write_text("bounded.c:5:1:vla_frame\t48\tdynamic,bounded\n")
 	assert parse_stack_usage(stack_file) == (
-		StackUsage(function="vla_frame", bytes=48, dynamic=True),
+		StackUsage(function="vla_frame", bytes=48, bounded=True),
 	)
+
+
+def test_parse_stack_usage_rejects_unknown_qualifiers(tmp_path: Path) -> None:
+	stack_file = tmp_path / "unknown.su"
+	stack_file.write_text("unknown.c:5:1:frame\t48\tbounded\n")
+	with pytest.raises(ValueError, match=r"unknown \.su qualifier 'bounded'"):
+		parse_stack_usage(stack_file)
 
 
 def test_load_stack_usages_collects_all_su_files(tmp_path: Path) -> None:
@@ -54,6 +61,6 @@ def test_load_stack_usages_collects_all_su_files(tmp_path: Path) -> None:
 	(nested / "canbus.c.obj.su").write_text("canbus.c:180:6:can_send\t24\tstatic\n")
 	(nested / "counter.c.obj.su").write_text("main.c:1:1:main\t48\tstatic\n")
 	assert load_stack_usages(build_directory) == (
-		StackUsage(function="can_send", bytes=24, dynamic=False),
-		StackUsage(function="main", bytes=48, dynamic=False),
+		StackUsage(function="can_send", bytes=24, bounded=True),
+		StackUsage(function="main", bytes=48, bounded=True),
 	)

@@ -11,15 +11,26 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
+from itertools import groupby
 from typing import TYPE_CHECKING
 
 import pytest
 from salix import Struct
 
-from dynamic_call_tree_resolution import assignments, build_report, extract_call_sites, load
+from dynamic_call_tree_resolution import (
+	Unbounded,
+	assignments,
+	build_report,
+	extract_call_sites,
+	load,
+)
 from dynamic_call_tree_resolution.call_sites import per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
-from dynamic_call_tree_resolution.stack_analysis import expand_indirect_calls, worst_case_depths
+from dynamic_call_tree_resolution.stack_analysis import (
+	expand_indirect_calls,
+	frame_key,
+	worst_case_depths,
+)
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 from tests.toolchains import FIXTURES, build_cortex_m3, build_host, run_cortex_m3, run_host
 
@@ -27,6 +38,8 @@ if TYPE_CHECKING:
 	import subprocess
 	from collections.abc import Iterator, Mapping
 	from pathlib import Path
+
+	from dynamic_call_tree_resolution.callgraph import CallEdge
 
 CORTEX_M3_LEVELS = ("-O0", "-O2", "-Os")
 
@@ -254,26 +267,65 @@ def test_every_observed_target_is_a_candidate_of_each_resolved_site(
 	assert [names for names in sites if names and not observed <= names] == []
 
 
+def _expanded_call_graph(elf: Path) -> tuple[CallEdge, ...]:
+	program = load(elf)
+	targets_by_caller, fallback = per_caller_candidates(
+		program, extract_call_sites(program), assignments(program)
+	)
+	return expand_indirect_calls(load_callgraph(elf.parent), targets_by_caller, fallback)
+
+
+def _caller_key(edge: CallEdge) -> str:
+	return frame_key(edge.caller)
+
+
+def _closure(reached: frozenset[str], callees: Mapping[str, frozenset[str]]) -> frozenset[str]:
+	grown = reached | frozenset(
+		callee for caller in reached for callee in callees.get(caller, frozenset())
+	)
+	return reached if grown == reached else _closure(grown, callees)
+
+
+def _reachable(edges: tuple[CallEdge, ...], entry: str) -> frozenset[str]:
+	return _closure(
+		frozenset({entry}),
+		{
+			caller: frozenset(frame_key(edge.callee) for edge in group)
+			for caller, group in groupby(sorted(edges, key=_caller_key), key=_caller_key)
+		},
+	)
+
+
 @pytest.mark.parametrize(
 	"image",
 	[pytest.param(image, id=_image_id(image), marks=_unsound((62,))) for image in STACK_IMAGES],
 )
-def test_the_reset_bound_covers_the_frames_on_the_path_the_run_took(
+def test_the_expanded_graph_reaches_every_target_the_run_called(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	outcome = outcomes[image]
+	assert (
+		outcome.observations["main"] - _reachable(_expanded_call_graph(outcome.elf), "reset")
+		== set()
+	)
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in STACK_IMAGES]
+)
+def test_a_bounded_reset_covers_the_frames_on_the_path_the_run_took(
 	image: Image, outcomes: Mapping[Image, Outcome]
 ) -> None:
 	elf = outcomes[image].elf
-	program = load(elf)
-	edges = load_callgraph(elf.parent)
 	frames = load_stack_usages(elf.parent)
-	targets_by_caller, fallback = per_caller_candidates(
-		program, extract_call_sites(program), assignments(program)
-	)
 	(reset,) = (
 		report
 		for report in worst_case_depths(
-			expand_indirect_calls(edges, targets_by_caller, fallback), frames, entry_edges=edges
+			_expanded_call_graph(elf), frames, entry_edges=load_callgraph(elf.parent)
 		)
 		if report.entry == "reset"
 	)
 	bytes_by_function = {frame.function: frame.bytes for frame in frames}
-	assert reset.depth >= sum(bytes_by_function[function] for function in ("reset", "main", "deep"))
+	assert isinstance(reset.bound, Unbounded) or reset.bound.bytes >= sum(
+		bytes_by_function[function] for function in ("reset", "main", "deep")
+	)
