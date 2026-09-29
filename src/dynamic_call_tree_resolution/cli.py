@@ -121,16 +121,16 @@ def compare(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	pexplorer: Annotated[
-		Path | None, Parameter(help="pexplorer JSON report to join per function")
+		Path | None,
+		Parameter(
+			help="pexplorer JSON report to join per function: every function with dynamic "
+			"calls on either side gets a row comparing pexplorer's dynamic-call count with "
+			"dctr's per-site candidate sets"
+		),
 	] = None,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
-	"""Print a resolution rollup per ELF for cross-tool comparison.
-
-	With a pexplorer JSON report, every function with dynamic calls on
-	either side gets a row comparing pexplorer's dynamic-call count with
-	dctr's per-site candidate sets.
-	"""
+	"""Print a resolution rollup per ELF for cross-tool comparison."""
 	paths: list[Path] = []
 	for elf in elfs:
 		if elf.is_dir():
@@ -171,8 +171,6 @@ def compare(
 
 
 class _Expansion(Struct):
-	"""One ELF-expanded call-graph: the edges, the originals, and the resolution."""
-
 	expanded: tuple[CallEdge, ...]
 	original: tuple[CallEdge, ...]
 	indirect_sites: int
@@ -205,16 +203,18 @@ def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[
 @app.command  # type: ignore[misc]
 def stack(
 	build_directory: Path,
-	elf: Path | None = None,
+	elf: Annotated[
+		Path | None,
+		Parameter(
+			help="ELF image to expand indirect call sites against; entries the linker "
+			"discarded are dropped and counted"
+		),
+	] = None,
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
-	"""Print worst-case stack depths of a build directory (.su and .ci artifacts).
-
-	When an ELF is given, indirect call sites are expanded against it,
-	and entries the linker discarded are dropped and counted.
-	"""
+	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
 	edges = load_callgraph(build_directory)
 	expansion = (
 		_expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature)

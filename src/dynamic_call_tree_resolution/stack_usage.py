@@ -14,11 +14,12 @@ if TYPE_CHECKING:
 
 
 class StackUsage(Struct):
-	"""One ``-fstack-usage`` record: a function's stack frame."""
+	"""One ``-fstack-usage`` record."""
 
 	function: str
 	bytes: int
 	bounded: bool
+	"""``False`` for a plain ``dynamic`` frame (``alloca`` or a variable-length array)."""
 
 
 def parse_stack_usage(path: Path) -> tuple[StackUsage, ...]:
@@ -58,7 +59,7 @@ def _parse_record(line: str) -> StackUsage:
 
 
 def _bounded(qualifier: str) -> bool:
-	"""Whether a ``.su`` qualifier's bytes bound the frame.
+	"""Whether the bytes of a ``.su`` record bound its frame.
 
 	Raises:
 		ValueError: for a qualifier GCC does not emit.

@@ -51,9 +51,10 @@ class Platform(Enum):
 
 
 class Image(Struct):
-	"""One reproducer build: a source under ``fixtures/reproducers`` or a generated one."""
+	"""One reproducer build."""
 
 	source: str
+	"""A file under ``fixtures/reproducers``, or a key of ``GENERATED_SOURCES``."""
 	platform: Platform
 	flags: tuple[str, ...]
 
@@ -180,11 +181,13 @@ IMAGES = tuple(
 
 
 class Outcome(Struct):
-	"""One image: its path, what its run observed per caller, and dctr's sites per caller."""
+	"""One image, built, run and analyzed."""
 
 	elf: Path
 	observations: Mapping[str, frozenset[str]]
+	"""Target names the run observed, by caller."""
 	sites: tuple[tuple[str, frozenset[str]], ...]
+	"""Each call site's caller and dctr's candidate names."""
 
 
 def _build(image: Image, directory: Path) -> Path:

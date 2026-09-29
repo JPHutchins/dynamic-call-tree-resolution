@@ -51,7 +51,7 @@ class SlotAssignmentReport(Struct):
 
 
 class CallSiteReport(Struct):
-	"""One extracted indirect call site with its resolved candidates."""
+	"""One extracted indirect call site, rendered for consumers."""
 
 	caller: str
 	site_address: int
@@ -76,7 +76,7 @@ class UnresolvedSlotReport(Struct):
 
 
 class AnalysisReport(Struct):
-	"""All resolved slots, call sites, and unresolved slots of one program."""
+	"""The analysis report of one program."""
 
 	assignments: tuple[SlotAssignmentReport, ...]
 	call_sites: tuple[CallSiteReport, ...]
@@ -121,7 +121,7 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
-	"""A stack depth that bounds only from below, with the functions breaking the bound."""
+	"""A stack depth that bounds only from below."""
 
 	at_least_bytes: int
 	recursion: tuple[str, ...]
@@ -169,7 +169,7 @@ class AnalysisSummary(Struct):
 
 
 class SlotCounts(SalixStruct):
-	"""Slot and target counts shared by every report builder."""
+	"""The counts every report builder shares."""
 
 	resolved_slots: int
 	total_slots: int
