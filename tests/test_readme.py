@@ -52,16 +52,22 @@ def _matches(expected: list[str], actual: list[str]) -> bool:
 	return _matches(expected[1:], actual[1:])
 
 
+def _prose(readme: Path) -> str:
+	return re.sub(r"```console\n.*?```", "", readme.read_text(), flags=re.DOTALL)
+
+
 def test_readme_prose_publishes_no_byte_count() -> None:
 	assert [
+		match[0] for match in re.finditer(r"\b\d+ bytes\b", _prose(REPOSITORY_ROOT / "README.md"))
+	] == []
+
+
+def test_readme_prose_quotes_only_sites_its_transcripts_print() -> None:
+	printed = "\n".join(
+		line for transcript in _transcripts(REPOSITORY_ROOT / "README.md") for line in transcript
+	)
+	assert [
 		match[0]
-		for match in re.finditer(
-			r"\b\d+ bytes\b",
-			re.sub(
-				r"```console\n.*?```",
-				"",
-				(REPOSITORY_ROOT / "README.md").read_text(),
-				flags=re.DOTALL,
-			),
-		)
+		for match in re.finditer(r"\w+@0x[0-9a-f]+", _prose(REPOSITORY_ROOT / "README.md"))
+		if match[0] not in printed
 	] == []
