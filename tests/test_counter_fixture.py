@@ -49,8 +49,8 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		resolved_targets=200,
 		indirect_call_sites=101,
 		total_functions=729,
-		entry_points=146,
-		discarded_entry_points=223,
+		entry_points=148,
+		discarded_entry_points=286,
 		worst_case_entry="gpio_emul_port_set_masked_raw",
 		worst_case=summary.worst_case,
 	)

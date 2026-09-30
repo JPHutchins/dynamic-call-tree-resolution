@@ -130,7 +130,7 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
-resolved slots: 106 | indirect call sites: 101 | not in the image: 223
+resolved slots: 106 | indirect call sites: 101 | not in the image: 286
 gpio_emul_port_set_masked_raw: unbounded, at least 6288 bytes (recursion: 222, unmeasured: 153)
 ...
 poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
@@ -155,7 +155,7 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
-resolved slots: 106 | indirect call sites: 101 | not in the image: 223
+resolved slots: 106 | indirect call sites: 101 | not in the image: 286
 poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
 poll_state_thread +80 = 80 bytes (recursion)
 can_msgq_put +32 = 112 bytes via indirect: fallback (recursion)
@@ -195,8 +195,10 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
   incomplete ([#96], [#113]).
 - Entry points come from the `.ci` graph, which also records functions the linker
-  discarded, such as `shell_readline`. With an ELF, entries missing from the image are
-  dropped and counted as `not in the image`; without one, every `.ci` entry is listed.
+  discarded, such as `shell_readline`. With an ELF, calls from discarded functions are
+  ignored, so a function only they call, such as `work_queue_main`, is an entry, and
+  discarded entries are dropped and counted as `not in the image`. Without one, every
+  `.ci` entry is listed.
 - `stack --json` carries the full function names behind each count.
 - `stack --path ENTRY` prints that entry alone, then its deepest path, one function per
   line: its frame, the running total, the edge it is called through (`static`,
@@ -257,7 +259,7 @@ contradicts does not hold.
   the cycle that a depth-first walk finds, not the deepest. More edges, such as the
   fallback's, can print a smaller number.
 - Without an ELF, entry points come from `.ci`, including functions the linker
-  discarded ([#78]).
+  discarded, and a function only they call is not an entry ([#78]).
 - Interrupt, exception, context-switch, and FPU stacking are not modeled.
 
 ### Residue
