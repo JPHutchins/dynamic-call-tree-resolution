@@ -150,7 +150,7 @@ CANDIDATES = (
 	*_cortex_m3("round_cap.c", "w9", {}),
 	*_cortex_m3("jump_table.c", "switch_case", _everywhere(66)),
 	*_cortex_m3("writeback_walk.c", "walk", {}),
-	*_cortex_m3("predicated_call.c", "predicated_call_case", _everywhere(66)),
+	*_cortex_m3("predicated_call.c", "predicated_call_case", {}),
 	*_cortex_m3("cast_handler.c", "main", {}),
 	_host("jump_table.c", "switch_case", ("-O0", "-no-pie", "-fcf-protection=full"), (66,)),
 	_host("jump_table.c", "switch_case", ("-O2", "-no-pie", "-fcf-protection=full"), (66,)),

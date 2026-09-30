@@ -22,6 +22,8 @@ from dynamic_call_tree_resolution.model import Address, Machine, aligned
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
+	from capstone import CsInsn
+
 
 DISASSEMBLERS: Final[Mapping[Machine, tuple[int, int]]] = {
 	Machine.EM_X86_64: (CS_ARCH_X86, CS_MODE_64),
@@ -232,6 +234,17 @@ FLAG_REGISTER_NAMES: Final = frozenset(
 		"spsr",
 	}
 )
+
+
+def arm_mnemonic(instruction: CsInsn) -> str:
+	unqualified = instruction.mnemonic.split(".")[0]
+	if instruction.mnemonic == ".byte":
+		return unqualified
+	return unqualified.removesuffix(ARM_CONDITION_SUFFIXES.get(instruction.cc, ""))
+
+
+def arm_predicated(instruction: CsInsn) -> bool:
+	return arm_mnemonic(instruction) != instruction.mnemonic.split(".")[0]
 
 
 def normalized(address: Address, machine: Machine) -> Address:

@@ -11,7 +11,6 @@ from capstone import arm_const
 
 from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.vsa.abi import (
-	ARM_CONDITION_SUFFIXES,
 	ARM_DESCENDING_STORES,
 	ARM_EXCLUSIVE_STORES,
 	ARM_LOADS,
@@ -20,6 +19,8 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_REGISTER_BYTES,
 	ARM_STORE_WIDTHS,
 	ARM_STORED_REGISTERS,
+	arm_mnemonic,
+	arm_predicated,
 )
 from dynamic_call_tree_resolution.vsa.lattice import (
 	Known,
@@ -61,10 +62,8 @@ def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
 
 
 def apply_arm(context: Context, instruction: CsInsn, state: State) -> State:
-	unqualified = instruction.mnemonic.split(".")[0]
-	base_mnemonic = unqualified.removesuffix(ARM_CONDITION_SUFFIXES.get(instruction.cc, ""))
-	executed = _apply_unconditional(context, instruction, base_mnemonic, state)
-	return executed if base_mnemonic == unqualified else weakened(context, state, executed)
+	executed = _apply_unconditional(context, instruction, arm_mnemonic(instruction), state)
+	return weakened(context, state, executed) if arm_predicated(instruction) else executed
 
 
 def _apply_unconditional(
