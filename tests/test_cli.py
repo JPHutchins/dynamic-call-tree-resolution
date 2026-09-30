@@ -215,6 +215,33 @@ def test_cli_stack_with_elf_makes_an_entry_of_what_only_discarded_functions_call
 	]
 
 
+def test_cli_stack_with_elf_makes_each_static_thread_an_entry(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "threads.c.ci").write_text(
+		"graph: { "
+		'edge: { sourcename: "z_thread_entry" targetname: "__indirect_call" } '
+		'edge: { sourcename: "z_thread_entry" targetname: "abort_thread" } '
+		"}\n"
+	)
+	(build_directory / "threads.c.su").write_text(
+		"threads.c:8:6:z_thread_entry\t16\tstatic\n"
+		"threads.c:17:6:rom_thread\t32\tstatic\n"
+		"threads.c:23:6:escaped_thread\t48\tstatic\n"
+		"threads.c:30:6:abort_thread\t24\tstatic\n"
+	)
+	stack(build_directory, fixture_elfs["threads"])
+	rows = capsys.readouterr().out.splitlines()
+	assert (
+		[row for row in rows if row.split(":")[0] in {"rom_tid", "escaped_tid"}],
+		[row for row in rows if row.split(":")[0] in {"rom_thread", "escaped_thread"}],
+	) == (["escaped_tid: 64 bytes", "rom_tid: 48 bytes"], [])
+
+
 def test_cli_stack_json_carries_every_name(
 	tmp_path: Path,
 	capsys: pytest.CaptureFixture[str],

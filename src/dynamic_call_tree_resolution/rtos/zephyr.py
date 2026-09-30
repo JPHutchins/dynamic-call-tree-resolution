@@ -35,6 +35,7 @@ def detect(program: Program) -> RtosModel | None:
 			if record.type_name == _RECORD
 			if (thread := _thread(program, layout, record)) is not None
 		),
+		trampoline=_TRAMPOLINE,
 	)
 
 

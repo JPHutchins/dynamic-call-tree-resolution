@@ -207,9 +207,11 @@ class RtosModel(Struct):
 	evidence: tuple[str, ...]
 	"""What identified the RTOS in the image."""
 	threads: tuple[ThreadRoot, ...]
+	trampoline: str | None
+	"""The function that calls each thread's entry."""
 
 
-BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=())
+BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)
 
 
 def aligned(address: Address) -> Address:

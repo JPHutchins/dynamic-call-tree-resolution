@@ -44,9 +44,11 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	frame_key,
 	stack_graph,
 	stack_reports,
+	thread_edges,
+	thread_frames,
 	worst_case_depths,
 )
-from dynamic_call_tree_resolution.stack_usage import load_stack_usages
+from dynamic_call_tree_resolution.stack_usage import StackUsage, load_stack_usages
 
 if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import Program, RtosModel, UnresolvedSlot
@@ -263,6 +265,8 @@ def _comparison(
 class _Expansion(Struct):
 	expanded: tuple[CallEdge, ...]
 	in_image_edges: tuple[CallEdge, ...]
+	frames: tuple[StackUsage, ...]
+	threads: frozenset[str]
 	indirect_sites: int
 	program: Program
 	rtos: RtosModel
@@ -272,20 +276,29 @@ class _Expansion(Struct):
 
 
 def _expand_from_elf(
-	edges: tuple[CallEdge, ...], elf: Path, *, narrow_by_signature: bool, rtos: RtosChoice
+	edges: tuple[CallEdge, ...],
+	frames: tuple[StackUsage, ...],
+	elf: Path,
+	*,
+	narrow_by_signature: bool,
+	rtos: RtosChoice,
 ) -> _Expansion:
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
 	image_functions = frozenset(frame_key(name) for name in defined_function_names(elf))
+	in_image_edges = tuple(edge for edge in edges if frame_key(edge.caller) in image_functions)
 	model = rtos_model(program, rtos)
 	resolution = resolve(program, model)
 	targets_by_caller, fallback = per_caller_candidates(
 		program, resolution.sites, resolution.assignments, narrow_by_signature=narrow_by_signature
 	)
 	unresolved = unresolved_slots(program, resolution.assignments)
+	threads_edges, threads_frames = _thread_graph(program, model, in_image_edges, frames)
 	return _Expansion(
-		expanded=expand_indirect_calls(edges, targets_by_caller, fallback),
-		in_image_edges=tuple(edge for edge in edges if frame_key(edge.caller) in image_functions),
+		expanded=(*expand_indirect_calls(edges, targets_by_caller, fallback), *threads_edges),
+		in_image_edges=(*in_image_edges, *threads_edges),
+		frames=(*frames, *threads_frames),
+		threads=frozenset(thread.name for thread in model.threads),
 		indirect_sites=indirect_sites,
 		program=program,
 		rtos=model,
@@ -295,8 +308,33 @@ def _expand_from_elf(
 	)
 
 
+def _thread_graph(
+	program: Program,
+	model: RtosModel,
+	edges: tuple[CallEdge, ...],
+	frames: tuple[StackUsage, ...],
+) -> tuple[tuple[CallEdge, ...], tuple[StackUsage, ...]]:
+	entries_by_thread = {
+		thread.name: frame_key(program.functions[thread.entry].name) for thread in model.threads
+	}
+	match model.trampoline:
+		case None:
+			return (), ()
+		case str() as trampoline:
+			return (
+				thread_edges(edges, trampoline, entries_by_thread),
+				thread_frames(frames, trampoline, entries_by_thread),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[StackReport, ...]:
-	return tuple(report for report in reports if report.entry in expansion.image_functions)
+	return tuple(
+		report
+		for report in reports
+		if report.entry in expansion.image_functions or report.entry in expansion.threads
+	)
 
 
 @app.command  # type: ignore[misc]
@@ -323,14 +361,15 @@ def stack(
 ) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
 	edges = load_callgraph(build_directory)
+	frames = load_stack_usages(build_directory)
 	expansion = (
-		_expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
+		_expand_from_elf(edges, frames, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
 		if elf is not None
 		else None
 	)
 	graph = stack_graph(
 		expansion.expanded if expansion is not None else edges,
-		load_stack_usages(build_directory),
+		expansion.frames if expansion is not None else frames,
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
 	)
 	reports = stack_reports(graph)
@@ -387,12 +426,15 @@ def summary(
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
-	edges = load_callgraph(build_directory)
-	expansion = _expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
-	reports = worst_case_depths(
-		expansion.expanded,
+	expansion = _expand_from_elf(
+		load_callgraph(build_directory),
 		load_stack_usages(build_directory),
-		entry_edges=expansion.in_image_edges,
+		elf,
+		narrow_by_signature=narrow_by_signature,
+		rtos=rtos,
+	)
+	reports = worst_case_depths(
+		expansion.expanded, expansion.frames, entry_edges=expansion.in_image_edges
 	)
 	kept = _in_image(reports, expansion)
 	worst = next(iter(kept), StackReport(entry="", bound=Bounded(bytes=0)))

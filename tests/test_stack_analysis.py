@@ -31,7 +31,12 @@ from dynamic_call_tree_resolution import (
 	stack_reports,
 	worst_case_depths,
 )
-from dynamic_call_tree_resolution.stack_analysis import frame_key
+from dynamic_call_tree_resolution.stack_analysis import (
+	INDIRECT_CALLEE,
+	frame_key,
+	thread_edges,
+	thread_frames,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -46,6 +51,35 @@ FRAMES = (
 	StackUsage(function="c", bytes=32, bounded=True),
 	StackUsage(function="leaf", bytes=4, bounded=True),
 )
+
+
+def test_a_thread_is_the_trampolines_frame_and_calls_with_its_indirect_call_to_the_entry() -> None:
+	edges = (
+		CallEdge(caller="trampoline", callee=INDIRECT_CALLEE),
+		CallEdge(caller="trampoline", callee="abort"),
+		CallEdge(caller="/src/app.c:entry", callee="leaf"),
+	)
+	frames = (
+		StackUsage(function="trampoline", bytes=8, bounded=True),
+		StackUsage(function="abort", bytes=50, bounded=True),
+		StackUsage(function="entry", bytes=100, bounded=True),
+		StackUsage(function="leaf", bytes=10, bounded=True),
+	)
+	threads = thread_edges(edges, "trampoline", {"worker_tid": "entry"})
+	depths = {
+		report.entry: report.bound
+		for report in worst_case_depths(
+			(*edges, *threads), (*frames, *thread_frames(frames, "trampoline", ("worker_tid",)))
+		)
+	}
+	assert (threads, depths.get("worker_tid"), "entry" in depths) == (
+		(
+			CallEdge(caller="worker_tid", callee="abort"),
+			CallEdge(caller="worker_tid", callee="/src/app.c:entry", kind=EdgeKind.THREAD),
+		),
+		Bounded(bytes=118),
+		False,
+	)
 
 
 def test_worst_case_depth_takes_the_deepest_branch() -> None:

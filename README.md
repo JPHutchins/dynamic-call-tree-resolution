@@ -208,11 +208,15 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   ignored, so a function only they call, such as `work_queue_main`, is an entry, and
   discarded entries are dropped and counted as `not in the image`. Without one, every
   `.ci` entry is listed.
+- With an ELF and an RTOS model, each static thread is an entry named for its thread,
+  such as `thermal_tid`. It is `z_thread_entry`'s frame and calls, with the indirect call
+  that starts the thread going to that thread's entry alone. The entry function is then
+  no longer an entry of its own.
 - `stack --json` carries the full function names behind each count.
 - `stack --path ENTRY` prints that entry alone, then its deepest path, one function per
   line: its frame, the running total, the edge it is called through (`static`,
-  `indirect: candidate`, or `indirect: fallback`), and what its own frame, calls, or
-  cycle add to an unbounded depth. The last total is the entry's depth.
+  `indirect: candidate`, `indirect: fallback`, or `thread record`), and what its own
+  frame, calls, or cycle add to an unbounded depth. The last total is the entry's depth.
 
 ## Related tools
 
@@ -272,7 +276,8 @@ contradicts does not hold.
   fallback's, can print a smaller number.
 - Without an ELF, entry points come from `.ci`, including functions the linker
   discarded, and a function only they call is not an entry ([#78]).
-- Interrupt, exception, context-switch, and FPU stacking are not modeled.
+- Interrupt, exception, context-switch, and FPU stacking are not modeled, so a
+  thread's depth leaves out the frames an interrupt pushes onto its stack.
 
 ### Residue
 

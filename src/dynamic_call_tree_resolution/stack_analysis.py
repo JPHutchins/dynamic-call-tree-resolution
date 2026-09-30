@@ -104,15 +104,7 @@ def expand_indirect_calls(
 	exact: bool = False,
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
-	raw_names_by_key: dict[str, set[str]] = {}
-	for edge in edges_tuple:
-		for name in (edge.caller, edge.callee):
-			raw_names_by_key.setdefault(frame_key(name), set()).add(name)
-
-	def graph_targets(target: str) -> frozenset[str]:
-		raw_names = raw_names_by_key.get(frame_key(target))
-		return frozenset(raw_names) if raw_names is not None else frozenset({target})
-
+	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
 	return tuple(
 		CallEdge(caller=edge.caller, callee=callee, kind=kind)
 		for edge in edges_tuple
@@ -133,6 +125,60 @@ def expand_indirect_calls(
 			else ((edge.callee, edge.kind),)
 		)
 	)
+
+
+def thread_edges(
+	edges: Iterable[CallEdge], trampoline: str, entries_by_thread: Mapping[str, str]
+) -> tuple[CallEdge, ...]:
+	edges_tuple = tuple(edges)
+	names_by_key = _raw_names_by_key(edges_tuple)
+	return tuple(
+		thread_edge
+		for thread, entry in entries_by_thread.items()
+		for thread_edge in (
+			*(
+				CallEdge(caller=thread, callee=edge.callee, kind=edge.kind)
+				for edge in edges_tuple
+				if frame_key(edge.caller) == trampoline and edge.callee != INDIRECT_CALLEE
+			),
+			*(
+				CallEdge(caller=thread, callee=name, kind=EdgeKind.THREAD)
+				for name in sorted(_graph_names(names_by_key, entry))
+			),
+		)
+	)
+
+
+def thread_frames(
+	frames: Iterable[StackUsage], trampoline: str, threads: Iterable[str]
+) -> tuple[StackUsage, ...]:
+	frames_tuple = tuple(frames)
+	return tuple(
+		StackUsage(function=thread, bytes=usage.bytes, bounded=usage.bounded)
+		for thread in threads
+		for usage in frames_tuple
+		if frame_key(usage.function) == trampoline
+	)
+
+
+def _raw_names_by_key(edges: tuple[CallEdge, ...]) -> Mapping[str, frozenset[str]]:
+	return {
+		key: frozenset(name for _, name in group)
+		for key, group in groupby(
+			sorted(
+				{(frame_key(name), name) for edge in edges for name in (edge.caller, edge.callee)}
+			),
+			key=_first,
+		)
+	}
+
+
+def _first(pair: tuple[str, str]) -> str:
+	return pair[0]
+
+
+def _graph_names(names_by_key: Mapping[str, frozenset[str]], target: str) -> frozenset[str]:
+	return names_by_key.get(frame_key(target), frozenset({target}))
 
 
 def worst_case_depths(

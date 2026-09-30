@@ -20,6 +20,7 @@ class EdgeKind(StrEnum):
 	STATIC = "static"
 	CANDIDATE = "indirect: candidate"
 	FALLBACK = "indirect: fallback"
+	THREAD = "thread record"
 
 
 class CallEdge(Struct):
