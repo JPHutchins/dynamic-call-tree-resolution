@@ -297,6 +297,7 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 					sp_offsets=state.sp_offsets,
 					stack=frame_write(state.stack, offsets, store, pointer_size),
 					globals=state.globals,
+					escaped=state.escaped,
 				),
 			)
 		case Image(addresses=addresses):
@@ -309,6 +310,7 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 					sp_offsets=state.sp_offsets,
 					stack=state.stack,
 					globals=image_write(state.globals, addresses, store, pointer_size),
+					escaped=state.escaped,
 				),
 			)
 		case Unknown():
@@ -343,6 +345,7 @@ def weakened(context: Context, before: State, after: State) -> State:
 			},
 			wild=after.globals.wild,
 		),
+		escaped=before.escaped or after.escaped,
 	)
 
 

@@ -56,6 +56,8 @@ class State(Struct):
 	"""Frame slots, by entry-frame offset."""
 	globals: Writes
 	"""What the stores on the path to the block wrote."""
+	escaped: bool
+	"""A frame address may be held where the analysis does not track it."""
 
 
 class Store(Struct):
@@ -73,6 +75,7 @@ def top_seed(machine: Machine) -> State:
 		sp_offsets={SP_REGISTERS[machine][0]: frozenset({0})},
 		stack={},
 		globals=NO_WRITES,
+		escaped=False,
 	)
 
 
@@ -84,6 +87,7 @@ def join_states(current: State | None, incoming: State) -> State:
 		sp_offsets=join_maps(current.sp_offsets, incoming.sp_offsets),
 		stack=join_maps(current.stack, incoming.stack),
 		globals=_join_writes(current.globals, incoming.globals),
+		escaped=current.escaped or incoming.escaped,
 	)
 
 
@@ -105,6 +109,7 @@ def set_register(state: State, register: int, value: ValueSet) -> State:
 		sp_offsets=sp_offsets,
 		stack=state.stack,
 		globals=state.globals,
+		escaped=state.escaped,
 	)
 
 
@@ -116,6 +121,7 @@ def set_offsets(state: State, register: int, value: OffsetSet) -> State:
 		sp_offsets=put_value(state.sp_offsets, register, value),
 		stack=state.stack,
 		globals=state.globals,
+		escaped=state.escaped,
 	)
 
 
@@ -124,7 +130,11 @@ def top_registers(state: State, registers: tuple[int, ...]) -> State:
 		register: value for register, value in state.registers.items() if register not in registers
 	}
 	return State(
-		registers=remaining, sp_offsets=state.sp_offsets, stack=state.stack, globals=state.globals
+		registers=remaining,
+		sp_offsets=state.sp_offsets,
+		stack=state.stack,
+		globals=state.globals,
+		escaped=state.escaped,
 	)
 
 
@@ -138,6 +148,7 @@ def unknown_memory(state: State) -> State:
 		sp_offsets=state.sp_offsets,
 		stack={},
 		globals=Writes(values={}, wild=True),
+		escaped=state.escaped,
 	)
 
 
@@ -156,6 +167,7 @@ def top_written(instruction: CsInsn, state: State) -> State:
 		},
 		stack=state.stack,
 		globals=state.globals,
+		escaped=state.escaped,
 	)
 
 

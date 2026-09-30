@@ -194,4 +194,5 @@ def _pop(state: State, sp: int, pointer_size: int, destination: int) -> State:
 		sp_offsets=put_value(state.sp_offsets, sp, shift_offsets(offsets, pointer_size)),
 		stack=state.stack,
 		globals=state.globals,
+		escaped=state.escaped,
 	)

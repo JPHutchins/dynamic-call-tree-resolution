@@ -255,4 +255,5 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 		),
 		stack=state.stack,
 		globals=state.globals,
+		escaped=state.escaped,
 	)
