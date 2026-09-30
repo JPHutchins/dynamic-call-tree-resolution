@@ -25,6 +25,9 @@ from dynamic_call_tree_resolution.callgraph import (
 	CallEdge as CallEdge,
 )
 from dynamic_call_tree_resolution.callgraph import (
+	EdgeKind as EdgeKind,
+)
+from dynamic_call_tree_resolution.callgraph import (
 	load_callgraph as load_callgraph,
 )
 from dynamic_call_tree_resolution.callgraph import (
@@ -127,6 +130,9 @@ from dynamic_call_tree_resolution.report import (
 	FunctionComparison as FunctionComparison,
 )
 from dynamic_call_tree_resolution.report import (
+	PathStepReport as PathStepReport,
+)
+from dynamic_call_tree_resolution.report import (
 	SignatureReport as SignatureReport,
 )
 from dynamic_call_tree_resolution.report import (
@@ -134,6 +140,9 @@ from dynamic_call_tree_resolution.report import (
 )
 from dynamic_call_tree_resolution.report import (
 	StackEntryReport as StackEntryReport,
+)
+from dynamic_call_tree_resolution.report import (
+	StackPathReport as StackPathReport,
 )
 from dynamic_call_tree_resolution.report import (
 	UnboundedStack as UnboundedStack,
@@ -151,13 +160,31 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	Bounded as Bounded,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
+	PathStep as PathStep,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	Reason as Reason,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	StackGraph as StackGraph,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
 	StackReport as StackReport,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
 	Unbounded as Unbounded,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
+	deepest_path as deepest_path,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
 	expand_indirect_calls as expand_indirect_calls,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	stack_graph as stack_graph,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	stack_reports as stack_reports,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
 	worst_case_depths as worst_case_depths,

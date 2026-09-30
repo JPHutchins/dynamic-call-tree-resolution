@@ -10,6 +10,7 @@ from msgspec import Struct
 from salix import Struct as SalixStruct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, resolve
+from dynamic_call_tree_resolution.callgraph import EdgeKind
 from dynamic_call_tree_resolution.model import (
 	Address,
 	FunctionSignature,
@@ -26,7 +27,7 @@ from dynamic_call_tree_resolution.pexplorer import (
 	dynamic_sites_by_caller,
 )
 from dynamic_call_tree_resolution.points_to import signatures_by_slot, unresolved_slots
-from dynamic_call_tree_resolution.stack_analysis import Bounded, Unbounded
+from dynamic_call_tree_resolution.stack_analysis import Bounded, Reason, Unbounded
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -152,6 +153,24 @@ class StackEntryReport(Struct):
 
 	entry: str
 	bound: BoundedStack | UnboundedStack
+
+
+class PathStepReport(Struct):
+	"""One function on a deepest path, rendered for consumers."""
+
+	function: str
+	frame_bytes: int
+	cumulative_bytes: int
+	edge: tuple[EdgeKind, ...]
+	flags: tuple[Reason, ...]
+
+
+class StackPathReport(Struct):
+	"""The output of ``stack --path --json``."""
+
+	entry: str
+	bound: BoundedStack | UnboundedStack
+	path: tuple[PathStepReport, ...]
 
 
 class AnalysisSummary(Struct):
