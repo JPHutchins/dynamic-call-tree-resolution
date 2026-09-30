@@ -43,6 +43,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	NO_WRITES,
 	State,
 	Writes,
+	frame_based,
 	join_states,
 	stack_read,
 	top_registers,
@@ -200,7 +201,7 @@ def _site_operand_addresses(
 		return Known(
 			values=frozenset({Address(instruction.address + instruction.size + memory.disp)})
 		)
-	if memory.base in SP_REGISTERS[context.program.machine] or memory.base in state.sp_offsets:
+	if frame_based(state, context.program.machine, memory.base):
 		return Top()
 	return memory_addresses(context, state, memory)
 

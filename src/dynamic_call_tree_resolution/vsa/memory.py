@@ -36,9 +36,11 @@ from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
 	Writes,
+	frame_based,
 	frame_write,
 	image_write,
 	stack_read,
+	unknown_memory,
 )
 
 if TYPE_CHECKING:
@@ -215,7 +217,7 @@ def load_value(context: Context, state: State, instruction: CsInsn, operand: CsO
 		if memory.base == x86_const.X86_REG_RIP:
 			address = Address(instruction.address + instruction.size + memory.disp)
 			return _image_value(context, state, Known(values=frozenset({address})))
-		if memory.base in SP_REGISTERS[machine] or memory.base in state.sp_offsets:
+		if frame_based(state, machine, memory.base):
 			return stack_read(state.stack, stack_offsets(state, memory, memory.base))
 		return _image_value(context, state, memory_addresses(context, state, memory))
 	if memory.base == arm_const.ARM_REG_PC:
@@ -238,19 +240,26 @@ class Image(Struct):
 	addresses: ValueSet
 
 
-type Destination = Frame | Image
+class Unknown(Struct):
+	"""Anywhere: the frame or program-global memory."""
+
+
+type Destination = Frame | Image | Unknown
 
 
 def memory_destination(
 	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
 ) -> Destination:
-	if memory.base in SP_REGISTERS[context.program.machine] or memory.base in state.sp_offsets:
+	machine = context.program.machine
+	if frame_based(state, machine, memory.base):
 		return Frame(offsets=stack_offsets(state, memory, memory.base))
+	if memory.base in SP_REGISTERS[machine] and memory.base not in state.registers:
+		return Unknown()
 	return Image(addresses=_store_addresses(context, state, instruction, memory))
 
 
 def register_destination(context: Context, state: State, register: int, delta: int) -> Destination:
-	if register in SP_REGISTERS[context.program.machine] or register in state.sp_offsets:
+	if frame_based(state, context.program.machine, register):
 		return Frame(offsets=shift_offsets(lookup(state.sp_offsets, register), delta))
 	return Image(addresses=shift_addresses(lookup(state.registers, register), delta))
 
@@ -261,6 +270,8 @@ def anywhere(destination: Destination) -> Destination:
 			return Frame(offsets=Top())
 		case Image():
 			return Image(addresses=Top())
+		case Unknown():
+			return destination
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -300,6 +311,8 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 					globals=image_write(state.globals, addresses, store, pointer_size),
 				),
 			)
+		case Unknown():
+			return unknown_memory(state)
 		case _ as unreachable:
 			assert_never(unreachable)
 
