@@ -95,6 +95,24 @@ class EmbeddedStructMember(Struct):
 	"""Resolved in place."""
 
 
+class SkipReason(StrEnum):
+	"""Why something that may hold or lead to code has no enumerated slots."""
+
+	POINTER_TO_POINTER = "pointer to a pointer"
+	POINTER_TO_ARRAY = "pointer to an array"
+	UNSIZED_ARRAY = "array of unknown size"
+	UNTYPED_OBJECT = "object without a type"
+
+
+class SkippedMember(Struct):
+	"""A member whose slots the analysis does not enumerate."""
+
+	kind: Literal["skipped"]
+	name: str | None
+	offset: int
+	reason: SkipReason
+
+
 class ArrayMember(Struct):
 	"""A by-value array member whose elements hold pointers."""
 
@@ -107,7 +125,9 @@ class ArrayMember(Struct):
 	"""One element, at offset 0."""
 
 
-type Member = FunctionPointerMember | StructPointerMember | EmbeddedStructMember | ArrayMember
+type Member = (
+	FunctionPointerMember | StructPointerMember | EmbeddedStructMember | ArrayMember | SkippedMember
+)
 
 
 def array_elements(member: ArrayMember) -> tuple[Member, ...]:
@@ -132,7 +152,7 @@ class StructureLayout(Struct):
 	"""One structure type's layout."""
 
 	members: tuple[Member, ...]
-	"""Pointer-valued ones only."""
+	"""Only those that hold or may lead to code."""
 	size: int
 
 
@@ -230,6 +250,13 @@ class UnresolvedSlot(Struct):
 	slot: Address
 	path: tuple[str | None, ...]
 	signature: FunctionSignature | None
+
+
+class NotEnumerated(Struct):
+	"""An object or member that may hold or lead to code, left out of the slot universe."""
+
+	path: tuple[str | None, ...]
+	reason: SkipReason
 
 
 def render_path(path: tuple[str | None, ...]) -> str:

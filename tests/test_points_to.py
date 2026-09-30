@@ -15,9 +15,11 @@ from dynamic_call_tree_resolution import (
 	FunctionSignature,
 	Program,
 	Provenance,
+	SkipReason,
 	SlotAssignment,
 	assignments,
 	load,
+	not_enumerated,
 	render_path,
 	unresolved_slots,
 )
@@ -256,6 +258,36 @@ def test_anonymous_types_resolve_through_objects_and_pointers(
 	assert {
 		render_path(slot.path) for slot in unresolved_slots(program, tuple(resolved.values()))
 	} == {"dynamic_anon_ops.run", "visitor.visit_ops", "visitor.visit_state"}
+
+
+def test_not_enumerated_lists_what_may_hold_code_without_slots(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	assert {
+		(render_path(item.path), item.reason)
+		for item in not_enumerated(load(fixture_elfs["arrays"]))
+	} == {
+		("indirection.handlers", SkipReason.POINTER_TO_POINTER),
+		("indirection.filter_refs", SkipReason.POINTER_TO_POINTER),
+		("indirection.filter_rows", SkipReason.POINTER_TO_ARRAY),
+		("tailed_bus.tail", SkipReason.UNSIZED_ARRAY),
+		("mixed_table", SkipReason.UNTYPED_OBJECT),
+		("untyped_buffer", SkipReason.UNTYPED_OBJECT),
+	}
+
+
+def test_a_typedefd_array_member_is_a_nested_array(fixture_elfs: dict[str, Path]) -> None:
+	resolved, program = _resolved(fixture_elfs["arrays"])
+	assert {
+		path: _names(program, assignment)
+		for path, assignment in resolved.items()
+		if path.startswith("indirection.")
+	} == {
+		"indirection.pairs.[0].[0]": {"handler_a"},
+		"indirection.pairs.[0].[1]": {"handler_b"},
+		"indirection.pairs.[1].[0]": {"handler_b"},
+		"indirection.pairs.[1].[1]": {"handler_a"},
+	}
 
 
 def test_array_globals_report_unresolved_elements(fixture_elfs: dict[str, Path]) -> None:

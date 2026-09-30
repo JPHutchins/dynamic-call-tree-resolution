@@ -67,6 +67,9 @@ from dynamic_call_tree_resolution.model import (
 	Member as Member,
 )
 from dynamic_call_tree_resolution.model import (
+	NotEnumerated as NotEnumerated,
+)
+from dynamic_call_tree_resolution.model import (
 	Program as Program,
 )
 from dynamic_call_tree_resolution.model import (
@@ -77,6 +80,12 @@ from dynamic_call_tree_resolution.model import (
 )
 from dynamic_call_tree_resolution.model import (
 	Section as Section,
+)
+from dynamic_call_tree_resolution.model import (
+	SkippedMember as SkippedMember,
+)
+from dynamic_call_tree_resolution.model import (
+	SkipReason as SkipReason,
 )
 from dynamic_call_tree_resolution.model import (
 	SlotAssignment as SlotAssignment,
@@ -109,6 +118,9 @@ from dynamic_call_tree_resolution.points_to import (
 	assignments as assignments,
 )
 from dynamic_call_tree_resolution.points_to import (
+	not_enumerated as not_enumerated,
+)
+from dynamic_call_tree_resolution.points_to import (
 	unresolved_slots as unresolved_slots,
 )
 from dynamic_call_tree_resolution.report import (
@@ -131,6 +143,9 @@ from dynamic_call_tree_resolution.report import (
 )
 from dynamic_call_tree_resolution.report import (
 	FunctionComparison as FunctionComparison,
+)
+from dynamic_call_tree_resolution.report import (
+	NotEnumeratedReport as NotEnumeratedReport,
 )
 from dynamic_call_tree_resolution.report import (
 	PathStepReport as PathStepReport,

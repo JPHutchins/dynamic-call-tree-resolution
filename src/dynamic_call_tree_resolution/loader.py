@@ -32,6 +32,8 @@ from dynamic_call_tree_resolution.model import (
 	Program,
 	Relocation,
 	Section,
+	SkippedMember,
+	SkipReason,
 	StructPointerMember,
 	StructureLayout,
 	layout_key,
@@ -433,8 +435,12 @@ class _Array(Struct):
 	element: Member
 
 
-type _PointeeKind = _FunctionPointer | _StructPointer | None
-type _MemberKind = _FunctionPointer | _StructPointer | _EmbeddedStruct | _Array | None
+class _Skipped(Struct):
+	reason: SkipReason
+
+
+type _PointeeKind = _FunctionPointer | _StructPointer | _Skipped | None
+type _MemberKind = _FunctionPointer | _StructPointer | _EmbeddedStruct | _Array | _Skipped | None
 
 
 def _pointee_kind(type_die: DIE | None) -> _PointeeKind:
@@ -449,6 +455,10 @@ def _pointee_kind(type_die: DIE | None) -> _PointeeKind:
 			return _FunctionPointer(signature=_signature(pointee))
 		case "DW_TAG_structure_type" | "DW_TAG_union_type":
 			return _StructPointer(pointee=_layout_name(_type_die(underlying)))
+		case "DW_TAG_pointer_type" if _pointee_kind(pointee) is not None:
+			return _Skipped(reason=SkipReason.POINTER_TO_POINTER)
+		case "DW_TAG_array_type" if _array_kind(pointee) is not None:
+			return _Skipped(reason=SkipReason.POINTER_TO_ARRAY)
 		case _:
 			return None
 
@@ -466,17 +476,24 @@ def _member_kind(type_die: DIE | None) -> _MemberKind:
 	return None
 
 
-def _array_kind(array_die: DIE) -> _Array | None:
+def _array_kind(array_die: DIE) -> _Array | _Skipped | None:
 	element = _member(_member_kind(_type_die(array_die)), None, 0)
+	if element is None:
+		return None
 	stride = _byte_size(_strip_qualifiers(_type_die(array_die)))
+	counts = _known_counts(array_die)
+	if not stride or counts is None:
+		return _Skipped(reason=SkipReason.UNSIZED_ARRAY)
+	return _nested_array(counts, stride, element)
+
+
+def _known_counts(array_die: DIE) -> tuple[int, ...] | None:
 	counts = tuple(
 		_subrange_count(child)
 		for child in array_die.iter_children()
 		if child.tag == "DW_TAG_subrange_type"
 	)
-	if element is None or not stride or not counts or not all(counts):
-		return None
-	return _nested_array(tuple(count for count in counts if count is not None), stride, element)
+	return tuple(count for count in counts if count) if counts and all(counts) else None
 
 
 def _nested_array(counts: tuple[int, ...], stride: int, element: Member) -> _Array:
@@ -524,6 +541,8 @@ def _member(kind: _MemberKind, name: str | None, offset: int) -> Member | None:
 			)
 		case _Array() as array:
 			return _array_member(array, name, offset)
+		case _Skipped(reason):
+			return SkippedMember(kind="skipped", name=name, offset=offset, reason=reason)
 		case None:
 			return None
 		case _ as unreachable:
@@ -655,7 +674,7 @@ def _object_signature(die: DIE) -> FunctionSignature | None:
 	match _pointee_kind(type_die):
 		case _FunctionPointer(signature):
 			return signature
-		case _StructPointer() | None:
+		case _StructPointer() | _Skipped() | None:
 			return None
 		case _ as unreachable:
 			assert_never(unreachable)

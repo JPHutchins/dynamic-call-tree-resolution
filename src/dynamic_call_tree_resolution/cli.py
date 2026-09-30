@@ -136,6 +136,8 @@ def analyze(
 		print(f"{label}: {', '.join(candidate.name for candidate in assignment.candidates)}")
 	for slot in report.unresolved_slots:
 		print(f"{slot.member_path}: <unresolved>")
+	for item in report.not_enumerated:
+		print(f"{item.member_path}: <not enumerated: {item.reason}>")
 	for site in report.call_sites:
 		label = f"{site.caller}@{site.site_address:#x}"
 		targets = ", ".join(candidate.name for candidate in site.candidates)

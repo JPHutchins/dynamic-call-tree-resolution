@@ -16,6 +16,7 @@ from dynamic_call_tree_resolution.model import (
 	FunctionSignature,
 	Machine,
 	Provenance,
+	SkipReason,
 	UnresolvedSlot,
 	aligned,
 	render_path,
@@ -26,7 +27,11 @@ from dynamic_call_tree_resolution.pexplorer import (
 	PexplorerReport,
 	dynamic_sites_by_caller,
 )
-from dynamic_call_tree_resolution.points_to import signatures_by_slot, unresolved_slots
+from dynamic_call_tree_resolution.points_to import (
+	not_enumerated,
+	signatures_by_slot,
+	unresolved_slots,
+)
 from dynamic_call_tree_resolution.stack_analysis import Bounded, Reason, Unbounded
 
 if TYPE_CHECKING:
@@ -77,12 +82,20 @@ class UnresolvedSlotReport(Struct):
 	signature: SignatureReport | None
 
 
+class NotEnumeratedReport(Struct):
+	"""An object or member whose slots the analysis does not enumerate."""
+
+	member_path: str
+	reason: SkipReason
+
+
 class AnalysisReport(Struct):
 	"""The analysis report of one program."""
 
 	assignments: tuple[SlotAssignmentReport, ...]
 	call_sites: tuple[CallSiteReport, ...]
 	unresolved_slots: tuple[UnresolvedSlotReport, ...]
+	not_enumerated: tuple[NotEnumeratedReport, ...]
 	total_slots: int
 	resolved_slots: int
 	resolved_targets: int
@@ -271,6 +284,10 @@ def build_report(
 				signature=_render_signature(slot.signature),
 			)
 			for slot in unresolved
+		),
+		not_enumerated=tuple(
+			NotEnumeratedReport(member_path=render_path(item.path), reason=item.reason)
+			for item in not_enumerated(program)
 		),
 		total_slots=counts.total_slots,
 		resolved_slots=counts.resolved_slots,
