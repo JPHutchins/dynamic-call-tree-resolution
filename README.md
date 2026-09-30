@@ -134,7 +134,7 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
   - `dynamic`: frames GCC could not bound (`alloca` or a VLA);
   - `unresolved`: callers of an indirect call with no candidates.
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
-  incomplete ([#61], [#96]).
+  incomplete ([#66], [#96], [#113]).
 - Entry points come from the `.ci` graph, which also records functions the linker
   discarded, such as `shell_readline`. With an ELF, entries missing from the image are
   dropped and counted as `not in the image`; without one, every `.ci` entry is listed.
@@ -174,9 +174,9 @@ contradicts does not hold.
 - A store whose address the analysis cannot compute makes every writable address
   unknown, so a site that reads its target from RAM is unresolved unless its own path
   wrote that target.
-- Value-set analysis per-site sets are refinements, not over-approximations: the
-  analysis drops unknown values and does not model every write ([#61]), and its
-  control-flow graph has gaps ([#66]).
+- Value-set analysis per-site sets are refinements, not over-approximations: its
+  control-flow graph has gaps ([#66]), and it does not model x86 sub-registers or a few
+  kinds of write ([#113]).
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
 - The fallback holds every function address the image stores, or that one instruction
@@ -226,7 +226,6 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
 [#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
-[#61]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/61
 [#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
 [#67]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/67
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
@@ -234,3 +233,4 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#74]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/74
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
+[#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
