@@ -14,7 +14,11 @@ from dynamic_call_tree_resolution import (
 	AnalysisReport,
 	AnalysisSummary,
 	ComparisonReport,
+	EdgeKind,
+	PathStepReport,
+	Reason,
 	StackEntryReport,
+	StackPathReport,
 	UnboundedStack,
 )
 from dynamic_call_tree_resolution.cli import analyze, compare, main, stack, summary
@@ -188,6 +192,87 @@ def test_cli_stack_json_carries_every_name(
 			),
 		),
 	)
+
+
+def _path_build(tmp_path: Path) -> Path:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "worker" } '
+		'edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(build_directory / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	(build_directory / "worker.c.su").write_text("worker.c:2:1:worker\t32\tdynamic\n")
+	return build_directory
+
+
+def test_cli_stack_path_prints_the_entry_and_its_deepest_path(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	stack(_path_build(tmp_path), path="main")
+	assert capsys.readouterr().out.splitlines() == [
+		"main: unbounded, at least 48 bytes (dynamic: 1, unresolved: 1)",
+		"main +16 = 16 bytes (unresolved)",
+		"worker +32 = 48 bytes via static (dynamic)",
+	]
+
+
+def test_cli_stack_path_json_carries_every_step(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	stack(_path_build(tmp_path), path="main", json=True)
+	assert msgspec.json.decode(capsys.readouterr().out, type=StackPathReport) == StackPathReport(
+		entry="main",
+		bound=UnboundedStack(
+			at_least_bytes=48,
+			recursion=(),
+			unmeasured=(),
+			dynamic=("worker",),
+			unresolved=("main",),
+		),
+		path=(
+			PathStepReport(
+				function="main",
+				frame_bytes=16,
+				cumulative_bytes=16,
+				edge=(),
+				flags=(Reason.UNRESOLVED,),
+			),
+			PathStepReport(
+				function="worker",
+				frame_bytes=32,
+				cumulative_bytes=48,
+				edge=(EdgeKind.STATIC,),
+				flags=(Reason.DYNAMIC,),
+			),
+		),
+	)
+
+
+def test_cli_stack_path_of_an_unknown_entry_is_an_error(tmp_path: Path) -> None:
+	with pytest.raises(ValueError, match="nope is not a stack entry"):
+		stack(_path_build(tmp_path), path="nope")
+
+
+def test_cli_stack_path_with_elf_names_the_indirect_edge(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "__indirect_call" } }\n'
+	)
+	(build_directory / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
+	(build_directory / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
+	stack(build_directory, elf=fixture_elfs["nopie"], path="main")
+	assert capsys.readouterr().out.splitlines() == [
+		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0",
+		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)",
+		"main +16 = 16 bytes (recursion)",
+		"plain_target +64 = 80 bytes via indirect: candidate",
+	]
 
 
 def test_cli_stack_without_an_elf_reports_every_indirect_call_as_unresolved(

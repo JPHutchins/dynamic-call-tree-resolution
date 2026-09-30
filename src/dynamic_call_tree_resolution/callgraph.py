@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from salix import Struct
@@ -13,11 +14,20 @@ if TYPE_CHECKING:
 	from pathlib import Path
 
 
+class EdgeKind(StrEnum):
+	"""Where a call edge comes from."""
+
+	STATIC = "static"
+	CANDIDATE = "indirect: candidate"
+	FALLBACK = "indirect: fallback"
+
+
 class CallEdge(Struct):
 	"""A resolved call edge from a ``.ci`` file."""
 
 	caller: str
 	callee: str
+	kind: EdgeKind = EdgeKind.STATIC
 
 
 class _VcgEdge(Struct):

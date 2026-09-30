@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import re
-from enum import Enum, auto
+from enum import StrEnum
+from functools import partial
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.callgraph import CallEdge
+from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
 from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 if TYPE_CHECKING:
@@ -46,14 +47,48 @@ class StackReport(Struct):
 	bound: Bounded | Unbounded
 
 
-class _Reason(Enum):
-	RECURSION = auto()
-	UNMEASURED = auto()
-	DYNAMIC = auto()
-	UNRESOLVED = auto()
+class Reason(StrEnum):
+	"""What keeps a depth from bounding every path."""
+
+	RECURSION = "recursion"
+	UNMEASURED = "unmeasured"
+	DYNAMIC = "dynamic"
+	UNRESOLVED = "unresolved"
 
 
-type _Reasons = frozenset[tuple[_Reason, str]]
+type _Reasons = frozenset[tuple[Reason, str]]
+
+
+class StackGraph(Struct):
+	"""A call graph with the frames and depths its stack bounds come from."""
+
+	adjacency: Mapping[str, frozenset[str]]
+	frame_by_name: Mapping[str, StackUsage]
+	components: Mapping[str, frozenset[str]]
+	"""Each node's strongly connected component."""
+	depths: Mapping[str, int]
+	reasons: Mapping[str, _Reasons]
+	kinds: Mapping[tuple[str, str], frozenset[EdgeKind]]
+	roots: tuple[str, ...]
+
+
+class PathStep(Struct):
+	"""One function on a deepest path."""
+
+	function: str
+	frame: int
+	cumulative: int
+	edge: frozenset[EdgeKind]
+	"""How the previous step calls this one."""
+	flags: frozenset[Reason]
+	"""What this function's own frame, calls and cycle add to an unbounded depth."""
+
+
+class _Forward(Struct):
+	"""A large component's depths along the preorder from where a path entered it."""
+
+	depths: Mapping[str, int]
+	position: Mapping[str, int]
 
 
 _MAX_CYCLE_SIZE: Final = 16
@@ -81,20 +116,23 @@ def expand_indirect_calls(
 		return frozenset(raw_names) if raw_names is not None else frozenset({target})
 
 	return tuple(
-		CallEdge(caller=edge.caller, callee=callee)
+		CallEdge(caller=edge.caller, callee=callee, kind=kind)
 		for edge in edges_tuple
-		for callee in (
+		for callee, kind in (
 			sorted(
-				graph_target
-				for target in sorted(
-					targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
-					| (frozenset[str]() if exact else fallback)
+				(
+					graph_target,
+					EdgeKind.CANDIDATE
+					if target in targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
+					else EdgeKind.FALLBACK,
 				)
+				for target in targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
+				| (frozenset[str]() if exact else fallback)
 				for graph_target in graph_targets(target)
 			)
-			or [INDIRECT_CALLEE]
+			or [(INDIRECT_CALLEE, edge.kind)]
 			if edge.callee == INDIRECT_CALLEE
-			else (edge.callee,)
+			else ((edge.callee, edge.kind),)
 		)
 	)
 
@@ -105,35 +143,186 @@ def worst_case_depths(
 	*,
 	entry_edges: Iterable[CallEdge] | None = None,
 ) -> tuple[StackReport, ...]:
+	return stack_reports(stack_graph(edges, frames, entry_edges=entry_edges))
+
+
+def stack_graph(
+	edges: Iterable[CallEdge],
+	frames: Iterable[StackUsage],
+	*,
+	entry_edges: Iterable[CallEdge] | None = None,
+) -> StackGraph:
+	edges_tuple = tuple(edges)
 	frames_tuple = tuple(frames)
 	frame_by_name = _frames_by_bare_name(frames_tuple)
-	adjacency = _adjacency(edges)
+	adjacency = _adjacency(edges_tuple)
 	root_adjacency = _adjacency(entry_edges) if entry_edges is not None else adjacency
 	components = _strongly_connected_components(adjacency)
-	depths = _depths_by_component(adjacency, frame_by_name, components)
-	reasons = _reasons_by_component(adjacency, frame_by_name, components)
 	root_callees = _callees(root_adjacency)
 	root_graph_nodes = {frame_key(node) for node in set(root_adjacency) | root_callees}
-	roots = sorted(
-		(root_adjacency.keys() - root_callees)
-		| ({frame_key(usage.function) for usage in frames_tuple} - root_graph_nodes)
+	return StackGraph(
+		adjacency=adjacency,
+		frame_by_name=frame_by_name,
+		components={node: frozenset(component) for component in components for node in component},
+		depths=_depths_by_component(adjacency, frame_by_name, components),
+		reasons=_reasons_by_component(adjacency, frame_by_name, components),
+		kinds={
+			pair: frozenset(edge.kind for edge in group)
+			for pair, group in groupby(sorted(edges_tuple, key=_pair), key=_pair)
+		},
+		roots=tuple(
+			sorted(
+				(root_adjacency.keys() - root_callees)
+				| ({frame_key(usage.function) for usage in frames_tuple} - root_graph_nodes)
+			)
+		),
 	)
-	return tuple(
-		sorted(
-			(
-				StackReport(
-					entry=frame_key(entry),
-					bound=_bound(
-						depths[entry] if entry in depths else frame_by_name[entry].bytes,
-						reasons[entry]
-						if entry in reasons
-						else _own_reasons(entry, adjacency, frame_by_name),
-					),
-				)
-				for entry in roots
-			),
-			key=_report_order,
+
+
+def stack_reports(graph: StackGraph) -> tuple[StackReport, ...]:
+	return tuple(sorted((_report(graph, root) for root in graph.roots), key=_report_order))
+
+
+def deepest_path(graph: StackGraph, entry: str) -> tuple[PathStep, ...]:
+	root = min(
+		(node for node in graph.roots if frame_key(node) == entry),
+		key=partial(_root_rank, graph),
+		default=None,
+	)
+	if root is None:
+		raise ValueError(f"{entry} is not an entry of the call graph")
+	return _walk(graph, root, frozenset(), _entered(graph, root), 0, frozenset(), {})
+
+
+def _root_depth(graph: StackGraph, root: str) -> int:
+	return graph.depths[root] if root in graph.depths else graph.frame_by_name[root].bytes
+
+
+def _root_reasons(graph: StackGraph, root: str) -> _Reasons:
+	return (
+		graph.reasons[root]
+		if root in graph.reasons
+		else _own_reasons(root, graph.adjacency, graph.frame_by_name)
+	)
+
+
+def _report(graph: StackGraph, root: str) -> StackReport:
+	return StackReport(
+		entry=frame_key(root), bound=_bound(_root_depth(graph, root), _root_reasons(graph, root))
+	)
+
+
+def _root_rank(graph: StackGraph, root: str) -> tuple[bool, int, str]:
+	return (*_report_order(_report(graph, root)), root)
+
+
+def _pair(edge: CallEdge) -> tuple[str, str]:
+	return (edge.caller, edge.callee)
+
+
+def _walk(
+	graph: StackGraph,
+	node: str,
+	path: frozenset[str],
+	forward: _Forward | None,
+	cumulative: int,
+	edge: frozenset[EdgeKind],
+	within: dict[tuple[str, frozenset[str]], int],
+) -> tuple[PathStep, ...]:
+	frame = _frame_size(graph, node)
+	step = PathStep(
+		function=frame_key(node),
+		frame=frame,
+		cumulative=cumulative + frame,
+		edge=edge,
+		flags=_flags(graph, node),
+	)
+	callee = max(
+		_callee_depths(graph, node, path, forward, within), key=_callee_depth, default=None
+	)
+	if callee is None:
+		return (step,)
+	enters = callee[0] not in _members(graph, node)
+	return (
+		step,
+		*_walk(
+			graph,
+			callee[0],
+			frozenset() if enters else path | {node},
+			_entered(graph, callee[0]) if enters else forward,
+			cumulative + frame,
+			graph.kinds[(node, callee[0])],
+			within,
+		),
+	)
+
+
+def _callee_depths(
+	graph: StackGraph,
+	node: str,
+	path: frozenset[str],
+	forward: _Forward | None,
+	within: dict[tuple[str, frozenset[str]], int],
+) -> tuple[tuple[str, int], ...]:
+	members = _members(graph, node)
+	callees = sorted(graph.adjacency.get(node, frozenset()) - {INDIRECT_CALLEE})
+	if forward is not None:
+		return tuple(
+			(callee, graph.depths[callee] if callee not in members else forward.depths[callee])
+			for callee in callees
+			if callee not in members or forward.position[callee] > forward.position[node]
 		)
+	return tuple(
+		(
+			callee,
+			graph.depths[callee]
+			if callee not in members
+			else _depth(
+				callee,
+				graph.adjacency,
+				graph.frame_by_name,
+				path | {node},
+				graph.depths,
+				members,
+				within,
+			),
+		)
+		for callee in callees
+		if callee not in path | {node}
+	)
+
+
+def _callee_depth(callee: tuple[str, int]) -> int:
+	return callee[1]
+
+
+def _entered(graph: StackGraph, node: str) -> _Forward | None:
+	members = _members(graph, node)
+	if len(members) <= _MAX_CYCLE_SIZE:
+		return None
+	order = _preorder(node, members, graph.adjacency)
+	return _Forward(
+		depths=_forward_depths(order, members, graph.adjacency, graph.frame_by_name, graph.depths),
+		position={member: index for index, member in enumerate(order)},
+	)
+
+
+def _members(graph: StackGraph, node: str) -> frozenset[str]:
+	return graph.components.get(node, frozenset({node}))
+
+
+def _frame_size(graph: StackGraph, node: str) -> int:
+	frame = graph.frame_by_name.get(frame_key(node))
+	return frame.bytes if frame is not None else 0
+
+
+def _flags(graph: StackGraph, node: str) -> frozenset[Reason]:
+	return frozenset(
+		reason for reason, _ in _own_reasons(node, graph.adjacency, graph.frame_by_name)
+	) | (
+		frozenset({Reason.RECURSION})
+		if len(_members(graph, node)) > 1 or node in graph.adjacency.get(node, frozenset())
+		else frozenset[Reason]()
 	)
 
 
@@ -148,17 +337,17 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 	return (
 		Unbounded(
 			at_least=depth,
-			recursion=_names(reasons, _Reason.RECURSION),
-			unmeasured=_names(reasons, _Reason.UNMEASURED),
-			dynamic=_names(reasons, _Reason.DYNAMIC),
-			unresolved=_names(reasons, _Reason.UNRESOLVED),
+			recursion=_names(reasons, Reason.RECURSION),
+			unmeasured=_names(reasons, Reason.UNMEASURED),
+			dynamic=_names(reasons, Reason.DYNAMIC),
+			unresolved=_names(reasons, Reason.UNRESOLVED),
 		)
 		if reasons
 		else Bounded(bytes=depth)
 	)
 
 
-def _names(reasons: _Reasons, reason: _Reason) -> frozenset[str]:
+def _names(reasons: _Reasons, reason: Reason) -> frozenset[str]:
 	return frozenset(name for kind, name in reasons if kind is reason)
 
 
@@ -181,9 +370,9 @@ def _own_reasons(
 	return frozenset(
 		(reason, frame_key(node))
 		for reason, applies in (
-			(_Reason.UNMEASURED, frame is None and node != INDIRECT_CALLEE),
-			(_Reason.DYNAMIC, frame is not None and not frame.bounded),
-			(_Reason.UNRESOLVED, INDIRECT_CALLEE in adjacency.get(node, frozenset())),
+			(Reason.UNMEASURED, frame is None and node != INDIRECT_CALLEE),
+			(Reason.DYNAMIC, frame is not None and not frame.bounded),
+			(Reason.UNRESOLVED, INDIRECT_CALLEE in adjacency.get(node, frozenset())),
 		)
 		if applies
 	)
@@ -197,7 +386,7 @@ def _reasons_by_component(
 	closure: dict[str, _Reasons] = {}
 	for component in components:
 		members = frozenset(component)
-		reasons = frozenset[tuple[_Reason, str]]().union(
+		reasons = frozenset[tuple[Reason, str]]().union(
 			*(_own_reasons(member, adjacency, frame_by_name) for member in component),
 			*(
 				closure[callee]
@@ -206,7 +395,7 @@ def _reasons_by_component(
 				if callee not in members
 			),
 			(
-				frozenset((_Reason.RECURSION, frame_key(member)) for member in component)
+				frozenset((Reason.RECURSION, frame_key(member)) for member in component)
 				if len(component) > 1
 				or any(member in adjacency.get(member, frozenset()) for member in component)
 				else frozenset()
@@ -248,9 +437,9 @@ def _rooted_depths(
 ) -> dict[str, int]:
 	members = frozenset(component)
 	return {
-		root: _forward_depth(
+		root: _forward_depths(
 			_preorder(root, members, adjacency), members, adjacency, frame_by_name, memo
-		)
+		)[root]
 		for root in component
 	}
 
@@ -271,13 +460,13 @@ def _preorder(
 	return tuple(order)
 
 
-def _forward_depth(
+def _forward_depths(
 	order: tuple[str, ...],
 	members: frozenset[str],
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, StackUsage],
 	memo: Mapping[str, int],
-) -> int:
+) -> dict[str, int]:
 	position = {node: index for index, node in enumerate(order)}
 	depths: dict[str, int] = {}
 	for node in reversed(order):
@@ -290,7 +479,7 @@ def _forward_depth(
 			),
 			default=0,
 		)
-	return depths[order[0]]
+	return depths
 
 
 def _depth(

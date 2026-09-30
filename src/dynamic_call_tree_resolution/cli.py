@@ -19,8 +19,10 @@ from dynamic_call_tree_resolution.pexplorer import load_pexplorer
 from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
+	PathStepReport,
 	SlotCounts,
 	StackEntryReport,
+	StackPathReport,
 	build_comparison,
 	build_report,
 	slot_counts,
@@ -29,10 +31,14 @@ from dynamic_call_tree_resolution.report import (
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	Bounded,
+	PathStep,
 	StackReport,
 	Unbounded,
+	deepest_path,
 	expand_indirect_calls,
 	frame_key,
+	stack_graph,
+	stack_reports,
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
@@ -79,6 +85,24 @@ def _render(report: StackReport) -> str:
 			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({reasons})"
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _render_step(step: PathStep) -> str:
+	return (
+		f"{step.function} +{step.frame} = {step.cumulative} bytes"
+		f"{' via ' + ', '.join(sorted(step.edge)) if step.edge else ''}"
+		f"{' (' + ', '.join(sorted(step.flags)) + ')' if step.flags else ''}"
+	)
+
+
+def _step_report(step: PathStep) -> PathStepReport:
+	return PathStepReport(
+		function=step.function,
+		frame_bytes=step.frame,
+		cumulative_bytes=step.cumulative,
+		edge=tuple(sorted(step.edge)),
+		flags=tuple(sorted(step.flags)),
+	)
 
 
 def _keep(path: Path) -> bool:
@@ -223,6 +247,13 @@ def stack(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	path: Annotated[
+		str | None,
+		Parameter(
+			help="print only this entry, with its deepest path: each function's frame and "
+			"cumulative bytes, the edge it is called through, and what makes it unbounded"
+		),
+	] = None,
 ) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
 	edges = load_callgraph(build_directory)
@@ -231,18 +262,17 @@ def stack(
 		if elf is not None
 		else None
 	)
-	reports = worst_case_depths(
+	graph = stack_graph(
 		expansion.expanded if expansion is not None else edges,
 		load_stack_usages(build_directory),
 		entry_edges=expansion.original if expansion is not None else None,
 	)
+	reports = stack_reports(graph)
 	kept = _in_image(reports, expansion) if expansion is not None else reports
+	shown = kept if path is None else _entry_report(kept, path)
+	steps = None if path is None else deepest_path(graph, path)
 	if json:
-		entries = tuple(
-			StackEntryReport(entry=report.entry, bound=stack_bound_report(report.bound))
-			for report in kept
-		)
-		print(msgspec.json.format(msgspec.json.encode(entries).decode()))
+		print(msgspec.json.format(msgspec.json.encode(_stack_document(shown, steps)).decode()))
 		return
 	if expansion is not None:
 		print(
@@ -251,8 +281,34 @@ def stack(
 			f"| not in the image: {len(reports) - len(kept)}"
 			f"{' | narrowed by signature' if narrow_by_signature else ''}"
 		)
-	for report in kept:
+	for report in shown:
 		print(_render(report))
+	for step in steps or ():
+		print(_render_step(step))
+
+
+def _stack_document(
+	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
+) -> tuple[StackEntryReport, ...] | StackPathReport:
+	return (
+		tuple(
+			StackEntryReport(entry=report.entry, bound=stack_bound_report(report.bound))
+			for report in shown
+		)
+		if steps is None
+		else StackPathReport(
+			entry=shown[0].entry,
+			bound=stack_bound_report(shown[0].bound),
+			path=tuple(_step_report(step) for step in steps),
+		)
+	)
+
+
+def _entry_report(reports: tuple[StackReport, ...], entry: str) -> tuple[StackReport, ...]:
+	report = next((report for report in reports if report.entry == entry), None)
+	if report is None:
+		raise ValueError(f"{entry} is not a stack entry")
+	return (report,)
 
 
 @app.command  # type: ignore[misc]

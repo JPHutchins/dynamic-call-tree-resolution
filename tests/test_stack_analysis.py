@@ -6,6 +6,7 @@
 import os
 import subprocess
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -13,12 +14,21 @@ import pytest
 from dynamic_call_tree_resolution import (
 	Bounded,
 	CallEdge,
+	EdgeKind,
+	PathStep,
+	Reason,
 	StackReport,
 	StackUsage,
 	Unbounded,
+	deepest_path,
 	expand_indirect_calls,
+	load,
 	load_callgraph,
 	load_stack_usages,
+	per_caller_candidates,
+	resolve,
+	stack_graph,
+	stack_reports,
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_analysis import frame_key
@@ -520,10 +530,10 @@ def test_expand_indirect_calls_replaces_placeholders_with_candidates() -> None:
 	)
 	assert expanded == (
 		CallEdge(caller="main", callee="direct_fn"),
-		CallEdge(caller="main", callee="cb_a"),
-		CallEdge(caller="main", callee="cb_b"),
-		CallEdge(caller="main", callee="fallback_fn"),
-		CallEdge(caller="other", callee="fallback_fn"),
+		CallEdge(caller="main", callee="cb_a", kind=EdgeKind.CANDIDATE),
+		CallEdge(caller="main", callee="cb_b", kind=EdgeKind.CANDIDATE),
+		CallEdge(caller="main", callee="fallback_fn", kind=EdgeKind.FALLBACK),
+		CallEdge(caller="other", callee="fallback_fn", kind=EdgeKind.FALLBACK),
 	)
 
 
@@ -531,8 +541,8 @@ def test_expand_indirect_calls_unions_the_fallback_into_caller_sets() -> None:
 	edges = (CallEdge(caller="main", callee="__indirect_call"),)
 	expanded = expand_indirect_calls(edges, {"main": frozenset({"cb"})}, frozenset({"fb"}))
 	assert expanded == (
-		CallEdge(caller="main", callee="cb"),
-		CallEdge(caller="main", callee="fb"),
+		CallEdge(caller="main", callee="cb", kind=EdgeKind.CANDIDATE),
+		CallEdge(caller="main", callee="fb", kind=EdgeKind.FALLBACK),
 	)
 
 
@@ -546,8 +556,10 @@ def test_expand_indirect_calls_matches_path_qualified_callers() -> None:
 	assert expand_indirect_calls(
 		edges, {"execute": frozenset({"cb"})}, frozenset({"fallback_fn"})
 	) == (
-		CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="cb"),
-		CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="fallback_fn"),
+		CallEdge(caller="/home/jp/zephyr/shell.c:execute", callee="cb", kind=EdgeKind.CANDIDATE),
+		CallEdge(
+			caller="/home/jp/zephyr/shell.c:execute", callee="fallback_fn", kind=EdgeKind.FALLBACK
+		),
 	)
 
 
@@ -599,3 +611,208 @@ def test_an_oversized_cycle_bound_does_not_depend_on_the_hash_seed() -> None:
 		)
 		== 1
 	)
+
+
+def _steps(
+	edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...], entry: str
+) -> list[tuple[str, int, int]]:
+	return [
+		(step.function, step.frame, step.cumulative)
+		for step in deepest_path(stack_graph(edges, frames), entry)
+	]
+
+
+def test_deepest_path_follows_the_deepest_branch() -> None:
+	edges = (
+		CallEdge(caller="main", callee="a"),
+		CallEdge(caller="main", callee="b"),
+		CallEdge(caller="a", callee="leaf"),
+		CallEdge(caller="b", callee="c"),
+		CallEdge(caller="c", callee="leaf"),
+	)
+	assert deepest_path(stack_graph(edges, FRAMES), "main") == (
+		PathStep(function="main", frame=8, cumulative=8, edge=frozenset(), flags=frozenset()),
+		PathStep(
+			function="b",
+			frame=24,
+			cumulative=32,
+			edge=frozenset({EdgeKind.STATIC}),
+			flags=frozenset(),
+		),
+		PathStep(
+			function="c",
+			frame=32,
+			cumulative=64,
+			edge=frozenset({EdgeKind.STATIC}),
+			flags=frozenset(),
+		),
+		PathStep(
+			function="leaf",
+			frame=4,
+			cumulative=68,
+			edge=frozenset({EdgeKind.STATIC}),
+			flags=frozenset(),
+		),
+	)
+
+
+def test_deepest_path_breaks_a_tie_by_name() -> None:
+	edges = (CallEdge(caller="main", callee="b"), CallEdge(caller="main", callee="a"))
+	frames = (
+		StackUsage(function="main", bytes=8, bounded=True),
+		StackUsage(function="a", bytes=4, bounded=True),
+		StackUsage(function="b", bytes=4, bounded=True),
+	)
+	assert _steps(edges, frames, "main") == [("main", 8, 8), ("a", 4, 12)]
+
+
+def test_deepest_path_through_a_cycle_visits_each_function_once() -> None:
+	edges = (
+		CallEdge(caller="main", callee="a"),
+		CallEdge(caller="a", callee="b"),
+		CallEdge(caller="b", callee="a"),
+		CallEdge(caller="b", callee="leaf"),
+	)
+	path = deepest_path(stack_graph(edges, FRAMES), "main")
+	assert [(step.function, step.cumulative, step.flags) for step in path] == [
+		("main", 8, frozenset()),
+		("a", 24, frozenset({Reason.RECURSION})),
+		("b", 48, frozenset({Reason.RECURSION})),
+		("leaf", 52, frozenset()),
+	]
+
+
+def test_deepest_path_through_an_oversized_cycle_ends_at_the_reported_depth() -> None:
+	ring = tuple(f"node_{index}" for index in range(80))
+	edges = (
+		CallEdge(caller="main", callee="node_0"),
+		*(CallEdge(caller=node, callee=ring[(index + 1) % 80]) for index, node in enumerate(ring)),
+		*(CallEdge(caller=node, callee=ring[(index * 7) % 80]) for index, node in enumerate(ring)),
+		*(CallEdge(caller=node, callee="leaf") for node in ring),
+	)
+	frames = (
+		StackUsage(function="main", bytes=8, bounded=True),
+		StackUsage(function="leaf", bytes=100, bounded=True),
+		*(
+			StackUsage(function=node, bytes=4 + (index * 5) % 17, bounded=True)
+			for index, node in enumerate(ring)
+		),
+	)
+	graph = stack_graph(edges, frames)
+	path = deepest_path(graph, "main")
+	(report,) = stack_reports(graph)
+	assert isinstance(report.bound, Unbounded)
+	assert path[-1].cumulative == report.bound.at_least
+	assert len({step.function for step in path}) == len(path)
+	assert path[-1].function == "leaf"
+
+
+def test_deepest_path_does_not_step_into_the_indirect_placeholder() -> None:
+	edges = (
+		CallEdge(caller="main", callee="__indirect_call"),
+		CallEdge(caller="main", callee="leaf"),
+	)
+	frames = (
+		StackUsage(function="main", bytes=8, bounded=True),
+		StackUsage(function="leaf", bytes=0, bounded=True),
+	)
+	path = deepest_path(stack_graph(edges, frames), "main")
+	assert [(step.function, step.flags) for step in path] == [
+		("main", frozenset({Reason.UNRESOLVED})),
+		("leaf", frozenset()),
+	]
+
+
+@pytest.mark.parametrize(
+	("candidate_bytes", "step"),
+	[
+		pytest.param(40, ("cb", EdgeKind.CANDIDATE), id="through-a-candidate"),
+		pytest.param(10, ("fb", EdgeKind.FALLBACK), id="through-the-fallback"),
+	],
+)
+def test_deepest_path_names_the_edge_each_step_is_called_through(
+	candidate_bytes: int, step: tuple[str, EdgeKind]
+) -> None:
+	edges = expand_indirect_calls(
+		(CallEdge(caller="main", callee="__indirect_call"),),
+		{"main": frozenset({"cb"})},
+		frozenset({"fb"}),
+	)
+	frames = (
+		StackUsage(function="main", bytes=8, bounded=True),
+		StackUsage(function="cb", bytes=candidate_bytes, bounded=True),
+		StackUsage(function="fb", bytes=20, bounded=True),
+	)
+	(_, callee) = deepest_path(stack_graph(edges, frames), "main")
+	assert (callee.function, *callee.edge) == step
+
+
+def test_deepest_path_of_a_function_outside_the_call_graph_is_its_own_frame() -> None:
+	edges = (CallEdge(caller="main", callee="leaf"),)
+	frames = (*FRAMES, StackUsage(function="lonely", bytes=12, bounded=False))
+	assert deepest_path(stack_graph(edges, frames), "lonely") == (
+		PathStep(
+			function="lonely",
+			frame=12,
+			cumulative=12,
+			edge=frozenset(),
+			flags=frozenset({Reason.DYNAMIC}),
+		),
+	)
+
+
+def test_deepest_path_of_a_clone_named_entry_starts_from_the_deeper_clone() -> None:
+	edges = (CallEdge(caller="f", callee="a"), CallEdge(caller="f.constprop.0", callee="c"))
+	assert _steps(edges, (*FRAMES, StackUsage(function="f", bytes=2, bounded=True)), "f") == [
+		("f", 2, 2),
+		("c", 32, 34),
+	]
+
+
+def test_deepest_path_of_a_clone_named_entry_starts_from_the_clone_listed_first() -> None:
+	edges = (
+		CallEdge(caller="f", callee="a"),
+		CallEdge(caller="a", callee="a"),
+		CallEdge(caller="f.constprop.0", callee="c"),
+	)
+	graph = stack_graph(edges, (*FRAMES, StackUsage(function="f", bytes=2, bounded=True)))
+	first = stack_reports(graph)[0]
+	assert isinstance(first.bound, Unbounded)
+	assert deepest_path(graph, "f")[-1].cumulative == first.bound.at_least == 18
+
+
+def test_deepest_path_of_an_unknown_entry_is_an_error() -> None:
+	with pytest.raises(ValueError, match="nope is not an entry"):
+		deepest_path(stack_graph((CallEdge(caller="main", callee="leaf"),), FRAMES), "nope")
+
+
+def _counter_graph(*, expanded: bool) -> tuple[CallEdge, ...]:
+	edges = load_callgraph(ARTIFACT_DIRECTORIES[0])
+	if not expanded:
+		return edges
+	program = load(ARTIFACT_DIRECTORIES[0] / "zephyr" / "zephyr.exe")
+	resolution = resolve(program)
+	return expand_indirect_calls(
+		edges, *per_caller_candidates(program, resolution.sites, resolution.assignments)
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize("expanded", [False, True], ids=["static", "expanded"])
+def test_every_counter_entry_has_a_deepest_path_as_deep_as_its_bound(expanded: bool) -> None:
+	edges = _counter_graph(expanded=expanded)
+	graph = stack_graph(
+		edges,
+		load_stack_usages(ARTIFACT_DIRECTORIES[0]),
+		entry_edges=load_callgraph(ARTIFACT_DIRECTORIES[0]),
+	)
+	assert [
+		report.entry
+		for report in stack_reports(graph)
+		if (path := deepest_path(graph, report.entry))[-1].cumulative
+		!= (report.bound.bytes if isinstance(report.bound, Bounded) else report.bound.at_least)
+		or any(
+			later.cumulative != earlier.cumulative + later.frame or not later.edge
+			for earlier, later in pairwise(path)
+		)
+	] == []
