@@ -2,6 +2,7 @@
 .camas/
 build/
 testbeds/modules/
+testbeds/zephyr/
 dist/
 __pycache__/
 *.py[cod]

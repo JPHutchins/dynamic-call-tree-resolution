@@ -277,9 +277,13 @@ use, so run the checks from `nix develop`.
 
 ```sh
 nix develop .#testbeds
-uv run camas testbeds_init            # the zephyr submodule and its west workspace
+uv run camas testbeds_init            # the west workspace testbeds/manifest/west.yml pins
 uv run camas testbeds --NAME=hello    # one testbed, into .camas/build/hello
+uv run camas testbeds_lock            # after editing testbeds/manifest/west.yml
 ```
+
+`nix build .#fixtures` builds the same testbeds in the Nix sandbox, from the projects
+`testbeds/west2nix.toml` locks.
 
 ## References
 

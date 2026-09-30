@@ -1,0 +1,30 @@
+[
+	{
+		"NAME": "hello",
+		"BOARD": "qemu_cortex_m3",
+		"SOURCE": "zephyr/samples/hello_world",
+		"TOOLCHAIN": "zephyr",
+		"EXTRA_CFLAGS": ""
+	},
+	{
+		"NAME": "counter",
+		"BOARD": "native_sim",
+		"SOURCE": "zephyr/samples/drivers/can/counter",
+		"TOOLCHAIN": "host",
+		"EXTRA_CFLAGS": ""
+	},
+	{
+		"NAME": "counter-su",
+		"BOARD": "native_sim",
+		"SOURCE": "zephyr/samples/drivers/can/counter",
+		"TOOLCHAIN": "host",
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da"
+	},
+	{
+		"NAME": "sensor-two-impl",
+		"BOARD": "qemu_cortex_m3",
+		"SOURCE": "../tests/fixtures/sensor-two-impl-app",
+		"TOOLCHAIN": "zephyr",
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da"
+	}
+]

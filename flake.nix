@@ -11,6 +11,11 @@
       url = "github:nix-community/zephyr-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    west2nix = {
+      url = "github:adisbladis/west2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.zephyr-nix.follows = "zephyr-nix";
+    };
   };
 
   outputs =
@@ -18,6 +23,7 @@
       nixpkgs,
       jphfmt,
       zephyr-nix,
+      west2nix,
       ...
     }:
     let
@@ -25,6 +31,29 @@
         "x86_64-linux"
         "aarch64-linux"
       ];
+      testbeds =
+        pkgs:
+        let
+          lock = pkgs.lib.importTOML ./testbeds/west2nix.toml;
+          zephyrProject = pkgs.lib.findFirst (
+            project: project.name == "zephyr"
+          ) (throw "testbeds/west2nix.toml locks no zephyr project") lock.manifest.projects;
+        in
+        {
+          sdk = (zephyr-nix.lib.mkZephyr { inherit pkgs; }).sdks."1_0".sdk.override {
+            targets = [ "arm-zephyr-eabi" ];
+          };
+          west2nix = west2nix.lib.mkWest2nix { inherit pkgs; };
+          zephyr = zephyr-nix.lib.mkZephyr {
+            inherit pkgs;
+            zephyr-src = pkgs.fetchgit {
+              inherit (zephyrProject) url;
+              rev = zephyrProject.revision;
+              inherit (zephyrProject.nix) hash;
+            };
+          };
+          buildVersion = builtins.substring 0 12 zephyrProject.revision;
+        };
     in
     {
       devShells = forAllSystems (
@@ -54,13 +83,45 @@
           default = devShell pkgs.gcc13Stdenv [ ];
         }
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
-          testbeds = devShell pkgs.multiStdenv [
-            ((zephyr-nix.lib.mkZephyr { inherit pkgs; }).sdks."1_0".sdk.override {
-              targets = [ "arm-zephyr-eabi" ];
-            })
-            pkgs.dtc
-          ];
+          testbeds =
+            let
+              toolchain = testbeds pkgs;
+            in
+            (devShell pkgs.multiStdenv [
+              toolchain.sdk
+              toolchain.west2nix.west2nix
+              pkgs.dtc
+            ]).overrideAttrs
+              (old: {
+                hardeningDisable = [ "all" ];
+                env = old.env // {
+                  USE_CCACHE = "0";
+                };
+              });
         }
       );
+
+      packages.x86_64-linux.fixtures =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          toolchain = testbeds pkgs;
+        in
+        pkgs.callPackage ./testbeds/fixtures.nix {
+          inherit (toolchain) sdk buildVersion;
+          pythonEnv = toolchain.zephyr.pythonEnv.override {
+            packageOverrides = _: _: { tree-sitter-cmake = null; };
+          };
+          stdenv = pkgs.multiStdenv;
+          west2nixHook = toolchain.west2nix.mkWest2nixHook { manifest = ./testbeds/west2nix.toml; };
+          builds = pkgs.lib.importJSON ./testbeds/builds.json;
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./testbeds/manifest
+              ./testbeds/.west
+              ./tests/fixtures/sensor-two-impl-app
+            ];
+          };
+        };
     };
 }
