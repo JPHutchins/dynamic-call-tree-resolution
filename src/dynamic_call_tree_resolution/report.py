@@ -4,7 +4,7 @@
 """JSON-serializable analysis reports."""
 
 from itertools import groupby
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING, Final, assert_never
 
 from msgspec import Struct
 from salix import Struct as SalixStruct
@@ -12,6 +12,7 @@ from salix import Struct as SalixStruct
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import EdgeKind
 from dynamic_call_tree_resolution.model import (
+	BARE_METAL,
 	Address,
 	FunctionSignature,
 	Machine,
@@ -38,7 +39,7 @@ from dynamic_call_tree_resolution.stack_analysis import Bounded, Reason, Unbound
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from dynamic_call_tree_resolution.model import CallSite, Program, SlotAssignment
+	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel, SlotAssignment
 
 
 class Candidate(Struct):
@@ -91,6 +92,27 @@ class NotEnumeratedReport(Struct):
 	reason: SkipReason
 
 
+class ThreadReport(Struct):
+	"""One thread of the RTOS model."""
+
+	name: str
+	entry: Candidate
+	arguments: tuple[int, ...]
+	seeded: bool
+	"""The entry started from these arguments; otherwise from unknown ones."""
+
+
+class RtosReport(Struct):
+	"""The RTOS model an analysis used."""
+
+	name: str
+	evidence: tuple[str, ...]
+	threads: tuple[ThreadReport, ...]
+
+
+BARE_METAL_REPORT: Final = RtosReport(name=BARE_METAL.name, evidence=(), threads=())
+
+
 class AnalysisReport(Struct):
 	"""The analysis report of one program."""
 
@@ -101,6 +123,7 @@ class AnalysisReport(Struct):
 	total_slots: int
 	resolved_slots: int
 	resolved_targets: int
+	rtos: RtosReport
 
 
 class FunctionComparison(Struct):
@@ -129,6 +152,7 @@ class ComparisonReport(Struct):
 	candidate_size_counts: tuple[tuple[int, int], ...]
 	pexplorer_dynamic_sites: int | None = None
 	function_comparisons: tuple[FunctionComparison, ...] = ()
+	rtos: str = BARE_METAL.name
 
 
 class BoundedStack(Struct, tag="bounded", tag_field="kind"):
@@ -201,6 +225,7 @@ class AnalysisSummary(Struct):
 	discarded_entry_points: int
 	worst_case_entry: str
 	worst_case: BoundedStack | UnboundedStack
+	rtos: str
 
 
 class SlotCounts(SalixStruct):
@@ -237,12 +262,29 @@ def _candidates(program: Program, addresses: frozenset[Address]) -> tuple[Candid
 	)
 
 
+def rtos_report(program: Program, rtos: RtosModel, seeded: frozenset[str]) -> RtosReport:
+	return RtosReport(
+		name=rtos.name,
+		evidence=rtos.evidence,
+		threads=tuple(
+			ThreadReport(
+				name=thread.name,
+				entry=Candidate(name=program.functions[thread.entry].name, address=thread.entry),
+				arguments=thread.arguments,
+				seeded=thread.name in seeded,
+			)
+			for thread in rtos.threads
+		),
+	)
+
+
 def build_report(
 	program: Program,
 	resolved: tuple[SlotAssignment, ...],
 	call_sites: tuple[CallSite, ...],
 	*,
 	narrow_by_signature: bool = False,
+	rtos: RtosReport = BARE_METAL_REPORT,
 ) -> AnalysisReport:
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
@@ -295,6 +337,7 @@ def build_report(
 		total_slots=counts.total_slots,
 		resolved_slots=counts.resolved_slots,
 		resolved_targets=counts.resolved_targets,
+		rtos=rtos,
 	)
 
 
@@ -312,8 +355,9 @@ def build_comparison(
 	pexplorer: PexplorerReport | None = None,
 	*,
 	narrow_by_signature: bool = False,
+	rtos: RtosModel = BARE_METAL,
 ) -> ComparisonReport:
-	resolution = resolve(program)
+	resolution = resolve(program, rtos)
 	resolved = resolution.assignments
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
@@ -376,6 +420,7 @@ def build_comparison(
 			else None
 		),
 		function_comparisons=tuple(sorted(rows, key=_row_caller)),
+		rtos=rtos.name,
 	)
 
 

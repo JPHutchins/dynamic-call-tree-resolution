@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Final
 
 from capstone import (
@@ -21,7 +22,7 @@ from dynamic_call_tree_resolution.points_to import instruction_runs, instruction
 from dynamic_call_tree_resolution.vsa.abi import disassemblers, normalized, program_counter
 
 if TYPE_CHECKING:
-	from collections.abc import Iterator
+	from collections.abc import Iterator, Mapping
 
 	from capstone import CsInsn
 
@@ -38,6 +39,34 @@ def address_taken(program: Program) -> frozenset[Address]:
 			for section in program.sections.values()
 		)
 	) | frozenset(Address(value) for value in _computed_addresses(program) if value in functions)
+
+
+def referenced_only_at(
+	program: Program, slots_by_function: Mapping[Address, frozenset[Address]]
+) -> frozenset[Address]:
+	computed = frozenset(_computed_addresses(program)) if slots_by_function else frozenset[int]()
+	return frozenset(
+		function
+		for function, slots in slots_by_function.items()
+		if function not in computed
+		and all(occurrence in slots for occurrence in _occurrences(program, function))
+		and all(
+			relocation.slot in slots
+			for relocation in program.relocations
+			if relocation.target == function
+		)
+	)
+
+
+def _occurrences(program: Program, function: Address) -> Iterator[Address]:
+	pattern = re.compile(
+		b"(?=" + re.escape(function.to_bytes(program.pointer_size, program.byte_order)) + b")"
+	)
+	return (
+		Address(start + match.start())
+		for start, section in program.sections.items()
+		for match in pattern.finditer(section.data)
+	)
 
 
 def _computed_addresses(program: Program) -> Iterator[int]:

@@ -48,6 +48,7 @@ On Zephyr's `hello_world` for `qemu_cortex_m3` (`$DCTR_FIXTURES/hello/zephyr/zep
 
 ```console
 $ dctr analyze $DCTR_FIXTURES/hello/zephyr/zephyr.elf
+rtos: zephyr (detected: z_thread_entry, struct _static_thread_data)
 ...
 __init_uart_stellaris_init.init_fn: uart_stellaris_init
 ...
@@ -72,6 +73,13 @@ z_sys_init_run_level@0xcd0: <unresolved>
 do_device_init@0x1dca: <unresolved>
 ```
 
+- `rtos:` names the RTOS model and what identified it in the image. `--rtos auto`, the
+  default, detects Zephyr; `--rtos none` models no RTOS. Each Zephyr static thread
+  (`K_THREAD_DEFINE`) prints as `thread NAME: ENTRY`, and `hello_world` defines none.
+  An entry is *seeded* when its thread's read-only record is the only place the image
+  holds its address: the analysis then starts it with the record's `p1`..`p3` instead
+  of unknown arguments. This assumes the kernel's static-thread start is the only code
+  that reads the records.
 - `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, read from their linker
   sections; `__device_dts_ord_22.ops.init` is the device struct's init function.
 - `<unresolved>` means the analysis has no function address for a writable slot. That
@@ -130,7 +138,7 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
-resolved slots: 106 | indirect call sites: 101 | not in the image: 286
+resolved slots: 106 | indirect call sites: 101 | not in the image: 286 | rtos: zephyr
 gpio_emul_port_set_masked_raw: unbounded, at least 6288 bytes (recursion: 222, unmeasured: 153)
 ...
 poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
@@ -155,7 +163,7 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
-resolved slots: 106 | indirect call sites: 101 | not in the image: 286
+resolved slots: 106 | indirect call sites: 101 | not in the image: 286 | rtos: zephyr
 poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
 poll_state_thread +80 = 80 bytes (recursion)
 can_msgq_put +32 = 112 bytes via indirect: fallback (recursion)
@@ -181,7 +189,8 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - A *resolved* site or slot has at least one candidate, and an *exact* site has
   exactly one, in the image as linked.
 - `compare` counts the indirect instructions it extracts; `stack --elf` counts the
-  `__indirect_call` edges in the `.ci` files.
+  `__indirect_call` edges in the `.ci` files. The `stack --elf` header ends with the
+  RTOS model when one is detected.
 - `stack --elf` expands every indirect edge to its site candidates plus the fallback,
   every address-taken function. `z_shell_write` has no candidates, so its edge is the
   fallback
@@ -228,7 +237,10 @@ contradicts does not hold.
   also need GCC's `-fstack-usage` (`.su`) and `-fcallgraph-info` (`.ci`) artifacts.
 - `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
   decoded as A32 inside the spans of `$a` mapping symbols and as Thumb elsewhere.
-- Zephyr is the only RTOS modeled, and its knowledge is not isolated ([#71]).
+- Zephyr is the only RTOS modeled, and only its static threads are. A thread created
+  with `k_thread_create` starts its entry with unknown arguments, and the indirect call
+  in `z_thread_entry` that starts every thread falls back to every address-taken
+  function ([#146]).
 
 ### Call targets
 
@@ -308,8 +320,8 @@ a machine builds it.
 
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
-[#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
 [#131]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/131
+[#146]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/146

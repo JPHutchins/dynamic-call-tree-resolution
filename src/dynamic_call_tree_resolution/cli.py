@@ -16,19 +16,23 @@ from dynamic_call_tree_resolution.call_sites import per_caller_candidates, resol
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
 from dynamic_call_tree_resolution.loader import defined_function_names, elf_machine, load
 from dynamic_call_tree_resolution.model import Machine, Residue
-from dynamic_call_tree_resolution.pexplorer import load_pexplorer
+from dynamic_call_tree_resolution.pexplorer import PexplorerReport, load_pexplorer
 from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
+	ComparisonReport,
 	PathStepReport,
+	RtosReport,
 	SlotCounts,
 	StackEntryReport,
 	StackPathReport,
 	build_comparison,
 	build_report,
+	rtos_report,
 	slot_counts,
 	stack_bound_report,
 )
+from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	Bounded,
@@ -45,7 +49,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 
 if TYPE_CHECKING:
-	from dynamic_call_tree_resolution.model import Program, UnresolvedSlot
+	from dynamic_call_tree_resolution.model import Program, RtosModel, UnresolvedSlot
 
 app = App(name="dctr")
 
@@ -54,6 +58,11 @@ _MAX_ELF_SIZE: Final = 50 * 1024 * 1024
 _NARROW_BY_SIGNATURE: Final = Parameter(
 	help="narrow a site whose slot the image leaves unset to the functions of the "
 	"slot's DWARF signature; unsound, since a cast defeats it"
+)
+
+_RTOS: Final = Parameter(
+	help="the RTOS whose threads start their entries with known arguments: auto detects "
+	"it, and none models no RTOS"
 )
 
 
@@ -119,6 +128,21 @@ def _step_report(step: PathStep) -> PathStepReport:
 	)
 
 
+def _rtos_lines(report: RtosReport) -> tuple[str, ...]:
+	return (
+		(
+			f"rtos: {report.name} (detected: {', '.join(report.evidence)})",
+			*(
+				f"thread {thread.name}: {thread.entry.name} "
+				f"({'seeded from its record' if thread.seeded else 'not seeded: its address is taken elsewhere'})"
+				for thread in report.threads
+			),
+		)
+		if report.evidence
+		else ()
+	)
+
+
 def _keep(path: Path) -> bool:
 	match _skip_reason(path):
 		case None:
@@ -136,19 +160,24 @@ def analyze(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print resolved function-pointer assignments and call sites of an ELF image."""
 	program = load(elf)
-	resolution = resolve(program)
+	model = rtos_model(program, rtos)
+	resolution = resolve(program, model)
 	report = build_report(
 		program,
 		resolution.assignments,
 		resolution.sites,
 		narrow_by_signature=narrow_by_signature,
+		rtos=rtos_report(program, model, resolution.seeded),
 	)
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(report).decode()))
 		return
+	for line in _rtos_lines(report.rtos):
+		print(line)
 	for assignment in report.assignments:
 		label = assignment.member_path or hex(assignment.slot_address)
 		print(f"{label}: {', '.join(candidate.name for candidate in assignment.candidates)}")
@@ -178,6 +207,7 @@ def compare(
 		),
 	] = None,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a resolution rollup per ELF for cross-tool comparison."""
 	paths: list[Path] = []
@@ -192,9 +222,7 @@ def compare(
 	paths = [path for path in paths if _keep(path)]
 	pexplorer_report = load_pexplorer(pexplorer) if pexplorer is not None else None
 	comparisons = [
-		build_comparison(
-			elf.name, load(elf), pexplorer_report, narrow_by_signature=narrow_by_signature
-		)
+		_comparison(elf, pexplorer_report, narrow_by_signature=narrow_by_signature, rtos=rtos)
 		for elf in paths
 	]
 	if json:
@@ -219,23 +247,38 @@ def compare(
 			)
 
 
+def _comparison(
+	elf: Path, pexplorer: PexplorerReport | None, *, narrow_by_signature: bool, rtos: RtosChoice
+) -> ComparisonReport:
+	program = load(elf)
+	return build_comparison(
+		elf.name,
+		program,
+		pexplorer,
+		narrow_by_signature=narrow_by_signature,
+		rtos=rtos_model(program, rtos),
+	)
+
+
 class _Expansion(Struct):
 	expanded: tuple[CallEdge, ...]
 	in_image_edges: tuple[CallEdge, ...]
 	indirect_sites: int
 	program: Program
+	rtos: RtosModel
 	counts: SlotCounts
 	unresolved: tuple[UnresolvedSlot, ...]
 	image_functions: frozenset[str]
 
 
 def _expand_from_elf(
-	edges: tuple[CallEdge, ...], elf: Path, *, narrow_by_signature: bool
+	edges: tuple[CallEdge, ...], elf: Path, *, narrow_by_signature: bool, rtos: RtosChoice
 ) -> _Expansion:
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
 	image_functions = frozenset(frame_key(name) for name in defined_function_names(elf))
-	resolution = resolve(program)
+	model = rtos_model(program, rtos)
+	resolution = resolve(program, model)
 	targets_by_caller, fallback = per_caller_candidates(
 		program, resolution.sites, resolution.assignments, narrow_by_signature=narrow_by_signature
 	)
@@ -245,6 +288,7 @@ def _expand_from_elf(
 		in_image_edges=tuple(edge for edge in edges if frame_key(edge.caller) in image_functions),
 		indirect_sites=indirect_sites,
 		program=program,
+		rtos=model,
 		counts=slot_counts(resolution.assignments, unresolved),
 		unresolved=unresolved,
 		image_functions=image_functions,
@@ -268,6 +312,7 @@ def stack(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 	path: Annotated[
 		str | None,
 		Parameter(
@@ -279,7 +324,7 @@ def stack(
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
 	edges = load_callgraph(build_directory)
 	expansion = (
-		_expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature)
+		_expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
 		if elf is not None
 		else None
 	)
@@ -301,6 +346,7 @@ def stack(
 			f"| indirect call sites: {expansion.indirect_sites} "
 			f"| not in the image: {len(reports) - len(kept)}"
 			f"{' | narrowed by signature' if narrow_by_signature else ''}"
+			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
 	for report in shown:
 		print(_render(report))
@@ -338,10 +384,11 @@ def summary(
 	elf: Path,
 	*,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
 	edges = load_callgraph(build_directory)
-	expansion = _expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature)
+	expansion = _expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
 	reports = worst_case_depths(
 		expansion.expanded,
 		load_stack_usages(build_directory),
@@ -360,6 +407,7 @@ def summary(
 		discarded_entry_points=len(reports) - len(kept),
 		worst_case_entry=worst.entry,
 		worst_case=stack_bound_report(worst.bound),
+		rtos=expansion.rtos.name,
 	)
 	print(msgspec.json.format(msgspec.json.encode(report).decode()))
 

@@ -53,6 +53,7 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		discarded_entry_points=286,
 		worst_case_entry="gpio_emul_port_set_masked_raw",
 		worst_case=summary.worst_case,
+		rtos="zephyr",
 	)
 	assert isinstance(summary.worst_case, UnboundedStack)
 	assert (

@@ -205,7 +205,7 @@ def _member_assignments(
 			case StructPointerMember(offset=offset, pointee=pointee):
 				target_object = _object_covering(
 					program,
-					pointer_at(program, Address(base_address + base_offset + offset)),
+					pointer_at(program, Address(base_address + base_offset + offset)) or None,
 				)
 				if target_object is not None and (
 					pointee is None

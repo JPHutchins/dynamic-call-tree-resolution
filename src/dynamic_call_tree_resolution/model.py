@@ -189,6 +189,29 @@ class Program(Struct):
 	"""Sorted spans of A32 code, from ARM `$a` mapping symbols."""
 
 
+class ThreadRoot(Struct):
+	"""A thread the image defines statically, as its RTOS starts it."""
+
+	name: str
+	entry: Address
+	entry_slot: Address
+	"""Where the thread's record holds the entry."""
+	arguments: tuple[Address, ...]
+	"""What the entry is started with, by ABI argument position."""
+
+
+class RtosModel(Struct):
+	"""What an RTOS adds to the analysis of an image."""
+
+	name: str
+	evidence: tuple[str, ...]
+	"""What identified the RTOS in the image."""
+	threads: tuple[ThreadRoot, ...]
+
+
+BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=())
+
+
 def aligned(address: Address) -> Address:
 	return Address(address & ~1)
 
