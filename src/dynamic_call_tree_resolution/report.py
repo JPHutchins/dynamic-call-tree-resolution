@@ -16,6 +16,7 @@ from dynamic_call_tree_resolution.model import (
 	FunctionSignature,
 	Machine,
 	Provenance,
+	Residue,
 	SkipReason,
 	UnresolvedSlot,
 	aligned,
@@ -80,6 +81,7 @@ class UnresolvedSlotReport(Struct):
 	slot_address: int
 	member_path: str
 	signature: SignatureReport | None
+	residue: Residue
 
 
 class NotEnumeratedReport(Struct):
@@ -282,6 +284,7 @@ def build_report(
 				slot_address=slot.slot,
 				member_path=render_path(slot.path),
 				signature=_render_signature(slot.signature),
+				residue=slot.residue,
 			)
 			for slot in unresolved
 		),

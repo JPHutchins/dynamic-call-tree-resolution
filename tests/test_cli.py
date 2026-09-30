@@ -99,6 +99,18 @@ def test_cli_main_entry(
 	assert report.resolved_slots == 11
 
 
+def test_cli_analyze_labels_read_only_residue(
+	fixture_elfs: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+	analyze(fixture_elfs["residue"])
+	assert {
+		"rom_ops.stop: <null>",
+		"rom_arm.run: <not a function>",
+		"ram_ops.stop: <unresolved>",
+		"bss_ops.run: <unresolved>",
+	} <= set(capsys.readouterr().out.splitlines())
+
+
 def test_cli_analyze_marks_what_it_does_not_enumerate(
 	fixture_elfs: dict[str, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:

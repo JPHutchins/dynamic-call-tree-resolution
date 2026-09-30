@@ -50,7 +50,7 @@ __init_uart_stellaris_init.init_fn: uart_stellaris_init
 ...
 __device_dts_ord_22.ops.init: uart_stellaris_init
 ...
-uart_stellaris_driver_api.configure: <unresolved>
+uart_stellaris_driver_api.configure: <null>
 ...
 z_main_thread.base.timeout.fn: <unresolved>
 _thread_dummy.base.timeout.fn: <unresolved>
@@ -71,11 +71,15 @@ do_device_init@0x1dca: <unresolved>
 
 - `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, read from their linker
   sections; `__device_dts_ord_22.ops.init` is the device struct's init function.
-- `<unresolved>` means the analysis has no function address for the slot. That covers
-  slots assigned at runtime (the thread timeout callbacks and `_stdout_hook` above),
-  constant `NULL` members (`uart_stellaris_driver_api.configure`), union arms that are
-  not function pointers, and writable slots whose stores are unknown (`_char_out` and
-  `__stdout.put`); they are listed with member paths for manual review.
+- `<unresolved>` means the analysis has no function address for a writable slot. That
+  covers slots assigned at runtime (the thread timeout callbacks and `_stdout_hook`
+  above) and writable slots whose stores are unknown (`_char_out` and `__stdout.put`).
+- `<null>` marks a read-only slot that holds NULL, such as an optional driver operation
+  the driver leaves out (`uart_stellaris_driver_api.configure`): it can never hold a
+  function. `<not a function>` marks a read-only slot that holds something else, such as
+  a union arm that overlaps a member that is not a function pointer.
+- All three are listed with member paths for manual review, and all three count as
+  unresolved in `compare` and `summary`.
 - `<not enumerated: reason>` marks an object or member that may hold or lead to a
   function pointer, but whose slots are not listed:
   - a pointer to a pointer, or to an array, whose target can hold a pointer;
@@ -251,10 +255,9 @@ contradicts does not hold.
 
 ### Residue
 
-`<unresolved>` slots are enumerated from DWARF-typed data objects, including array
-members and anonymous structs. The kinds marked `<not enumerated>` are listed without
-slots. Location lists ([#17]) and heap or stack storage are not enumerated at all.
-Constant NULLs in ROM are still reported as `<unresolved>` ([#69]).
+Unresolved slots are enumerated from DWARF-typed data objects, including array members
+and anonymous structs. The kinds marked `<not enumerated>` are listed without slots.
+Location lists ([#17]) and heap or stack storage are not enumerated at all.
 
 ## Development
 
@@ -281,7 +284,6 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
 [#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
-[#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
 [#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96

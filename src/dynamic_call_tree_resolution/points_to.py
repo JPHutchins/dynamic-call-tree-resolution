@@ -24,6 +24,7 @@ from dynamic_call_tree_resolution.model import (
 	NotEnumerated,
 	Program,
 	Provenance,
+	Residue,
 	Section,
 	SkippedMember,
 	SkipReason,
@@ -276,12 +277,30 @@ def unresolved_slots(
 	return tuple(
 		sorted(
 			(
-				UnresolvedSlot(slot=slot, path=entry.path, signature=entry.signature)
+				UnresolvedSlot(
+					slot=slot,
+					path=entry.path,
+					signature=entry.signature,
+					residue=_residue(program, slot),
+				)
 				for slot, entry in universe.items()
 				if slot not in resolved_by_slot
 			),
 			key=_slot_address,
 		)
+	)
+
+
+def _residue(program: Program, slot: Address) -> Residue:
+	value = pointer_at(program, slot)
+	if not in_writable_memory(program, slot):
+		return Residue.ROM_NULL if value == 0 else Residue.ROM_NON_FUNCTION
+	return (
+		Residue.RAM_UNINITIALIZED
+		if value is None
+		else Residue.RAM_NULL
+		if value == 0
+		else Residue.RAM_INITIALIZED
 	)
 
 

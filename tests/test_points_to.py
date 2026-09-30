@@ -15,6 +15,7 @@ from dynamic_call_tree_resolution import (
 	FunctionSignature,
 	Program,
 	Provenance,
+	Residue,
 	SkipReason,
 	SlotAssignment,
 	assignments,
@@ -287,6 +288,25 @@ def test_a_typedefd_array_member_is_a_nested_array(fixture_elfs: dict[str, Path]
 		"indirection.pairs.[0].[1]": {"handler_b"},
 		"indirection.pairs.[1].[0]": {"handler_b"},
 		"indirection.pairs.[1].[1]": {"handler_a"},
+	}
+
+
+def test_unresolved_slots_say_what_the_image_holds(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["residue"])
+	resolved = tuple(
+		assignment
+		for assignment in assignments(program)
+		if render_path(assignment.path) != "written"
+	)
+	assert {
+		render_path(slot.path): slot.residue for slot in unresolved_slots(program, resolved)
+	} == {
+		"rom_ops.stop": Residue.ROM_NULL,
+		"rom_arm.run": Residue.ROM_NON_FUNCTION,
+		"ram_ops.stop": Residue.RAM_NULL,
+		"bss_ops.run": Residue.RAM_UNINITIALIZED,
+		"bss_ops.stop": Residue.RAM_UNINITIALIZED,
+		"written": Residue.RAM_INITIALIZED,
 	}
 
 

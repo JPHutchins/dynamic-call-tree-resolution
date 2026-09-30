@@ -15,6 +15,7 @@ from salix import Struct
 from dynamic_call_tree_resolution.call_sites import per_caller_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
 from dynamic_call_tree_resolution.loader import defined_function_names, load
+from dynamic_call_tree_resolution.model import Residue
 from dynamic_call_tree_resolution.pexplorer import load_pexplorer
 from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
@@ -87,6 +88,18 @@ def _render(report: StackReport) -> str:
 			assert_never(unreachable)
 
 
+def _residue_label(residue: Residue) -> str:
+	match residue:
+		case Residue.ROM_NULL:
+			return "<null>"
+		case Residue.ROM_NON_FUNCTION:
+			return "<not a function>"
+		case Residue.RAM_NULL | Residue.RAM_UNINITIALIZED | Residue.RAM_INITIALIZED:
+			return "<unresolved>"
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 def _render_step(step: PathStep) -> str:
 	return (
 		f"{step.function} +{step.frame} = {step.cumulative} bytes"
@@ -135,7 +148,7 @@ def analyze(
 		label = assignment.member_path or hex(assignment.slot_address)
 		print(f"{label}: {', '.join(candidate.name for candidate in assignment.candidates)}")
 	for slot in report.unresolved_slots:
-		print(f"{slot.member_path}: <unresolved>")
+		print(f"{slot.member_path}: {_residue_label(slot.residue)}")
 	for item in report.not_enumerated:
 		print(f"{item.member_path}: <not enumerated: {item.reason}>")
 	for site in report.call_sites:
