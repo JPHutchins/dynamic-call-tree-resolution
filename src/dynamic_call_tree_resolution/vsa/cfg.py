@@ -20,6 +20,8 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	X86_CALLS,
 	X86_RETURNING_TRAPS,
 	X86_TRANSFERS,
+	arm_mnemonic,
+	arm_predicated,
 	normalized,
 )
 
@@ -136,7 +138,7 @@ def call_target(instruction: CsInsn, machine: Machine) -> int | None:
 		if operand.type != x86_const.X86_OP_IMM:
 			return None
 		return operand.imm
-	if instruction.mnemonic.split(".")[0] not in ("bl", "blx"):
+	if arm_mnemonic(instruction) not in ARM_CALLS:
 		return None
 	operand = instruction.operands[0]
 	if operand.type != arm_const.ARM_OP_IMM:
@@ -147,7 +149,7 @@ def call_target(instruction: CsInsn, machine: Machine) -> int | None:
 def _is_control_transfer(instruction: CsInsn, machine: Machine) -> bool:
 	if machine.is_x86:
 		return instruction.mnemonic in X86_TRANSFERS
-	return instruction.mnemonic.split(".")[0] in ARM_TRANSFERS
+	return arm_mnemonic(instruction) in ARM_TRANSFERS
 
 
 def indirect_operand(
@@ -166,9 +168,10 @@ def indirect_operand(
 			if operand.type == x86_const.X86_OP_REG:
 				return "register", operand
 		return None
-	if mnemonic == "blx" and operand.type == arm_const.ARM_OP_REG:
+	base_mnemonic = arm_mnemonic(instruction)
+	if base_mnemonic == "blx" and operand.type == arm_const.ARM_OP_REG:
 		return "register", operand
-	if mnemonic == "bx" and operand.reg not in (arm_const.ARM_REG_LR, arm_const.ARM_REG_PC):
+	if base_mnemonic == "bx" and operand.reg not in (arm_const.ARM_REG_LR, arm_const.ARM_REG_PC):
 		return "register", operand
 	return None
 
@@ -188,14 +191,21 @@ def _successors(
 	if instruction.mnemonic == ".byte":
 		return fallthrough
 	if _is_control_transfer(instruction, machine):
-		if instruction.mnemonic in (X86_CALLS if machine.is_x86 else ARM_CALLS):
-			return fallthrough
+		if machine.is_x86:
+			return (
+				fallthrough
+				if instruction.mnemonic in X86_CALLS or is_returning_trap(instruction, machine)
+				else ()
+			)
 		if (
-			instruction.mnemonic.split(".")[0] == "pop"
-			and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
+			arm_mnemonic(instruction) in ARM_CALLS
+			or (
+				arm_mnemonic(instruction) == "pop"
+				and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
+			)
+			or is_returning_trap(instruction, machine)
+			or arm_predicated(instruction)
 		):
-			return fallthrough
-		if is_returning_trap(instruction, machine):
 			return fallthrough
 		return ()
 	raise AssertionError  # every block-ending instruction matches an arm above
@@ -205,7 +215,7 @@ def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
 	return (
 		instruction.mnemonic in X86_RETURNING_TRAPS
 		if machine.is_x86
-		else instruction.mnemonic.split(".")[0] in ARM_RETURNING_TRAPS
+		else arm_mnemonic(instruction) in ARM_RETURNING_TRAPS
 	)
 
 
