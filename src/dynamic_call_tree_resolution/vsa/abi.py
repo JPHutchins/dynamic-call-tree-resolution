@@ -112,6 +112,8 @@ X86_MEMORY_READERS: Final = frozenset(
 		"bt",
 		"jmp",
 		"ljmp",
+		"call",
+		"lcall",
 		"div",
 		"idiv",
 		"mul",

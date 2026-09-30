@@ -1090,6 +1090,51 @@ def test_x86_store_to_writable_memory_clobbers_what_it_may_cover(
 	assert site.candidates == frozenset(Address(address) for address in candidates)
 
 
+@pytest.mark.parametrize(
+	("code", "candidates"),
+	[
+		pytest.param(
+			"48c7c500400000 48c7c100310000 48894d00 488b042500400000 ffd0",
+			{0x3000, 0x3100},
+			id="store-through-a-known-rbp",
+		),
+		pytest.param("48c7c500400000 488b4508 ffd0", {0x3100}, id="load-through-a-known-rbp"),
+		pytest.param("48c7c500400000 488d4508 488b00 ffd0", {0x3100}, id="lea-from-a-known-rbp"),
+		pytest.param("48c7c500400000 4883c508 488b4500 ffd0", {0x3100}, id="add-to-a-known-rbp"),
+		pytest.param("48c7c500400000 ff5508", {0x3100}, id="site-through-a-known-rbp"),
+		pytest.param(
+			"48894d00 488b042500400000 ffd0", set[int](), id="store-through-an-unknown-rbp"
+		),
+		pytest.param(
+			"48c7c300300000 48895c2408 48894d00 488b442408 ffd0",
+			set[int](),
+			id="store-through-an-unknown-rbp-clears-the-frame",
+		),
+		pytest.param(
+			"48c7c300300000 48895c2408 0fae4500 488b442408 ffd0",
+			set[int](),
+			id="fxsave-through-an-unknown-rbp-clears-the-frame",
+		),
+		pytest.param(
+			"488d5c2408 4883c308 48c7c100310000 48894c2410 488b03 ffd0",
+			{0x3100},
+			id="add-to-an-sp-copy",
+		),
+	],
+)
+def test_x86_rbp_addresses_the_frame_only_as_an_sp_copy(code: str, candidates: set[int]) -> None:
+	body = bytes.fromhex(code)
+	program = build_program(
+		"EM_X86_64",
+		(("caller", 0x1000, len(body)), ("first", 0x3000, 1), ("second", 0x3100, 1)),
+		objects=(("table", 0x4000, _pointer(0x3000, 8) + _pointer(0x3100, 8)),),
+		sections={0x1000: body},
+		writable=frozenset({0x4000}),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
 def test_x86_inc_shifts_the_tracked_address() -> None:
 	code = bytes.fromhex("48 c7 c0 ff 2f 00 0048 ff c0ff d0")
 	program = _program(

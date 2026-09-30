@@ -128,6 +128,10 @@ def top_registers(state: State, registers: tuple[int, ...]) -> State:
 	)
 
 
+def frame_based(state: State, machine: Machine, register: int) -> bool:
+	return register == SP_REGISTERS[machine][0] or register in state.sp_offsets
+
+
 def unknown_memory(state: State) -> State:
 	return State(
 		registers=state.registers,

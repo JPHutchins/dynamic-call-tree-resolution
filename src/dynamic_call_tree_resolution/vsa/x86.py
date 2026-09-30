@@ -40,6 +40,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
 	copy_register,
+	frame_based,
 	set_offsets,
 	set_register,
 	stack_read,
@@ -96,7 +97,7 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 		if memory.base == x86_const.X86_REG_RIP:
 			address = Address(instruction.address + instruction.size + memory.disp)
 			return set_register(state, destination.reg, Known(values=frozenset({address})))
-		if memory.base in SP_REGISTERS[machine]:
+		if frame_based(state, machine, memory.base):
 			return set_offsets(state, destination.reg, stack_offsets(state, memory, memory.base))
 		return set_register(state, destination.reg, memory_addresses(context, state, memory))
 	if instruction.mnemonic in ("inc", "dec"):
@@ -169,7 +170,7 @@ def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
 def _shift_x86_destination(
 	state: State, machine: Machine, destination: int, source: int, delta: int
 ) -> State:
-	if destination in SP_REGISTERS[machine]:
+	if frame_based(state, machine, destination):
 		return set_offsets(
 			state, destination, shift_offsets(lookup(state.sp_offsets, destination), delta)
 		)
