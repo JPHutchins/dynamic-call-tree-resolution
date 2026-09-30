@@ -154,7 +154,7 @@ CANDIDATES = (
 	*_cortex_m3("cast_handler.c", "main", {}),
 	_host("jump_table.c", "switch_case", ("-O0", "-no-pie", "-fcf-protection=full"), (66,)),
 	_host("jump_table.c", "switch_case", ("-O2", "-no-pie", "-fcf-protection=full"), (66,)),
-	_host("x86_64_subregister.c", "subregister_case", ("-O2", "-no-pie"), (61,)),
+	_host("x86_64_subregister.c", "subregister_case", ("-O2", "-no-pie"), (113,)),
 	_host("cast_handler.c", "main", ("-O2", "-no-pie"), ()),
 	_host("cast_handler.c", "main", ("-Os", "-no-pie"), ()),
 )
