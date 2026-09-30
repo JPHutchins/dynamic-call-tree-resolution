@@ -198,6 +198,7 @@ ARM_MULTIPLE_STORES: Final = frozenset(
 )
 ARM_DESCENDING_STORES: Final = frozenset({"push", "stmdb", "stmfd", "vpush", "vstmdb"})
 ARM_REGISTER_BYTES: Final[Mapping[str, int]] = {"s": 4, "d": 8, "q": 16}
+ARM_TABLE_ENTRY_BYTES: Final[Mapping[str, int]] = {"tbb": 1, "tbh": 2, "ldr": 4}
 X86_64_ARGUMENT_REGISTERS: Final = (
 	x86_const.X86_REG_RDI,
 	x86_const.X86_REG_RSI,

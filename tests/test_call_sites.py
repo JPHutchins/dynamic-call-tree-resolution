@@ -2694,6 +2694,12 @@ _TBB: Final = "02280cd8dfe800f00205080042f2000307e043f2000304e045f2000301e046f20
 			(),
 			id="adr-and-ldr-pc",
 		),
+		pytest.param(
+			"02280bd807a252f820f042f2000307e043f2000304e045f2000301e046f20003984770470b100000"
+			"1110000017100000",
+			(),
+			id="a-table-after-the-cases",
+		),
 	],
 )
 def test_thumb_bounded_dispatch_reaches_every_case(
@@ -2733,6 +2739,10 @@ def test_thumb_bounded_dispatch_reaches_every_case(
 		pytest.param(
 			"012808d80a4652f820f042f2000304e043f2000301e046f2000398477047",
 			id="ldr-pc-without-adr",
+		),
+		pytest.param(
+			"02280cd8dfe800f00305080042f2000307e043f2000304e045f2000301e046f2000398477047",
+			id="a-target-inside-an-instruction",
 		),
 	],
 )

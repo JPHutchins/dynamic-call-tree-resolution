@@ -16,6 +16,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
 	ARM_CONDITIONAL,
 	ARM_RETURNING_TRAPS,
+	ARM_TABLE_ENTRY_BYTES,
 	ARM_TRANSFERS,
 	X86_CALLS,
 	X86_RETURNING_TRAPS,
@@ -79,8 +80,9 @@ class _JumpTable(Struct):
 	"""The case addresses a bounded dispatch's table holds."""
 
 	targets: tuple[Address, ...]
+	base: int
 	end: int
-	"""The first address past the table, where decoding resumes."""
+	"""The first address past the table."""
 	guarded: tuple[int, ...]
 	"""Instructions from the bound check's branch to the dispatch; entering one skips the check."""
 
@@ -97,7 +99,12 @@ def _decoded(
 			if program.machine is Machine.EM_ARM and _dispatches(instruction):
 				table = _jump_table(instructions, program, function)
 				dispatches[instruction.address] = table
-				if table is not None:
+				if (
+					table is not None
+					and instruction.address + instruction.size
+					<= table.base
+					<= instruction.address + instruction.size + 2
+				):
 					offset = table.end - start
 					break
 		else:
@@ -149,7 +156,7 @@ def _jump_table(
 	)
 	if count is None:
 		return None
-	size = {"tbb": 1, "tbh": 2}.get(mnemonic, 4)
+	size = ARM_TABLE_ENTRY_BYTES[mnemonic]
 	table = memory_at(program, Address(table_base), size * count)
 	if len(table) != size * count:
 		return None
@@ -165,6 +172,7 @@ def _jump_table(
 		return None
 	return _JumpTable(
 		targets=targets,
+		base=table_base,
 		end=table_base + size * count + (size * count) % 2,
 		guarded=tuple(instruction.address for instruction in instructions[guard:]),
 	)
@@ -386,7 +394,9 @@ def _build_blocks(
 	cases = {
 		address: table.targets
 		for address, table in dispatches.items()
-		if table is not None and entered.isdisjoint(table.guarded)
+		if table is not None
+		and entered.isdisjoint(table.guarded)
+		and all(target in by_address for target in table.targets)
 	}
 	targets = branched_to | {target for targets in cases.values() for target in targets}
 	blocks: list[Block] = []
@@ -419,9 +429,7 @@ def _build_blocks(
 				Block(
 					start=Address(current[0].address),
 					instructions=tuple(current),
-					successors=tuple(
-						target for target in cases[instruction.address] if target in by_address
-					)
+					successors=cases[instruction.address]
 					if instruction.address in cases
 					else ()
 					if instruction.address in dispatches
