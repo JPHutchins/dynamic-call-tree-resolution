@@ -165,8 +165,8 @@ CANDIDATES = (
 	),
 	*(
 		cell
-		for source, caller in ARM_CASES
-		for cell in _arm(Platform.CORTEX_A15, source, caller, dict.fromkeys(ARM_LEVELS, (122,)))
+		for source, caller in (*ARM_CASES, ("predicated_call.c", "predicated_call_case"))
+		for cell in _arm(Platform.CORTEX_A15, source, caller, {})
 	),
 	_host("jump_table.c", "switch_case", ("-O0", "-no-pie", "-fcf-protection=full"), (113,)),
 	_host("jump_table.c", "switch_case", ("-O2", "-no-pie", "-fcf-protection=full"), (113,)),
@@ -382,7 +382,7 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 
 @pytest.mark.parametrize(
 	"image",
-	[pytest.param(image, id=_image_id(image), marks=_unsound((122,))) for image in A15_IMAGES],
+	[pytest.param(image, id=_image_id(image)) for image in A15_IMAGES],
 )
 def test_a32_sites_are_objdumps_register_indirect_branches(
 	image: Image, outcomes: Mapping[Image, Outcome]

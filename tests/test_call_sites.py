@@ -32,7 +32,8 @@ from dynamic_call_tree_resolution import (
 	resolve,
 	unresolved_slots,
 )
-from dynamic_call_tree_resolution.model import FUNCTION_POINTER
+from dynamic_call_tree_resolution.model import FUNCTION_POINTER, InstructionSet
+from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
 from dynamic_call_tree_resolution.report import slot_counts
 from dynamic_call_tree_resolution.vsa import address_taken
 from tests.programs import build_program
@@ -811,6 +812,7 @@ def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
 		layouts={},
 		relocations=(),
 		data_in_code=(),
+		arm_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0"), writable=False
@@ -835,6 +837,7 @@ def _two_entry_table(objects: Mapping[Address, DataObject]) -> Program:
 		layouts={},
 		relocations=(),
 		data_in_code=(),
+		arm_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0"), writable=False
@@ -882,6 +885,7 @@ def test_x86_bss_slot_read_is_unknown() -> None:
 		layouts={},
 		relocations=(),
 		data_in_code=(),
+		arm_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 8b 05 f9 0f 00 00ff d0"), writable=False
@@ -1919,6 +1923,7 @@ def _signature_program() -> Program:
 		layouts={},
 		relocations=(),
 		data_in_code=(),
+		arm_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 c7 c0 00 20 00 00ff d0"), writable=False
@@ -1980,6 +1985,7 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 		layouts={},
 		relocations=(),
 		data_in_code=(),
+		arm_code=(),
 		sections={
 			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False)
 		},
@@ -2029,6 +2035,7 @@ def _bss_slot_site_program() -> Program:
 		layouts={},
 		relocations=(),
 		data_in_code=(),
+		arm_code=(),
 		sections={
 			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False),
 			Address(0x6000): Section(data=(0x4000).to_bytes(8, "little"), writable=False),
@@ -2498,6 +2505,7 @@ def _hook_program(machine: str, code: bytes, *, writable: bool, pointer_size: in
 		layouts={},
 		relocations=(),
 		data_in_code=(),
+		arm_code=(),
 		sections={
 			Address(0x1000): Section(data=code, writable=False),
 			Address(0x4000): Section(data=_pointer(0x2000, pointer_size), writable=writable),
@@ -2775,3 +2783,123 @@ def test_thumb_unbounded_dispatch_reaches_every_block(code: str) -> None:
 def test_thumb_pc_write_is_a_return_or_a_site(code: str, candidates: set[int]) -> None:
 	(site,) = extract_call_sites(_thumb_dispatch_program(code))
 	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
+def _a32(words: str) -> bytes:
+	return b"".join(bytes.fromhex(word)[::-1] for word in words.split())
+
+
+@pytest.mark.parametrize(
+	("arm_code", "sites"),
+	[
+		pytest.param(((0x1000, 0x1008),), [{0x2000}], id="a32-reads-pc-plus-eight"),
+		pytest.param((), [], id="unmarked-decodes-as-thumb"),
+	],
+)
+def test_a32_code_decodes_only_inside_its_mapping_span(
+	arm_code: tuple[tuple[int, int], ...], sites: list[set[int]]
+) -> None:
+	body = _a32("e59f3000 e12fff33") + _pointer(0x2000, 4)
+	program = build_program(
+		"EM_ARM",
+		(("caller", 0x1000, len(body)), ("a", 0x2000, 4), ("b", 0x3000, 4)),
+		sections={0x1000: body},
+		pointer_size=4,
+		data_in_code=((0x1008, 0x100C),),
+		arm_code=arm_code,
+	)
+	assert [set(site.candidates) for site in extract_call_sites(program)] == sites
+
+
+def test_a32_and_thumb_functions_each_decode_in_their_own_set() -> None:
+	body = (
+		_a32("e59f3000 e12fff33")
+		+ _pointer(0x3001, 4)
+		+ bytes.fromhex("004b 9847")
+		+ _pointer(0x2000, 4)
+	)
+	program = build_program(
+		"EM_ARM",
+		(
+			("arm_caller", 0x1000, 0xC),
+			("thumb_caller", 0x100D, 8),
+			("a", 0x2000, 4),
+			("b", 0x3001, 4),
+		),
+		sections={0x1000: body},
+		pointer_size=4,
+		data_in_code=((0x1008, 0x100C), (0x1010, 0x1014)),
+		arm_code=((0x1000, 0x1008),),
+	)
+	assert sorted((site.site_address, site.candidates) for site in extract_call_sites(program)) == [
+		(Address(0x1004), frozenset({Address(0x3001)})),
+		(Address(0x100E), frozenset({Address(0x2000)})),
+	]
+
+
+def test_a32_pc_relative_load_with_an_index_is_unknown() -> None:
+	body = _a32("e79f3102 e12fff33") + _pointer(0x2000, 4)
+	program = build_program(
+		"EM_ARM",
+		(("caller", 0x1000, len(body)), ("a", 0x2000, 4)),
+		sections={0x1000: body},
+		pointer_size=4,
+		data_in_code=((0x1008, 0x100C),),
+		arm_code=((0x1000, 0x1008),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()
+
+
+@pytest.mark.parametrize(
+	("restore", "candidates"),
+	[
+		pytest.param("e24dd000", {0x2000}, id="from-sp"),
+		pytest.param("e28db004 e24bd004", {0x2000}, id="from-an-sp-copy"),
+		pytest.param("e24bd000", set[int](), id="from-an-unknown-register"),
+	],
+)
+def test_a32_sp_rebuilt_from_a_register_keeps_the_frame_only_when_it_is_an_sp_copy(
+	restore: str, candidates: set[int]
+) -> None:
+	body = _a32(f"e3a03a02 e58d3000 {restore} e59d3000 e12fff33")
+	program = build_program(
+		"EM_ARM",
+		(("caller", 0x1000, len(body)), ("a", 0x2000, 4)),
+		sections={0x1000: body},
+		pointer_size=4,
+		arm_code=((0x1000, 0x1000 + len(body)),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
+def test_a32_pc_relative_address_is_taken_without_a_thumb_bit() -> None:
+	body = _a32("e28f0008 e24f0010")
+	program = build_program(
+		"EM_ARM",
+		(("caller", 0x1000, len(body)), ("before", 0xFFC, 4), ("after", 0x1010, 4)),
+		sections={0x1000: body},
+		pointer_size=4,
+		arm_code=((0x1000, 0x1008),),
+	)
+	assert address_taken(program) == frozenset({Address(0xFFC), Address(0x1010)})
+
+
+def test_instruction_runs_split_where_a32_code_ends() -> None:
+	program = build_program(
+		"EM_ARM",
+		(("mixed", 0x1000, 16),),
+		sections={0x1000: bytes(16)},
+		pointer_size=4,
+		data_in_code=((0x1008, 0x100C),),
+		arm_code=((0x1000, 0x1004),),
+	)
+	assert [
+		(address, len(code), instruction_set_at(program, address))
+		for address, code in instruction_runs(program, Address(0x1000), 16)
+	] == [
+		(0x1000, 4, InstructionSet.A32),
+		(0x1004, 4, InstructionSet.T32),
+		(0x100C, 4, InstructionSet.T32),
+	]

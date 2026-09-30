@@ -10,13 +10,11 @@ from functools import partial, reduce
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
-from capstone import Cs
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, CallSite, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
-	DISASSEMBLERS,
 	SP_REGISTERS,
 	X86_64_ARGUMENT_REGISTERS,
 	normalized,
@@ -51,10 +49,7 @@ class Analysis(Struct):
 
 
 def analyze(program: Program) -> Analysis:
-	disassembler = Cs(*DISASSEMBLERS[program.machine])
-	disassembler.detail = True
-	disassembler.skipdata = True
-	blocks_by_function = control_flow_graphs(program, disassembler)
+	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())
 	_prewarm_instructions(functions, program.machine)
 	top = top_seed(program.machine)

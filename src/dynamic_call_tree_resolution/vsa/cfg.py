@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from capstone import Cs, arm_const, x86_const
+from capstone import arm_const, x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, Machine, aligned
-from dynamic_call_tree_resolution.points_to import instruction_runs, memory_at
+from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at, memory_at
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
 	ARM_CONDITIONAL,
@@ -23,13 +23,15 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	X86_TRANSFERS,
 	arm_mnemonic,
 	arm_predicated,
+	disassemblers,
 	normalized,
+	program_counter,
 )
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from capstone import CsInsn, CsOperand
+	from capstone import Cs, CsInsn, CsOperand
 
 	from dynamic_call_tree_resolution.model import Function, Program
 
@@ -46,9 +48,8 @@ def _function_address(function: Function) -> Address:
 	return function.address
 
 
-def control_flow_graphs(
-	program: Program, disassembler: Cs
-) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
+def control_flow_graphs(program: Program) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
+	decoders = disassemblers()
 	seen: set[Address] = set()
 	blocks: dict[Address, tuple[Function, tuple[Block, ...]]] = {}
 	for function in sorted(program.functions.values(), key=_function_address):
@@ -62,7 +63,13 @@ def control_flow_graphs(
 			continue
 		seen.add(start)
 		decoded = tuple(
-			_decoded(disassembler, program, address, code, (start, start + function.size))
+			_decoded(
+				decoders[instruction_set_at(program, address)],
+				program,
+				address,
+				code,
+				(start, start + function.size),
+			)
 			for address, code in runs
 		)
 		blocks[start] = (
@@ -142,7 +149,7 @@ def _jump_table(
 		if mnemonic == "add"
 		else dispatch.address + 4
 		if mnemonic in ("tbb", "tbh")
-		else _adr_target(instructions[-2])
+		else _adr_target(instructions[-2], program)
 		if len(instructions) >= 2
 		else None
 	)
@@ -178,7 +185,7 @@ def _jump_table(
 	)
 
 
-def _adr_target(instruction: CsInsn) -> int | None:
+def _adr_target(instruction: CsInsn, program: Program) -> int | None:
 	if (
 		arm_mnemonic(instruction) not in ("add", "adr")
 		or len(instruction.operands) < 2
@@ -189,7 +196,10 @@ def _adr_target(instruction: CsInsn) -> int | None:
 		)
 	):
 		return None
-	return ((instruction.address + 4) & ~3) + instruction.operands[-1].imm
+	return (
+		program_counter(instruction, instruction_set_at(program, Address(instruction.address)))
+		+ instruction.operands[-1].imm
+	)
 
 
 def _bound(compare: CsInsn, branch: CsInsn, index: int) -> int | None:

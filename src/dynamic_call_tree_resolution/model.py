@@ -30,6 +30,15 @@ class Machine(StrEnum):
 		return self is Machine.EM_X86_64 or self is Machine.EM_386
 
 
+class InstructionSet(StrEnum):
+	"""The encodings the analyzer decodes."""
+
+	A32 = "A32"
+	T32 = "T32"
+	X86_32 = "X86_32"
+	X86_64 = "X86_64"
+
+
 class FunctionSignature(Struct):
 	"""A function's type, as resolved type names."""
 
@@ -126,6 +135,8 @@ class Program(Struct):
 	sections: Mapping[Address, Section]
 	data_in_code: tuple[tuple[Address, Address], ...]
 	"""Spans of data inside code, such as literal pools, from ARM `$d` mapping symbols."""
+	arm_code: tuple[tuple[Address, Address], ...]
+	"""Sorted spans of A32 code, from ARM `$a` mapping symbols."""
 
 
 def aligned(address: Address) -> Address:

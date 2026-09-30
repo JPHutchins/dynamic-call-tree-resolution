@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
+from itertools import pairwise
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
@@ -16,6 +18,8 @@ from dynamic_call_tree_resolution.model import (
 	EmbeddedStructMember,
 	FunctionPointerMember,
 	FunctionSignature,
+	InstructionSet,
+	Machine,
 	Program,
 	Provenance,
 	Section,
@@ -382,9 +386,42 @@ def instruction_runs(
 	)
 	return tuple(
 		(Address(low), memory_at(program, Address(low), high - low))
-		for low, high in zip(edges[::2], edges[1::2], strict=True)
+		for code_start, code_end in zip(edges[::2], edges[1::2], strict=True)
+		for low, high in pairwise(
+			(
+				code_start,
+				*sorted(
+					edge
+					for span in program.arm_code
+					for edge in span
+					if code_start < edge < code_end
+				),
+				code_end,
+			)
+		)
 		if high > low
 	)
+
+
+def instruction_set_at(program: Program, address: Address) -> InstructionSet:
+	match program.machine:
+		case Machine.EM_X86_64:
+			return InstructionSet.X86_64
+		case Machine.EM_386:
+			return InstructionSet.X86_32
+		case Machine.EM_ARM:
+			index = bisect_right(program.arm_code, address, key=_span_start) - 1
+			return (
+				InstructionSet.A32
+				if index >= 0 and address < program.arm_code[index][1]
+				else InstructionSet.T32
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _span_start(span: tuple[Address, Address]) -> Address:
+	return span[0]
 
 
 def _section_covering(program: Program, address: Address) -> tuple[Address, Section] | None:
