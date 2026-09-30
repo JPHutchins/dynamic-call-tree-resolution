@@ -214,13 +214,15 @@ def test_conflicting_paths_fall_back_to_the_resolved_union() -> None:
 			slot=Address(0x3000),
 			path=("target_a",),
 			candidates=frozenset({Address(0x3000)}),
-			provenance=Provenance.CONSTANT_DATA,
+			provenance=Provenance.ROM_CONSTANT,
+			relocated=False,
 		),
 		SlotAssignment(
 			slot=Address(0x4000),
 			path=("target_b",),
 			candidates=frozenset({Address(0x4000)}),
-			provenance=Provenance.CONSTANT_DATA,
+			provenance=Provenance.ROM_CONSTANT,
+			relocated=False,
 		),
 	)
 	by_caller, fallback = per_caller_candidates(program, extract_call_sites(program), resolved)
@@ -402,7 +404,8 @@ def test_site_slot_joins_resolved_assignments() -> None:
 		slot=Address(0x3000),
 		path=("holder", "run"),
 		candidates=frozenset({Address(0x2000)}),
-		provenance=Provenance.CONSTANT_DATA,
+		provenance=Provenance.ROM_CONSTANT,
+		relocated=False,
 	)
 	assert call_site_candidates(program, site, {Address(0x3000): assignment}) == frozenset(
 		{Address(0x2000)}

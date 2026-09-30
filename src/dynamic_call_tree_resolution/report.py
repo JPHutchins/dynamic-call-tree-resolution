@@ -48,6 +48,7 @@ class SlotAssignmentReport(Struct):
 	member_path: str
 	candidates: tuple[Candidate, ...]
 	provenance: Provenance
+	relocated: bool
 
 
 class CallSiteReport(Struct):
@@ -220,6 +221,7 @@ def build_report(
 				member_path=render_path(assignment.path),
 				candidates=_candidates(program, assignment.candidates),
 				provenance=assignment.provenance,
+				relocated=assignment.relocated,
 			)
 			for assignment in resolved
 		),

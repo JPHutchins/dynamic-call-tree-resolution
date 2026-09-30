@@ -39,12 +39,31 @@ def _names(program: Program, assignment: SlotAssignment) -> set[str]:
 	return {program.functions[address].name for address in assignment.candidates}
 
 
-def test_nopie_resolves_all_const_slots_exactly(fixture_elfs: dict[str, Path]) -> None:
+def test_nopie_resolves_every_initialized_slot(fixture_elfs: dict[str, Path]) -> None:
 	resolved, program = _resolved(fixture_elfs["nopie"])
 	assert set(resolved) == set(EXPECTED_NOPIE)
 	for path, names in EXPECTED_NOPIE.items():
 		assert _names(program, resolved[path]) == set(names)
-		assert resolved[path].provenance is Provenance.CONSTANT_DATA
+		assert not resolved[path].relocated
+
+
+def test_nopie_slots_in_writable_objects_are_ram_initializers(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	resolved, _ = _resolved(fixture_elfs["nopie"])
+	assert {
+		path
+		for path, assignment in resolved.items()
+		if assignment.provenance is Provenance.RAM_INITIALIZER
+	} == {
+		"holder.run",
+		"node_a.fn",
+		"plain_cb",
+		"dev_a.ops.init",
+		"dev_b.ops.init",
+		"dev_c.ops.init",
+		"holder2.inner.fn",
+	}
 
 
 @pytest.mark.parametrize("variant", ["o2", "dwarf4"])
@@ -61,9 +80,9 @@ def test_other_build_modes_match_nopie(
 def test_pie_resolves_relocations_with_their_slots(fixture_elfs: dict[str, Path]) -> None:
 	resolved, _ = _resolved(fixture_elfs["pie"])
 	assert set(resolved) >= set(EXPECTED_NOPIE)
-	assert resolved["plain_cb"].provenance is Provenance.RELOCATION
-	assert resolved["holder.run"].provenance is Provenance.RELOCATION
-	assert resolved["dev_a.api.open"].provenance is Provenance.CONSTANT_DATA
+	assert resolved["plain_cb"].relocated
+	assert resolved["holder.run"].relocated
+	assert not resolved["dev_a.api.open"].relocated
 
 
 def test_nodebug_resolves_direct_slots_only(fixture_elfs: dict[str, Path]) -> None:
@@ -105,7 +124,7 @@ def test_multi_tu_resolves_via_declared_types(fixture_elfs: dict[str, Path]) -> 
 def test_minimal_pie_resolves_via_relocation(fixture_elfs: dict[str, Path]) -> None:
 	resolved, program = _resolved(fixture_elfs["minimal.pie"])
 	assert set(resolved) >= {"ping_cb"}
-	assert resolved["ping_cb"].provenance is Provenance.RELOCATION
+	assert resolved["ping_cb"].relocated
 	assert _names(program, resolved["ping_cb"]) == {"ping"}
 	assert "undef_ptr" not in resolved
 

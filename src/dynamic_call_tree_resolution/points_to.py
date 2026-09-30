@@ -18,6 +18,7 @@ from dynamic_call_tree_resolution.model import (
 	FunctionSignature,
 	Program,
 	Provenance,
+	Section,
 	SlotAssignment,
 	StructPointerMember,
 	UnresolvedSlot,
@@ -30,41 +31,56 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import DataObject, Member, StructureLayout
 
 
+class _Resolution(Struct):
+	"""A slot and the targets one walk of the image found for it."""
+
+	slot: Address
+	path: tuple[str | None, ...]
+	candidates: frozenset[Address]
+
+
 def assignments(program: Program) -> tuple[SlotAssignment, ...]:
-	by_key: dict[tuple[Address, tuple[str | None, ...], frozenset[Address]], Provenance] = {}
-	for assignment in _from_objects(program):
-		by_key[(assignment.slot, assignment.path, assignment.candidates)] = assignment.provenance
-	for assignment in _from_relocations(program):
-		by_key[(assignment.slot, assignment.path, assignment.candidates)] = assignment.provenance
 	return tuple(
 		sorted(
 			(
 				SlotAssignment(
-					slot=slot,
-					path=path,
-					candidates=candidates,
-					provenance=provenance,
+					slot=resolution.slot,
+					path=resolution.path,
+					candidates=resolution.candidates,
+					provenance=_provenance(program, resolution.slot),
+					relocated=relocated,
 				)
-				for (slot, path, candidates), provenance in by_key.items()
+				for resolution, relocated in {
+					**dict.fromkeys(_from_objects(program), False),
+					**dict.fromkeys(_from_relocations(program), True),
+				}.items()
 			),
 			key=_assignment_slot,
 		)
 	)
 
 
-def _from_relocations(program: Program) -> Iterable[SlotAssignment]:
+def _provenance(program: Program, slot: Address) -> Provenance:
+	covering = _section_covering(program, slot)
+	return (
+		Provenance.ROM_CONSTANT
+		if covering is not None and not covering[1].writable
+		else Provenance.RAM_INITIALIZER
+	)
+
+
+def _from_relocations(program: Program) -> Iterable[_Resolution]:
 	for relocation in program.relocations:
 		if relocation.target not in program.functions:
 			continue
-		yield SlotAssignment(
+		yield _Resolution(
 			slot=relocation.slot,
 			path=_slot_path(program, relocation.slot),
 			candidates=frozenset({relocation.target}),
-			provenance=Provenance.RELOCATION,
 		)
 
 
-def _from_objects(program: Program) -> Iterable[SlotAssignment]:
+def _from_objects(program: Program) -> Iterable[_Resolution]:
 	for data_object in program.objects.values():
 		yield from _object_assignments(
 			program, data_object, path=(data_object.name,), visited=frozenset()
@@ -76,7 +92,7 @@ def _object_assignments(
 	data_object: DataObject,
 	path: tuple[str | None, ...],
 	visited: frozenset[Address],
-) -> Iterable[SlotAssignment]:
+) -> Iterable[_Resolution]:
 	if data_object.address in visited:
 		return
 	layout = _layout_of(program, data_object)
@@ -92,11 +108,10 @@ def _object_assignments(
 		else:
 			target = pointer_at(program, data_object.address)
 			if target is not None and target != 0 and target in program.functions:
-				yield SlotAssignment(
+				yield _Resolution(
 					slot=data_object.address,
 					path=path,
 					candidates=frozenset({target}),
-					provenance=Provenance.CONSTANT_DATA,
 				)
 		return
 	visited = visited | {data_object.address}
@@ -107,7 +122,7 @@ def _vector_table_assignments(
 	program: Program,
 	data_object: DataObject,
 	path: tuple[str | None, ...],
-) -> Iterable[SlotAssignment]:
+) -> Iterable[_Resolution]:
 	values = tuple(
 		pointer_at(program, Address(data_object.address + base_offset))
 		for base_offset in range(0, data_object.size, program.pointer_size)
@@ -120,11 +135,10 @@ def _vector_table_assignments(
 	if len(targets) != len(values):
 		return
 	for index, target in enumerate(targets):
-		yield SlotAssignment(
+		yield _Resolution(
 			slot=Address(data_object.address + index * program.pointer_size),
 			path=(*path, f"[{index}]"),
 			candidates=frozenset({target}),
-			provenance=Provenance.CONSTANT_DATA,
 		)
 
 
@@ -133,18 +147,17 @@ def _array_element_assignments(
 	data_object: DataObject,
 	path: tuple[str | None, ...],
 	visited: frozenset[Address],
-) -> Iterable[SlotAssignment]:
+) -> Iterable[_Resolution]:
 	element_name = array_element_type(data_object.type_name) if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
 	if element_layout is None:
 		for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
 			target = pointer_at(program, Address(data_object.address + base_offset))
 			if target is not None and target != 0 and target in program.functions:
-				yield SlotAssignment(
+				yield _Resolution(
 					slot=Address(data_object.address + base_offset),
 					path=(*path, f"[{index}]"),
 					candidates=frozenset({target}),
-					provenance=Provenance.CONSTANT_DATA,
 				)
 		return
 	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
@@ -165,18 +178,17 @@ def _member_assignments(
 	members: tuple[Member, ...],
 	path: tuple[str | None, ...],
 	visited: frozenset[Address],
-) -> Iterable[SlotAssignment]:
+) -> Iterable[_Resolution]:
 	for member in members:
 		member_path = (*path, member.name)
 		match member:
 			case FunctionPointerMember(offset=offset):
 				target = pointer_at(program, Address(base_address + base_offset + offset))
 				if target is not None and target != 0 and target in program.functions:
-					yield SlotAssignment(
+					yield _Resolution(
 						slot=Address(base_address + base_offset + offset),
 						path=member_path,
 						candidates=frozenset({target}),
-						provenance=Provenance.CONSTANT_DATA,
 					)
 			case StructPointerMember(offset=offset, pointee=pointee):
 				target_object = _object_covering(
@@ -345,12 +357,22 @@ def signatures_by_slot(
 
 
 def memory_at(program: Program, address: Address, size: int) -> bytes:
-	for section_address, section in program.sections.items():
-		if not section_address <= address < section_address + len(section.data):
-			continue
-		offset = address - section_address
-		return section.data[offset : offset + size]
-	return b""
+	covering = _section_covering(program, address)
+	if covering is None:
+		return b""
+	start, section = covering
+	return section.data[address - start : address - start + size]
+
+
+def _section_covering(program: Program, address: Address) -> tuple[Address, Section] | None:
+	return next(
+		(
+			(start, section)
+			for start, section in program.sections.items()
+			if start <= address < start + len(section.data)
+		),
+		None,
+	)
 
 
 def pointer_at(program: Program, address: Address) -> Address | None:

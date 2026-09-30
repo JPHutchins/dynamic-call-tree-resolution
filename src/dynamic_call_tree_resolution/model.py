@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from enum import Enum, StrEnum, auto
+from enum import StrEnum
 from typing import TYPE_CHECKING, Final, Literal, NewType
 
 from salix import Struct
@@ -148,11 +148,11 @@ def layout_key(keyword: str, name: str) -> str:
 	return f"{keyword} {name}"
 
 
-class Provenance(Enum):
-	"""How a slot assignment was established."""
+class Provenance(StrEnum):
+	"""Whether a slot's image value is the only value it holds at runtime."""
 
-	RELOCATION = auto()
-	CONSTANT_DATA = auto()
+	ROM_CONSTANT = "rom_constant"
+	RAM_INITIALIZER = "ram_initializer"
 
 
 class SlotAssignment(Struct):
@@ -162,6 +162,8 @@ class SlotAssignment(Struct):
 	path: tuple[str | None, ...]
 	candidates: frozenset[Address]
 	provenance: Provenance
+	relocated: bool
+	"""A dynamic relocation supplies the value at load time."""
 
 
 class CallSite(Struct):
