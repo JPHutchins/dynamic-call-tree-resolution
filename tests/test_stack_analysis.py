@@ -34,6 +34,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 
 if TYPE_CHECKING:
+	from collections.abc import Mapping
 	from pathlib import Path
 
 ARTIFACT_DIRECTORIES = ("counter-su", "sensor-two-impl")
@@ -785,27 +786,59 @@ def test_deepest_path_of_an_unknown_entry_is_an_error() -> None:
 		deepest_path(stack_graph((CallEdge(caller="main", callee="leaf"),), FRAMES), "nope")
 
 
-def _counter_graph(artifacts: Path, *, expanded: bool) -> tuple[CallEdge, ...]:
-	edges = load_callgraph(artifacts)
-	if not expanded:
-		return edges
-	program = load(artifacts / "zephyr" / "zephyr.exe")
+@pytest.fixture(scope="module")
+def counter_candidates(
+	zephyr_fixtures: Path,
+) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
+	program = load(zephyr_fixtures / ARTIFACT_DIRECTORIES[0] / "zephyr" / "zephyr.exe")
 	resolution = resolve(program)
-	return expand_indirect_calls(
-		edges, *per_caller_candidates(program, resolution.sites, resolution.assignments)
+	return per_caller_candidates(program, resolution.sites, resolution.assignments)
+
+
+def _depth(report: StackReport) -> int:
+	return report.bound.bytes if isinstance(report.bound, Bounded) else report.bound.at_least
+
+
+@pytest.mark.image
+def test_no_acyclic_counter_entry_is_deeper_with_candidates_alone_than_with_the_fallback(
+	zephyr_fixtures: Path,
+	counter_candidates: tuple[Mapping[str, frozenset[str]], frozenset[str]],
+) -> None:
+	artifacts = zephyr_fixtures / ARTIFACT_DIRECTORIES[0]
+	edges = load_callgraph(artifacts)
+	frames = load_stack_usages(artifacts)
+	candidates, with_fallback = (
+		{
+			report.entry: report
+			for report in worst_case_depths(
+				expand_indirect_calls(edges, *counter_candidates, exact=exact),
+				frames,
+				entry_edges=edges,
+			)
+		}
+		for exact in (True, False)
 	)
+	assert [
+		entry
+		for entry, report in with_fallback.items()
+		if not (isinstance(report.bound, Unbounded) and report.bound.recursion)
+		and _depth(candidates[entry]) > _depth(report)
+	] == []
 
 
 @pytest.mark.image
 @pytest.mark.parametrize("expanded", [False, True], ids=["static", "expanded"])
 def test_every_counter_entry_has_a_deepest_path_as_deep_as_its_bound(
-	zephyr_fixtures: Path, expanded: bool
+	zephyr_fixtures: Path,
+	counter_candidates: tuple[Mapping[str, frozenset[str]], frozenset[str]],
+	expanded: bool,
 ) -> None:
 	artifacts = zephyr_fixtures / ARTIFACT_DIRECTORIES[0]
+	edges = load_callgraph(artifacts)
 	graph = stack_graph(
-		_counter_graph(artifacts, expanded=expanded),
+		expand_indirect_calls(edges, *counter_candidates) if expanded else edges,
 		load_stack_usages(artifacts),
-		entry_edges=load_callgraph(artifacts),
+		entry_edges=edges,
 	)
 	assert [
 		report.entry

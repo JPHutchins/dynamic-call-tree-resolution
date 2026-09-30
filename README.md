@@ -131,9 +131,9 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 resolved slots: 106 | indirect call sites: 101 | not in the image: 223
-cmd_date_set: unbounded, at least 3116 bytes (recursion: 99, unmeasured: 132)
+gpio_emul_port_set_masked_raw: unbounded, at least 6288 bytes (recursion: 222, unmeasured: 153)
 ...
-poll_state_thread: unbounded, at least 1844 bytes (recursion: 99, unmeasured: 128)
+poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
 ...
 ```
 
@@ -156,13 +156,15 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
 resolved slots: 106 | indirect call sites: 101 | not in the image: 223
-poll_state_thread: unbounded, at least 1844 bytes (recursion: 99, unmeasured: 128)
+poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
 poll_state_thread +80 = 80 bytes (recursion)
-change_led_work_handler +64 = 144 bytes via indirect: fallback (recursion)
-idle +16 = 160 bytes via indirect: candidate (recursion)
+can_msgq_put +32 = 112 bytes via indirect: fallback (recursion)
+z_impl_k_msgq_put +8 = 120 bytes via static (recursion)
 ...
-timer_core_arm +48 = 1844 bytes via static
-hwtimer_set_tick_one_shot +0 = 1844 bytes via static (unmeasured)
+tx_thread +112 = 624 bytes via indirect: candidate (recursion)
+...
+timer_core_arm +48 = 6192 bytes via static
+hwtimer_set_tick_one_shot +0 = 6192 bytes via static (unmeasured)
 ```
 
 ```console
@@ -251,8 +253,9 @@ contradicts does not hold.
 
 - A depth is the deepest path the search found over the call graph; it is a bound
   only if that graph is complete, and today it is not (above).
-- Expanding indirect edges (`stack --elf`) can report less than the subset-only
-  expansion used in the tests ([#58]).
+- In an entry that reaches a large cycle, `at least` is the depth of one path through
+  the cycle that a depth-first walk finds, not the deepest. More edges, such as the
+  fallback's, can print a smaller number.
 - Without an ELF, entry points come from `.ci`, including functions the linker
   discarded ([#78]).
 - Interrupt, exception, context-switch, and FPU stacking are not modeled.
@@ -302,7 +305,6 @@ a machine builds it.
 - [avstack](https://github.com/JPHutchins/avstack) — avr stack "worst case usage" tooling
 
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
-[#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
 [#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
