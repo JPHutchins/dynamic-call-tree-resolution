@@ -9,6 +9,7 @@ from pathlib import Path
 
 import msgspec
 import pytest
+from elftools.elf.enums import ENUM_E_MACHINE
 
 from dynamic_call_tree_resolution import (
 	AnalysisReport,
@@ -342,6 +343,23 @@ def test_cli_compare_skips_oversized_elfs(
 		stream.truncate(51 * 1024 * 1024)
 	compare([directory])
 	assert "too large" in capsys.readouterr().err
+
+
+def test_cli_compare_skips_unsupported_machines_and_rolls_up_the_rest(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	directory = tmp_path / "elfs"
+	directory.mkdir()
+	image = fixture_elfs["nopie"].read_bytes()
+	riscv = directory / "a.elf"
+	riscv.write_bytes(image[:18] + ENUM_E_MACHINE["EM_RISCV"].to_bytes(2, "little") + image[20:])
+	(directory / "b.elf").write_bytes(image)
+	compare([directory])
+	captured = capsys.readouterr()
+	assert f"warning: skipping {riscv} (EM_RISCV; unsupported machine)" in captured.err
+	assert [line.split()[0] for line in captured.out.splitlines()[1:]] == ["b.elf"]
 
 
 def test_cli_stack_accepts_positional_elf(
