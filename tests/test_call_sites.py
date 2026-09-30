@@ -2560,3 +2560,46 @@ def test_site_through_an_unresolved_slot_keeps_its_member_path() -> None:
 	(site,) = build_report(program, resolution.assignments, resolution.sites).call_sites
 	assert site.member_path == "hook"
 	assert site.candidates == ()
+
+
+@pytest.mark.parametrize(
+	("code", "callee", "sites"),
+	[
+		pytest.param("42f20003 0128 c8bf 9847 7047", None, [{0x2000}], id="blxgt-is-a-site"),
+		pytest.param(
+			"42f20003 43f20004 0028 18bf 1847 a047",
+			None,
+			[{0x2000}, {0x3000}],
+			id="bxne-is-a-site-and-falls-through",
+		),
+		pytest.param(
+			"42f20000 0129 c8bf 00f001f8 8047 7047", 0xE, [set[int]()], id="blgt-clobbers-r0"
+		),
+		pytest.param("42f20003 0028 18bf 7047 9847", None, [{0x2000}], id="bxne-lr-falls-through"),
+		pytest.param(
+			"10b5 42f20003 0028 18bf 10bd 9847", None, [{0x2000}], id="popne-pc-falls-through"
+		),
+	],
+)
+def test_thumb_predicated_transfer_also_falls_through(
+	code: str, callee: int | None, sites: list[set[int]]
+) -> None:
+	body = bytes.fromhex(code)
+	caller_size = callee if callee is not None else len(body)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(
+			("caller", 0x1000, caller_size),
+			*((("callee", 0x1000 + caller_size, len(body) - caller_size),) if callee else ()),
+			("first", 0x2000, 4),
+			("second", 0x3000, 4),
+		),
+		pointer_size=4,
+	)
+	assert [
+		candidates
+		for _, candidates in sorted(
+			(site.site_address, site.candidates) for site in extract_call_sites(program)
+		)
+	] == [frozenset(Address(address) for address in expected) for expected in sites]

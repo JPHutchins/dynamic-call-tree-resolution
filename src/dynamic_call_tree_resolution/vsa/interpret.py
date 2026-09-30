@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	X86_CALLER_SAVED_32,
 	X86_CALLER_SAVED_64,
 	X86_CALLS,
+	arm_mnemonic,
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.arm import apply_arm
@@ -97,9 +98,11 @@ def _transfer(context: Context, instruction: CsInsn, state: State) -> State:
 	machine = context.program.machine
 	if instruction.mnemonic == ".byte":
 		return state
-	if instruction.mnemonic in (X86_CALLS if machine.is_x86 else ARM_CALLS) or is_returning_trap(
-		instruction, machine
-	):
+	if (
+		instruction.mnemonic in X86_CALLS
+		if machine.is_x86
+		else arm_mnemonic(instruction) in ARM_CALLS
+	) or is_returning_trap(instruction, machine):
 		return _called(state, machine)
 	if instruction.mnemonic in ("loop", "loope", "loopne"):
 		return top_registers(
