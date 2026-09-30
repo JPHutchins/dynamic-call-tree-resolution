@@ -49,7 +49,7 @@ def test_load_without_dwarf(fixture_elfs: dict[str, Path]) -> None:
 
 def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["pie"])
-	assert set(program.layouts) == {
+	assert {key for key in program.layouts if "<anonymous>@" not in key} == {
 		"struct ops",
 		"struct device",
 		"struct device_ops",
@@ -60,7 +60,12 @@ def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
 		"struct embedded_holder",
 		"union un",
 		"struct bitpacked",
+		"anon_t",
 	}
+	assert sum("<anonymous>@" in key for key in program.layouts) == 2
+	assert program.layouts["struct anon_wrapper"].members == (
+		StructPointerMember(kind="struct_pointer", name="anon", offset=0, pointee="anon_t"),
+	)
 	assert program.layouts["struct ops"].members == (
 		FunctionPointerMember(
 			kind="function_pointer",
@@ -468,3 +473,25 @@ def test_load_records_pointer_valued_array_members(fixture_elfs: dict[str, Path]
 		),
 	)
 	assert layouts["struct tailed"].members == ()
+
+
+def test_load_names_anonymous_types_by_typedef_or_by_their_die(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	program = load(fixture_elfs["anonymous"])
+	objects = {data_object.name: data_object for data_object in program.objects.values()}
+	assert {key for key in program.layouts if "<anonymous>@" not in key} == {
+		"anon_ops_t",
+		"struct anon_ops_holder",
+		"struct visitor",
+	}
+	assert objects["anon_ops"].type_name == "anon_ops_t"
+	assert objects["bare_anon"].type_name != objects["anonymous_state"].type_name
+	assert {objects["bare_anon"].type_name, objects["anonymous_state"].type_name} <= set(
+		program.layouts
+	)
+	assert [
+		member.signature.parameters
+		for member in program.layouts["struct visitor"].members
+		if isinstance(member, FunctionPointerMember) and member.signature is not None
+	] == [("struct <anonymous> *",), ("anon_ops_t *",)]
