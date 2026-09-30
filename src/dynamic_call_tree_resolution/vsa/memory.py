@@ -18,6 +18,7 @@ from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized
 from dynamic_call_tree_resolution.vsa.lattice import (
 	K_BOUND,
 	Known,
+	Lattice,
 	OffsetSet,
 	Top,
 	ValueSet,
@@ -26,20 +27,22 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	indexed,
 	indexed_offsets,
 	join,
+	join_maps,
 	lookup,
 	shift_addresses,
 	shift_offsets,
 )
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
+	Store,
 	Writes,
+	frame_write,
+	image_write,
 	stack_read,
-	store_global,
-	union_write,
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable
+	from collections.abc import Hashable, Iterable
 
 	from capstone import CsInsn, CsMemOperand, CsOperand
 
@@ -223,39 +226,110 @@ def load_value(context: Context, state: State, instruction: CsInsn, operand: CsO
 	return _image_value(context, state, memory_addresses(context, state, memory))
 
 
+class Frame(Struct):
+	"""Stack memory, by entry-frame offset."""
+
+	offsets: OffsetSet
+
+
+class Image(Struct):
+	"""Program-global memory."""
+
+	addresses: ValueSet
+
+
+type Destination = Frame | Image
+
+
+def memory_destination(
+	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
+) -> Destination:
+	if memory.base in SP_REGISTERS[context.program.machine] or memory.base in state.sp_offsets:
+		return Frame(offsets=stack_offsets(state, memory, memory.base))
+	return Image(addresses=_store_addresses(context, state, instruction, memory))
+
+
+def register_destination(context: Context, state: State, register: int, delta: int) -> Destination:
+	if register in SP_REGISTERS[context.program.machine] or register in state.sp_offsets:
+		return Frame(offsets=shift_offsets(lookup(state.sp_offsets, register), delta))
+	return Image(addresses=shift_addresses(lookup(state.registers, register), delta))
+
+
+def anywhere(destination: Destination) -> Destination:
+	match destination:
+		case Frame():
+			return Frame(offsets=Top())
+		case Image():
+			return Image(addresses=Top())
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 def store_value(
-	context: Context, state: State, instruction: CsInsn, operand: CsOperand, value: ValueSet
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand, store: Store
 ) -> State:
-	machine = context.program.machine
-	memory = operand.mem
-	if machine.is_x86:
-		if memory.base in SP_REGISTERS[machine] or memory.base in state.sp_offsets:
-			return State(
-				registers=state.registers,
-				sp_offsets=state.sp_offsets,
-				stack=union_write(state.stack, stack_offsets(state, memory, memory.base), value),
-				globals=state.globals,
+	return store_at(
+		context, state, memory_destination(context, state, instruction, operand.mem), store
+	)
+
+
+def store_at(context: Context, state: State, destination: Destination, store: Store) -> State:
+	pointer_size = context.program.pointer_size
+	match destination:
+		case Frame(offsets=offsets):
+			return _weak_across(
+				context,
+				state,
+				offsets,
+				State(
+					registers=state.registers,
+					sp_offsets=state.sp_offsets,
+					stack=frame_write(state.stack, offsets, store, pointer_size),
+					globals=state.globals,
+				),
 			)
-		addresses = _store_addresses(context, state, instruction, memory)
-		return State(
-			registers=state.registers,
-			sp_offsets=state.sp_offsets,
-			stack=state.stack,
-			globals=store_global(state.globals, addresses, value),
-		)
-	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
-		return State(
-			registers=state.registers,
-			sp_offsets=state.sp_offsets,
-			stack=union_write(state.stack, stack_offsets(state, memory, memory.base), value),
-			globals=state.globals,
-		)
-	addresses = _store_addresses(context, state, instruction, memory)
+		case Image(addresses=addresses):
+			return _weak_across(
+				context,
+				state,
+				addresses,
+				State(
+					registers=state.registers,
+					sp_offsets=state.sp_offsets,
+					stack=state.stack,
+					globals=image_write(state.globals, addresses, store, pointer_size),
+				),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _weak_across[T: Hashable](
+	context: Context, before: State, targets: Lattice[T], after: State
+) -> State:
+	match targets:
+		case Top():
+			return after
+		case Known(values=values):
+			return weakened(context, before, after) if len(values) > 1 else after
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def weakened(context: Context, before: State, after: State) -> State:
 	return State(
-		registers=state.registers,
-		sp_offsets=state.sp_offsets,
-		stack=state.stack,
-		globals=store_global(state.globals, addresses, value),
+		registers=join_maps(before.registers, after.registers),
+		sp_offsets=join_maps(before.sp_offsets, after.sp_offsets),
+		stack=join_maps(before.stack, after.stack),
+		globals=Writes(
+			values={
+				address: value
+				if before.globals.values.get(address) == value
+				else join(value, _image_read(context, before, frozenset({address})))
+				for address, value in after.globals.values.items()
+			},
+			wild=after.globals.wild,
+		),
 	)
 
 

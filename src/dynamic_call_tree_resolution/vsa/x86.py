@@ -5,12 +5,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from capstone import x86_const
 
 from dynamic_call_tree_resolution.model import Address, Machine
-from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, X86_MOVES
+from dynamic_call_tree_resolution.vsa.abi import (
+	SP_REGISTERS,
+	X86_MEMORY_READERS,
+	X86_MOVES,
+	X86_REPEATS,
+	X86_UNBOUNDED_STORES,
+)
 from dynamic_call_tree_resolution.vsa.lattice import (
 	Known,
 	ValueSet,
@@ -21,29 +27,37 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 )
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
+	Frame,
+	anywhere,
 	load_value,
 	memory_addresses,
+	memory_destination,
 	stack_offsets,
+	store_at,
 	store_value,
 )
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
+	Store,
 	copy_register,
 	set_offsets,
 	set_register,
 	stack_read,
 	top_written,
-	union_write,
 )
 
 if TYPE_CHECKING:
-	from capstone import CsInsn
+	from capstone import CsInsn, X86CsOperand
+
+
+def _x86_operands(instruction: CsInsn) -> tuple[X86CsOperand, ...]:
+	return tuple(cast("X86CsOperand", operand) for operand in instruction.operands)
 
 
 def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 	machine = context.program.machine
 	if instruction.mnemonic in X86_MOVES:
-		destination, source = instruction.operands
+		destination, source = _x86_operands(instruction)
 		match (destination.type, source.type):
 			case (x86_const.X86_OP_REG, x86_const.X86_OP_REG):
 				return copy_register(state, destination.reg, source.reg)
@@ -57,7 +71,11 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 				)
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_REG):
 				return store_value(
-					context, state, instruction, destination, lookup(state.registers, source.reg)
+					context,
+					state,
+					instruction,
+					destination,
+					Store(words=(lookup(state.registers, source.reg),), width=destination.size),
 				)
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_IMM):
 				return store_value(
@@ -65,12 +83,15 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 					state,
 					instruction,
 					destination,
-					Known(values=frozenset({Address(source.imm)})),
+					Store(
+						words=(Known(values=frozenset({Address(source.imm)})),),
+						width=destination.size,
+					),
 				)
 			case _:
 				return top_written(instruction, state)  # pragma: no cover
 	if instruction.mnemonic == "lea":
-		destination, source = instruction.operands
+		destination, source = _x86_operands(instruction)
 		memory = source.mem
 		if memory.base == x86_const.X86_REG_RIP:
 			address = Address(instruction.address + instruction.size + memory.disp)
@@ -79,9 +100,9 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 			return set_offsets(state, destination.reg, stack_offsets(state, memory, memory.base))
 		return set_register(state, destination.reg, memory_addresses(context, state, memory))
 	if instruction.mnemonic in ("inc", "dec"):
-		destination = instruction.operands[0]
-		if destination.type != x86_const.X86_OP_REG:  # pragma: no branch
-			return top_written(instruction, state)
+		destination = _x86_operands(instruction)[0]
+		if destination.type != x86_const.X86_OP_REG:
+			return _clobbered(context, instruction, state)
 		return _shift_x86_destination(
 			state,
 			machine,
@@ -90,22 +111,22 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 			1 if instruction.mnemonic == "inc" else -1,
 		)
 	if instruction.mnemonic in ("add", "sub"):
-		destination, source = instruction.operands
+		destination, source = _x86_operands(instruction)
 		if destination.type != x86_const.X86_OP_REG or source.type != x86_const.X86_OP_IMM:
-			return top_written(instruction, state)
+			return _clobbered(context, instruction, state)
 		delta = source.imm if instruction.mnemonic == "add" else -source.imm
 		return _shift_x86_destination(state, machine, destination.reg, destination.reg, delta)
 	if instruction.mnemonic == "xor":
-		destination, source = instruction.operands
+		destination, source = _x86_operands(instruction)
 		if (
 			destination.type == x86_const.X86_OP_REG
 			and source.type == x86_const.X86_OP_REG
 			and destination.reg == source.reg
 		):
 			return set_register(state, destination.reg, Known(values=frozenset({Address(0)})))
-		return top_written(instruction, state)
+		return _clobbered(context, instruction, state)
 	if instruction.mnemonic == "push":
-		operand = instruction.operands[0]
+		operand = _x86_operands(instruction)[0]
 		value = (
 			Known(values=frozenset({Address(operand.imm)}))
 			if operand.type == x86_const.X86_OP_IMM
@@ -113,11 +134,36 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 			if operand.type == x86_const.X86_OP_REG
 			else load_value(context, state, instruction, operand)
 		)
-		return _push(state, SP_REGISTERS[machine][0], context.program.pointer_size, value)
+		return _push(context, state, SP_REGISTERS[machine][0], value)
 	if instruction.mnemonic == "pop":
-		operand = instruction.operands[0]
+		operand = _x86_operands(instruction)[0]
+		if operand.type != x86_const.X86_OP_REG:
+			return _clobbered(context, instruction, state)
 		return _pop(state, SP_REGISTERS[machine][0], context.program.pointer_size, operand.reg)
-	return top_written(instruction, state)
+	return _clobbered(context, instruction, state)
+
+
+def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
+	prefixes_and_name = instruction.mnemonic.split()
+	operands = _x86_operands(instruction)
+	if (
+		not operands
+		or operands[0].type != x86_const.X86_OP_MEM
+		or prefixes_and_name[-1] in X86_MEMORY_READERS
+	):
+		return top_written(instruction, state)
+	destination = memory_destination(context, state, instruction, operands[0].mem)
+	return top_written(
+		instruction,
+		store_at(
+			context,
+			state,
+			anywhere(destination)
+			if prefixes_and_name[0] in X86_REPEATS or prefixes_and_name[-1] in X86_UNBOUNDED_STORES
+			else destination,
+			Store(words=(), width=operands[0].size),
+		),
+	)
 
 
 def _shift_x86_destination(
@@ -130,13 +176,13 @@ def _shift_x86_destination(
 	return set_register(state, destination, shift_addresses(lookup(state.registers, source), delta))
 
 
-def _push(state: State, sp: int, pointer_size: int, value: ValueSet) -> State:
+def _push(context: Context, state: State, sp: int, value: ValueSet) -> State:
+	pointer_size = context.program.pointer_size
 	offsets = shift_offsets(lookup(state.sp_offsets, sp), -pointer_size)
-	return State(
-		registers=state.registers,
-		sp_offsets=put_value(state.sp_offsets, sp, offsets),
-		stack=union_write(state.stack, offsets, value),
-		globals=state.globals,
+	return set_offsets(
+		store_at(context, state, Frame(offsets=offsets), Store(words=(value,), width=pointer_size)),
+		sp,
+		offsets,
 	)
 
 

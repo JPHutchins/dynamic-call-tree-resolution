@@ -1024,6 +1024,72 @@ def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
 	assert site.candidates == frozenset()
 
 
+@pytest.mark.parametrize(
+	"code",
+	[
+		pytest.param(
+			"48c7c300300000 48895c2410 48895c2418 0f29442410 488b442418 ffd0",
+			id="movaps-covers-two-slots",
+		),
+		pytest.param(
+			"4885ff 7407 488d5c2408 eb05 488d5c2410 48c7c100300000 48890b 488b442410 ffd0",
+			id="one-of-two-offsets-leaves-the-other-unknown",
+		),
+		pytest.param("48c7c300300000 48895c2408 488344240808 488b442408 ffd0", id="add-to-memory"),
+		pytest.param(
+			"48c7c300300000 48895c2408 c744240c00000000 488b442408 ffd0",
+			id="a-narrower-store-overlaps-the-slot",
+		),
+		pytest.param(
+			"48c7c300300000 48895c2408 488d7c2410 f348ab 488b442408 ffd0",
+			id="rep-stosq-has-no-known-extent",
+		),
+		pytest.param(
+			"48c7c300300000 48895c2408 0fae442410 488b442408 ffd0",
+			id="fxsave-has-no-known-extent",
+		),
+	],
+)
+def test_x86_store_clobbers_the_frame_slots_it_may_cover(code: str) -> None:
+	body = bytes.fromhex(code)
+	program = _program(
+		"EM_X86_64",
+		body,
+		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 1)),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()
+
+
+@pytest.mark.parametrize(
+	("code", "candidates"),
+	[
+		pytest.param(
+			"488916 4885ff 7409 48c7c300400000 eb07 48c7c308400000 48c7c100500000 48890b"
+			"488b042508400000 ffd0",
+			set[int](),
+			id="one-of-two-addresses-after-a-wild-store",
+		),
+		pytest.param("c604250140000000 488b042500400000 ffd0", set[int](), id="a-byte-in-the-slot"),
+		pytest.param("48c7c300400000 8f03 488b03 ffd0", set[int](), id="pop-to-memory"),
+		pytest.param("660f1f0400 488b042500400000 ffd0", {0x3000}, id="nop-writes-nothing"),
+	],
+)
+def test_x86_store_to_writable_memory_clobbers_what_it_may_cover(
+	code: str, candidates: set[int]
+) -> None:
+	body = bytes.fromhex(code)
+	program = build_program(
+		"EM_X86_64",
+		(("caller", 0x1000, len(body)), ("first", 0x3000, 1), ("second", 0x3100, 1)),
+		objects=(("table", 0x4000, _pointer(0x3000, 8) + _pointer(0x3100, 8)),),
+		sections={0x1000: body},
+		writable=frozenset({0x4000}),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
 def test_x86_inc_shifts_the_tracked_address() -> None:
 	code = bytes.fromhex("48 c7 c0 ff 2f 00 0048 ff c0ff d0")
 	program = _program(
@@ -2124,3 +2190,80 @@ def test_a_returning_trap_falls_through_and_clobbers_caller_saved_registers(
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
+@pytest.mark.parametrize(
+	("code", "candidates"),
+	[
+		pytest.param(
+			"42f20003 0193 43f20002 0128 c8bf 0192 019b 9847",
+			{0x2000, 0x3000},
+			id="strgt-joins-the-slot",
+		),
+		pytest.param(
+			"42f20003 0128 c8bf 43f20003 9847", {0x2000, 0x3000}, id="movwgt-joins-the-register"
+		),
+		pytest.param("42f20002 43f20003 cde90223 039c a047", {0x3000}, id="strd-writes-two-words"),
+		pytest.param(
+			"6846 43f20001 45f20002 06c0 50f8043c 9847", {0x5000}, id="stm-writes-and-advances"
+		),
+		pytest.param("42f20003 0193 8df80530 019c a047", set[int](), id="strb-overlaps-the-slot"),
+		pytest.param(
+			"42f20003 4df80c3c 2ded020b 5df8044c a047", {0x2000}, id="vpush-moves-sp-past-the-slot"
+		),
+		pytest.param(
+			"6846 42f20003 0093 a0ec020b 009c a047", set[int](), id="vstmia-covers-the-slot"
+		),
+		pytest.param("42f20002 6946 41e80032 9047", set[int](), id="strex-writes-its-status"),
+		pytest.param("42f20003 0093 80ed0021 009c a047", set[int](), id="stc-has-no-known-extent"),
+	],
+)
+def test_thumb_store_writes_the_words_it_covers(code: str, candidates: set[int]) -> None:
+	body = bytes.fromhex(code)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(
+			("caller", 0x1000, len(body)),
+			("first", 0x2000, 4),
+			("second", 0x3000, 4),
+			("third", 0x5000, 4),
+		),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
+def _thumb_slot_program(sections: Mapping[int, bytes]) -> Program:
+	return build_program(
+		"EM_ARM",
+		(
+			*((f"code_{address:x}", address, len(code)) for address, code in sections.items()),
+			("first", 0x2000, 4),
+			("second", 0x3000, 4),
+		),
+		objects=(("slot", 0x4000, _pointer(0x2000, 4)),),
+		sections=sections,
+		writable=frozenset({0x4000}),
+		pointer_size=4,
+	)
+
+
+def test_thumb_predicated_store_reaches_other_readers() -> None:
+	program = _thumb_slot_program(
+		{
+			0x1000: bytes.fromhex("44f20001 43f20002 0128 c8bf 0a60 7047"),
+			0x1100: bytes.fromhex("44f20001 0b68 9847"),
+		}
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x2000), Address(0x3000)})
+
+
+def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
+	program = _thumb_slot_program(
+		{0x1000: bytes.fromhex("2c60 44f20001 43f20002 0128 c8bf 0a60 0b68 9847")}
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()

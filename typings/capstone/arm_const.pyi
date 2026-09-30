@@ -1,3 +1,17 @@
+ARM_CC_EQ: int
+ARM_CC_GE: int
+ARM_CC_GT: int
+ARM_CC_HI: int
+ARM_CC_HS: int
+ARM_CC_LE: int
+ARM_CC_LO: int
+ARM_CC_LS: int
+ARM_CC_LT: int
+ARM_CC_MI: int
+ARM_CC_NE: int
+ARM_CC_PL: int
+ARM_CC_VC: int
+ARM_CC_VS: int
 ARM_OP_IMM: int
 ARM_OP_MEM: int
 ARM_OP_REG: int

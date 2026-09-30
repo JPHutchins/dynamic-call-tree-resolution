@@ -38,10 +38,6 @@ type ValueSet = Lattice[Address]
 type OffsetSet = Lattice[int]
 
 
-def join_sets[T: Hashable](current: frozenset[T], incoming: frozenset[T]) -> Lattice[T]:
-	return capped(current | incoming)
-
-
 def join_maps[K: int, T: Hashable](
 	current: Mapping[K, frozenset[T]], incoming: Mapping[K, frozenset[T]]
 ) -> dict[K, frozenset[T]]:
