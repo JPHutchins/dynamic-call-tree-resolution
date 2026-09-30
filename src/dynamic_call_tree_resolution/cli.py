@@ -14,8 +14,8 @@ from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import per_caller_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
-from dynamic_call_tree_resolution.loader import defined_function_names, load
-from dynamic_call_tree_resolution.model import Residue
+from dynamic_call_tree_resolution.loader import defined_function_names, elf_machine, load
+from dynamic_call_tree_resolution.model import Machine, Residue
 from dynamic_call_tree_resolution.pexplorer import load_pexplorer
 from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
@@ -61,11 +61,12 @@ def _oversized(path: Path) -> bool:
 	return path.stat().st_size > _MAX_ELF_SIZE
 
 
-def _warn_skipped(path: Path) -> None:
-	print(
-		f"warning: skipping {path} ({path.stat().st_size // 1024 // 1024} MiB; too large)",
-		file=sys.stderr,
-	)
+def _skip_reason(path: Path) -> str | None:
+	if _oversized(path):
+		return f"{path.stat().st_size // 1024 // 1024} MiB; too large"
+	if (machine := elf_machine(path)) not in Machine:
+		return f"{machine}; unsupported machine"
+	return None
 
 
 def _render(report: StackReport) -> str:
@@ -119,10 +120,14 @@ def _step_report(step: PathStep) -> PathStepReport:
 
 
 def _keep(path: Path) -> bool:
-	if not _oversized(path):
-		return True
-	_warn_skipped(path)
-	return False
+	match _skip_reason(path):
+		case None:
+			return True
+		case str() as reason:
+			print(f"warning: skipping {path} ({reason})", file=sys.stderr)
+			return False
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 @app.command  # type: ignore[misc]

@@ -82,6 +82,11 @@ def load(path: Path) -> Program:
 		return _load(stream)
 
 
+def elf_machine(path: Path) -> str:
+	with path.open("rb") as stream:
+		return ELFFile(stream).header["e_machine"]
+
+
 def defined_function_names(path: Path) -> frozenset[str]:
 	with path.open("rb") as stream:
 		symtab = _symbol_table(ELFFile(stream))
