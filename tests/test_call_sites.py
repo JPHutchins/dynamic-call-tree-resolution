@@ -2603,3 +2603,25 @@ def test_thumb_predicated_transfer_also_falls_through(
 			(site.site_address, site.candidates) for site in extract_call_sites(program)
 		)
 	] == [frozenset(Address(address) for address in expected) for expected in sites]
+
+
+@pytest.mark.parametrize(
+	("code", "candidates"),
+	[
+		pytest.param("44f20004 54f8043f 6568 a847", {0x5000}, id="ldr-advances-its-base"),
+		pytest.param("42f20003 4df8083d 009c a047", {0x2000}, id="str-advances-sp"),
+	],
+)
+def test_thumb_pre_indexed_writeback_advances_the_base(code: str, candidates: set[int]) -> None:
+	body = bytes.fromhex(code)
+	program = build_program(
+		"EM_ARM",
+		(("caller", 0x1000, len(body)), ("a", 0x2000, 4), ("b", 0x3000, 4), ("c", 0x5000, 4)),
+		objects=(
+			("table", 0x4000, _pointer(0x2000, 4) + _pointer(0x3000, 4) + _pointer(0x5000, 4)),
+		),
+		sections={0x1000: body},
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
