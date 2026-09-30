@@ -32,6 +32,7 @@ class CsShiftOperand:
 
 class ArmCsOperand(CsOperand):
 	shift: CsShiftOperand
+	subtracted: bool
 
 class X86CsOperand(CsOperand):
 	size: int

@@ -382,6 +382,20 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 
 @pytest.mark.parametrize(
 	"image",
+	[
+		pytest.param(image, id=_image_id(image))
+		for image in IMAGES
+		if image.source == "jump_table.c" and image.platform is not Platform.HOST
+	],
+)
+def test_switch_case_sites_name_every_case(image: Image, outcomes: Mapping[Image, Outcome]) -> None:
+	assert frozenset[str]().union(
+		*(names for caller, names in outcomes[image].sites if caller == "switch_case")
+	) == {"a", "b", "c", "d", "e"}
+
+
+@pytest.mark.parametrize(
+	"image",
 	[pytest.param(image, id=_image_id(image)) for image in A15_IMAGES],
 )
 def test_a32_sites_are_objdumps_register_indirect_branches(

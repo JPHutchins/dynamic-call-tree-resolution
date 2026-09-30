@@ -2720,6 +2720,12 @@ _TBB: Final = "02280cd8dfe800f00205080042f2000307e043f2000304e045f2000301e046f20
 			(),
 			id="a-table-after-the-cases",
 		),
+		pytest.param(
+			"08a202280ad852f820f042f2000307e043f2000304e045f2000301e046f20003984770470b100000"
+			"1110000017100000",
+			(),
+			id="adr-before-the-bound",
+		),
 	],
 )
 def test_thumb_bounded_dispatch_reaches_every_case(
@@ -2744,6 +2750,10 @@ def test_thumb_bounded_dispatch_reaches_every_case(
 		),
 		pytest.param(
 			"002906d0874442f2000304e043f2000301e046f2000398477047", id="add-pc-has-no-table"
+		),
+		pytest.param(
+			"022809d8874442f2000307e043f2000304e045f2000301e046f2000398477047",
+			id="add-pc-after-a-bound",
 		),
 		pytest.param(
 			"dfe800f0000042f2000304e043f2000301e046f2000398477047", id="dispatch-before-any-guard"
@@ -2903,3 +2913,177 @@ def test_instruction_runs_split_where_a32_code_ends() -> None:
 		(0x1004, 4, InstructionSet.T32),
 		(0x100C, 4, InstructionSet.T32),
 	]
+
+
+def _a32_dispatch_program(
+	code: str, data_in_code: tuple[tuple[int, int], ...], *, writable: bool = False
+) -> Program:
+	body = bytes.fromhex(code)
+	return build_program(
+		"EM_ARM",
+		(
+			("caller", 0x1000, len(body)),
+			*((f"case_{address:x}", address, 4) for address in (0x2000, 0x3000, 0x5000, 0x6000)),
+		),
+		sections={0x1000: body},
+		writable=frozenset({0x1000}) if writable else frozenset(),
+		pointer_size=4,
+		data_in_code=data_in_code,
+		arm_code=((0x1000, 0x1000 + len(body)),),
+	)
+
+
+@pytest.mark.parametrize(
+	("code", "data_in_code"),
+	[
+		pytest.param(
+			"2c309fe5020050e30600008a00f193e7001002e3040000ea001003e3020000ea001005e3000000ea"
+			"001006e331ff2fe11eff2fe138100000101000001810000020100000",
+			((0x1034, 0x1044),),
+			id="word-table-via-a-literal",
+		),
+		pytest.param(
+			"2c308fe2020050e30600008a00f193e7001002e3040000ea001003e3020000ea001005e3000000ea"
+			"001006e331ff2fe11eff2fe1101000001810000020100000",
+			((0x1034, 0x1040),),
+			id="word-table-via-adr",
+		),
+		pytest.param(
+			"383001e3003040e3020050e30600008a00f193e7001002e3040000ea001003e3020000ea001005e3"
+			"000000ea001006e331ff2fe11eff2fe1141000001c10000024100000",
+			((0x1038, 0x1044),),
+			id="word-table-via-movw-movt",
+		),
+		pytest.param(
+			"34309fe5020050e30800008a0000d3e700f18fe000f020e3001002e3040000ea001003e3020000ea"
+			"001005e3000000ea001006e331ff2fe11eff2fe14010000000020400",
+			((0x103C, 0x1044),),
+			id="byte-offsets",
+		),
+		pytest.param(
+			"3c309fe510402de9020050e30900008a000080e0b00093e100f18fe000f020e3001002e3040000ea"
+			"001003e3020000ea001005e3000000ea001006e331ff2fe11080bde8481000000000020004000000",
+			((0x1044, 0x1050),),
+			id="halfword-offsets-after-a-push",
+		),
+		pytest.param(
+			"38309fe5020050e30900008a8000a0e1b00093e100f18fe000f020e3001002e3040000ea001003e3"
+			"020000ea001005e3000000ea001006e331ff2fe11eff2fe1441000000000020004000000",
+			((0x1040, 0x104C),),
+			id="halfword-offsets-scaled-by-lsl",
+		),
+	],
+)
+def test_a32_bounded_dispatch_reaches_every_case(
+	code: str, data_in_code: tuple[tuple[int, int], ...]
+) -> None:
+	(site,) = extract_call_sites(_a32_dispatch_program(code, data_in_code))
+	assert site.candidates == frozenset(
+		Address(address) for address in (0x2000, 0x3000, 0x5000, 0x6000)
+	)
+
+
+@pytest.mark.parametrize(
+	("code", "data_in_code"),
+	[
+		pytest.param(
+			"34309fe5020050e30600008a00f193e7001002e3040000ea001003e3020000ea001005e3000000ea"
+			"001006e331ff2fe1012052e2f2ffff1a1eff2fe140100000101000001810000020100000",
+			((0x103C, 0x104C),),
+			id="a-branch-past-the-literal-load",
+		),
+		pytest.param(
+			"38309fe5020050e30900008a000052e30000d31700f18fe000f020e3001002e3040000ea001003e3"
+			"020000ea001005e3000000ea001006e331ff2fe11eff2fe14410000000020400",
+			((0x1040, 0x1048),),
+			id="a-predicated-index-load",
+		),
+		pytest.param(
+			"30309fe5020050e30700008a003023e000f193e7001002e3040000ea001003e3020000ea001005e3"
+			"000000ea001006e331ff2fe11eff2fe13c100000141000001c10000024100000",
+			((0x1038, 0x1048),),
+			id="a-clobbered-base",
+		),
+		pytest.param(
+			"34309fe5020050e30800008a0000d3e700f18f9000f020e3001002e3040000ea001003e3020000ea"
+			"001005e3000000ea001006e331ff2fe11eff2fe14010000000020400",
+			((0x103C, 0x1044),),
+			id="a-predicated-dispatch",
+		),
+		pytest.param(
+			"2c309fe5020050e30600008a00f113e7001002e3040000ea001003e3020000ea001005e3000000ea"
+			"001006e331ff2fe11eff2fe138100000101000001810000020100000",
+			((0x1034, 0x1044),),
+			id="a-subtracted-index",
+		),
+		pytest.param(
+			"34309fe5020050e30800008a0000d3e720f18fe000f020e3001002e3040000ea001003e3020000ea"
+			"001005e3000000ea001006e331ff2fe11eff2fe14010000000020400",
+			((0x103C, 0x1044),),
+			id="a-shift-other-than-lsl",
+		),
+		pytest.param(
+			"30309fe5020050e30700008a00009de500f193e7001002e3040000ea001003e3020000ea001005e3"
+			"000000ea001006e331ff2fe11eff2fe13c100000141000001c10000024100000",
+			((0x1038, 0x1048),),
+			id="an-index-from-memory",
+		),
+		pytest.param(
+			"30309fe5020050e30700008a1002a0e100f093e7001002e3040000ea001003e3020000ea001005e3"
+			"000000ea001006e331ff2fe11eff2fe13c100000141000001c10000024100000",
+			((0x1038, 0x1048),),
+			id="a-register-shifted-index",
+		),
+		pytest.param(
+			"003040e3020050e30600008a00f193e7001002e3040000ea001003e3020000ea001005e3000000ea"
+			"001006e331ff2fe11eff2fe1101000001810000020100000",
+			((0x1034, 0x1040),),
+			id="movt-of-an-unknown-register",
+		),
+	],
+)
+def test_a32_unbounded_dispatch_reaches_every_block(
+	code: str, data_in_code: tuple[tuple[int, int], ...]
+) -> None:
+	sites = extract_call_sites(_a32_dispatch_program(code, data_in_code))
+	assert [site for site in sites if site.candidates] == []
+
+
+@pytest.mark.parametrize(
+	("writable", "candidates"),
+	[
+		pytest.param(False, {0x2000, 0x3000, 0x5000, 0x6000}, id="read-only"),
+		pytest.param(True, set[int](), id="writable"),
+	],
+)
+def test_a32_dispatch_reads_its_table_only_from_read_only_memory(
+	writable: bool, candidates: set[int]
+) -> None:
+	program = _a32_dispatch_program(
+		"2c309fe5020050e30600008a00f193e7001002e3040000ea001003e3020000ea001005e3000000ea"
+		"001006e331ff2fe11eff2fe138100000101000001810000020100000",
+		((0x1034, 0x1044),),
+		writable=writable,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
+@pytest.mark.parametrize(
+	("compare", "candidates"),
+	[
+		pytest.param("e3500fff", {0x2000, 0x6000}, id="1021-cases"),
+		pytest.param("e3500b01", set[int](), id="1025-cases"),
+	],
+)
+def test_a32_dispatch_past_the_case_limit_is_unbounded(compare: str, candidates: set[int]) -> None:
+	code = _a32(
+		f"e59f302c {compare} 8a000006 e793f100 e3021000 ea000004 e3031000 ea000002 e3051000"
+		" ea000000 e3061000 e12fff31 e12fff1e"
+	)
+	program = _a32_dispatch_program(
+		(code + _pointer(0x1038, 4) + _pointer(0x1010, 4) * 1025).hex(),
+		((0x1034, 0x1038 + 4 * 1025),),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
