@@ -4,7 +4,9 @@
 """C compiler invocations for the fixture programs, and their runners."""
 
 import subprocess
+from itertools import islice
 from pathlib import Path
+from typing import IO, cast
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ARM_HARNESS = FIXTURES / "arm" / "harness.c"
@@ -98,6 +100,39 @@ def run_cortex_m3(elf: Path, *arguments: str) -> subprocess.CompletedProcess[str
 
 def run_cortex_a15(elf: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
 	return _run_qemu("virt", "cortex-a15", elf, arguments)
+
+
+def zephyr_console_cortex_m3(elf: Path, line_count: int) -> tuple[str, ...]:
+	with subprocess.Popen(
+		[
+			"timeout",
+			"30",
+			"qemu-system-arm",
+			"-machine",
+			"lm3s6965evb",
+			"-cpu",
+			"cortex-m3",
+			"-nographic",
+			"-monitor",
+			"none",
+			"-serial",
+			"stdio",
+			"-icount",
+			"shift=6,align=off,sleep=off",
+			"-rtc",
+			"clock=vm",
+			"-kernel",
+			str(elf),
+		],
+		stdin=subprocess.DEVNULL,
+		stdout=subprocess.PIPE,
+		encoding="utf-8",
+	) as qemu:
+		lines = tuple(
+			line.rstrip("\n") for line in islice(cast("IO[str]", qemu.stdout), line_count)
+		)
+		qemu.terminate()
+		return lines
 
 
 def _run_qemu(

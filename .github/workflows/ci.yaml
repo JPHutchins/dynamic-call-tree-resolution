@@ -39,7 +39,7 @@ jobs:
       - &restore-nix-store
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'testbeds/**', 'tests/fixtures/sensor-two-impl-app/**', '.github/workflows/ci.yaml') }}
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'testbeds/**', 'tests/fixtures/*-app/**', '.github/workflows/ci.yaml') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - run: nix develop --command uv run camas --PY="${{ matrix.PY }}"
