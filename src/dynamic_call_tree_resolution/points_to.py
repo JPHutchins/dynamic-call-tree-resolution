@@ -15,6 +15,7 @@ from dynamic_call_tree_resolution.model import (
 	ARRAY_SUFFIX,
 	FUNCTION_POINTER,
 	Address,
+	ArrayMember,
 	EmbeddedStructMember,
 	FunctionPointerMember,
 	FunctionSignature,
@@ -27,6 +28,7 @@ from dynamic_call_tree_resolution.model import (
 	StructPointerMember,
 	UnresolvedSlot,
 	array_element_type,
+	array_elements,
 )
 
 if TYPE_CHECKING:
@@ -216,6 +218,15 @@ def _member_assignments(
 					member_path,
 					visited,
 				)
+			case ArrayMember(offset=offset):
+				yield from _member_assignments(
+					program,
+					base_address,
+					base_offset + offset,
+					array_elements(member),
+					member_path,
+					visited,
+				)
 			case _ as unreachable:
 				assert_never(unreachable)
 
@@ -313,6 +324,10 @@ def _collect_member_slots(
 			case EmbeddedStructMember(offset=offset, members=inner_members):
 				_collect_member_slots(
 					data_object, base_offset + offset, inner_members, member_path, universe
+				)
+			case ArrayMember(offset=offset):
+				_collect_member_slots(
+					data_object, base_offset + offset, array_elements(member), member_path, universe
 				)
 			case StructPointerMember():
 				pass
