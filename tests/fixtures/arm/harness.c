@@ -31,7 +31,13 @@ static inline void semihosting_call(
 ) {
 	register enum semihosting_operation operation_register __asm__("r0") = operation;
 	register void const * const parameters_register __asm__("r1") = parameters;
+#if __ARM_ARCH_PROFILE == 'M'
 	__asm__ volatile ("bkpt 0xab" : "+r"(operation_register) : "r"(parameters_register) : "memory");
+#elif defined(__thumb__)
+	__asm__ volatile ("svc 0xab" : "+r"(operation_register) : "r"(parameters_register) : "memory");
+#else
+	__asm__ volatile ("svc 0x123456" : "+r"(operation_register) : "r"(parameters_register) : "memory");
+#endif
 }
 
 void observe(char const name[static 1]) {
@@ -45,10 +51,6 @@ void observe(char const name[static 1]) {
 		&(struct semihosting_exit){.reason = reason, .status = status}
 	);
 	for (;;) {}
-}
-
-[[noreturn]] static void fault(void) {
-	stop(stopped_run_time_error, 1);
 }
 
 static int split_arguments(
@@ -81,6 +83,11 @@ static int split_arguments(
 
 extern char initial_stack[];
 
+#if __ARM_ARCH_PROFILE == 'M'
+[[noreturn]] static void fault(void) {
+	stop(stopped_run_time_error, 1);
+}
+
 struct vector_table {
 	char * initial_stack;
 	void (*reset)(void);
@@ -94,3 +101,8 @@ struct vector_table {
 	.nmi = fault,
 	.hard_fault = fault,
 };
+#else
+[[gnu::naked, gnu::section(".text.start")]] void start(void) {
+	__asm__ volatile ("ldr sp, =initial_stack\n\tb reset");
+}
+#endif

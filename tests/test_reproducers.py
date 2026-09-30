@@ -5,20 +5,22 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from itertools import groupby
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING, Final, assert_never
 
 import pytest
 from salix import Struct
 
 from dynamic_call_tree_resolution import (
 	Unbounded,
-	assignments,
 	build_report,
 	extract_call_sites,
 	load,
+	resolve,
 )
 from dynamic_call_tree_resolution.call_sites import per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
@@ -29,16 +31,23 @@ from dynamic_call_tree_resolution.stack_analysis import (
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 from dynamic_call_tree_resolution.vsa import address_taken
-from tests.toolchains import FIXTURES, build_cortex_m3, build_host, run_cortex_m3, run_host
+from tests.toolchains import (
+	FIXTURES,
+	build_cortex_a15,
+	build_cortex_m3,
+	build_host,
+	run_cortex_a15,
+	run_cortex_m3,
+	run_host,
+)
 
 if TYPE_CHECKING:
-	import subprocess
 	from collections.abc import Iterator, Mapping
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.callgraph import CallEdge
 
-CORTEX_M3_LEVELS = ("-O0", "-O2", "-Os")
+ARM_LEVELS = ("-O0", "-O2", "-Os")
 
 ARGUMENTS = ("x", "y")
 
@@ -47,6 +56,7 @@ SEED_OVERFLOW_TARGETS = 65
 
 class Platform(Enum):
 	CORTEX_M3 = "cortex-m3"
+	CORTEX_A15 = "cortex-a15"
 	HOST = "host"
 
 
@@ -110,19 +120,33 @@ def _image_id(image: Image) -> str:
 	return f"{image.platform.value}:{image.source.removesuffix('.c')}{''.join(image.flags)}"
 
 
-def _cortex_m3(
-	source: str, caller: str, issues_by_level: Mapping[str, tuple[int, ...]]
+def _arm(
+	platform: Platform, source: str, caller: str, issues_by_level: Mapping[str, tuple[int, ...]]
 ) -> Iterator[tuple[Case, tuple[int, ...]]]:
 	return (
 		(
-			Case(
-				image=Image(source=source, platform=Platform.CORTEX_M3, flags=(level,)),
-				caller=caller,
-			),
+			Case(image=Image(source=source, platform=platform, flags=(level,)), caller=caller),
 			issues_by_level.get(level, ()),
 		)
-		for level in CORTEX_M3_LEVELS
+		for level in ARM_LEVELS
 	)
+
+
+ARM_CASES: tuple[tuple[str, str], ...] = (
+	("top_argument.c", "run"),
+	("unobserved_callers.c", "run"),
+	("top_stores.c", "call_bss"),
+	("top_stores.c", "call_data"),
+	("top_stores.c", "call_object"),
+	("predicated_store.c", "predicated_store_case"),
+	("call_clobbers.c", "stack_case"),
+	("call_clobbers.c", "global_case"),
+	("seed_overflow.c", "run"),
+	("round_cap.c", "w9"),
+	("jump_table.c", "switch_case"),
+	("writeback_walk.c", "walk"),
+	("cast_handler.c", "main"),
+)
 
 
 def _host(
@@ -134,20 +158,16 @@ def _host(
 
 
 CANDIDATES = (
-	*_cortex_m3("top_argument.c", "run", {}),
-	*_cortex_m3("unobserved_callers.c", "run", {}),
-	*_cortex_m3("top_stores.c", "call_bss", {}),
-	*_cortex_m3("top_stores.c", "call_data", {}),
-	*_cortex_m3("top_stores.c", "call_object", {}),
-	*_cortex_m3("predicated_store.c", "predicated_store_case", {}),
-	*_cortex_m3("call_clobbers.c", "stack_case", {}),
-	*_cortex_m3("call_clobbers.c", "global_case", {}),
-	*_cortex_m3("seed_overflow.c", "run", {}),
-	*_cortex_m3("round_cap.c", "w9", {}),
-	*_cortex_m3("jump_table.c", "switch_case", {}),
-	*_cortex_m3("writeback_walk.c", "walk", {}),
-	*_cortex_m3("predicated_call.c", "predicated_call_case", {}),
-	*_cortex_m3("cast_handler.c", "main", {}),
+	*(
+		cell
+		for source, caller in (*ARM_CASES, ("predicated_call.c", "predicated_call_case"))
+		for cell in _arm(Platform.CORTEX_M3, source, caller, {})
+	),
+	*(
+		cell
+		for source, caller in ARM_CASES
+		for cell in _arm(Platform.CORTEX_A15, source, caller, dict.fromkeys(ARM_LEVELS, (122,)))
+	),
 	_host("jump_table.c", "switch_case", ("-O0", "-no-pie", "-fcf-protection=full"), (113,)),
 	_host("jump_table.c", "switch_case", ("-O2", "-no-pie", "-fcf-protection=full"), (113,)),
 	_host("x86_64_subregister.c", "subregister_case", ("-O2", "-no-pie"), (113,)),
@@ -162,7 +182,7 @@ STACK_IMAGES = tuple(
 		flags=(level, "-fstack-usage", "-fcallgraph-info=su,da", *variant),
 	)
 	for variant in ((), ("-DPARTIAL",))
-	for level in CORTEX_M3_LEVELS
+	for level in ARM_LEVELS
 )
 
 OBSERVED_CASES = (
@@ -173,6 +193,13 @@ OBSERVED_CASES = (
 
 IMAGES = tuple(
 	sorted(frozenset((*(case.image for case, _ in CANDIDATES), *STACK_IMAGES)), key=_image_id)
+)
+
+A15_IMAGES = tuple(image for image in IMAGES if image.platform is Platform.CORTEX_A15)
+
+REGISTER_INDIRECT_BRANCH: Final = re.compile(
+	r"\t(?:blx|bx)(?:eq|ne|cs|cc|hs|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)?(?:\.[nw])?"
+	r"\t(?!lr\b)(?:r\d+|sb|sl|fp|ip)\b"
 )
 
 
@@ -194,6 +221,8 @@ def _build(image: Image, directory: Path) -> Path:
 	match image.platform:
 		case Platform.CORTEX_M3:
 			return build_cortex_m3((source,), directory / "image.elf", "-g", *image.flags)
+		case Platform.CORTEX_A15:
+			return build_cortex_a15((source,), directory / "image.elf", "-g", *image.flags)
 		case Platform.HOST:
 			return build_host((source,), directory / "image.elf", "-g", *image.flags)
 		case _ as unreachable:
@@ -204,6 +233,8 @@ def _run(platform: Platform, elf: Path) -> subprocess.CompletedProcess[str]:
 	match platform:
 		case Platform.CORTEX_M3:
 			return run_cortex_m3(elf, *ARGUMENTS)
+		case Platform.CORTEX_A15:
+			return run_cortex_a15(elf, *ARGUMENTS)
 		case Platform.HOST:
 			return run_host(elf, *ARGUMENTS)
 		case _ as unreachable:
@@ -222,11 +253,10 @@ def _observations(result: subprocess.CompletedProcess[str]) -> Mapping[str, froz
 
 def _sites(elf: Path) -> tuple[tuple[str, frozenset[str]], ...]:
 	program = load(elf)
+	resolution = resolve(program)
 	return tuple(
 		(site.caller, frozenset(candidate.name for candidate in site.candidates))
-		for site in build_report(
-			program, assignments(program), extract_call_sites(program)
-		).call_sites
+		for site in build_report(program, resolution.assignments, resolution.sites).call_sites
 	)
 
 
@@ -274,8 +304,9 @@ def test_every_observed_target_is_a_candidate_of_the_callers_sites(
 
 def _expanded_call_graph(elf: Path) -> tuple[CallEdge, ...]:
 	program = load(elf)
+	resolution = resolve(program)
 	targets_by_caller, fallback = per_caller_candidates(
-		program, extract_call_sites(program), assignments(program)
+		program, resolution.sites, resolution.assignments
 	)
 	return expand_indirect_calls(load_callgraph(elf.parent), targets_by_caller, fallback)
 
@@ -347,3 +378,19 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 		for address in site.candidates
 		if address in program.functions and address not in taken
 	] == []
+
+
+@pytest.mark.parametrize(
+	"image",
+	[pytest.param(image, id=_image_id(image), marks=_unsound((122,))) for image in A15_IMAGES],
+)
+def test_a32_sites_are_objdumps_register_indirect_branches(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	listing = subprocess.run(
+		["arm-none-eabi-objdump", "-d", str(outcomes[image].elf)],
+		check=True,
+		capture_output=True,
+		text=True,
+	).stdout
+	assert len(outcomes[image].sites) == sum(1 for _ in REGISTER_INDIRECT_BRANCH.finditer(listing))

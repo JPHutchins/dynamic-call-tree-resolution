@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 
 FIXTURES = Path(__file__).parent / "fixtures"
+ARM_HARNESS = FIXTURES / "arm" / "harness.c"
 CORTEX_M3_HARNESS = FIXTURES / "cortex-m3"
+CORTEX_A15_HARNESS = FIXTURES / "cortex-a15"
 HOST_HARNESS = FIXTURES / "host"
 
 _CC_FLAGS = ("-std=gnu2x", "-Wall", "-Wextra", "-Werror", "-Wdouble-promotion")
@@ -27,9 +29,34 @@ def cortex_m3_cc(*flags: str) -> tuple[str, ...]:
 		"-nostdlib",
 		f"-I{FIXTURES}",
 		f"-T{CORTEX_M3_HARNESS / 'cortex_m3.ld'}",
-		str(CORTEX_M3_HARNESS / "harness.c"),
+		str(ARM_HARNESS),
 		*flags,
 	)
+
+
+def cortex_a15_cc(*flags: str) -> tuple[str, ...]:
+	return (
+		"arm-none-eabi-gcc",
+		"-mcpu=cortex-a15",
+		"-marm",
+		"-mno-unaligned-access",
+		*_CC_FLAGS,
+		"-ffreestanding",
+		"-nostdlib",
+		f"-I{FIXTURES}",
+		f"-T{CORTEX_A15_HARNESS / 'cortex_a15.ld'}",
+		str(ARM_HARNESS),
+		*flags,
+	)
+
+
+def build_cortex_a15(sources: tuple[Path, ...], output: Path, *flags: str) -> Path:
+	subprocess.run(
+		[*cortex_a15_cc(*flags), *map(str, sources), "-o", str(output)],
+		check=True,
+		capture_output=True,
+	)
+	return output
 
 
 def build_cortex_m3(sources: tuple[Path, ...], output: Path, *flags: str) -> Path:
@@ -66,13 +93,23 @@ def run_host(executable: Path, *arguments: str) -> subprocess.CompletedProcess[s
 
 
 def run_cortex_m3(elf: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+	return _run_qemu("lm3s6965evb", "cortex-m3", elf, arguments)
+
+
+def run_cortex_a15(elf: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+	return _run_qemu("virt", "cortex-a15", elf, arguments)
+
+
+def _run_qemu(
+	machine: str, cpu: str, elf: Path, arguments: tuple[str, ...]
+) -> subprocess.CompletedProcess[str]:
 	return subprocess.run(
 		[
 			"qemu-system-arm",
 			"-machine",
-			"lm3s6965evb",
+			machine,
 			"-cpu",
-			"cortex-m3",
+			cpu,
 			"-nographic",
 			"-monitor",
 			"none",
