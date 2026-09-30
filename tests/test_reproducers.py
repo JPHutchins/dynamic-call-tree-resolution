@@ -468,7 +468,10 @@ def _worker_targets(program: Program, resolution: ProgramResolution) -> frozense
 
 
 def _with_record_thread(program: Program) -> ProgramResolution:
-	return resolve(program, RtosModel(name="test", evidence=(), threads=(_record_thread(program),)))
+	return resolve(
+		program,
+		RtosModel(name="test", evidence=(), threads=(_record_thread(program),), trampoline=None),
+	)
 
 
 @pytest.mark.parametrize(

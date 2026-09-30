@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from dynamic_call_tree_resolution import load, resolve
-from dynamic_call_tree_resolution.cli import analyze
+from dynamic_call_tree_resolution.cli import analyze, stack
 from dynamic_call_tree_resolution.model import BARE_METAL, RtosModel
 from dynamic_call_tree_resolution.points_to import pointer_at
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
@@ -105,7 +105,10 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 	assert rtos_model(
 		load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf"), RtosChoice.AUTO
 	) == RtosModel(
-		name="zephyr", evidence=("z_thread_entry", "struct _static_thread_data"), threads=()
+		name="zephyr",
+		evidence=("z_thread_entry", "struct _static_thread_data"),
+		threads=(),
+		trampoline="z_thread_entry",
 	)
 
 
@@ -163,4 +166,27 @@ def test_cli_analyze_names_the_rtos_and_its_threads_unless_told_none(
 			"thread thermal_tid: thermal_thread (seeded from its record)",
 		],
 		[],
+	)
+
+
+@pytest.mark.image
+def test_cli_stack_reports_each_sensor_thread_in_place_of_its_entry(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-two-impl"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf")
+	entries = {line.split(":")[0] for line in capsys.readouterr().out.splitlines()[1:]}
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="thermal_tid")
+	steps = capsys.readouterr().out.splitlines()[2:4]
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", rtos=RtosChoice.NONE)
+	bare_metal = {line.split(":")[0] for line in capsys.readouterr().out.splitlines()[1:]}
+	threads_and_entries = {"motion_tid", "thermal_tid", "motion_thread", "thermal_thread"}
+	assert (
+		sorted(entries & threads_and_entries),
+		steps,
+		sorted(bare_metal & threads_and_entries),
+	) == (
+		["motion_tid", "thermal_tid"],
+		["thermal_tid +8 = 8 bytes", "thermal_thread +8 = 16 bytes via thread record (recursion)"],
+		["motion_thread", "thermal_thread"],
 	)
