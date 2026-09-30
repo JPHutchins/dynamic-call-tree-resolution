@@ -136,7 +136,7 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
   - `dynamic`: frames GCC could not bound (`alloca` or a VLA);
   - `unresolved`: callers of an indirect call with no candidates.
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
-  incomplete ([#66], [#96], [#113]).
+  incomplete ([#96], [#113], [#122]).
 - Entry points come from the `.ci` graph, which also records functions the linker
   discarded, such as `shell_readline`. With an ELF, entries missing from the image are
   dropped and counted as `not in the image`; without one, every `.ci` entry is listed.
@@ -178,8 +178,8 @@ contradicts does not hold.
   unknown, so a site that reads its target from RAM is unresolved unless its own path
   wrote that target.
 - Value-set analysis per-site sets are refinements, not over-approximations: its
-  control-flow graph has gaps ([#66]), and it does not model x86 sub-registers or a few
-  kinds of write ([#113]).
+  control-flow graph misreads A32 code as Thumb ([#122]) and misses x86 `notrack`
+  switches, and it does not model x86 sub-registers or a few kinds of write ([#113]).
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
 - The fallback holds every function address the image stores, or that one instruction
@@ -229,10 +229,10 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
 [#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
-[#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
 [#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
 [#74]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/74
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
+[#122]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/122
