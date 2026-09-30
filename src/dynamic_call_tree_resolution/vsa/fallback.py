@@ -18,7 +18,7 @@ from capstone import (
 )
 
 from dynamic_call_tree_resolution.model import Address, Machine, thumb_twin
-from dynamic_call_tree_resolution.points_to import memory_at
+from dynamic_call_tree_resolution.points_to import instruction_runs
 from dynamic_call_tree_resolution.vsa.abi import DISASSEMBLERS, normalized
 
 if TYPE_CHECKING:
@@ -49,7 +49,8 @@ def _computed_addresses(program: Program) -> Iterator[int]:
 		start = normalized(function.address, program.machine)
 		instructions = tuple(
 			instruction
-			for instruction in disassembler.disasm(memory_at(program, start, function.size), start)
+			for address, code in instruction_runs(program, start, function.size)
+			for instruction in disassembler.disasm(code, address)
 			if instruction.id != 0 and not any(instruction.group(group) for group in _BRANCH_GROUPS)
 		)
 		for index, instruction in enumerate(instructions):

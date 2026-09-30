@@ -810,6 +810,7 @@ def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
 		},
 		layouts={},
 		relocations=(),
+		data_in_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0"), writable=False
@@ -833,6 +834,7 @@ def _two_entry_table(objects: Mapping[Address, DataObject]) -> Program:
 		objects=objects,
 		layouts={},
 		relocations=(),
+		data_in_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0"), writable=False
@@ -879,6 +881,7 @@ def test_x86_bss_slot_read_is_unknown() -> None:
 		},
 		layouts={},
 		relocations=(),
+		data_in_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 8b 05 f9 0f 00 00ff d0"), writable=False
@@ -1915,6 +1918,7 @@ def _signature_program() -> Program:
 		},
 		layouts={},
 		relocations=(),
+		data_in_code=(),
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 c7 c0 00 20 00 00ff d0"), writable=False
@@ -1975,6 +1979,7 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 		},
 		layouts={},
 		relocations=(),
+		data_in_code=(),
 		sections={
 			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False)
 		},
@@ -2023,6 +2028,7 @@ def _bss_slot_site_program() -> Program:
 		},
 		layouts={},
 		relocations=(),
+		data_in_code=(),
 		sections={
 			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False),
 			Address(0x6000): Section(data=(0x4000).to_bytes(8, "little"), writable=False),
@@ -2479,6 +2485,7 @@ def _hook_program(machine: str, code: bytes, *, writable: bool, pointer_size: in
 		},
 		layouts={},
 		relocations=(),
+		data_in_code=(),
 		sections={
 			Address(0x1000): Section(data=code, writable=False),
 			Address(0x4000): Section(data=_pointer(0x2000, pointer_size), writable=writable),
@@ -2625,3 +2632,29 @@ def test_thumb_pre_indexed_writeback_advances_the_base(code: str, candidates: se
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
+@pytest.mark.parametrize(
+	("data_in_code", "sites"),
+	[
+		pytest.param(((0x1008, 0x100C),), [{0x2000}], id="a-marked-literal-is-not-decoded"),
+		pytest.param((), [{0x2000}, set[int]()], id="an-unmarked-literal-decodes-as-blx"),
+	],
+)
+def test_thumb_data_in_code_is_not_decoded(
+	data_in_code: tuple[tuple[int, int], ...], sites: list[set[int]]
+) -> None:
+	body = bytes.fromhex("42f20003 9847 7047 90470000")
+	program = build_program(
+		"EM_ARM",
+		(("caller", 0x1000, len(body)), ("first", 0x2000, 4)),
+		sections={0x1000: body},
+		pointer_size=4,
+		data_in_code=data_in_code,
+	)
+	assert [
+		candidates
+		for _, candidates in sorted(
+			(site.site_address, site.candidates) for site in extract_call_sites(program)
+		)
+	] == [frozenset(Address(address) for address in expected) for expected in sites]

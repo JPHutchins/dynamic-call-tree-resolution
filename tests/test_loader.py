@@ -381,3 +381,20 @@ def test_load_marks_relro_sections_read_only(fixture_elfs: dict[str, Path]) -> N
 	sections = load(fixture_elfs["nopie"]).sections
 	assert not sections[starts[".data.rel.ro"]].writable
 	assert sections[starts[".data"]].writable
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("elf", "first_code_data"),
+	[
+		("hello_zephyr_qemu_cortex_m3.elf", 0xFC),
+		("counter-su/zephyr/zephyr.exe", None),
+	],
+)
+def test_load_records_data_in_code_from_mapping_symbols(
+	elf: str, first_code_data: int | None
+) -> None:
+	spans = load(Path(__file__).parent / "fixtures" / elf).data_in_code
+	assert (
+		first_code_data in {low for low, _ in spans} if first_code_data is not None else spans == ()
+	)

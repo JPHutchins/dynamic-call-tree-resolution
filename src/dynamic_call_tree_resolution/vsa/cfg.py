@@ -11,7 +11,7 @@ from capstone import Cs, arm_const, x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, Machine, aligned
-from dynamic_call_tree_resolution.points_to import memory_at
+from dynamic_call_tree_resolution.points_to import instruction_runs
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
 	ARM_CONDITIONAL,
@@ -56,11 +56,15 @@ def control_flow_graphs(
 		start = aligned(function.address) if program.machine is Machine.EM_ARM else function.address
 		if start in seen:
 			continue
-		code = memory_at(program, start, function.size)
-		if not code:
+		runs = instruction_runs(program, start, function.size)
+		if not any(code for _, code in runs):
 			continue
 		seen.add(start)
-		instructions = tuple(disassembler.disasm(code, start))
+		instructions = tuple(
+			instruction
+			for address, code in runs
+			for instruction in disassembler.disasm(code, address)
+		)
 		blocks[start] = (function, _build_blocks(instructions, program.machine))
 	return blocks
 

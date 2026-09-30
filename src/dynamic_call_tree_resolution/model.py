@@ -124,6 +124,8 @@ class Program(Struct):
 	layouts: Mapping[str, StructureLayout]
 	relocations: tuple[Relocation, ...]
 	sections: Mapping[Address, Section]
+	data_in_code: tuple[tuple[Address, Address], ...]
+	"""Spans of data inside code, such as literal pools, from ARM `$d` mapping symbols."""
 
 
 def aligned(address: Address) -> Address:

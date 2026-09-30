@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import re
+from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from elftools.elf.descriptions import describe_reloc_type
@@ -56,6 +58,8 @@ class _SectionBytes(Struct):
 _DW_OP_ADDR: Final = 0x03
 _SHF_WRITE: Final = 0x1
 _SHF_ALLOC: Final = 0x2
+_SHF_EXECINSTR: Final = 0x4
+_MAPPING_SYMBOL: Final = re.compile(r"\$[adt](\..*)?")
 
 
 def load(path: Path) -> Program:
@@ -90,6 +94,7 @@ def _load(stream: BinaryIO) -> Program:
 		for segment in elf.iter_segments(type="PT_GNU_RELRO")
 	)
 	machine = Machine(elf.header["e_machine"])
+	data_in_code = _data_in_code(elf, symtab)
 	return Program(
 		byte_order=byte_order,
 		pointer_size=pointer_size,
@@ -112,6 +117,52 @@ def _load(stream: BinaryIO) -> Program:
 			for section in sections.values()
 			if section.flags & _SHF_ALLOC
 		},
+		data_in_code=data_in_code,
+	)
+
+
+def _data_in_code(
+	elf: ELFFile, symtab: SymbolTableSection | None
+) -> tuple[tuple[Address, Address], ...]:
+	return tuple(
+		span
+		for section_index, group in groupby(_mapping_markers(symtab), key=_marker_section)
+		if (section := elf.get_section(section_index)) is not None
+		and section.header.sh_flags & _SHF_EXECINSTR
+		for span in _data_spans(tuple(group), section.header.sh_addr + section.header.sh_size)
+	)
+
+
+def _mapping_markers(symtab: SymbolTableSection | None) -> tuple[tuple[int, int, str], ...]:
+	return tuple(
+		sorted(
+			marker
+			for symbol in (symtab.iter_symbols() if symtab is not None else ())
+			if (marker := _mapping_marker(symbol)) is not None
+		)
+	)
+
+
+def _mapping_marker(symbol: Symbol) -> tuple[int, int, str] | None:
+	section_index = symbol["st_shndx"]
+	if not _MAPPING_SYMBOL.fullmatch(symbol.name) or not isinstance(section_index, int):
+		return None
+	return section_index, symbol["st_value"], symbol.name[1]
+
+
+def _marker_section(marker: tuple[int, int, str]) -> int:
+	return marker[0]
+
+
+def _data_spans(
+	marks: tuple[tuple[int, int, str], ...], end: int
+) -> Iterator[tuple[Address, Address]]:
+	return (
+		(Address(address), Address(following))
+		for (_, address, kind), following in zip(
+			marks, (*(mark[1] for mark in marks[1:]), end), strict=True
+		)
+		if kind == "d" and following > address
 	)
 
 
