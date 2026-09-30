@@ -122,6 +122,45 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
 ...
 ```
 
+```console
+$ dctr stack tests/fixtures/counter-su --path poll_state_thread
+poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
+poll_state_thread +96 = 96 bytes (unresolved)
+k_sleep_ticks +32 = 128 bytes via static
+z_impl_k_sleep_ticks +64 = 192 bytes via static
+z_impl_k_yield +4 = 196 bytes via static
+z_sched_yield +48 = 244 bytes via static
+z_time_slice_reset +16 = 260 bytes via static
+slice_reset +64 = 324 bytes via static
+z_add_timeout +80 = 404 bytes via static
+sys_clock_set_timeout +8 = 412 bytes via static
+timer_core_arm +48 = 460 bytes via static
+hwtimer_set_tick_one_shot +0 = 460 bytes via static (unmeasured)
+```
+
+```console
+$ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe --path poll_state_thread
+resolved slots: 106 | indirect call sites: 100 | not in the image: 222
+poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 129)
+poll_state_thread +96 = 96 bytes (recursion)
+change_led_work_handler +80 = 176 bytes via indirect: fallback (recursion)
+idle +16 = 192 bytes via indirect: candidate (recursion)
+...
+timer_core_arm +48 = 1940 bytes via static
+hwtimer_set_tick_one_shot +0 = 1940 bytes via static (unmeasured)
+```
+
+```console
+$ dctr stack tests/fixtures/counter-su --path shell_readline
+shell_readline: unbounded, at least 1760 bytes (recursion: 4, unmeasured: 22, unresolved: 10)
+shell_readline +96 = 96 bytes
+state_collect +96 = 192 bytes via static (unresolved)
+execute +448 = 640 bytes via static (unresolved)
+...
+encode_uint +112 = 1760 bytes via static
+__ctype_b_loc +0 = 1760 bytes via static (unmeasured)
+```
+
 - A *resolved* site or slot has at least one candidate, and an *exact* site has
   exactly one, in the image as linked.
 - `compare` counts the indirect instructions it extracts; `stack --elf` counts the
@@ -132,7 +171,7 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
 - An `unbounded` entry's number is only a lower bound. The counts name what breaks the
   bound anywhere in the entry's subtree:
   - `recursion`: functions on a cycle;
-  - `unmeasured`: functions with no `.su` record, counted as 0 bytes;
+  - `unmeasured`: functions with no `.su` record, counted as empty frames;
   - `dynamic`: frames GCC could not bound (`alloca` or a VLA);
   - `unresolved`: callers of an indirect call with no candidates.
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
@@ -141,6 +180,10 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
   discarded, such as `shell_readline`. With an ELF, entries missing from the image are
   dropped and counted as `not in the image`; without one, every `.ci` entry is listed.
 - `stack --json` carries the full function names behind each count.
+- `stack --path ENTRY` prints that entry alone, then its deepest path, one function per
+  line: its frame, the running total, the edge it is called through (`static`,
+  `indirect: candidate`, or `indirect: fallback`), and what its own frame, calls, or
+  cycle add to an unbounded depth. The last total is the entry's depth.
 
 ## Related tools
 
@@ -148,7 +191,7 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
   `-fcallgraph-info`; it recovers calls and indirect calls from disassembly with
   ARM-only regexes (`BLX\s+(\w+)$` in `gcc_tools.py`), so on an x86 build such as the
   counter it sees no calls at all. A like-for-like comparison on an ARM build is
-  tracked in [#74].
+  tracked in [#131].
 - [pexplorer](https://paulwuertz.github.io/pexplorer/) detects dynamic edges and
   defers their resolution to a hand-maintained config file. `dctr compare --pexplorer`
   joins its report per function, comparing pexplorer's dynamic-call count with dctr's
@@ -231,7 +274,7 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
 [#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
-[#74]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/74
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
+[#131]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/131
