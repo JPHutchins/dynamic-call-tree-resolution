@@ -3,5 +3,7 @@
 
 """Whole-function value-set analysis of indirect call sites."""
 
+from dynamic_call_tree_resolution.vsa.analysis import Analysis as Analysis
 from dynamic_call_tree_resolution.vsa.analysis import analyze as analyze
 from dynamic_call_tree_resolution.vsa.fallback import address_taken as address_taken
+from dynamic_call_tree_resolution.vsa.memory import runtime_value as runtime_value

@@ -20,8 +20,10 @@ with no target.
 
 1. **Static points-to.** A function pointer stored in initialized data is either a baked
    value or a relocation against a function symbol. Combined with DWARF structure
-   layouts, every such slot is read from the image as linked. A slot in a writable
-   section holds its initializer, which code may overwrite at runtime.
+   layouts, every such slot is read from the image as linked. A slot in read-only memory
+   keeps that value. A slot in writable memory holds its initializer plus every value
+   the value-set analysis sees the program store there, and is unresolved when a store's
+   address or value is unknown.
 2. **Init-system enumeration.** Zephyr `SYS_INIT`/`DEVICE_DEFINE` entries are static
    data that the linker places in dedicated sections, so their slots are enumerated
    from the image. The dispatch sites that call through them (`z_sys_init_run_level`,
@@ -69,11 +71,11 @@ do_device_init@0x1dca: <unresolved>
 
 - `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, read from their linker
   sections; `__device_dts_ord_22.ops.init` is the device struct's init function.
-- `<unresolved>` means the slot holds no function address in the image as linked. That
-  covers slots assigned at runtime (the thread timeout callbacks and `_stdout_hook`
-  above), constant `NULL` members (`uart_stellaris_driver_api.configure`), and union
-  arms that are not function pointers; they are listed with member paths for manual
-  review.
+- `<unresolved>` means the analysis has no function address for the slot. That covers
+  slots assigned at runtime (the thread timeout callbacks and `_stdout_hook` above),
+  constant `NULL` members (`uart_stellaris_driver_api.configure`), union arms that are
+  not function pointers, and writable slots whose stores are unknown (`_char_out` and
+  `__stdout.put`); they are listed with member paths for manual review.
 - `char_out@0x118` and `z_impl_zephyr_fputc@0x8a6` call through `_char_out`, a function
   pointer in RAM. The image has stores whose address the analysis cannot compute, so any
   writable slot may hold anything: `analyze` reports these sites unresolved, and
@@ -91,7 +93,7 @@ The Zephyr CAN counter sample for `native_sim` (an x86 host executable), with it
 ```console
 $ dctr compare tests/fixtures/counter-su/zephyr/zephyr.exe
 elf                                            machine    functions slots r/u/t  sites r/e/t
-zephyr.exe                                     EM_386           734 121/113/234       9/8/98
+zephyr.exe                                     EM_386           734 106/128/234       9/8/98
 ```
 
 ```console
@@ -113,7 +115,7 @@ poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
 
 ```console
 $ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe
-resolved slots: 121 | indirect call sites: 100 | not in the image: 222
+resolved slots: 106 | indirect call sites: 100 | not in the image: 222
 cmd_can_send: unbounded, at least 3196 bytes (recursion: 100, unmeasured: 130)
 ...
 poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 129)
@@ -167,8 +169,9 @@ contradicts does not hold.
 
 ### Call targets
 
-- A slot's value is its value in the image as linked. Writable-section slots report
-  their initializer, which runtime code may replace ([#67]).
+- A read-only slot's value is its value in the image as linked. A writable slot's
+  candidates are its initializer and the values stored to it, so a store whose address
+  or value is unknown leaves it unresolved.
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - A store whose address the analysis cannot compute makes every writable address
@@ -227,7 +230,6 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#58]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
 [#66]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/66
-[#67]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/67
 [#69]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/69
 [#71]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/71
 [#74]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/74

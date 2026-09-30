@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, assert_never
 from msgspec import Struct
 from salix import Struct as SalixStruct
 
-from dynamic_call_tree_resolution.call_sites import call_site_candidates, extract_call_sites
+from dynamic_call_tree_resolution.call_sites import call_site_candidates, resolve
 from dynamic_call_tree_resolution.model import (
 	Address,
 	FunctionSignature,
@@ -25,7 +25,7 @@ from dynamic_call_tree_resolution.pexplorer import (
 	PexplorerReport,
 	dynamic_sites_by_caller,
 )
-from dynamic_call_tree_resolution.points_to import assignments, signatures_by_slot, unresolved_slots
+from dynamic_call_tree_resolution.points_to import signatures_by_slot, unresolved_slots
 from dynamic_call_tree_resolution.stack_analysis import Bounded, Unbounded
 
 if TYPE_CHECKING:
@@ -212,6 +212,10 @@ def build_report(
 ) -> AnalysisReport:
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
+	slot_paths = {
+		**{slot.slot: slot.path for slot in unresolved},
+		**{slot: assignment.path for slot, assignment in resolved_map.items()},
+	}
 	signatures = signatures_by_slot(unresolved) if narrow_by_signature else None
 	counts = slot_counts(resolved, unresolved)
 	return AnalysisReport(
@@ -231,8 +235,8 @@ def build_report(
 				site_address=site.site_address,
 				slot_address=site.slot,
 				member_path=(
-					render_path(resolved_map[site.slot].path)
-					if site.slot is not None and site.slot in resolved_map
+					render_path(slot_paths[site.slot])
+					if site.slot is not None and site.slot in slot_paths
 					else None
 				),
 				candidates=_candidates(
@@ -270,12 +274,13 @@ def build_comparison(
 	*,
 	narrow_by_signature: bool = False,
 ) -> ComparisonReport:
-	resolved = assignments(program)
+	resolution = resolve(program)
+	resolved = resolution.assignments
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
 	signatures = signatures_by_slot(unresolved) if narrow_by_signature else None
 	counts = slot_counts(resolved, unresolved)
-	sites = extract_call_sites(program)
+	sites = resolution.sites
 	candidate_sizes = sorted(
 		len(call_site_candidates(program, site, resolved_map, signatures)) for site in sites
 	)
