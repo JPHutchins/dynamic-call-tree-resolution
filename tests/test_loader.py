@@ -24,6 +24,8 @@ from dynamic_call_tree_resolution import (
 	FunctionPointerMember,
 	FunctionSignature,
 	Relocation,
+	SkippedMember,
+	SkipReason,
 	StructPointerMember,
 	load,
 )
@@ -472,7 +474,9 @@ def test_load_records_pointer_valued_array_members(fixture_elfs: dict[str, Path]
 			),
 		),
 	)
-	assert layouts["struct tailed"].members == ()
+	assert layouts["struct tailed"].members == (
+		SkippedMember(kind="skipped", name="tail", offset=8, reason=SkipReason.UNSIZED_ARRAY),
+	)
 
 
 def test_load_names_anonymous_types_by_typedef_or_by_their_die(

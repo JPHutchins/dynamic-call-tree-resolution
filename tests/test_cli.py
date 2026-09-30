@@ -99,6 +99,15 @@ def test_cli_main_entry(
 	assert report.resolved_slots == 11
 
 
+def test_cli_analyze_marks_what_it_does_not_enumerate(
+	fixture_elfs: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+	analyze(fixture_elfs["arrays"])
+	assert "tailed_bus.tail: <not enumerated: array of unknown size>" in (
+		capsys.readouterr().out.splitlines()
+	)
+
+
 def test_cli_stack_plain_text(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
 	build_directory = tmp_path / "build"
 	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"

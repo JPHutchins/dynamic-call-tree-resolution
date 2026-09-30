@@ -51,6 +51,19 @@ struct bus ram_bus;
 
 struct tailed tailed_bus;
 
+typedef void (*callback_pair_t[2])(void);
+
+struct indirection {
+	void (**handlers)(void);
+	struct filter * * filter_refs;
+	struct filter(*filter_rows)[2];
+	char * * names;
+	int (*levels)[2];
+	callback_pair_t pairs[2];
+};
+
+struct indirection indirection = {.pairs = {{handler_a, handler_b}, {handler_b, handler_a}}};
+
 __asm__(
 	".section .rodata.vector,\"a\"\n"
 	".globl vector_table\n"
@@ -59,6 +72,27 @@ __asm__(
 	"vector_table:\n"
 	"	.quad handler_a\n"
 	"	.quad handler_b\n"
+	".section .rodata.mixed,\"a\"\n"
+	".globl mixed_table\n"
+	".type mixed_table, @object\n"
+	".size mixed_table, 16\n"
+	"mixed_table:\n"
+	"	.quad 0\n"
+	"	.quad handler_a\n"
+	".section .rodata.inert,\"a\"\n"
+	".globl inert_table\n"
+	".type inert_table, @object\n"
+	".size inert_table, 16\n"
+	"inert_table:\n"
+	"	.quad 1\n"
+	"	.quad 2\n"
+	".section .data.untyped,\"aw\"\n"
+	".globl untyped_buffer\n"
+	".type untyped_buffer, @object\n"
+	".size untyped_buffer, 16\n"
+	"untyped_buffer:\n"
+	"	.quad 0\n"
+	"	.quad 0\n"
 );
 
 int main(void) {

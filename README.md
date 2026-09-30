@@ -76,6 +76,14 @@ do_device_init@0x1dca: <unresolved>
   constant `NULL` members (`uart_stellaris_driver_api.configure`), union arms that are
   not function pointers, and writable slots whose stores are unknown (`_char_out` and
   `__stdout.put`); they are listed with member paths for manual review.
+- `<not enumerated: reason>` marks an object or member that may hold or lead to a
+  function pointer, but whose slots are not listed:
+  - a pointer to a pointer, or to an array, whose target can hold a pointer;
+  - an array of unknown size;
+  - an object without a type that is writable, or only partly holds function addresses.
+
+  Heap and stack slots, and variables whose location is a location list ([#17]), are
+  not listed at all.
 - `char_out@0x118` and `z_impl_zephyr_fputc@0x8a6` call through `_char_out`, a function
   pointer in RAM. The image has stores whose address the analysis cannot compute, so any
   writable slot may hold anything: `analyze` reports these sites unresolved, and
@@ -243,9 +251,10 @@ contradicts does not hold.
 
 ### Residue
 
-`<unresolved>` slots are enumerated from DWARF-typed data objects. Array members,
-pointer-to-pointer members, anonymous structs, location lists ([#17]), and heap or stack
-storage are not enumerated ([#69]).
+`<unresolved>` slots are enumerated from DWARF-typed data objects, including array
+members and anonymous structs. The kinds marked `<not enumerated>` are listed without
+slots. Location lists ([#17]) and heap or stack storage are not enumerated at all.
+Constant NULLs in ROM are still reported as `<unresolved>` ([#69]).
 
 ## Development
 
