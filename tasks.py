@@ -90,7 +90,9 @@ matrix = Sequential(
 testbeds_init = Sequential(
 	Task("git submodule update --init --depth 1 testbeds/zephyr", mutates=True),
 	Task(
-		"uv run --group build west update --fetch-opt=--depth=1", cwd=Path("testbeds"), mutates=True
+		"uv run --group build west update --narrow --fetch-opt=--depth=1",
+		cwd=Path("testbeds"),
+		mutates=True,
 	),
 	help="check out the zephyr submodule and its west workspace, with the one module the "
 	"testbeds link, cmsis_6",
@@ -135,35 +137,6 @@ testbeds = Parallel(
 	help="build the zephyr testbeds into .camas/build/{NAME}; run in `nix develop .#testbeds`, "
 	"which provides the Zephyr SDK, dtc and the multilib host gcc native_sim links with",
 )
-
-zephyr_sdk = Path("/home/jp/zephyr-sdk-1.0.1")
-zephyr_sdk_legacy = Path("/home/jp/zephyr-sdk-0.17.4")
-zmk = Task(
-	"uv run --group build west build -b nice_nano -d ../../.camas/build/zmk -s /home/jp/repos/dynamic-call-tree-resolution/testbeds/zmk/app -- -DSHIELD=a_dux_left",
-	cwd=Path("testbeds/zmk-workspace"),
-	env={
-		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
-		"ZEPHYR_TOOLCHAIN_VARIANT": "zephyr",
-		"DTC": str(zephyr_sdk / "hosttools/sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
-	},
-	help="build the ZMK testbed for nice_nano",
-)
-zswatch_patch = Task(
-	"sed -i -e '/select DEPRECATED/d' -e 's/^    if kconf.warnings:/    if False and kconf.warnings:/' testbeds/zswatch-workspace/zephyr/subsys/usb/device/Kconfig testbeds/zswatch-workspace/zephyr/drivers/usb/device/Kconfig testbeds/zswatch-workspace/zephyr/scripts/kconfig/kconfig.py",
-	mutates=True,
-	help="testbed-local fork patches: drop DEPRECATED selects, make kconfig warnings non-fatal",
-)
-zswatch_build = Task(
-	"uv run --group build west build -b zswatch_legacy/nrf5340/cpuapp -d ../../.camas/build/zswatch -s /home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app -- -DBOARD_ROOT=/home/jp/repos/dynamic-call-tree-resolution/testbeds/zswatch/app",
-	cwd=Path("testbeds/zswatch-workspace"),
-	env={
-		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk_legacy),
-		"ZEPHYR_TOOLCHAIN_VARIANT": "zephyr",
-		"DTC": str(zephyr_sdk_legacy / "sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
-	},
-	help="build the ZSWatch testbed (produces ipc_radio netcore ELF; app image blocked upstream)",
-)
-zswatch = Sequential(zswatch_patch, zswatch_build)
 
 pexplorer_testdata = Sequential(
 	Task("git submodule update --init --depth 1 references/pexplorer", mutates=True),
