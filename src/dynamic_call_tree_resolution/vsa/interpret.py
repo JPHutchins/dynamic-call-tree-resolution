@@ -16,6 +16,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLER_SAVED,
 	ARM_CALLS,
 	EM_386_STACK_ARGUMENTS,
+	REGISTER_ARGUMENTS,
 	SP_REGISTERS,
 	X86_64_ARGUMENT_REGISTERS,
 	X86_CALLER_SAVED_32,
@@ -43,6 +44,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	NO_WRITES,
 	State,
 	Writes,
+	escaping,
 	frame_based,
 	join_states,
 	stack_read,
@@ -77,6 +79,20 @@ def _clobber_caller_saved(state: State, machine: Machine) -> State:
 	return top_registers(state, registers)
 
 
+def _called(state: State, machine: Machine) -> State:
+	passed = escaping(state, REGISTER_ARGUMENTS[machine])
+	return _clobber_caller_saved(
+		State(
+			registers=passed.registers,
+			sp_offsets=passed.sp_offsets,
+			stack={} if passed.escaped else passed.stack,
+			globals=Writes(values={}, wild=passed.globals.wild),
+			escaped=passed.escaped,
+		),
+		machine,
+	)
+
+
 def _transfer(context: Context, instruction: CsInsn, state: State) -> State:
 	machine = context.program.machine
 	if instruction.mnemonic == ".byte":
@@ -84,7 +100,7 @@ def _transfer(context: Context, instruction: CsInsn, state: State) -> State:
 	if instruction.mnemonic in (X86_CALLS if machine.is_x86 else ARM_CALLS) or is_returning_trap(
 		instruction, machine
 	):
-		return _clobber_caller_saved(state, machine)
+		return _called(state, machine)
 	if instruction.mnemonic in ("loop", "loope", "loopne"):
 		return top_registers(
 			state, (x86_const.X86_REG_ECX if machine is Machine.EM_386 else x86_const.X86_REG_RCX,)

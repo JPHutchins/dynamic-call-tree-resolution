@@ -9,6 +9,7 @@ CS_GRP_JUMP: int
 CS_GRP_CALL: int
 CS_GRP_RET: int
 CS_GRP_BRANCH_RELATIVE: int
+CS_OP_REG: int
 
 class CsError(Exception): ...
 

@@ -211,6 +211,27 @@ ARM_ARGUMENT_REGISTERS: Final = (
 	arm_const.ARM_REG_R3,
 )
 EM_386_STACK_ARGUMENTS: Final = 8
+REGISTER_ARGUMENTS: Final[Mapping[Machine, tuple[int, ...]]] = {
+	Machine.EM_X86_64: X86_64_ARGUMENT_REGISTERS,
+	Machine.EM_386: (),
+	Machine.EM_ARM: ARM_ARGUMENT_REGISTERS,
+}
+FLAG_REGISTER_NAMES: Final = frozenset(
+	{
+		"apsr",
+		"apsr_nzcv",
+		"apsr_nzcvq",
+		"cpsr",
+		"eflags",
+		"flags",
+		"fpscr",
+		"fpscr_nzcv",
+		"fpsw",
+		"itstate",
+		"rflags",
+		"spsr",
+	}
+)
 
 
 def normalized(address: Address, machine: Machine) -> Address:

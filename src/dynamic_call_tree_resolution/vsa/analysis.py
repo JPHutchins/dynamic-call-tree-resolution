@@ -285,4 +285,5 @@ def _seed_from_observation(observation: CallObservation, program: Program) -> St
 		sp_offsets={SP_REGISTERS[program.machine][0]: frozenset({0})},
 		stack=stack,
 		globals=NO_WRITES,
+		escaped=False,
 	)

@@ -231,6 +231,7 @@ def _build_blocks(instructions: tuple[CsInsn, ...], machine: Machine) -> tuple[B
 			instruction.address in targets
 			or indirect_operand(instruction, machine) is not None
 			or call_target(instruction, machine) is not None
+			or is_returning_trap(instruction, machine)
 			or (
 				(branch := branch_target(instruction, machine)) is not None
 				and branch.target not in by_address
