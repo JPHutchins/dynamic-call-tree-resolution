@@ -80,9 +80,13 @@ def _arm_addresses(
 
 
 def _pc_relative(program: Program, instruction: CsInsn, offset: int) -> Address:
-	instruction_set = instruction_set_at(program, Address(instruction.address))
-	target = Address(program_counter(instruction, instruction_set) + offset)
-	return thumb_twin(target) if instruction_set is InstructionSet.T32 else target
+	target = Address(
+		program_counter(instruction, instruction_set_at(program, Address(instruction.address)))
+		+ offset
+	)
+	return (
+		thumb_twin(target) if instruction_set_at(program, target) is InstructionSet.T32 else target
+	)
 
 
 def _movt_addresses(high: int, register: int, preceding: tuple[CsInsn, ...]) -> Iterator[int]:

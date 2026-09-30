@@ -2884,16 +2884,32 @@ def test_a32_sp_rebuilt_from_a_register_keeps_the_frame_only_when_it_is_an_sp_co
 	assert site.candidates == frozenset(Address(address) for address in candidates)
 
 
-def test_a32_pc_relative_address_is_taken_without_a_thumb_bit() -> None:
-	body = _a32("e28f0008 e24f0010")
+@pytest.mark.parametrize(
+	("caller", "body", "targets", "arm_code"),
+	[
+		pytest.param(
+			0x1000, _a32("e28f0008 e24f0010"), (0xFFC, 0x1010), ((0xFFC, 0x1014),), id="a32-to-a32"
+		),
+		pytest.param(
+			0x1000, _a32("e28f0008 e24f0010"), (0xFFD, 0x1011), ((0x1000, 0x1008),), id="a32-to-t32"
+		),
+		pytest.param(
+			0x1001, bytes.fromhex("01a07047"), (0x1008,), ((0x1008, 0x100C),), id="t32-to-a32"
+		),
+		pytest.param(0x1001, bytes.fromhex("01a07047"), (0x1009,), (), id="t32-to-t32"),
+	],
+)
+def test_a_pc_relative_address_takes_the_thumb_bit_of_its_target(
+	caller: int, body: bytes, targets: tuple[int, ...], arm_code: tuple[tuple[int, int], ...]
+) -> None:
 	program = build_program(
 		"EM_ARM",
-		(("caller", 0x1000, len(body)), ("before", 0xFFC, 4), ("after", 0x1010, 4)),
+		(("caller", caller, len(body)), *((f"f_{target:x}", target, 4) for target in targets)),
 		sections={0x1000: body},
 		pointer_size=4,
-		arm_code=((0x1000, 0x1008),),
+		arm_code=arm_code,
 	)
-	assert address_taken(program) == frozenset({Address(0xFFC), Address(0x1010)})
+	assert address_taken(program) == frozenset(Address(target) for target in targets)
 
 
 def test_instruction_runs_split_where_a32_code_ends() -> None:
