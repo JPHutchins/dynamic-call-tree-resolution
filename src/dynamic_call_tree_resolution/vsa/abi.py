@@ -5,19 +5,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, assert_never
 
 from capstone import (
 	CS_ARCH_ARM,
 	CS_ARCH_X86,
 	CS_MODE_32,
 	CS_MODE_64,
+	CS_MODE_ARM,
 	CS_MODE_THUMB,
+	Cs,
 	arm_const,
 	x86_const,
 )
 
-from dynamic_call_tree_resolution.model import Address, Machine, aligned
+from dynamic_call_tree_resolution.model import Address, InstructionSet, Machine, aligned
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -25,10 +27,11 @@ if TYPE_CHECKING:
 	from capstone import CsInsn
 
 
-DISASSEMBLERS: Final[Mapping[Machine, tuple[int, int]]] = {
-	Machine.EM_X86_64: (CS_ARCH_X86, CS_MODE_64),
-	Machine.EM_386: (CS_ARCH_X86, CS_MODE_32),
-	Machine.EM_ARM: (CS_ARCH_ARM, CS_MODE_THUMB),
+DISASSEMBLERS: Final[Mapping[InstructionSet, tuple[int, int]]] = {
+	InstructionSet.X86_64: (CS_ARCH_X86, CS_MODE_64),
+	InstructionSet.X86_32: (CS_ARCH_X86, CS_MODE_32),
+	InstructionSet.A32: (CS_ARCH_ARM, CS_MODE_ARM),
+	InstructionSet.T32: (CS_ARCH_ARM, CS_MODE_THUMB),
 }
 
 SP_REGISTERS: Final[Mapping[Machine, tuple[int, ...]]] = {
@@ -250,3 +253,27 @@ def arm_predicated(instruction: CsInsn) -> bool:
 
 def normalized(address: Address, machine: Machine) -> Address:
 	return aligned(address) if machine is Machine.EM_ARM else address
+
+
+def disassemblers() -> Mapping[InstructionSet, Cs]:
+	return {instruction_set: _disassembler(instruction_set) for instruction_set in InstructionSet}
+
+
+def _disassembler(instruction_set: InstructionSet) -> Cs:
+	disassembler = Cs(*DISASSEMBLERS[instruction_set])
+	disassembler.detail = True
+	disassembler.skipdata = True
+	return disassembler
+
+
+def program_counter(instruction: CsInsn, instruction_set: InstructionSet) -> int:
+	"""The base a PC-relative operand of the instruction addresses from."""
+	match instruction_set:
+		case InstructionSet.A32:
+			return instruction.address + 8
+		case InstructionSet.T32:
+			return (instruction.address + 4) & ~3
+		case InstructionSet.X86_32 | InstructionSet.X86_64:
+			return instruction.address + instruction.size
+		case _ as unreachable:
+			assert_never(unreachable)

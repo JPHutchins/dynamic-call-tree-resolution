@@ -94,7 +94,7 @@ def _load(stream: BinaryIO) -> Program:
 		for segment in elf.iter_segments(type="PT_GNU_RELRO")
 	)
 	machine = Machine(elf.header["e_machine"])
-	data_in_code = _data_in_code(elf, symtab)
+	markers = _mapping_markers(symtab)
 	return Program(
 		byte_order=byte_order,
 		pointer_size=pointer_size,
@@ -117,19 +117,20 @@ def _load(stream: BinaryIO) -> Program:
 			for section in sections.values()
 			if section.flags & _SHF_ALLOC
 		},
-		data_in_code=data_in_code,
+		data_in_code=_mapped_spans(elf, markers, "d"),
+		arm_code=tuple(sorted(_mapped_spans(elf, markers, "a"))),
 	)
 
 
-def _data_in_code(
-	elf: ELFFile, symtab: SymbolTableSection | None
+def _mapped_spans(
+	elf: ELFFile, markers: tuple[tuple[int, int, str], ...], kind: str
 ) -> tuple[tuple[Address, Address], ...]:
 	return tuple(
 		span
-		for section_index, group in groupby(_mapping_markers(symtab), key=_marker_section)
+		for section_index, group in groupby(markers, key=_marker_section)
 		if (section := elf.get_section(section_index)) is not None
 		and section.header.sh_flags & _SHF_EXECINSTR
-		for span in _data_spans(tuple(group), section.header.sh_addr + section.header.sh_size)
+		for span in _kind_spans(tuple(group), section.header.sh_addr + section.header.sh_size, kind)
 	)
 
 
@@ -154,15 +155,15 @@ def _marker_section(marker: tuple[int, int, str]) -> int:
 	return marker[0]
 
 
-def _data_spans(
-	marks: tuple[tuple[int, int, str], ...], end: int
+def _kind_spans(
+	marks: tuple[tuple[int, int, str], ...], end: int, kind: str
 ) -> Iterator[tuple[Address, Address]]:
 	return (
 		(Address(address), Address(following))
-		for (_, address, kind), following in zip(
+		for (_, address, mark_kind), following in zip(
 			marks, (*(mark[1] for mark in marks[1:]), end), strict=True
 		)
-		if kind == "d" and following > address
+		if mark_kind == kind and following > address
 	)
 
 

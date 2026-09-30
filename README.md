@@ -136,7 +136,7 @@ poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 1
   - `dynamic`: frames GCC could not bound (`alloca` or a VLA);
   - `unresolved`: callers of an indirect call with no candidates.
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
-  incomplete ([#96], [#113], [#122]).
+  incomplete ([#96], [#113]).
 - Entry points come from the `.ci` graph, which also records functions the linker
   discarded, such as `shell_readline`. With an ELF, entries missing from the image are
   dropped and counted as `not in the image`; without one, every `.ci` entry is listed.
@@ -164,7 +164,7 @@ contradicts does not hold.
 - A linked ELF executable with DWARF; relocatable objects are rejected. Stack depths
   also need GCC's `-fstack-usage` (`.su`) and `-fcallgraph-info` (`.ci`) artifacts.
 - `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
-  decoded as Thumb only, with no A32 detection.
+  decoded as A32 inside the spans of `$a` mapping symbols and as Thumb elsewhere.
 - Zephyr is the only RTOS modeled, and its knowledge is not isolated ([#71]).
 
 ### Call targets
@@ -178,8 +178,8 @@ contradicts does not hold.
   unknown, so a site that reads its target from RAM is unresolved unless its own path
   wrote that target.
 - Value-set analysis per-site sets are refinements, not over-approximations: its
-  control-flow graph misreads A32 code as Thumb ([#122]) and misses x86 `notrack`
-  switches, and it does not model x86 sub-registers or a few kinds of write ([#113]).
+  control-flow graph misses x86 `notrack` switches, and it does not model x86
+  sub-registers or a few kinds of write ([#113]).
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
 - The fallback holds every function address the image stores, or that one instruction
@@ -235,4 +235,3 @@ shell, such as an editor or `camas mcp`, inherit its toolchain.
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
-[#122]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/122

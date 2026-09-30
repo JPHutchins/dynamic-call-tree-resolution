@@ -27,7 +27,9 @@ from dynamic_call_tree_resolution import (
 	load,
 )
 from dynamic_call_tree_resolution.loader import defined_function_names
-from dynamic_call_tree_resolution.model import aligned
+from dynamic_call_tree_resolution.model import InstructionSet, aligned
+from dynamic_call_tree_resolution.points_to import instruction_set_at
+from tests.toolchains import build_cortex_a15
 
 
 def test_load_functions_from_dwarf_and_symtab(fixture_elfs: dict[str, Path]) -> None:
@@ -398,3 +400,23 @@ def test_load_records_data_in_code_from_mapping_symbols(
 	assert (
 		first_code_data in {low for low, _ in spans} if first_code_data is not None else spans == ()
 	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize("elf", ["hello_zephyr_qemu_cortex_m3.elf", "counter-su/zephyr/zephyr.exe"])
+def test_load_records_no_a32_code_outside_a32_images(elf: str) -> None:
+	assert load(Path(__file__).parent / "fixtures" / elf).arm_code == ()
+
+
+def test_load_records_a32_code_from_mapping_symbols(tmp_path: Path) -> None:
+	program = load(
+		build_cortex_a15(
+			(Path(__file__).parent / "fixtures" / "reproducers" / "top_argument.c",),
+			tmp_path / "image.elf",
+			"-O2",
+		)
+	)
+	assert program.arm_code == tuple(sorted(program.arm_code))
+	assert {
+		instruction_set_at(program, function.address) for function in program.functions.values()
+	} == {InstructionSet.A32}

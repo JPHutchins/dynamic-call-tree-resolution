@@ -13,8 +13,8 @@ from capstone import arm_const, x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address
-from dynamic_call_tree_resolution.points_to import read_pointer
-from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized
+from dynamic_call_tree_resolution.points_to import instruction_set_at, read_pointer
+from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized, program_counter
 from dynamic_call_tree_resolution.vsa.lattice import (
 	K_BOUND,
 	Known,
@@ -222,17 +222,37 @@ def load_value(context: Context, state: State, instruction: CsInsn, operand: CsO
 	memory = operand.mem
 	if machine.is_x86:
 		if memory.base == x86_const.X86_REG_RIP:
-			address = Address(instruction.address + instruction.size + memory.disp)
-			return _image_value(context, state, Known(values=frozenset({address})))
+			return _pc_relative_value(context, state, instruction, memory.disp)
 		if frame_based(state, machine, memory.base):
 			return stack_read(state.stack, stack_offsets(state, memory, memory.base))
 		return _image_value(context, state, memory_addresses(context, state, memory))
-	if memory.base == arm_const.ARM_REG_PC:
-		address = Address(((instruction.address + 4) & ~3) + memory.disp)
-		return _image_value(context, state, Known(values=frozenset({address})))
+	if memory.base == arm_const.ARM_REG_PC and memory.index == 0:
+		return _pc_relative_value(context, state, instruction, memory.disp)
 	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
 		return stack_read(state.stack, stack_offsets(state, memory, memory.base))
 	return _image_value(context, state, memory_addresses(context, state, memory))
+
+
+def _pc_relative_value(
+	context: Context, state: State, instruction: CsInsn, displacement: int
+) -> ValueSet:
+	return _image_value(
+		context,
+		state,
+		Known(
+			values=frozenset(
+				{
+					Address(
+						program_counter(
+							instruction,
+							instruction_set_at(context.program, Address(instruction.address)),
+						)
+						+ displacement
+					)
+				}
+			)
+		),
+	)
 
 
 class Frame(Struct):

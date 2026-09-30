@@ -4,6 +4,7 @@ CS_ARCH_ARM: int
 CS_ARCH_X86: int
 CS_MODE_32: int
 CS_MODE_64: int
+CS_MODE_ARM: int
 CS_MODE_THUMB: int
 CS_GRP_JUMP: int
 CS_GRP_CALL: int

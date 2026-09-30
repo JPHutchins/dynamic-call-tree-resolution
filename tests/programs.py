@@ -20,6 +20,7 @@ def build_program(
 	writable: frozenset[int] = frozenset(),
 	pointer_size: int = 8,
 	data_in_code: tuple[tuple[int, int], ...] = (),
+	arm_code: tuple[tuple[int, int], ...] = (),
 ) -> Program:
 	return Program(
 		byte_order="little",
@@ -44,6 +45,7 @@ def build_program(
 		layouts={},
 		relocations=(),
 		data_in_code=tuple((Address(low), Address(high)) for low, high in data_in_code),
+		arm_code=tuple(sorted((Address(low), Address(high)) for low, high in arm_code)),
 		sections={
 			Address(address): Section(data=data, writable=address in writable)
 			for address, data in (
