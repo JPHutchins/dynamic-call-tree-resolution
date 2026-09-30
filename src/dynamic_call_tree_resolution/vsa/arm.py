@@ -97,6 +97,12 @@ def _apply_unconditional(
 			offset = instruction.operands[2]
 			updated = _advance(state, load_source.mem.base, offset.imm)
 			return set_register(updated, load_destination.reg, value)
+		if instruction.writeback and load_source.mem.base != load_destination.reg:
+			return set_register(
+				_advance(state, load_source.mem.base, load_source.mem.disp),
+				load_destination.reg,
+				value,
+			)
 		return set_register(state, load_destination.reg, value)
 	if base_mnemonic in ARM_STORE_WIDTHS:
 		return _arm_store(context, instruction, base_mnemonic, state)
@@ -157,6 +163,8 @@ def _arm_store(context: Context, instruction: CsInsn, base_mnemonic: str, state:
 	advanced = (
 		_advance(stored, operands[memory_index].mem.base, operands[-1].imm)
 		if memory_index < len(operands) - 1
+		else _advance(stored, operands[memory_index].mem.base, operands[memory_index].mem.disp)
+		if instruction.writeback
 		else stored
 	)
 	return (
