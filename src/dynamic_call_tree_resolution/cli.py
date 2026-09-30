@@ -221,7 +221,7 @@ def compare(
 
 class _Expansion(Struct):
 	expanded: tuple[CallEdge, ...]
-	original: tuple[CallEdge, ...]
+	in_image_edges: tuple[CallEdge, ...]
 	indirect_sites: int
 	program: Program
 	counts: SlotCounts
@@ -234,6 +234,7 @@ def _expand_from_elf(
 ) -> _Expansion:
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
+	image_functions = frozenset(frame_key(name) for name in defined_function_names(elf))
 	resolution = resolve(program)
 	targets_by_caller, fallback = per_caller_candidates(
 		program, resolution.sites, resolution.assignments, narrow_by_signature=narrow_by_signature
@@ -241,12 +242,12 @@ def _expand_from_elf(
 	unresolved = unresolved_slots(program, resolution.assignments)
 	return _Expansion(
 		expanded=expand_indirect_calls(edges, targets_by_caller, fallback),
-		original=edges,
+		in_image_edges=tuple(edge for edge in edges if frame_key(edge.caller) in image_functions),
 		indirect_sites=indirect_sites,
 		program=program,
 		counts=slot_counts(resolution.assignments, unresolved),
 		unresolved=unresolved,
-		image_functions=frozenset(frame_key(name) for name in defined_function_names(elf)),
+		image_functions=image_functions,
 	)
 
 
@@ -260,8 +261,8 @@ def stack(
 	elf: Annotated[
 		Path | None,
 		Parameter(
-			help="ELF image to expand indirect call sites against; entries the linker "
-			"discarded are dropped and counted"
+			help="ELF image to expand indirect call sites against; calls from functions the "
+			"linker discarded are ignored, and discarded entries are dropped and counted"
 		),
 	] = None,
 	*,
@@ -285,7 +286,7 @@ def stack(
 	graph = stack_graph(
 		expansion.expanded if expansion is not None else edges,
 		load_stack_usages(build_directory),
-		entry_edges=expansion.original if expansion is not None else None,
+		entry_edges=expansion.in_image_edges if expansion is not None else None,
 	)
 	reports = stack_reports(graph)
 	kept = _in_image(reports, expansion) if expansion is not None else reports
@@ -344,7 +345,7 @@ def summary(
 	reports = worst_case_depths(
 		expansion.expanded,
 		load_stack_usages(build_directory),
-		entry_edges=expansion.original,
+		entry_edges=expansion.in_image_edges,
 	)
 	kept = _in_image(reports, expansion)
 	worst = next(iter(kept), StackReport(entry="", bound=Bounded(bytes=0)))
