@@ -2486,13 +2486,32 @@ def _hook_program(machine: str, code: bytes, *, writable: bool, pointer_size: in
 	)
 
 
-def test_ram_initializer_holds_what_the_program_stores_to_its_slot() -> None:
-	program = _hook_program(
-		"EM_ARM", bytes.fromhex("44f20001 43f20002 0a60 7047"), writable=True, pointer_size=4
+@pytest.mark.parametrize(
+	("code", "candidates"),
+	[
+		pytest.param("44f20001 43f20002 0a60 7047", {0x2000, 0x3000}, id="a-stored-function"),
+		pytest.param("44f20001 40f20002 0a60 7047", {0x2000}, id="a-stored-null"),
+		pytest.param("44f20001 45f20002 0a60 7047", None, id="a-stored-non-function"),
+	],
+)
+def test_ram_initializer_holds_what_the_program_stores_to_its_slot(
+	code: str, candidates: set[int] | None
+) -> None:
+	program = _hook_program("EM_ARM", bytes.fromhex(code), writable=True, pointer_size=4)
+	resolved = resolve(program).assignments
+	assert {
+		assignment.slot: (assignment.provenance, assignment.candidates) for assignment in resolved
+	} == (
+		{
+			Address(0x4000): (
+				Provenance.RAM_INITIALIZER,
+				frozenset(Address(address) for address in candidates),
+			)
+		}
+		if candidates is not None
+		else {}
 	)
-	(hook,) = resolve(program).assignments
-	assert hook.provenance is Provenance.RAM_INITIALIZER
-	assert hook.candidates == frozenset({Address(0x2000), Address(0x3000)})
+	assert slot_counts(resolved, unresolved_slots(program, resolved)).total_slots == 1
 
 
 @pytest.mark.parametrize(

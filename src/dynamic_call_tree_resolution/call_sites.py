@@ -68,14 +68,16 @@ def _at_runtime(
 				case Top():
 					return None
 				case Known(values=values):
-					return SlotAssignment(
-						slot=assignment.slot,
-						path=assignment.path,
-						candidates=frozenset(
-							value for value in values if value != 0 and value in program.functions
-						),
-						provenance=assignment.provenance,
-						relocated=assignment.relocated,
+					return (
+						SlotAssignment(
+							slot=assignment.slot,
+							path=assignment.path,
+							candidates=values - {Address(0)},
+							provenance=assignment.provenance,
+							relocated=assignment.relocated,
+						)
+						if all(value == 0 or value in program.functions for value in values)
+						else None
 					)
 				case _ as unreachable:
 					assert_never(unreachable)
