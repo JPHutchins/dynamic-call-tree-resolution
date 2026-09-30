@@ -104,8 +104,96 @@ ARM_CALLER_SAVED: Final = (
 	arm_const.ARM_REG_LR,
 )
 X86_MOVES: Final = ("mov", "movabs")
-ARM_LOADS: Final = ("ldr", "ldr.w", "ldr.n")
-ARM_MOVES: Final = ("mov", "movs", "mov.w")
+X86_MEMORY_READERS: Final = frozenset(
+	{
+		"nop",
+		"cmp",
+		"test",
+		"bt",
+		"jmp",
+		"ljmp",
+		"div",
+		"idiv",
+		"mul",
+		"imul",
+		"cmpsb",
+		"cmpsw",
+		"cmpsd",
+		"cmpsq",
+		"prefetcht0",
+		"prefetcht1",
+		"prefetcht2",
+		"prefetchnta",
+		"prefetchw",
+		"prefetchwt1",
+		"clflush",
+		"clflushopt",
+		"clwb",
+	}
+)
+X86_REPEATS: Final = frozenset({"rep", "repe", "repne", "repz", "repnz"})
+X86_UNBOUNDED_STORES: Final = frozenset(
+	{
+		"fnsave",
+		"fsave",
+		"fnstenv",
+		"fstenv",
+		"fxsave",
+		"fxsave64",
+		"xsave",
+		"xsave64",
+		"xsavec",
+		"xsavec64",
+		"xsaveopt",
+		"xsaveopt64",
+		"xsaves",
+		"xsaves64",
+	}
+)
+ARM_LOADS: Final = ("ldr",)
+ARM_MOVES: Final = ("mov", "movs")
+ARM_CONDITION_SUFFIXES: Final[Mapping[int, str]] = {
+	arm_const.ARM_CC_EQ: "eq",
+	arm_const.ARM_CC_NE: "ne",
+	arm_const.ARM_CC_HS: "hs",
+	arm_const.ARM_CC_LO: "lo",
+	arm_const.ARM_CC_MI: "mi",
+	arm_const.ARM_CC_PL: "pl",
+	arm_const.ARM_CC_VS: "vs",
+	arm_const.ARM_CC_VC: "vc",
+	arm_const.ARM_CC_HI: "hi",
+	arm_const.ARM_CC_LS: "ls",
+	arm_const.ARM_CC_GE: "ge",
+	arm_const.ARM_CC_LT: "lt",
+	arm_const.ARM_CC_GT: "gt",
+	arm_const.ARM_CC_LE: "le",
+}
+ARM_STORE_WIDTHS: Final[Mapping[str, int]] = {
+	"str": 4,
+	"strb": 1,
+	"strh": 2,
+	"strd": 8,
+	"strt": 4,
+	"strbt": 1,
+	"strht": 2,
+	"stl": 4,
+	"stlb": 1,
+	"stlh": 2,
+	"strex": 4,
+	"strexb": 1,
+	"strexh": 2,
+	"stlex": 4,
+	"stlexb": 1,
+	"stlexh": 2,
+	"vstr": 8,
+}
+ARM_STORED_REGISTERS: Final[Mapping[str, int]] = {"str": 1, "strd": 2}
+ARM_EXCLUSIVE_STORES: Final = frozenset({"strex", "strexb", "strexh", "stlex", "stlexb", "stlexh"})
+ARM_MULTIPLE_STORES: Final = frozenset(
+	{"push", "stm", "stmia", "stmea", "stmdb", "stmfd", "vpush", "vstm", "vstmia", "vstmdb"}
+)
+ARM_DESCENDING_STORES: Final = frozenset({"push", "stmdb", "stmfd", "vpush", "vstmdb"})
+ARM_REGISTER_BYTES: Final[Mapping[str, int]] = {"s": 4, "d": 8, "q": 16}
 X86_64_ARGUMENT_REGISTERS: Final = (
 	x86_const.X86_REG_RDI,
 	x86_const.X86_REG_RSI,

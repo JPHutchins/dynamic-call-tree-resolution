@@ -10,9 +10,20 @@ from typing import TYPE_CHECKING, cast
 from capstone import arm_const
 
 from dynamic_call_tree_resolution.model import Address
-from dynamic_call_tree_resolution.vsa.abi import ARM_LOADS, ARM_MOVES
+from dynamic_call_tree_resolution.vsa.abi import (
+	ARM_CONDITION_SUFFIXES,
+	ARM_DESCENDING_STORES,
+	ARM_EXCLUSIVE_STORES,
+	ARM_LOADS,
+	ARM_MOVES,
+	ARM_MULTIPLE_STORES,
+	ARM_REGISTER_BYTES,
+	ARM_STORE_WIDTHS,
+	ARM_STORED_REGISTERS,
+)
 from dynamic_call_tree_resolution.vsa.lattice import (
 	Known,
+	Top,
 	lookup,
 	map_set,
 	put_value,
@@ -22,21 +33,25 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
 	load_value,
+	register_destination,
 	scaled_addresses,
+	store_at,
 	store_value,
+	weakened,
 )
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
+	Store,
 	copy_register,
 	set_offsets,
 	set_register,
 	stack_read,
 	top_written,
-	union_write,
+	unknown_memory,
 )
 
 if TYPE_CHECKING:
-	from capstone import ArmCsOperand, CsInsn, CsOperand
+	from capstone import ArmCsOperand, CsInsn
 
 
 def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
@@ -44,9 +59,17 @@ def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
 
 
 def apply_arm(context: Context, instruction: CsInsn, state: State) -> State:
-	base_mnemonic = instruction.mnemonic.split(".")[0]
-	if base_mnemonic == "push":
-		return _arm_push(instruction, state)
+	unqualified = instruction.mnemonic.split(".")[0]
+	base_mnemonic = unqualified.removesuffix(ARM_CONDITION_SUFFIXES.get(instruction.cc, ""))
+	executed = _apply_unconditional(context, instruction, base_mnemonic, state)
+	return executed if base_mnemonic == unqualified else weakened(context, state, executed)
+
+
+def _apply_unconditional(
+	context: Context, instruction: CsInsn, base_mnemonic: str, state: State
+) -> State:
+	if base_mnemonic in ARM_MULTIPLE_STORES:
+		return _arm_store_multiple(context, instruction, base_mnemonic, state)
 	if base_mnemonic == "pop":
 		return _arm_pop(instruction, state)
 	if base_mnemonic in ("movw", "movt"):
@@ -65,31 +88,19 @@ def apply_arm(context: Context, instruction: CsInsn, state: State) -> State:
 				lambda low: Address((source.imm << 16) | (low & 0xFFFF)),
 			),
 		)
-	if instruction.mnemonic in ARM_LOADS:
+	if base_mnemonic in ARM_LOADS:
 		load_destination, load_source = _arm_operands(instruction)[0], instruction.operands[1]
 		value = load_value(context, state, instruction, load_source)
 		if len(instruction.operands) == 3:
 			offset = instruction.operands[2]
-			updated = _advance_post_index(context, state, load_source, offset.imm)
+			updated = _advance(state, load_source.mem.base, offset.imm)
 			return set_register(updated, load_destination.reg, value)
 		return set_register(state, load_destination.reg, value)
-	if instruction.mnemonic in ("str", "str.w"):
-		store_source, store_destination = _arm_operands(instruction)[0], instruction.operands[1]
-		if store_source.type != arm_const.ARM_OP_REG:  # pragma: no branch
-			return top_written(instruction, state)  # pragma: no cover
-		stored = store_value(
-			context,
-			state,
-			instruction,
-			store_destination,
-			lookup(state.registers, store_source.reg),
-		)
-		if len(instruction.operands) == 3:
-			return _advance_post_index(
-				context, stored, store_destination, instruction.operands[2].imm
-			)
-		return stored
-	if instruction.mnemonic in ARM_MOVES:
+	if base_mnemonic in ARM_STORE_WIDTHS:
+		return _arm_store(context, instruction, base_mnemonic, state)
+	if base_mnemonic.startswith(("st", "vst")):
+		return top_written(instruction, unknown_memory(state))
+	if base_mnemonic in ARM_MOVES:
 		destination, source = _arm_operands(instruction)
 		match source.type:
 			case arm_const.ARM_OP_REG:
@@ -105,11 +116,69 @@ def apply_arm(context: Context, instruction: CsInsn, state: State) -> State:
 	return top_written(instruction, state)
 
 
-def _advance_post_index(context: Context, state: State, operand: CsOperand, delta: int) -> State:
-	base = operand.mem.base
-	if base == arm_const.ARM_REG_SP:
-		return set_offsets(state, base, shift_offsets(lookup(state.sp_offsets, base), delta))
-	return set_register(state, base, shift_addresses(lookup(state.registers, base), delta))
+def _arm_store(context: Context, instruction: CsInsn, base_mnemonic: str, state: State) -> State:
+	operands = _arm_operands(instruction)
+	memory_index = next(
+		index for index, operand in enumerate(operands) if operand.type == arm_const.ARM_OP_MEM
+	)
+	stored = store_value(
+		context,
+		state,
+		instruction,
+		instruction.operands[memory_index],
+		Store(
+			words=tuple(
+				lookup(state.registers, operand.reg)
+				for operand in operands[: ARM_STORED_REGISTERS.get(base_mnemonic, 0)]
+			),
+			width=ARM_STORE_WIDTHS[base_mnemonic],
+		),
+	)
+	advanced = (
+		_advance(stored, operands[memory_index].mem.base, operands[-1].imm)
+		if memory_index < len(operands) - 1
+		else stored
+	)
+	return (
+		set_register(advanced, operands[0].reg, Top())
+		if base_mnemonic in ARM_EXCLUSIVE_STORES
+		else advanced
+	)
+
+
+def _arm_store_multiple(
+	context: Context, instruction: CsInsn, base_mnemonic: str, state: State
+) -> State:
+	operands = _arm_operands(instruction)
+	implicit_sp = base_mnemonic in ("push", "vpush")
+	base_register = arm_const.ARM_REG_SP if implicit_sp else operands[0].reg
+	listed = operands if implicit_sp else operands[1:]
+	width = sum(
+		ARM_REGISTER_BYTES.get(instruction.reg_name(operand.reg)[0], 4) for operand in listed
+	)
+	descending = base_mnemonic in ARM_DESCENDING_STORES
+	stored = store_at(
+		context,
+		state,
+		register_destination(context, state, base_register, -width if descending else 0),
+		Store(
+			words=()
+			if base_mnemonic.startswith("v")
+			else tuple(lookup(state.registers, operand.reg) for operand in listed),
+			width=width,
+		),
+	)
+	if not (implicit_sp or instruction.writeback):
+		return stored
+	return _advance(stored, base_register, -width if descending else width)
+
+
+def _advance(state: State, register: int, delta: int) -> State:
+	if register == arm_const.ARM_REG_SP or register in state.sp_offsets:
+		return set_offsets(
+			state, register, shift_offsets(lookup(state.sp_offsets, register), delta)
+		)
+	return set_register(state, register, shift_addresses(lookup(state.registers, register), delta))
 
 
 def _arm_shift_scale(operand: ArmCsOperand) -> int | None:
@@ -164,23 +233,6 @@ def _arm_shift_destination(state: State, destination: int, source: int, delta: i
 			state, destination, shift_offsets(lookup(state.sp_offsets, source), delta)
 		)
 	return set_register(state, destination, shift_addresses(lookup(state.registers, source), delta))
-
-
-def _arm_push(instruction: CsInsn, state: State) -> State:
-	operands = _arm_operands(instruction)
-	registers = tuple(operand.reg for operand in operands if operand.reg != arm_const.ARM_REG_SP)
-	offsets = shift_offsets(lookup(state.sp_offsets, arm_const.ARM_REG_SP), -4 * len(registers))
-	stack = state.stack
-	for index, register in enumerate(registers):
-		stack = union_write(
-			stack, shift_offsets(offsets, 4 * index), lookup(state.registers, register)
-		)
-	return State(
-		registers=state.registers,
-		sp_offsets=put_value(state.sp_offsets, arm_const.ARM_REG_SP, offsets),
-		stack=stack,
-		globals=state.globals,
-	)
 
 
 def _arm_pop(instruction: CsInsn, state: State) -> State:

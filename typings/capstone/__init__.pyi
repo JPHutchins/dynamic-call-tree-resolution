@@ -31,6 +31,9 @@ class CsShiftOperand:
 class ArmCsOperand(CsOperand):
 	shift: CsShiftOperand
 
+class X86CsOperand(CsOperand):
+	size: int
+
 class CsInsn:
 	id: int
 	address: int
@@ -39,8 +42,11 @@ class CsInsn:
 	mnemonic: str
 	op_str: str
 	operands: list[CsOperand]
+	cc: int
+	writeback: bool
 
 	def regs_access(self) -> tuple[list[int], list[int]]: ...
+	def reg_name(self, reg_id: int) -> str: ...
 	def group(self, group_id: int) -> bool: ...
 
 class Cs:

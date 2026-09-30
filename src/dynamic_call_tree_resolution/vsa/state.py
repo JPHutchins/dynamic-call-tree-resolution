@@ -5,15 +5,15 @@
 
 from __future__ import annotations
 
-from functools import partial
+from functools import partial, reduce
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS
 from dynamic_call_tree_resolution.vsa.lattice import (
 	Known,
-	Lattice,
 	OffsetSet,
 	Top,
 	ValueSet,
@@ -21,18 +21,17 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	capped,
 	join,
 	join_maps,
-	join_sets,
 	lookup,
 	map_entry,
 	put_value,
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Container, Iterable, Mapping
 
 	from capstone import CsInsn
 
-	from dynamic_call_tree_resolution.model import Address, Machine
+	from dynamic_call_tree_resolution.model import Machine
 
 
 class Writes(Struct):
@@ -57,6 +56,15 @@ class State(Struct):
 	"""Frame slots, by entry-frame offset."""
 	globals: Writes
 	"""What the stores on the path to the block wrote."""
+
+
+class Store(Struct):
+	"""What one store writes from each address it may start at."""
+
+	words: tuple[ValueSet, ...]
+	"""Pointer-sized values from the start up; the written bytes past them hold Top."""
+	width: int
+	"""In bytes."""
 
 
 def top_seed(machine: Machine) -> State:
@@ -87,27 +95,6 @@ def _join_writes(current: Writes, incoming: Writes) -> Writes:
 		},
 		wild=current.wild or incoming.wild,
 	)
-
-
-def store_global(writes: Writes, addresses: ValueSet, value: ValueSet) -> Writes:
-	match addresses:
-		case Top():
-			return Writes(values={}, wild=True)
-		case Known(values=targets):
-			return Writes(
-				values={
-					**writes.values,
-					**{
-						address: join(writes.values[address], value)
-						if address in writes.values
-						else value
-						for address in targets
-					},
-				},
-				wild=writes.wild,
-			)
-		case _ as unreachable:
-			assert_never(unreachable)
 
 
 def set_register(state: State, register: int, value: ValueSet) -> State:
@@ -141,6 +128,15 @@ def top_registers(state: State, registers: tuple[int, ...]) -> State:
 	)
 
 
+def unknown_memory(state: State) -> State:
+	return State(
+		registers=state.registers,
+		sp_offsets=state.sp_offsets,
+		stack={},
+		globals=Writes(values={}, wild=True),
+	)
+
+
 def top_written(instruction: CsInsn, state: State) -> State:
 	written = set(instruction.regs_access()[1])
 	return State(
@@ -169,29 +165,114 @@ def _frame_read(stack: Mapping[int, frozenset[Address]], offsets: frozenset[int]
 	return capped(frozenset(value for offset in offsets for value in stack[offset]))
 
 
-def union_write[K: int](
-	mapping: Mapping[K, frozenset[Address]], keys: Lattice[K], value: ValueSet
-) -> dict[K, frozenset[Address]]:
-	match keys:
+def frame_write(
+	stack: Mapping[int, frozenset[Address]], offsets: OffsetSet, store: Store, pointer_size: int
+) -> dict[int, frozenset[Address]]:
+	match offsets:
 		case Top():
 			return {}
-		case Known(values=written):
+		case Known(values=starts):
+			written = _written(
+				store,
+				pointer_size,
+				starts,
+				_overlapping(stack, store, pointer_size, starts)
+				| _word_keys(store, pointer_size, starts),
+			)
 			return {
-				**{key: values for key, values in mapping.items() if key not in written},
+				**{key: values for key, values in stack.items() if key not in written},
 				**dict(
 					entry
-					for key in written
-					for entry in map_entry(key, _updated(mapping, key, value))
+					for key, value in written.items()
+					for entry in map_entry(
+						key, join(Known(values=stack[key]), value) if key in stack else value
+					)
 				),
 			}
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _updated[K: int](mapping: Mapping[K, frozenset[Address]], key: K, value: ValueSet) -> ValueSet:
-	return bind(
-		value,
-		lambda values: join_sets(mapping[key], values) if key in mapping else Known(values=values),
+def image_write(writes: Writes, addresses: ValueSet, store: Store, pointer_size: int) -> Writes:
+	match addresses:
+		case Top():
+			return Writes(values={}, wild=True)
+		case Known(values=starts):
+			return Writes(
+				values={
+					**writes.values,
+					**{
+						Address(address): join(writes.values[Address(address)], value)
+						if address in writes.values
+						else value
+						for address, value in _written(
+							store,
+							pointer_size,
+							starts,
+							_overlapping(writes.values, store, pointer_size, starts)
+							| starts
+							| _word_keys(store, pointer_size, starts)
+							| _aligned_keys(store, pointer_size, starts),
+						).items()
+					},
+				},
+				wild=writes.wild,
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _written(
+	store: Store, pointer_size: int, starts: frozenset[int], keys: Iterable[int]
+) -> dict[int, ValueSet]:
+	return {
+		key: reduce(join, words)
+		for key in keys
+		if (
+			words := tuple(
+				_word(store, pointer_size, key - start)
+				for start in starts
+				if key < start + store.width and start < key + pointer_size
+			)
+		)
+	}
+
+
+def _word(store: Store, pointer_size: int, offset: int) -> ValueSet:
+	index, remainder = divmod(offset, pointer_size)
+	return (
+		store.words[index]
+		if remainder == 0
+		and 0 <= index < len(store.words)
+		and (index + 1) * pointer_size <= store.width
+		else Top()
+	)
+
+
+def _overlapping(
+	keys: Container[int], store: Store, pointer_size: int, starts: frozenset[int]
+) -> frozenset[int]:
+	return frozenset(
+		key
+		for start in starts
+		for key in range(start - pointer_size + 1, start + store.width)
+		if key in keys
+	)
+
+
+def _word_keys(store: Store, pointer_size: int, starts: frozenset[int]) -> frozenset[int]:
+	return frozenset(
+		start + index * pointer_size
+		for start in starts
+		for index in range(min(len(store.words), store.width // pointer_size))
+	)
+
+
+def _aligned_keys(store: Store, pointer_size: int, starts: frozenset[int]) -> frozenset[int]:
+	return frozenset(
+		key
+		for start in starts
+		for key in range(start - start % pointer_size, start + store.width, pointer_size)
 	)
 
 
