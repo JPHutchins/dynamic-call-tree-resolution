@@ -5,18 +5,25 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from functools import partial, reduce
+from itertools import takewhile
+from typing import TYPE_CHECKING, Final, Literal, cast
 
 from capstone import arm_const, x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, Machine, aligned
-from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at, memory_at
+from dynamic_call_tree_resolution.points_to import (
+	in_writable_memory,
+	instruction_runs,
+	instruction_set_at,
+	memory_at,
+)
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
 	ARM_CONDITIONAL,
+	ARM_LOAD_WIDTHS,
 	ARM_RETURNING_TRAPS,
-	ARM_TABLE_ENTRY_BYTES,
 	ARM_TRANSFERS,
 	X86_CALLS,
 	X86_RETURNING_TRAPS,
@@ -29,11 +36,17 @@ from dynamic_call_tree_resolution.vsa.abi import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Callable, Mapping
 
-	from capstone import Cs, CsInsn, CsOperand
+	from capstone import ArmCsOperand, Cs, CsInsn, CsOperand
 
 	from dynamic_call_tree_resolution.model import Function, Program
+
+
+_WINDOW: Final = 16
+_MAX_CASES: Final = 1024
+_WORD_MASK: Final = 0xFFFF_FFFF
+_NOTHING_KNOWN: Final[Mapping[int, int]] = {}
 
 
 class Block(Struct):
@@ -84,14 +97,21 @@ def control_flow_graphs(program: Program) -> dict[Address, tuple[Function, tuple
 
 
 class _JumpTable(Struct):
-	"""The case addresses a bounded dispatch's table holds."""
+	"""The case addresses a bounded dispatch reaches."""
 
 	targets: tuple[Address, ...]
-	base: int
-	end: int
-	"""The first address past the table."""
+	skip: int | None
+	"""The end of a table that follows the dispatch, which the decoder skips."""
 	guarded: tuple[int, ...]
-	"""Instructions from the bound check's branch to the dispatch; entering one skips the check."""
+	"""Instructions no branch may enter without skipping the bound or a value the dispatch reads."""
+
+
+class _Case(Struct):
+	"""Where a dispatch goes for one index."""
+
+	target: Address
+	table: tuple[int, int] | None
+	"""The bytes the dispatch read the target from."""
 
 
 def _decoded(
@@ -106,13 +126,8 @@ def _decoded(
 			if program.machine is Machine.EM_ARM and _dispatches(instruction):
 				table = _jump_table(instructions, program, function)
 				dispatches[instruction.address] = table
-				if (
-					table is not None
-					and instruction.address + instruction.size
-					<= table.base
-					<= instruction.address + instruction.size + 2
-				):
-					offset = table.end - start
+				if table is not None and table.skip is not None:
+					offset = table.skip - start
 					break
 		else:
 			break
@@ -142,76 +157,237 @@ def _writes_pc(instruction: CsInsn) -> bool:
 def _jump_table(
 	instructions: list[CsInsn], program: Program, function: tuple[int, int]
 ) -> _JumpTable | None:
+	guard = _window_start(instructions, len(instructions) - 1) - 1
+	if (
+		guard < 1
+		or arm_predicated(instructions[-1])
+		or not _bounds(instructions[guard - 1], instructions[guard])
+		or instructions[guard - 1].operands[1].imm >= _MAX_CASES
+	):
+		return None
+	return next(
+		(
+			table
+			for start in range(guard - 1, _window_start(instructions, guard - 1) - 1, -1)
+			if (table := _bounded(instructions, start, guard, program, function)) is not None
+		),
+		None,
+	)
+
+
+def _window_start(instructions: list[CsInsn], end: int) -> int:
+	floor = max(end - _WINDOW, 0)
+	return next(
+		(
+			index + 1
+			for index in range(end - 1, floor - 1, -1)
+			if _block_ends(instructions[index], Machine.EM_ARM)
+		),
+		floor,
+	)
+
+
+def _bounds(compare: CsInsn, branch: CsInsn) -> bool:
+	return (
+		arm_mnemonic(compare) == "cmp"
+		and not arm_predicated(compare)
+		and compare.operands[1].type == arm_const.ARM_OP_IMM
+		and arm_mnemonic(branch) == "b"
+		and branch.cc == arm_const.ARM_CC_HI
+	)
+
+
+def _bounded(
+	instructions: list[CsInsn],
+	start: int,
+	guard: int,
+	program: Program,
+	function: tuple[int, int],
+) -> _JumpTable | None:
 	dispatch = instructions[-1]
-	mnemonic = arm_mnemonic(dispatch)
-	table_base = (
+	compare = instructions[guard - 1]
+	known = reduce(partial(_step, program), instructions[start : guard - 1], _NOTHING_KNOWN)
+	cases = tuple(
+		case
+		for case in takewhile(
+			_is_case,
+			(
+				_case(
+					program,
+					dispatch,
+					reduce(
+						partial(_step, program),
+						instructions[guard + 1 : -1],
+						{**known, compare.operands[0].reg: index},
+					),
+				)
+				for index in range(compare.operands[1].imm + 1)
+			),
+		)
+		if case is not None
+	)
+	if len(cases) <= compare.operands[1].imm or not all(
+		function[0] <= case.target < function[1] for case in cases
+	):
+		return None
+	tables = tuple(case.table for case in cases if case.table is not None)
+	end = max((high for _, high in tables), default=0)
+	return _JumpTable(
+		targets=tuple(case.target for case in cases),
+		skip=end + end % 2
+		if dispatch.address + dispatch.size
+		<= min((low for low, _ in tables), default=-1)
+		<= dispatch.address + dispatch.size + 2
+		else None,
+		guarded=tuple(instruction.address for instruction in instructions[start + 1 :]),
+	)
+
+
+def _is_case(case: _Case | None) -> bool:
+	return case is not None
+
+
+def _case(program: Program, dispatch: CsInsn, registers: Mapping[int, int]) -> _Case | None:
+	match arm_mnemonic(dispatch), _arm_operands(dispatch):
+		case ("tbb" | "tbh") as mnemonic, [table]:
+			return _read_case(
+				program,
+				_address(registers, table, dispatch.address + 4),
+				ARM_LOAD_WIDTHS["ldrb" if mnemonic == "tbb" else "ldrh"],
+				partial(_halfwords_past, dispatch.address + 4),
+			)
+		case "ldr", [_, table]:
+			return _read_case(
+				program,
+				_address(registers, table, _base(program, dispatch, registers, table)),
+				ARM_LOAD_WIDTHS["ldr"],
+				_absolute_target,
+			)
+		case "add", [_, base, offset] if (
+			base.reg == arm_const.ARM_REG_PC
+			and (value := _operand_value(registers, offset)) is not None
+		):
+			return _Case(target=Address(_pc_relative(program, dispatch) + value), table=None)
+		case _:
+			return None
+
+
+def _read_case(
+	program: Program,
+	address: int | None,
+	width: int,
+	target: Callable[[int], Address],
+) -> _Case | None:
+	entry = None if address is None else _read(program, address, width)
+	return (
 		None
-		if mnemonic == "add"
-		else dispatch.address + 4
-		if mnemonic in ("tbb", "tbh")
-		else _adr_target(instructions[-2], program)
-		if len(instructions) >= 2
+		if address is None or entry is None
+		else _Case(target=target(entry), table=(address, address + width))
+	)
+
+
+def _halfwords_past(base: int, entry: int) -> Address:
+	return Address(base + 2 * entry)
+
+
+def _absolute_target(entry: int) -> Address:
+	return aligned(Address(entry))
+
+
+def _step(program: Program, registers: Mapping[int, int], instruction: CsInsn) -> Mapping[int, int]:
+	value = (
+		None
+		if arm_predicated(instruction) or instruction.writeback
+		else _computed(program, registers, instruction)
+	)
+	written = frozenset(instruction.regs_access()[1])
+	kept = {register: known for register, known in registers.items() if register not in written}
+	return kept if value is None else {**kept, instruction.operands[0].reg: value & _WORD_MASK}
+
+
+def _computed(program: Program, registers: Mapping[int, int], instruction: CsInsn) -> int | None:
+	match arm_mnemonic(instruction), _arm_operands(instruction):
+		case ("ldr" | "ldrb" | "ldrh") as mnemonic, [_, source]:
+			address = _address(registers, source, _base(program, instruction, registers, source))
+			return None if address is None else _read(program, address, ARM_LOAD_WIDTHS[mnemonic])
+		case "adr", [_, offset]:
+			return _pc_relative(program, instruction) + offset.imm
+		case (("add" | "adds" | "addw"), [_, base, offset]) if (
+			base.reg == arm_const.ARM_REG_PC and offset.type == arm_const.ARM_OP_IMM
+		):
+			return _pc_relative(program, instruction) + offset.imm
+		case (("add" | "adds" | "addw"), [_, augend, addend]):
+			return _sum(registers, augend, addend)
+		case (("mov" | "movs" | "movw" | "lsl" | "lsls"), [_, source]):
+			return _operand_value(registers, source)
+		case "movt", [destination, high] if (low := registers.get(destination.reg)) is not None:
+			return (high.imm << 16) | (low & 0xFFFF)
+		case _:
+			return None
+
+
+def _pc_relative(program: Program, instruction: CsInsn) -> int:
+	return program_counter(instruction, instruction_set_at(program, Address(instruction.address)))
+
+
+def _sum(registers: Mapping[int, int], augend: ArmCsOperand, addend: ArmCsOperand) -> int | None:
+	left = _operand_value(registers, augend)
+	right = _operand_value(registers, addend)
+	return None if left is None or right is None else left + right
+
+
+def _operand_value(registers: Mapping[int, int], operand: ArmCsOperand) -> int | None:
+	return (
+		operand.imm
+		if operand.type == arm_const.ARM_OP_IMM
+		else _shifted(registers.get(operand.reg), operand)
+		if operand.type == arm_const.ARM_OP_REG
 		else None
 	)
-	guard = len(instructions) - (2 if mnemonic in ("tbb", "tbh") else 3)
-	if table_base is None or guard < 1:
-		return None
-	count = _bound(
-		instructions[guard - 1],
-		instructions[guard],
-		dispatch.operands[-1].mem.index,
-	)
-	if count is None:
-		return None
-	size = ARM_TABLE_ENTRY_BYTES[mnemonic]
-	table = memory_at(program, Address(table_base), size * count)
-	if len(table) != size * count:
-		return None
-	entries = tuple(
-		int.from_bytes(table[index : index + size], "little")
-		for index in range(0, len(table), size)
-	)
-	targets = tuple(
-		Address(dispatch.address + 4 + 2 * entry if size < 4 else aligned(Address(entry)))
-		for entry in entries
-	)
-	if not all(function[0] <= target < function[1] for target in targets):
-		return None
-	return _JumpTable(
-		targets=targets,
-		base=table_base,
-		end=table_base + size * count + (size * count) % 2,
-		guarded=tuple(instruction.address for instruction in instructions[guard:]),
-	)
 
 
-def _adr_target(instruction: CsInsn, program: Program) -> int | None:
-	if (
-		arm_mnemonic(instruction) not in ("add", "adr")
-		or len(instruction.operands) < 2
-		or instruction.operands[-1].type != arm_const.ARM_OP_IMM
-		or (
-			arm_mnemonic(instruction) == "add"
-			and instruction.operands[1].reg != arm_const.ARM_REG_PC
-		)
-	):
+def _shifted(value: int | None, operand: ArmCsOperand) -> int | None:
+	if value is None:
 		return None
+	match operand.shift.type:
+		case arm_const.ARM_SFT_INVALID:
+			return value
+		case arm_const.ARM_SFT_LSL:
+			return value << operand.shift.value
+		case _:
+			return None
+
+
+def _base(
+	program: Program, instruction: CsInsn, registers: Mapping[int, int], operand: ArmCsOperand
+) -> int | None:
 	return (
-		program_counter(instruction, instruction_set_at(program, Address(instruction.address)))
-		+ instruction.operands[-1].imm
+		_pc_relative(program, instruction)
+		if operand.mem.base == arm_const.ARM_REG_PC
+		else registers.get(operand.mem.base)
 	)
 
 
-def _bound(compare: CsInsn, branch: CsInsn, index: int) -> int | None:
-	if (
-		arm_mnemonic(compare) != "cmp"
-		or compare.operands[0].reg != index
-		or compare.operands[1].type != arm_const.ARM_OP_IMM
-		or arm_mnemonic(branch) != "b"
-		or branch.cc != arm_const.ARM_CC_HI
-	):
-		return None
-	return compare.operands[1].imm + 1
+def _address(registers: Mapping[int, int], operand: ArmCsOperand, base: int | None) -> int | None:
+	index = 0 if operand.mem.index == 0 else _shifted(registers.get(operand.mem.index), operand)
+	return (
+		None
+		if base is None or index is None or operand.subtracted
+		else (base + index + operand.mem.disp) & _WORD_MASK
+	)
+
+
+def _read(program: Program, address: int, width: int) -> int | None:
+	data = memory_at(program, Address(address), width)
+	return (
+		int.from_bytes(data, program.byte_order)
+		if len(data) == width and not in_writable_memory(program, Address(address))
+		else None
+	)
+
+
+def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
+	return tuple(cast("ArmCsOperand", operand) for operand in instruction.operands)
 
 
 class _BranchTarget(Struct):
