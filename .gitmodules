@@ -1,12 +1,6 @@
 [submodule "testbeds/zephyr"]
 	path = testbeds/zephyr
 	url = https://github.com/zephyrproject-rtos/zephyr
-[submodule "testbeds/zmk"]
-	path = testbeds/zmk
-	url = https://github.com/zmkfirmware/zmk
-[submodule "testbeds/zswatch"]
-	path = testbeds/zswatch
-	url = https://github.com/jakkra/ZSWatch
 [submodule "references/pexplorer"]
 	path = references/pexplorer
 	url = https://github.com/paulwuertz/pexplorer
