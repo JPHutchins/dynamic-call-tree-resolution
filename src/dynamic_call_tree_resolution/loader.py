@@ -39,7 +39,7 @@ from dynamic_call_tree_resolution.model import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Iterator, Mapping
+	from collections.abc import Callable, Iterator, Mapping
 	from pathlib import Path
 	from typing import BinaryIO
 
@@ -340,13 +340,29 @@ def _signature(die: DIE) -> FunctionSignature:
 
 
 def _type_name(die: DIE | None) -> str:
+	return _named_type(die, _shared_anonymous)
+
+
+def _layout_name(die: DIE | None) -> str:
+	return _named_type(die, _distinct_anonymous)
+
+
+def _shared_anonymous(_: DIE) -> str:
+	return ANONYMOUS
+
+
+def _distinct_anonymous(die: DIE) -> str:
+	return f"{ANONYMOUS}@{die.offset:#x}"
+
+
+def _named_type(die: DIE | None, anonymous: Callable[[DIE], str]) -> str:
 	if die is None:
 		return "void"
 	match die.tag:
 		case "DW_TAG_base_type" | "DW_TAG_enumeration_type":
 			return _die_name(die)
 		case "DW_TAG_const_type" | "DW_TAG_volatile_type":
-			return _type_name(_type_die(die))
+			return _named_type(_type_die(die), anonymous)
 		case "DW_TAG_pointer_type":
 			pointee = _strip_qualifiers(_type_die(die))
 			if pointee is None:
@@ -354,20 +370,33 @@ def _type_name(die: DIE | None) -> str:
 			return (
 				FUNCTION_POINTER
 				if pointee.tag == "DW_TAG_subroutine_type"
-				else f"{_type_name(pointee)} *"
+				else f"{_named_type(_type_die(die), anonymous)} *"
 			)
 		case "DW_TAG_typedef":
-			return _type_name(_type_die(die))
+			return (
+				_die_name(die)
+				if _anonymous_aggregate(_type_die(die))
+				else _named_type(_type_die(die), anonymous)
+			)
 		case "DW_TAG_structure_type" | "DW_TAG_union_type" | "DW_TAG_class_type":
 			return layout_key(
-				"union" if die.tag == "DW_TAG_union_type" else "struct", _die_name(die)
+				"union" if die.tag == "DW_TAG_union_type" else "struct",
+				_die_name(die) if "DW_AT_name" in die.attributes else anonymous(die),
 			)
 		case "DW_TAG_array_type":
-			return f"{_type_name(_type_die(die))}{ARRAY_SUFFIX}"
+			return f"{_named_type(_type_die(die), anonymous)}{ARRAY_SUFFIX}"
 		case "DW_TAG_subroutine_type":  # pragma: no cover
 			return FUNCTION_POINTER
 		case _:
 			return str(die.tag)  # pragma: no cover
+
+
+def _anonymous_aggregate(die: DIE | None) -> bool:
+	return (
+		die is not None
+		and die.tag in ("DW_TAG_structure_type", "DW_TAG_union_type")
+		and "DW_AT_name" not in die.attributes
+	)
 
 
 def _type_die(die: DIE) -> DIE | None:
@@ -418,8 +447,8 @@ def _pointee_kind(type_die: DIE | None) -> _PointeeKind:
 	match pointee.tag:
 		case "DW_TAG_subroutine_type":
 			return _FunctionPointer(signature=_signature(pointee))
-		case "DW_TAG_structure_type" | "DW_TAG_union_type" if "DW_AT_name" in pointee.attributes:
-			return _StructPointer(pointee=_type_name(pointee))
+		case "DW_TAG_structure_type" | "DW_TAG_union_type":
+			return _StructPointer(pointee=_layout_name(_type_die(underlying)))
 		case _:
 			return None
 
@@ -518,25 +547,32 @@ def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 	layouts: dict[str, StructureLayout] = {}
 	for compilation_unit in dwarf.iter_CUs():
 		for die in _iter_dies(compilation_unit.get_top_DIE()):
-			if die.tag not in ("DW_TAG_structure_type", "DW_TAG_union_type"):
+			aggregate = _defined_aggregate(die)
+			if aggregate is None:
 				continue
-			if "DW_AT_declaration" in die.attributes:
-				continue
-			name_attribute = die.attributes.get("DW_AT_name")
-			if name_attribute is None:
-				continue  # pragma: no cover
-			name = _string_value(name_attribute)
-			keyword = "union" if die.tag == "DW_TAG_union_type" else "struct"
-			key = layout_key(keyword, name)
-			byte_size = die.attributes.get("DW_AT_byte_size")
+			key = _layout_name(die)
 			layout = StructureLayout(
-				members=tuple(_layout_members(die)),
-				size=_int_value(byte_size) if byte_size is not None else 0,  # pragma: no branch
+				members=tuple(_layout_members(aggregate)), size=_byte_size(aggregate) or 0
 			)
 			existing = layouts.get(key)
 			if existing is None or len(layout.members) > len(existing.members):
 				layouts[key] = layout
 	return layouts
+
+
+def _defined_aggregate(die: DIE) -> DIE | None:
+	aggregate = (
+		die
+		if die.tag in ("DW_TAG_structure_type", "DW_TAG_union_type")
+		else _type_die(die)
+		if die.tag == "DW_TAG_typedef" and _anonymous_aggregate(_type_die(die))
+		else None
+	)
+	return (
+		aggregate
+		if aggregate is not None and "DW_AT_declaration" not in aggregate.attributes
+		else None
+	)
 
 
 def _layout_members(struct_die: DIE) -> Iterator[Member]:
@@ -600,7 +636,7 @@ def _objects_from_dwarf(
 			name=_string_value(name_attribute),
 			address=address,
 			size=_byte_size_of(die),
-			type_name=_type_name(_type_die(die)),
+			type_name=_layout_name(_type_die(die)),
 			signature=_object_signature(die),
 		)
 		for compilation_unit in dwarf.iter_CUs()
@@ -654,7 +690,7 @@ def _declaration_types(dwarf: DWARFInfo | None) -> dict[str, str]:
 	if dwarf is None:
 		return {}  # pragma: no cover
 	return {
-		_string_value(name_attribute): _type_name(_type_die(die))
+		_string_value(name_attribute): _layout_name(_type_die(die))
 		for compilation_unit in dwarf.iter_CUs()
 		for die in _iter_dies(compilation_unit.get_top_DIE())
 		if die.tag == "DW_TAG_variable"

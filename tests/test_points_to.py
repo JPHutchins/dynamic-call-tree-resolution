@@ -244,6 +244,20 @@ def test_array_members_descend_each_element(fixture_elfs: dict[str, Path]) -> No
 	}
 
 
+def test_anonymous_types_resolve_through_objects_and_pointers(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	resolved, program = _resolved(fixture_elfs["anonymous"])
+	assert {path: _names(program, assignment) for path, assignment in resolved.items()} == {
+		"anon_ops.run": {"anon_ops_fn"},
+		"anon_ops_holder.ops.run": {"anon_ops_fn"},
+		"bare_anon.run": {"anon_ops_fn"},
+	}
+	assert {
+		render_path(slot.path) for slot in unresolved_slots(program, tuple(resolved.values()))
+	} == {"dynamic_anon_ops.run", "visitor.visit_ops", "visitor.visit_state"}
+
+
 def test_array_globals_report_unresolved_elements(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["arrays"])
 	unresolved = {
