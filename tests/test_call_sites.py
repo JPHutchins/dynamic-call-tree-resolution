@@ -12,6 +12,7 @@ import pytest
 
 from dynamic_call_tree_resolution import (
 	Address,
+	CallSite,
 	DataObject,
 	Function,
 	FunctionSignature,
@@ -28,7 +29,11 @@ from dynamic_call_tree_resolution import (
 	load,
 	matching_targets,
 	per_caller_candidates,
+	resolve,
+	unresolved_slots,
 )
+from dynamic_call_tree_resolution.model import FUNCTION_POINTER
+from dynamic_call_tree_resolution.report import slot_counts
 from dynamic_call_tree_resolution.vsa import address_taken
 from tests.programs import build_program
 
@@ -2446,3 +2451,112 @@ def test_x86_call_clears_the_frame_after_its_address_escapes(code: str, callee: 
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset()
+
+
+def _hook_program(machine: str, code: bytes, *, writable: bool, pointer_size: int) -> Program:
+	return Program(
+		byte_order="little",
+		pointer_size=pointer_size,
+		machine=Machine(machine),
+		functions={
+			Address(address): Function(
+				name=name, address=Address(address), size=size, signature=None
+			)
+			for name, address, size in (
+				("code", 0x1000, len(code)),
+				("a", 0x2000, 4),
+				("b", 0x3000, 4),
+			)
+		},
+		objects={
+			Address(0x4000): DataObject(
+				name="hook",
+				address=Address(0x4000),
+				size=pointer_size,
+				type_name=FUNCTION_POINTER,
+				signature=None,
+			)
+		},
+		layouts={},
+		relocations=(),
+		sections={
+			Address(0x1000): Section(data=code, writable=False),
+			Address(0x4000): Section(data=_pointer(0x2000, pointer_size), writable=writable),
+		},
+	)
+
+
+@pytest.mark.parametrize(
+	("code", "candidates"),
+	[
+		pytest.param("44f20001 43f20002 0a60 7047", {0x2000, 0x3000}, id="a-stored-function"),
+		pytest.param("44f20001 40f20002 0a60 7047", {0x2000}, id="a-stored-null"),
+		pytest.param("44f20001 45f20002 0a60 7047", None, id="a-stored-non-function"),
+	],
+)
+def test_ram_initializer_holds_what_the_program_stores_to_its_slot(
+	code: str, candidates: set[int] | None
+) -> None:
+	program = _hook_program("EM_ARM", bytes.fromhex(code), writable=True, pointer_size=4)
+	resolved = resolve(program).assignments
+	assert {
+		assignment.slot: (assignment.provenance, assignment.candidates) for assignment in resolved
+	} == (
+		{
+			Address(0x4000): (
+				Provenance.RAM_INITIALIZER,
+				frozenset(Address(address) for address in candidates),
+			)
+		}
+		if candidates is not None
+		else {}
+	)
+	assert slot_counts(resolved, unresolved_slots(program, resolved)).total_slots == 1
+
+
+@pytest.mark.parametrize(
+	("writable", "candidates"),
+	[
+		pytest.param(True, set[int](), id="ram-initializer-is-unresolved"),
+		pytest.param(False, {0x2000}, id="rom-constant-keeps-its-value"),
+	],
+)
+def test_unknown_store_unresolves_only_writable_slots(writable: bool, candidates: set[int]) -> None:
+	program = _hook_program("EM_ARM", bytes.fromhex("2c60 7047"), writable=writable, pointer_size=4)
+	resolved = resolve(program).assignments
+	assert {candidate for assignment in resolved for candidate in assignment.candidates} == {
+		Address(address) for address in candidates
+	}
+	assert slot_counts(resolved, unresolved_slots(program, resolved)).total_slots == 1
+
+
+@pytest.mark.parametrize(
+	("writable", "candidates"),
+	[
+		pytest.param(True, set[int](), id="writable-slot-is-not-read"),
+		pytest.param(False, {0x2000}, id="read-only-slot-is-read"),
+	],
+)
+def test_chasing_a_slot_reads_its_image_value_only_when_read_only(
+	writable: bool, candidates: set[int]
+) -> None:
+	program = _hook_program("EM_ARM", bytes.fromhex("7047"), writable=writable, pointer_size=4)
+	site = CallSite(
+		caller_address=Address(0x1000),
+		site_address=Address(0x1000),
+		slot=None,
+		candidates=frozenset({Address(0x4000)}),
+	)
+	assert call_site_candidates(program, site, {}) == frozenset(
+		Address(address) for address in candidates
+	)
+
+
+def test_site_through_an_unresolved_slot_keeps_its_member_path() -> None:
+	program = _hook_program(
+		"EM_X86_64", bytes.fromhex("488916 ff142500400000"), writable=True, pointer_size=8
+	)
+	resolution = resolve(program)
+	(site,) = build_report(program, resolution.assignments, resolution.sites).call_sites
+	assert site.member_path == "hook"
+	assert site.candidates == ()

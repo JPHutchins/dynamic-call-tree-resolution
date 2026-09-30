@@ -5,20 +5,21 @@
 
 import sys
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
-from typing import Annotated, Final, assert_never
+from typing import TYPE_CHECKING, Annotated, Final, assert_never
 
 import msgspec
 from cyclopts import App, Parameter
 from elftools.common.exceptions import ELFError
 from salix import Struct
 
-from dynamic_call_tree_resolution.call_sites import extract_call_sites, per_caller_candidates
+from dynamic_call_tree_resolution.call_sites import per_caller_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
 from dynamic_call_tree_resolution.loader import defined_function_names, load
 from dynamic_call_tree_resolution.pexplorer import load_pexplorer
-from dynamic_call_tree_resolution.points_to import assignments, unresolved_slots
+from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
+	SlotCounts,
 	StackEntryReport,
 	build_comparison,
 	build_report,
@@ -35,6 +36,9 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
+
+if TYPE_CHECKING:
+	from dynamic_call_tree_resolution.model import Program, UnresolvedSlot
 
 app = App(name="dctr")
 
@@ -93,10 +97,11 @@ def analyze(
 ) -> None:
 	"""Print resolved function-pointer assignments and call sites of an ELF image."""
 	program = load(elf)
+	resolution = resolve(program)
 	report = build_report(
 		program,
-		assignments(program),
-		extract_call_sites(program),
+		resolution.assignments,
+		resolution.sites,
 		narrow_by_signature=narrow_by_signature,
 	)
 	if json:
@@ -174,7 +179,9 @@ class _Expansion(Struct):
 	expanded: tuple[CallEdge, ...]
 	original: tuple[CallEdge, ...]
 	indirect_sites: int
-	resolved_slots: int
+	program: Program
+	counts: SlotCounts
+	unresolved: tuple[UnresolvedSlot, ...]
 	image_functions: frozenset[str]
 
 
@@ -183,15 +190,18 @@ def _expand_from_elf(
 ) -> _Expansion:
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
-	resolved = assignments(program)
+	resolution = resolve(program)
 	targets_by_caller, fallback = per_caller_candidates(
-		program, extract_call_sites(program), resolved, narrow_by_signature=narrow_by_signature
+		program, resolution.sites, resolution.assignments, narrow_by_signature=narrow_by_signature
 	)
+	unresolved = unresolved_slots(program, resolution.assignments)
 	return _Expansion(
 		expanded=expand_indirect_calls(edges, targets_by_caller, fallback),
 		original=edges,
 		indirect_sites=indirect_sites,
-		resolved_slots=slot_counts(resolved, unresolved_slots(program, resolved)).resolved_slots,
+		program=program,
+		counts=slot_counts(resolution.assignments, unresolved),
+		unresolved=unresolved,
 		image_functions=frozenset(frame_key(name) for name in defined_function_names(elf)),
 	)
 
@@ -236,7 +246,7 @@ def stack(
 		return
 	if expansion is not None:
 		print(
-			f"resolved slots: {expansion.resolved_slots} "
+			f"resolved slots: {expansion.counts.resolved_slots} "
 			f"| indirect call sites: {expansion.indirect_sites} "
 			f"| not in the image: {len(reports) - len(kept)}"
 			f"{' | narrowed by signature' if narrow_by_signature else ''}"
@@ -253,8 +263,6 @@ def summary(
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
-	program = load(elf)
-	resolved = assignments(program)
 	edges = load_callgraph(build_directory)
 	expansion = _expand_from_elf(edges, elf, narrow_by_signature=narrow_by_signature)
 	reports = worst_case_depths(
@@ -264,15 +272,13 @@ def summary(
 	)
 	kept = _in_image(reports, expansion)
 	worst = next(iter(kept), StackReport(entry="", bound=Bounded(bytes=0)))
-	unresolved = unresolved_slots(program, resolved)
-	counts = slot_counts(resolved, unresolved)
 	report = AnalysisSummary(
-		resolved_slots=counts.resolved_slots,
-		total_slots=counts.total_slots,
-		unresolved_slots=len(unresolved),
-		resolved_targets=counts.resolved_targets,
+		resolved_slots=expansion.counts.resolved_slots,
+		total_slots=expansion.counts.total_slots,
+		unresolved_slots=len(expansion.unresolved),
+		resolved_targets=expansion.counts.resolved_targets,
 		indirect_call_sites=expansion.indirect_sites,
-		total_functions=len(program.functions),
+		total_functions=len(expansion.program.functions),
 		entry_points=len(kept),
 		discarded_entry_points=len(reports) - len(kept),
 		worst_case_entry=worst.entry,

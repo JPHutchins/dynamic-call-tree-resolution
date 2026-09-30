@@ -182,7 +182,7 @@ class CallSite(Struct):
 
 
 class UnresolvedSlot(Struct):
-	"""A stored function pointer that nothing resolves statically."""
+	"""A stored function pointer the analysis cannot resolve."""
 
 	slot: Address
 	path: tuple[str | None, ...]

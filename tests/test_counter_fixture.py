@@ -36,10 +36,10 @@ def test_summary_pins_the_published_numbers() -> None:
 		_dctr("summary", str(ARTIFACTS), str(EXECUTABLE)), type=AnalysisSummary
 	)
 	assert summary == AnalysisSummary(
-		resolved_slots=121,
+		resolved_slots=106,
 		total_slots=234,
-		unresolved_slots=113,
-		resolved_targets=215,
+		unresolved_slots=128,
+		resolved_targets=200,
 		indirect_call_sites=100,
 		total_functions=734,
 		entry_points=146,

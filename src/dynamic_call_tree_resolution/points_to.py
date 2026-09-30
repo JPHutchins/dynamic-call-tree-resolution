@@ -61,12 +61,14 @@ def assignments(program: Program) -> tuple[SlotAssignment, ...]:
 
 
 def _provenance(program: Program, slot: Address) -> Provenance:
-	covering = _section_covering(program, slot)
 	return (
-		Provenance.ROM_CONSTANT
-		if covering is not None and not covering[1].writable
-		else Provenance.RAM_INITIALIZER
+		Provenance.RAM_INITIALIZER if in_writable_memory(program, slot) else Provenance.ROM_CONSTANT
 	)
+
+
+def in_writable_memory(program: Program, address: Address) -> bool:
+	covering = _section_covering(program, address)
+	return covering is None or covering[1].writable
 
 
 def _from_relocations(program: Program) -> Iterable[_Resolution]:

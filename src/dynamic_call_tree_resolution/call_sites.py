@@ -6,21 +6,83 @@
 from __future__ import annotations
 
 from itertools import groupby
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
-from dynamic_call_tree_resolution.model import Address, FunctionSignature
-from dynamic_call_tree_resolution.points_to import pointer_at, signatures_by_slot, unresolved_slots
+from salix import Struct
+
+from dynamic_call_tree_resolution.model import (
+	Address,
+	FunctionSignature,
+	Provenance,
+	SlotAssignment,
+)
+from dynamic_call_tree_resolution.points_to import (
+	assignments,
+	in_writable_memory,
+	pointer_at,
+	signatures_by_slot,
+	unresolved_slots,
+)
 from dynamic_call_tree_resolution.stack_analysis import frame_key
-from dynamic_call_tree_resolution.vsa import address_taken, analyze
+from dynamic_call_tree_resolution.vsa import Analysis, address_taken, analyze, runtime_value
+from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from dynamic_call_tree_resolution.model import CallSite, Program, SlotAssignment
+	from dynamic_call_tree_resolution.model import CallSite, Program
 
 
 def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
-	return analyze(program)
+	return analyze(program).sites
+
+
+class ProgramResolution(Struct):
+	"""One image's call sites and the slot assignments that hold at runtime."""
+
+	sites: tuple[CallSite, ...]
+	assignments: tuple[SlotAssignment, ...]
+	"""RAM initializers include the program's stores, and drop out when a store is unknown."""
+
+
+def resolve(program: Program) -> ProgramResolution:
+	analysis = analyze(program)
+	return ProgramResolution(
+		sites=analysis.sites,
+		assignments=tuple(
+			runtime
+			for assignment in assignments(program)
+			if (runtime := _at_runtime(program, analysis, assignment)) is not None
+		),
+	)
+
+
+def _at_runtime(
+	program: Program, analysis: Analysis, assignment: SlotAssignment
+) -> SlotAssignment | None:
+	match assignment.provenance:
+		case Provenance.ROM_CONSTANT:
+			return assignment
+		case Provenance.RAM_INITIALIZER:
+			match runtime_value(analysis.context, assignment.slot):
+				case Top():
+					return None
+				case Known(values=values):
+					return (
+						SlotAssignment(
+							slot=assignment.slot,
+							path=assignment.path,
+							candidates=values - {Address(0)},
+							provenance=assignment.provenance,
+							relocated=assignment.relocated,
+						)
+						if all(value == 0 or value in program.functions for value in values)
+						else None
+					)
+				case _ as unreachable:
+					assert_never(unreachable)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def matching_targets(program: Program, signature: FunctionSignature) -> frozenset[Address]:
@@ -65,7 +127,7 @@ def _chase_target(
 	assignment = resolved_by_slot.get(address)
 	if assignment is not None:
 		return assignment.candidates
-	target = pointer_at(program, address)
+	target = None if in_writable_memory(program, address) else pointer_at(program, address)
 	if target is None:
 		signature = signatures_by_slot.get(address)
 		return matching_targets(program, signature) if signature is not None else frozenset()

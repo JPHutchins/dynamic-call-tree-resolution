@@ -42,6 +42,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	frame_write,
 	image_write,
 	stack_read,
+	top_seed,
 	unknown_memory,
 )
 
@@ -137,6 +138,10 @@ def _section_slots(context: Context, start: Address, stride: int) -> ValueSet:
 
 def _image_value(context: Context, state: State, addresses: ValueSet) -> ValueSet:
 	return bind(addresses, partial(_image_read, context, state))
+
+
+def runtime_value(context: Context, address: Address) -> ValueSet:
+	return _image_read(context, top_seed(context.program.machine), frozenset({address}))
 
 
 def _image_read(context: Context, state: State, addresses: frozenset[Address]) -> ValueSet:

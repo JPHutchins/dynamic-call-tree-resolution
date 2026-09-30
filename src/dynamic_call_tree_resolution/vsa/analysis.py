@@ -11,6 +11,7 @@ from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from capstone import Cs
+from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, CallSite, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
@@ -41,7 +42,15 @@ if TYPE_CHECKING:
 _WIDENING_ROUND: Final = 8
 
 
-def analyze(program: Program) -> tuple[CallSite, ...]:
+class Analysis(Struct):
+	"""One image's indirect call sites, and the memory state they were resolved against."""
+
+	sites: tuple[CallSite, ...]
+	context: Context
+	"""Holds the stores of every function, as the final round saw them."""
+
+
+def analyze(program: Program) -> Analysis:
 	disassembler = Cs(*DISASSEMBLERS[program.machine])
 	disassembler.detail = True
 	disassembler.skipdata = True
@@ -80,12 +89,15 @@ def analyze(program: Program) -> tuple[CallSite, ...]:
 				break
 			seeds, global_writes = next_seeds, next_writes
 		final_context = context_for(program, global_writes)
-		return tuple(
-			site
-			for sites in executor.map(
-				partial(_final_sites, program, final_context, seeds), functions
-			)
-			for site in sites
+		return Analysis(
+			sites=tuple(
+				site
+				for sites in executor.map(
+					partial(_final_sites, program, final_context, seeds), functions
+				)
+				for site in sites
+			),
+			context=final_context,
 		)
 
 
