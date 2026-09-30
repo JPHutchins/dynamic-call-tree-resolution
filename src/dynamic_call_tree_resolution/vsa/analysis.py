@@ -20,7 +20,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.cfg import Block, control_flow_graphs, direct_transfer
-from dynamic_call_tree_resolution.vsa.fallback import address_taken
+from dynamic_call_tree_resolution.vsa.fallback import address_taken, referenced_only_at
 from dynamic_call_tree_resolution.vsa.interpret import (
 	CallObservation,
 	FunctionResult,
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 	from capstone import ArmCsOperand
 
-	from dynamic_call_tree_resolution.model import Function, Program
+	from dynamic_call_tree_resolution.model import Function, Program, ThreadRoot
 
 _WIDENING_ROUND: Final = 8
 
@@ -46,15 +46,33 @@ class Analysis(Struct):
 	sites: tuple[CallSite, ...]
 	context: Context
 	"""Holds the stores of every function, as the final round saw them."""
+	seeded: frozenset[str]
+	"""The threads whose entry started from its record's arguments rather than unknown ones."""
 
 
-def analyze(program: Program) -> Analysis:
+def analyze(program: Program, threads: tuple[ThreadRoot, ...] = ()) -> Analysis:
 	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())
 	_prewarm_instructions(functions, program.machine)
 	top = top_seed(program.machine)
-	roots = dict.fromkeys(_roots(program, functions), top)
-	seeds: Mapping[Address, State] = roots
+	threads_by_entry = {
+		entry: tuple(group) for entry, group in groupby(sorted(threads, key=_entry), key=_entry)
+	}
+	seeded_entries = referenced_only_at(
+		program,
+		{
+			entry: frozenset(thread.entry_slot for thread in group)
+			for entry, group in threads_by_entry.items()
+		},
+	)
+	entry_seeds = {
+		normalized(entry, program.machine): reduce(
+			join_states, (_seed_from_thread(thread, program) for thread in threads_by_entry[entry])
+		)
+		for entry in seeded_entries
+	}
+	roots = dict.fromkeys(_roots(program, functions) - entry_seeds.keys(), top)
+	seeds: Mapping[Address, State] = {**entry_seeds, **roots}
 	global_writes = NO_WRITES
 	round_number = 0
 	with ThreadPoolExecutor() as executor:
@@ -69,7 +87,7 @@ def analyze(program: Program) -> Analysis:
 			):
 				written.append(result.writes)
 				observations.extend(result.observations)
-			observed = _observed_seeds(observations, roots, program)
+			observed = _observed_seeds(observations, roots, entry_seeds, program)
 			next_seeds = {
 				**(observed if round_number < _WIDENING_ROUND else _widened(seeds, observed, top)),
 				**roots,
@@ -93,6 +111,9 @@ def analyze(program: Program) -> Analysis:
 				for site in sites
 			),
 			context=final_context,
+			seeded=frozenset(
+				thread.name for entry in seeded_entries for thread in threads_by_entry[entry]
+			),
 		)
 
 
@@ -196,15 +217,29 @@ def _callee(observation: CallObservation) -> Address:
 	return observation.callee
 
 
+def _entry(thread: ThreadRoot) -> Address:
+	return thread.entry
+
+
 def _observed_seeds(
-	observations: list[CallObservation], roots: Mapping[Address, State], program: Program
+	observations: list[CallObservation],
+	roots: Mapping[Address, State],
+	entry_seeds: Mapping[Address, State],
+	program: Program,
 ) -> dict[Address, State]:
 	return {
-		callee: reduce(
-			join_states, (_seed_from_observation(observation, program) for observation in group)
-		)
-		for callee, group in groupby(sorted(observations, key=_callee), key=_callee)
-		if callee not in roots
+		**entry_seeds,
+		**{
+			callee: join_states(
+				entry_seeds.get(callee),
+				reduce(
+					join_states,
+					(_seed_from_observation(observation, program) for observation in group),
+				),
+			)
+			for callee, group in groupby(sorted(observations, key=_callee), key=_callee)
+			if callee not in roots
+		},
 	}
 
 
@@ -269,6 +304,19 @@ def _prewarm_instructions(
 						_ = cast("ArmCsOperand", operand).shift
 					else:
 						_ = operand.mem
+
+
+def _seed_from_thread(thread: ThreadRoot, program: Program) -> State:
+	return _seed_from_observation(
+		CallObservation(
+			callee=thread.entry,
+			arguments={
+				position: Known(values=frozenset({value}))
+				for position, value in enumerate(thread.arguments)
+			},
+		),
+		program,
+	)
 
 
 def _seed_from_observation(observation: CallObservation, program: Program) -> State:

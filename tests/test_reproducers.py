@@ -24,6 +24,8 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.call_sites import per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
+from dynamic_call_tree_resolution.model import Address, RtosModel, ThreadRoot, render_path
+from dynamic_call_tree_resolution.points_to import assignments, pointer_at
 from dynamic_call_tree_resolution.stack_analysis import (
 	expand_indirect_calls,
 	frame_key,
@@ -45,7 +47,9 @@ if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
 	from pathlib import Path
 
+	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.callgraph import CallEdge
+	from dynamic_call_tree_resolution.model import Program
 
 ARM_LEVELS = ("-O0", "-O2", "-Os")
 
@@ -185,14 +189,42 @@ STACK_IMAGES = tuple(
 	for level in ARM_LEVELS
 )
 
+THREAD_RECORD_IMAGES = tuple(
+	Image(source="thread_record.c", platform=platform, flags=flags)
+	for platform, flags in (
+		*((Platform.CORTEX_M3, (level,)) for level in ARM_LEVELS),
+		(Platform.CORTEX_A15, ("-O2",)),
+		(Platform.HOST, ("-O2", "-no-pie")),
+	)
+)
+
+ESCAPED_RECORD_IMAGES = tuple(
+	Image(source=image.source, platform=image.platform, flags=(*image.flags, "-DESCAPED"))
+	for image in THREAD_RECORD_IMAGES
+)
+
 OBSERVED_CASES = (
 	*(case for case, _ in CANDIDATES),
 	*(Case(image=image, caller="main") for image in STACK_IMAGES),
+	*(
+		Case(image=image, caller="worker")
+		for image in (*THREAD_RECORD_IMAGES, *ESCAPED_RECORD_IMAGES)
+	),
 )
 
 
 IMAGES = tuple(
-	sorted(frozenset((*(case.image for case, _ in CANDIDATES), *STACK_IMAGES)), key=_image_id)
+	sorted(
+		frozenset(
+			(
+				*(case.image for case, _ in CANDIDATES),
+				*STACK_IMAGES,
+				*THREAD_RECORD_IMAGES,
+				*ESCAPED_RECORD_IMAGES,
+			)
+		),
+		key=_image_id,
+	)
 )
 
 A15_IMAGES = tuple(image for image in IMAGES if image.platform is Platform.CORTEX_A15)
@@ -408,3 +440,76 @@ def test_a32_sites_are_objdumps_register_indirect_branches(
 		text=True,
 	).stdout
 	assert len(outcomes[image].sites) == sum(1 for _ in REGISTER_INDIRECT_BRANCH.finditer(listing))
+
+
+def _record_thread(program: Program) -> ThreadRoot:
+	(records,) = (item for item in program.objects.values() if item.name == "records")
+	offsets = {
+		member.name: member.offset for member in program.layouts["struct thread_record"].members
+	}
+	return ThreadRoot(
+		name="record",
+		entry=Address(pointer_at(program, Address(records.address + offsets["entry"])) or 0),
+		entry_slot=Address(records.address + offsets["entry"]),
+		arguments=tuple(
+			Address(pointer_at(program, Address(records.address + offsets[name])) or 0)
+			for name in ("p1", "p2", "p3")
+		),
+	)
+
+
+def _worker_targets(program: Program, resolution: ProgramResolution) -> frozenset[str]:
+	return frozenset(
+		candidate.name
+		for site in build_report(program, resolution.assignments, resolution.sites).call_sites
+		if site.caller == "worker"
+		for candidate in site.candidates
+	)
+
+
+def _with_record_thread(program: Program) -> ProgramResolution:
+	return resolve(program, RtosModel(name="test", evidence=(), threads=(_record_thread(program),)))
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in THREAD_RECORD_IMAGES]
+)
+def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	program = load(outcomes[image].elf)
+	seeded = _with_record_thread(program)
+	assert (
+		_worker_targets(program, resolve(program)),
+		seeded.seeded,
+		_worker_targets(program, seeded),
+	) == (frozenset(), frozenset({"record"}), outcomes[image].observations["worker"])
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in ESCAPED_RECORD_IMAGES]
+)
+def test_an_entry_whose_address_is_also_stored_elsewhere_is_not_seeded(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	program = load(outcomes[image].elf)
+	seeded = _with_record_thread(program)
+	assert (seeded.seeded, _worker_targets(program, seeded)) == (frozenset(), frozenset())
+
+
+@pytest.mark.parametrize(
+	"image",
+	[
+		pytest.param(image, id=_image_id(image))
+		for image in THREAD_RECORD_IMAGES
+		if image.platform is Platform.CORTEX_M3
+	],
+)
+def test_a_null_record_argument_leads_to_no_object_at_address_zero(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	assert sorted(
+		render_path(assignment.path)
+		for assignment in assignments(load(outcomes[image].elf))
+		if assignment.path[0] == "records"
+	) == ["records.[0].entry", "records.[0].p1.operations.run"]

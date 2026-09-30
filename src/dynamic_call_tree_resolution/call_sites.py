@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, assert_never
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import (
+	BARE_METAL,
 	Address,
 	FunctionSignature,
 	Provenance,
@@ -30,7 +31,7 @@ from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from dynamic_call_tree_resolution.model import CallSite, Program
+	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
 
 
 def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
@@ -43,12 +44,14 @@ class ProgramResolution(Struct):
 	sites: tuple[CallSite, ...]
 	assignments: tuple[SlotAssignment, ...]
 	"""RAM initializers include the program's stores, and drop out when a store is unknown."""
+	seeded: frozenset[str]
 
 
-def resolve(program: Program) -> ProgramResolution:
-	analysis = analyze(program)
+def resolve(program: Program, rtos: RtosModel = BARE_METAL) -> ProgramResolution:
+	analysis = analyze(program, rtos.threads)
 	return ProgramResolution(
 		sites=analysis.sites,
+		seeded=analysis.seeded,
 		assignments=tuple(
 			runtime
 			for assignment in assignments(program)

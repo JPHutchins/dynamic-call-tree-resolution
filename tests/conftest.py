@@ -29,6 +29,7 @@ FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 	"arrays": ("array_fn.c", ("-g", "-O0", "-no-pie")),
 	"anonymous": ("anonymous_types.c", ("-g", "-O0", "-no-pie")),
 	"residue": ("residue.c", ("-g", "-O0", "-no-pie")),
+	"threads": ("static_threads.c", ("-g", "-O0", "-no-pie")),
 }
 
 
