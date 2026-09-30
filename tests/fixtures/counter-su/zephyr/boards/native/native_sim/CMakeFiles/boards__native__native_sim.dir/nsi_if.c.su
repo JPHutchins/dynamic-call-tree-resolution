@@ -1,5 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/nsi_if.c:11:6:nsif_cpu0_pre_cmdline_hooks	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/nsi_if.c:16:6:nsif_cpu0_pre_hw_init_hooks	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/nsi_if.c:21:6:nsif_cpu0_boot	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/nsi_if.c:28:5:nsif_cpu0_cleanup	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/nsi_if.c:38:6:nsif_cpu0_irq_raised	4	static

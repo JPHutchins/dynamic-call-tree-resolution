@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/assert.c"
-node: { title: "__assert_no_args" label: "__assert_no_args\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/assert.c:22:20\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "abort" label: "abort\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:107:17" shape : ellipse }
-edge: { sourcename: "__assert_no_args" targetname: "abort" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/assert.c:25:2" }
-}

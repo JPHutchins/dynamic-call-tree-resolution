@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1346:12:outs	64	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:315:15:extract_decimal	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:788:14:encode_uint	112	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_complete.c:1367:5:z_cbvprintf_impl	160	dynamic,bounded

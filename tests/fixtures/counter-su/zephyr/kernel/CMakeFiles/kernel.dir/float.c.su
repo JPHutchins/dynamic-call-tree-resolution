@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/float.c:11:5:z_impl_k_float_disable	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/float.c:21:5:z_impl_k_float_enable	4	static

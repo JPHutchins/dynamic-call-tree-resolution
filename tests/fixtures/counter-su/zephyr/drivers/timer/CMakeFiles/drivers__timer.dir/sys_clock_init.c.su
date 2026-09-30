@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/timer/sys_clock_init.c:21:13:sys_clock_set_timeout	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/timer/sys_clock_init.c:27:13:sys_clock_idle_exit	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/timer/sys_clock_init.c:31:13:sys_clock_no_timeout	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/timer/sys_clock_init.c:41:13:sys_clock_idle_enter	32	dynamic,bounded

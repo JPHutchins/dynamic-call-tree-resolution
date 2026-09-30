@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/chk_fail.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/chk_fail.c:__chk_fail" label: "__chk_fail\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/chk_fail.c:13:27\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "printk" label: "printk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk.h:58:26" shape : ellipse }
-edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/chk_fail.c:__chk_fail" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/chk_fail.c:15:2" }
-}

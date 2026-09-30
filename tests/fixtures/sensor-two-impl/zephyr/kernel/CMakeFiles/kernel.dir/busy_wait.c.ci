@@ -1,6 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/busy_wait.c"
-node: { title: "z_impl_k_busy_wait" label: "z_impl_k_busy_wait\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/busy_wait.c:29:6\n16 bytes (static)\n0 dynamic objects" }
-node: { title: "sys_clock_cycle_get_32" label: "sys_clock_cycle_get_32\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/drivers/timer/system_timer.h:332:10" shape : ellipse }
-edge: { sourcename: "z_impl_k_busy_wait" targetname: "sys_clock_cycle_get_32" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/arm/misc.h:26:9" }
-edge: { sourcename: "z_impl_k_busy_wait" targetname: "sys_clock_cycle_get_32" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/arm/misc.h:26:9" }
-}

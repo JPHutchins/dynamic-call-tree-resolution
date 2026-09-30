@@ -1,6 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/idle.c"
-node: { title: "idle" label: "idle\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/idle.c:22:6\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "arch_cpu_idle" label: "arch_cpu_idle\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/arch_interface.h:225:6" shape : ellipse }
-edge: { sourcename: "idle" targetname: "arch_cpu_idle" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/kernel.h:7083:2" }
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/idle.c:arch_spin_relax" label: "arch_spin_relax\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/idle.c:100:13\n0 bytes (static)\n0 dynamic objects" }
-}

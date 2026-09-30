@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/offsets/offsets.c"
-node: { title: "_OffsetAbsSyms" label: "_OffsetAbsSyms\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/include/kernel_offsets.h:26:1\n0 bytes (static)\n0 dynamic objects" }
-}

@@ -16,8 +16,15 @@ from dynamic_call_tree_resolution import AnalysisSummary, UnboundedStack, load
 
 pytestmark = pytest.mark.image
 
-ARTIFACTS = Path(__file__).parent / "fixtures" / "counter-su"
-EXECUTABLE = ARTIFACTS / "zephyr" / "zephyr.exe"
+
+@pytest.fixture(scope="module")
+def artifacts(zephyr_fixtures: Path) -> Path:
+	return zephyr_fixtures / "counter-su"
+
+
+@pytest.fixture(scope="module")
+def executable(artifacts: Path) -> Path:
+	return artifacts / "zephyr" / "zephyr.exe"
 
 
 def _dctr(*arguments: str) -> str:
@@ -31,20 +38,20 @@ def _dctr(*arguments: str) -> str:
 	return result.stdout
 
 
-def test_summary_pins_the_published_numbers() -> None:
+def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -> None:
 	summary = msgspec.json.decode(
-		_dctr("summary", str(ARTIFACTS), str(EXECUTABLE)), type=AnalysisSummary
+		_dctr("summary", str(artifacts), str(executable)), type=AnalysisSummary
 	)
 	assert summary == AnalysisSummary(
 		resolved_slots=106,
 		total_slots=250,
 		unresolved_slots=144,
 		resolved_targets=200,
-		indirect_call_sites=100,
-		total_functions=734,
+		indirect_call_sites=101,
+		total_functions=729,
 		entry_points=146,
-		discarded_entry_points=222,
-		worst_case_entry="cmd_can_send",
+		discarded_entry_points=223,
+		worst_case_entry="cmd_date_set",
 		worst_case=summary.worst_case,
 	)
 	assert isinstance(summary.worst_case, UnboundedStack)
@@ -54,10 +61,10 @@ def test_summary_pins_the_published_numbers() -> None:
 		len(summary.worst_case.unmeasured),
 		summary.worst_case.dynamic,
 		summary.worst_case.unresolved,
-	) == (3196, 100, 130, (), ())
+	) == (3116, 99, 132, (), ())
 
 
-def test_shell_readline_is_not_in_the_linked_executable() -> None:
+def test_shell_readline_is_not_in_the_linked_executable(executable: Path) -> None:
 	assert "shell_readline" not in {
-		function.name for function in load(EXECUTABLE).functions.values()
+		function.name for function in load(executable).functions.values()
 	}

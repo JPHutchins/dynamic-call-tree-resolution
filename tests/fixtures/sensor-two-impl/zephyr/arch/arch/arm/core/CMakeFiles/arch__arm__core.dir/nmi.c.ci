@@ -1,7 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/nmi.c"
-node: { title: "z_arm_nmi" label: "z_arm_nmi\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/nmi.c:56:6\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "z_SysNmiOnReset" label: "z_SysNmiOnReset\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/nmi.c:23:13" shape : ellipse }
-edge: { sourcename: "z_arm_nmi" targetname: "z_SysNmiOnReset" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/nmi.c:58:2" }
-node: { title: "z_arm_int_exit" label: "z_arm_int_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/arch/arm/irq.h:131:13" shape : ellipse }
-edge: { sourcename: "z_arm_nmi" targetname: "z_arm_int_exit" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/nmi.c:59:2" }
-}

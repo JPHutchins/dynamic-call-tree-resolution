@@ -41,10 +41,13 @@ instruction computes.
 
 ## Usage
 
-On Zephyr's `hello_world` for `qemu_cortex_m3` (`tests/fixtures/hello_zephyr_qemu_cortex_m3.elf`):
+The examples analyze Zephyr builds from `nix build .#fixtures`, which `nix develop`
+exports as `$DCTR_FIXTURES` (see [Development](#development)).
+
+On Zephyr's `hello_world` for `qemu_cortex_m3` (`$DCTR_FIXTURES/hello/zephyr/zephyr.elf`):
 
 ```console
-$ dctr analyze tests/fixtures/hello_zephyr_qemu_cortex_m3.elf
+$ dctr analyze $DCTR_FIXTURES/hello/zephyr/zephyr.elf
 ...
 __init_uart_stellaris_init.init_fn: uart_stellaris_init
 ...
@@ -100,77 +103,77 @@ do_device_init@0x1dca: <unresolved>
 ## Counter build
 
 The Zephyr CAN counter sample for `native_sim` (an x86 host executable), with its
-`-fstack-usage`/`-fcallgraph-info` artifacts, at `tests/fixtures/counter-su`:
+`-fstack-usage`/`-fcallgraph-info` artifacts, at `$DCTR_FIXTURES/counter-su`:
 
 ```console
-$ dctr compare tests/fixtures/counter-su/zephyr/zephyr.exe
+$ dctr compare $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 elf                                            machine    functions slots r/u/t  sites r/e/t
-zephyr.exe                                     EM_386           734 106/144/250       9/8/98
+zephyr.exe                                     EM_386           729 106/144/250       8/7/97
 ```
 
 ```console
-$ dctr analyze tests/fixtures/counter-su/zephyr/zephyr.exe
+$ dctr analyze $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 ...
-poll_state_thread@0x8049dad: can_loopback_get_state
+poll_state_thread@0x8049dc1: can_loopback_get_state
 ...
-outs@0x804a8fa: <unresolved>
-...
-```
-
-```console
-$ dctr stack tests/fixtures/counter-su
-shell_readline: unbounded, at least 1760 bytes (recursion: 4, unmeasured: 22, unresolved: 10)
-...
-poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
+z_shell_write@0x804f506: <unresolved>
 ...
 ```
 
 ```console
-$ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe
-resolved slots: 106 | indirect call sites: 100 | not in the image: 222
-cmd_can_send: unbounded, at least 3196 bytes (recursion: 100, unmeasured: 130)
+$ dctr stack $DCTR_FIXTURES/counter-su
+shell_readline: unbounded, at least 1728 bytes (recursion: 4, unmeasured: 21, unresolved: 9)
 ...
-poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 129)
+poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 ...
 ```
 
 ```console
-$ dctr stack tests/fixtures/counter-su --path poll_state_thread
-poll_state_thread: unbounded, at least 460 bytes (unmeasured: 7, unresolved: 1)
-poll_state_thread +96 = 96 bytes (unresolved)
-k_sleep_ticks +32 = 128 bytes via static
-z_impl_k_sleep_ticks +64 = 192 bytes via static
-z_impl_k_yield +4 = 196 bytes via static
-z_sched_yield +48 = 244 bytes via static
-z_time_slice_reset +16 = 260 bytes via static
-slice_reset +64 = 324 bytes via static
-z_add_timeout +80 = 404 bytes via static
-sys_clock_set_timeout +8 = 412 bytes via static
-timer_core_arm +48 = 460 bytes via static
-hwtimer_set_tick_one_shot +0 = 460 bytes via static (unmeasured)
+$ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
+resolved slots: 106 | indirect call sites: 101 | not in the image: 223
+cmd_date_set: unbounded, at least 3116 bytes (recursion: 99, unmeasured: 132)
+...
+poll_state_thread: unbounded, at least 1844 bytes (recursion: 99, unmeasured: 128)
+...
 ```
 
 ```console
-$ dctr stack tests/fixtures/counter-su --elf tests/fixtures/counter-su/zephyr/zephyr.exe --path poll_state_thread
-resolved slots: 106 | indirect call sites: 100 | not in the image: 222
-poll_state_thread: unbounded, at least 1940 bytes (recursion: 100, unmeasured: 129)
-poll_state_thread +96 = 96 bytes (recursion)
-change_led_work_handler +80 = 176 bytes via indirect: fallback (recursion)
-idle +16 = 192 bytes via indirect: candidate (recursion)
-...
-timer_core_arm +48 = 1940 bytes via static
-hwtimer_set_tick_one_shot +0 = 1940 bytes via static (unmeasured)
+$ dctr stack $DCTR_FIXTURES/counter-su --path poll_state_thread
+poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
+poll_state_thread +80 = 80 bytes (unresolved)
+k_sleep_ticks +32 = 112 bytes via static
+z_impl_k_sleep_ticks +64 = 176 bytes via static
+z_impl_k_yield +4 = 180 bytes via static
+z_sched_yield +32 = 212 bytes via static
+z_time_slice_reset +16 = 228 bytes via static
+slice_reset +64 = 292 bytes via static
+z_add_timeout +80 = 372 bytes via static
+sys_clock_set_timeout +8 = 380 bytes via static
+timer_core_arm +48 = 428 bytes via static
+hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 ```
 
 ```console
-$ dctr stack tests/fixtures/counter-su --path shell_readline
-shell_readline: unbounded, at least 1760 bytes (recursion: 4, unmeasured: 22, unresolved: 10)
-shell_readline +96 = 96 bytes
-state_collect +96 = 192 bytes via static (unresolved)
-execute +448 = 640 bytes via static (unresolved)
+$ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
+resolved slots: 106 | indirect call sites: 101 | not in the image: 223
+poll_state_thread: unbounded, at least 1844 bytes (recursion: 99, unmeasured: 128)
+poll_state_thread +80 = 80 bytes (recursion)
+change_led_work_handler +64 = 144 bytes via indirect: fallback (recursion)
+idle +16 = 160 bytes via indirect: candidate (recursion)
 ...
-encode_uint +112 = 1760 bytes via static
-__ctype_b_loc +0 = 1760 bytes via static (unmeasured)
+timer_core_arm +48 = 1844 bytes via static
+hwtimer_set_tick_one_shot +0 = 1844 bytes via static (unmeasured)
+```
+
+```console
+$ dctr stack $DCTR_FIXTURES/counter-su --path shell_readline
+shell_readline: unbounded, at least 1728 bytes (recursion: 4, unmeasured: 21, unresolved: 9)
+shell_readline +80 = 80 bytes
+state_collect +96 = 176 bytes via static (unresolved)
+execute +432 = 608 bytes via static (unresolved)
+...
+encode_uint +112 = 1728 bytes via static
+__ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 ```
 
 - A *resolved* site or slot has at least one candidate, and an *exact* site has
@@ -178,7 +181,8 @@ __ctype_b_loc +0 = 1760 bytes via static (unmeasured)
 - `compare` counts the indirect instructions it extracts; `stack --elf` counts the
   `__indirect_call` edges in the `.ci` files.
 - `stack --elf` expands every indirect edge to its site candidates plus the fallback,
-  every address-taken function. `outs` has no candidates, so its edge is the fallback
+  every address-taken function. `z_shell_write` has no candidates, so its edge is the
+  fallback
   alone.
 - An `unbounded` entry's number is only a lower bound. The counts name what breaks the
   bound anywhere in the entry's subtree:
@@ -283,7 +287,9 @@ uv run camas testbeds_lock            # after editing testbeds/manifest/west.yml
 ```
 
 `nix build .#fixtures` builds the same testbeds in the Nix sandbox, from the projects
-`testbeds/west2nix.toml` locks.
+`testbeds/west2nix.toml` locks. `nix develop` exports that build as `$DCTR_FIXTURES`,
+which the tests marked image and the examples above read, so the first `nix develop` on
+a machine builds it.
 
 ## References
 

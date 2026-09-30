@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_init.c"
-node: { title: "z_arm_interrupt_init" label: "z_arm_interrupt_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_init.c:26:6\n0 bytes (static)\n0 dynamic objects" }
-}

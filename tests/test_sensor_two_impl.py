@@ -39,8 +39,15 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.image
 
-ARTIFACTS = Path(__file__).parent / "fixtures" / "sensor-two-impl"
-EXECUTABLE = ARTIFACTS / "zephyr" / "zephyr.elf"
+
+@pytest.fixture(scope="module")
+def artifacts(zephyr_fixtures: Path) -> Path:
+	return zephyr_fixtures / "sensor-two-impl"
+
+
+@pytest.fixture(scope="module")
+def executable(artifacts: Path) -> Path:
+	return artifacts / "zephyr" / "zephyr.elf"
 
 
 def _dctr(*arguments: str) -> str:
@@ -54,8 +61,8 @@ def _dctr(*arguments: str) -> str:
 	return result.stdout
 
 
-def test_analyze_resolves_each_threads_dispatch_to_its_own_impl() -> None:
-	report = msgspec.json.decode(_dctr("analyze", "--json", str(EXECUTABLE)), type=AnalysisReport)
+def test_analyze_resolves_each_threads_dispatch_to_its_own_impl(executable: Path) -> None:
+	report = msgspec.json.decode(_dctr("analyze", "--json", str(executable)), type=AnalysisReport)
 	sites_by_caller: dict[str, set[str]] = {}
 	for site in report.call_sites:
 		sites_by_caller.setdefault(site.caller, set()).update(
@@ -73,14 +80,14 @@ class _Resolution(Struct):
 
 
 @pytest.fixture(scope="module")
-def resolution() -> _Resolution:
-	program = load(EXECUTABLE)
+def resolution(artifacts: Path, executable: Path) -> _Resolution:
+	program = load(executable)
 	targets_by_caller, fallback = per_caller_candidates(
 		program, extract_call_sites(program), assignments(program)
 	)
 	return _Resolution(
-		edges=load_callgraph(ARTIFACTS),
-		frames=load_stack_usages(ARTIFACTS),
+		edges=load_callgraph(artifacts),
+		frames=load_stack_usages(artifacts),
 		targets_by_caller=targets_by_caller,
 		fallback=fallback,
 	)

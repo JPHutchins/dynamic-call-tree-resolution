@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/exit.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/exit.c:_exit" label: "_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/exit.c:9:13\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "puts" label: "__builtin_puts\n<built-in>" shape : ellipse }
-edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/exit.c:_exit" targetname: "puts" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/exit.c:12:2" }
-}

@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:14:6:getopt_init	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:19:22:getopt_state_get	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:24:5:getopt	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/portability/posix/c_lib_ext/getopt_shim.c:29:6:z_getopt_global_state_update_shim	0	static

@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/version.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/version.c:cmd_kernel_version" label: "cmd_kernel_version\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/version.c:12:12\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
-node: { title: "shell_fprintf_impl" label: "shell_fprintf_impl\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/shell/shell.h:1287:26" shape : ellipse }
-edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/version.c:cmd_kernel_version" targetname: "shell_fprintf_impl" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/version.c:18:2" }
-}

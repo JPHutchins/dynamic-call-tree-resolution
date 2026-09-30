@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/abort.c"
-node: { title: "abort" label: "abort\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:107:17\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "printk" label: "printk\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/sys/printk.h:58:26" shape : ellipse }
-edge: { sourcename: "abort" targetname: "printk" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/abort.c:12:2" }
-}

@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/main_weak.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/main_weak.c:main" label: "main\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/main_weak.c:24:12\n4 bytes (static)\n0 dynamic objects" }
-}

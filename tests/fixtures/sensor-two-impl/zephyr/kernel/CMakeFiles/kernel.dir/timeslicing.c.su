@@ -1,6 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeslicing.c:44:12:z_time_slice_size	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeslicing.c:66:13:slice_timeout	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeslicing.c:80:13:slice_reset	24	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeslicing.c:103:6:z_time_slice_reset	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeslicing.c:118:6:k_sched_time_slice_set	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/timeslicing.c:151:6:z_time_slice	24	static

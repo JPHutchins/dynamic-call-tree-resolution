@@ -1,9 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:53:14:z_heap_alloc_helper	112	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:15:5:k_heap_array_get	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:26:6:k_heap_init	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:35:12:statics_init	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:93:7:k_heap_alloc	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:105:7:k_heap_aligned_alloc	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:131:7:k_heap_calloc	64	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:150:7:k_heap_realloc	112	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/kheap.c:181:6:k_heap_free	48	dynamic,bounded

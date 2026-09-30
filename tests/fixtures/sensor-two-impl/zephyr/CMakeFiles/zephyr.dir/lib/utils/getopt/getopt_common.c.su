@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.c:50:6:z_getopt_global_state_update	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt_common.c:64:26:sys_getopt_state_get	0	static

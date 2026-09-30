@@ -1,8 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:96:1:stats_walk	96	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:159:1:stats_group_walk	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:175:1:stats_group_get_next	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:194:1:stats_group_find	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:219:1:stats_register	48	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:281:1:stats_reset	12	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:133:1:stats_init	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats.c:259:1:stats_init_and_reg	32	dynamic,bounded

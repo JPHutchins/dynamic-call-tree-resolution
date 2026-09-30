@@ -65,7 +65,7 @@ testpaths = ["src", "tests"]
 norecursedirs = ["fixtures"]
 markers = [
     "slow: tests excluded from the default check run",
-    "image: analyzes a committed firmware image; check_fast skips it",
+    "image: analyzes a Zephyr image from `nix build .#fixtures` ($DCTR_FIXTURES); check_fast skips it",
 ]
 
 [tool.ruff]

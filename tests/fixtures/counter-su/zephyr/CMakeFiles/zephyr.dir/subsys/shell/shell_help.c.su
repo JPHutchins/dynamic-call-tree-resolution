@@ -1,8 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/shell/shell.h:345:20:shell_help_is_structured	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_ops.h:18:20:z_shell_raw_fprintf	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_ops.h:260:20:z_cursor_next_line_move.isra	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_help.c:22:13:formatted_text_print.constprop	80	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_help.c:129:13:formatted_structured_help_print	64	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_help.c:192:6:z_shell_help_subcmd_print	128	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_help.c:223:6:z_shell_help_cmd_print	80	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_help.c:240:6:z_shell_help_request	32	dynamic,bounded

@@ -1,6 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/linker/utils.h:30:20:linker_is_in_rodata	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:239:5:cbvprintf_package	104	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:825:5:cbprintf_package	28	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:837:5:cbpprintf_external	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:892:6:is_ptr	12	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/os/cbprintf_packaged.c:919:5:cbprintf_package_convert	104	static

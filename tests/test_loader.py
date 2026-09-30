@@ -291,11 +291,9 @@ def test_load_skips_absolute_object_symbols(tmp_path: Path) -> None:
 
 
 @pytest.mark.image
-@pytest.mark.parametrize(
-	"elf", ["hello_zephyr_qemu_cortex_m3.elf", "sensor-two-impl/zephyr/zephyr.elf"]
-)
-def test_load_arm_fixture_has_no_absolute_symbol_objects(elf: str) -> None:
-	program = load(Path(__file__).parent / "fixtures" / elf)
+@pytest.mark.parametrize("elf", ["hello/zephyr/zephyr.elf", "sensor-two-impl/zephyr/zephyr.elf"])
+def test_load_arm_fixture_has_no_absolute_symbol_objects(zephyr_fixtures: Path, elf: str) -> None:
+	program = load(zephyr_fixtures / elf)
 	assert [
 		data_object.name
 		for data_object in program.objects.values()
@@ -303,10 +301,9 @@ def test_load_arm_fixture_has_no_absolute_symbol_objects(elf: str) -> None:
 	] == []
 
 
-def test_defined_function_names_include_locals_and_aliases() -> None:
-	names = defined_function_names(
-		Path(__file__).parent / "fixtures" / "sensor-two-impl" / "zephyr" / "zephyr.elf"
-	)
+@pytest.mark.image
+def test_defined_function_names_include_locals_and_aliases(zephyr_fixtures: Path) -> None:
+	names = defined_function_names(zephyr_fixtures / "sensor-two-impl" / "zephyr" / "zephyr.elf")
 	assert {"ready_thread", "z_sched_ready_locked", "memcpy", "vfprintf"} <= names
 	assert "__aeabi_uldivmod" not in names
 
@@ -327,13 +324,15 @@ def test_defined_function_names_of_a_stripped_image_are_empty(
 @pytest.mark.parametrize(
 	"elf",
 	[
-		"hello_zephyr_qemu_cortex_m3.elf",
+		"hello/zephyr/zephyr.elf",
 		"sensor-two-impl/zephyr/zephyr.elf",
 		"counter-su/zephyr/zephyr.exe",
 	],
 )
-def test_committed_images_name_every_function_and_parameter(elf: str) -> None:
-	functions = load(Path(__file__).parent / "fixtures" / elf).functions.values()
+def test_committed_images_name_every_function_and_parameter(
+	zephyr_fixtures: Path, elf: str
+) -> None:
+	functions = load(zephyr_fixtures / elf).functions.values()
 	assert [function.address for function in functions if function.name == "<anonymous>"] == []
 	assert [
 		function.name
@@ -343,13 +342,12 @@ def test_committed_images_name_every_function_and_parameter(elf: str) -> None:
 
 
 @pytest.mark.image
-@pytest.mark.parametrize(
-	"elf", ["hello_zephyr_qemu_cortex_m3.elf", "sensor-two-impl/zephyr/zephyr.elf"]
-)
-def test_committed_arm_images_hold_one_function_per_entry_point(elf: str) -> None:
+@pytest.mark.parametrize("elf", ["hello/zephyr/zephyr.elf", "sensor-two-impl/zephyr/zephyr.elf"])
+def test_committed_arm_images_hold_one_function_per_entry_point(
+	zephyr_fixtures: Path, elf: str
+) -> None:
 	entry_points = Counter(
-		aligned(function.address)
-		for function in load(Path(__file__).parent / "fixtures" / elf).functions.values()
+		aligned(function.address) for function in load(zephyr_fixtures / elf).functions.values()
 	)
 	assert [address for address, count in entry_points.items() if count > 1] == []
 
@@ -358,7 +356,7 @@ def test_committed_arm_images_hold_one_function_per_entry_point(elf: str) -> Non
 @pytest.mark.parametrize(
 	("elf", "writable", "read_only"),
 	[
-		("hello_zephyr_qemu_cortex_m3.elf", "datas", ("text", "rodata", "device_area")),
+		("hello/zephyr/zephyr.elf", "datas", ("text", "rodata", "device_area")),
 		("counter-su/zephyr/zephyr.exe", ".data", (".text", ".rodata", "device_area")),
 		pytest.param(
 			"counter-su/zephyr/zephyr.exe",
@@ -369,9 +367,9 @@ def test_committed_arm_images_hold_one_function_per_entry_point(elf: str) -> Non
 	],
 )
 def test_committed_images_mark_data_writable_and_code_read_only(
-	elf: str, writable: str, read_only: tuple[str, ...]
+	zephyr_fixtures: Path, elf: str, writable: str, read_only: tuple[str, ...]
 ) -> None:
-	path = Path(__file__).parent / "fixtures" / elf
+	path = zephyr_fixtures / elf
 	with path.open("rb") as stream:
 		starts = {
 			section.name: Address(section.header.sh_addr)
@@ -397,23 +395,23 @@ def test_load_marks_relro_sections_read_only(fixture_elfs: dict[str, Path]) -> N
 @pytest.mark.parametrize(
 	("elf", "first_code_data"),
 	[
-		("hello_zephyr_qemu_cortex_m3.elf", 0xFC),
+		("hello/zephyr/zephyr.elf", 0xFC),
 		("counter-su/zephyr/zephyr.exe", None),
 	],
 )
 def test_load_records_data_in_code_from_mapping_symbols(
-	elf: str, first_code_data: int | None
+	zephyr_fixtures: Path, elf: str, first_code_data: int | None
 ) -> None:
-	spans = load(Path(__file__).parent / "fixtures" / elf).data_in_code
+	spans = load(zephyr_fixtures / elf).data_in_code
 	assert (
 		first_code_data in {low for low, _ in spans} if first_code_data is not None else spans == ()
 	)
 
 
 @pytest.mark.image
-@pytest.mark.parametrize("elf", ["hello_zephyr_qemu_cortex_m3.elf", "counter-su/zephyr/zephyr.exe"])
-def test_load_records_no_a32_code_outside_a32_images(elf: str) -> None:
-	assert load(Path(__file__).parent / "fixtures" / elf).arm_code == ()
+@pytest.mark.parametrize("elf", ["hello/zephyr/zephyr.elf", "counter-su/zephyr/zephyr.exe"])
+def test_load_records_no_a32_code_outside_a32_images(zephyr_fixtures: Path, elf: str) -> None:
+	assert load(zephyr_fixtures / elf).arm_code == ()
 
 
 def test_load_records_a32_code_from_mapping_symbols(tmp_path: Path) -> None:

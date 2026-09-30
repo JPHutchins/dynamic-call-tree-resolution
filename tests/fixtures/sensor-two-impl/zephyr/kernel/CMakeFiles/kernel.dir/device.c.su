@@ -1,6 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:18:5:do_device_init	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:63:5:z_impl_device_init	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:176:8:z_device_get_all_static	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:186:6:z_impl_device_is_ready	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:83:22:z_impl_device_get_binding	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/device.c:199:5:z_impl_device_deinit	0	static

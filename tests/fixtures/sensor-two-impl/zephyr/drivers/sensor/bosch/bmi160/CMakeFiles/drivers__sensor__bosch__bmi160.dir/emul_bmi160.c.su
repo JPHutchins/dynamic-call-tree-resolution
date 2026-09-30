@@ -1,7 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:287:12:bmi160_emul_backend_set_channel	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:374:12:bmi160_emul_backend_get_sample_range	24	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:531:12:bmi160_emul_backend_get_attribute_metadata	24	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:584:12:emul_bosch_bmi160_init	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:229:12:bmi160_emul_transfer_i2c	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:518:12:bmi160_emul_backend_set_attribute	48	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/bosch/bmi160/emul_bmi160.c:49:5:emul_bmi160_get_reg_value	8	static

@@ -1,6 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/stack.c:28:6:k_stack_init	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/stack.c:45:9:z_impl_k_stack_alloc_init	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/stack.c:87:5:z_stack_cleanup	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/stack.c:117:5:k_stack_cleanup	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/stack.c:122:5:z_impl_k_stack_push	24	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/stack.c:162:5:z_impl_k_stack_pop	24	static

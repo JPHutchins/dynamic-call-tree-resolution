@@ -1,9 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sys/thread_entry.c"
-node: { title: "z_thread_entry" label: "z_thread_entry\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sys/thread_entry.c:36:20\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "z_impl_k_sched_current_thread_query" label: "z_impl_k_sched_current_thread_query\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:212:16" shape : ellipse }
-edge: { sourcename: "z_thread_entry" targetname: "z_impl_k_sched_current_thread_query" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:222:9" }
-node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
-edge: { sourcename: "z_thread_entry" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sys/thread_entry.c:60:2" }
-node: { title: "z_impl_k_thread_abort" label: "z_impl_k_thread_abort\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:226:13" shape : ellipse }
-edge: { sourcename: "z_thread_entry" targetname: "z_impl_k_thread_abort" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/kernel.h:238:2" }
-}

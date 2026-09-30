@@ -29,11 +29,14 @@ def _transcripts(readme: Path) -> list[list[str]]:
 		for transcript in _transcripts(REPOSITORY_ROOT / "README.md")
 	],
 )
-def test_readme_transcript_runs(transcript: list[str]) -> None:
+def test_readme_transcript_runs(zephyr_fixtures: Path, transcript: list[str]) -> None:
 	command, *expected = transcript
 	executable = Path(sys.executable).with_name("dctr")
 	result = subprocess.run(
-		[str(executable), *command.removeprefix("$ ").split()[1:]],
+		[
+			str(executable),
+			*command.removeprefix("$ ").replace("$DCTR_FIXTURES", str(zephyr_fixtures)).split()[1:],
+		],
 		check=True,
 		capture_output=True,
 		text=True,

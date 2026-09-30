@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_history.c:23:6:z_shell_history_mode_exit	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_history.c:28:6:z_shell_history_get	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_history.c:71:6:z_shell_history_put	64	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_history.c:109:6:z_shell_history_purge	32	dynamic,bounded
