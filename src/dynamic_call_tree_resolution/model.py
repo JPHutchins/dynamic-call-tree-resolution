@@ -244,12 +244,23 @@ class CallSite(Struct):
 	"""What the value-set analysis tracked into the operand, before chasing; empty when unresolved."""
 
 
+class Residue(StrEnum):
+	"""What an unresolved slot holds in the image, and whether that can change."""
+
+	ROM_NULL = "rom_null"
+	ROM_NON_FUNCTION = "rom_non_function"
+	RAM_NULL = "ram_null"
+	RAM_UNINITIALIZED = "ram_uninitialized"
+	RAM_INITIALIZED = "ram_initialized"
+
+
 class UnresolvedSlot(Struct):
 	"""A stored function pointer the analysis cannot resolve."""
 
 	slot: Address
 	path: tuple[str | None, ...]
 	signature: FunctionSignature | None
+	residue: Residue
 
 
 class NotEnumerated(Struct):
