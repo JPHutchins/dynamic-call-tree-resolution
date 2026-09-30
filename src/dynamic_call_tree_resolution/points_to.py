@@ -366,6 +366,27 @@ def memory_at(program: Program, address: Address, size: int) -> bytes:
 	return section.data[address - start : address - start + size]
 
 
+def instruction_runs(
+	program: Program, start: Address, size: int
+) -> tuple[tuple[Address, bytes], ...]:
+	end = start + size
+	edges = (
+		start,
+		*(
+			edge
+			for low, high in sorted(program.data_in_code)
+			if low < end and start < high
+			for edge in (max(low, start), min(high, end))
+		),
+		end,
+	)
+	return tuple(
+		(Address(low), memory_at(program, Address(low), high - low))
+		for low, high in zip(edges[::2], edges[1::2], strict=True)
+		if high > low
+	)
+
+
 def _section_covering(program: Program, address: Address) -> tuple[Address, Section] | None:
 	return next(
 		(
