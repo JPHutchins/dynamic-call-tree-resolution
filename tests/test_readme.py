@@ -1,7 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Every README console block is a transcript: run it and match, in order."""
+"""Every README depth is tool output: each console block runs and matches, in order."""
 
 import re
 import subprocess
@@ -50,3 +50,18 @@ def _matches(expected: list[str], actual: list[str]) -> bool:
 	if not actual or expected[0] != actual[0]:
 		return False
 	return _matches(expected[1:], actual[1:])
+
+
+def test_readme_prose_publishes_no_byte_count() -> None:
+	assert [
+		match[0]
+		for match in re.finditer(
+			r"\b\d+ bytes\b",
+			re.sub(
+				r"```console\n.*?```",
+				"",
+				(REPOSITORY_ROOT / "README.md").read_text(),
+				flags=re.DOTALL,
+			),
+		)
+	] == []
