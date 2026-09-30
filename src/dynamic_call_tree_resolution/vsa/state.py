@@ -8,10 +8,11 @@ from __future__ import annotations
 from functools import partial, reduce
 from typing import TYPE_CHECKING, Final, assert_never
 
+from capstone import CS_OP_REG
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address
-from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS
+from dynamic_call_tree_resolution.vsa.abi import FLAG_REGISTER_NAMES, SP_REGISTERS
 from dynamic_call_tree_resolution.vsa.lattice import (
 	Known,
 	OffsetSet,
@@ -19,6 +20,7 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	ValueSet,
 	bind,
 	capped,
+	is_top,
 	join,
 	join_maps,
 	lookup,
@@ -82,13 +84,24 @@ def top_seed(machine: Machine) -> State:
 def join_states(current: State | None, incoming: State) -> State:
 	if current is None:
 		return incoming
+	sp_offsets = join_maps(current.sp_offsets, incoming.sp_offsets)
 	return State(
 		registers=join_maps(current.registers, incoming.registers),
-		sp_offsets=join_maps(current.sp_offsets, incoming.sp_offsets),
+		sp_offsets=sp_offsets,
 		stack=join_maps(current.stack, incoming.stack),
 		globals=_join_writes(current.globals, incoming.globals),
-		escaped=current.escaped or incoming.escaped,
+		escaped=current.escaped
+		or incoming.escaped
+		or frame_copies_lost(current.sp_offsets, incoming.sp_offsets, sp_offsets),
 	)
+
+
+def frame_copies_lost(
+	current: Mapping[int, frozenset[int]],
+	incoming: Mapping[int, frozenset[int]],
+	joined: Mapping[int, frozenset[int]],
+) -> bool:
+	return not current.keys() | incoming.keys() <= joined.keys()
 
 
 def _join_writes(current: Writes, incoming: Writes) -> Writes:
@@ -121,7 +134,7 @@ def set_offsets(state: State, register: int, value: OffsetSet) -> State:
 		sp_offsets=put_value(state.sp_offsets, register, value),
 		stack=state.stack,
 		globals=state.globals,
-		escaped=state.escaped,
+		escaped=state.escaped or is_top(value),
 	)
 
 
@@ -152,8 +165,20 @@ def unknown_memory(state: State) -> State:
 	)
 
 
+def escaping(state: State, registers: Iterable[int]) -> State:
+	if state.escaped or not any(register in state.sp_offsets for register in registers):
+		return state
+	return State(
+		registers=state.registers,
+		sp_offsets=state.sp_offsets,
+		stack=state.stack,
+		globals=state.globals,
+		escaped=True,
+	)
+
+
 def top_written(instruction: CsInsn, state: State) -> State:
-	written = set(instruction.regs_access()[1])
+	read, written = instruction.regs_access()
 	return State(
 		registers={
 			register: value
@@ -167,7 +192,18 @@ def top_written(instruction: CsInsn, state: State) -> State:
 		},
 		stack=state.stack,
 		globals=state.globals,
-		escaped=state.escaped,
+		escaped=state.escaped
+		or (
+			any(
+				operand.type == CS_OP_REG
+				and operand.reg in read
+				and operand.reg in state.sp_offsets
+				for operand in instruction.operands
+			)
+			and any(
+				instruction.reg_name(register) not in FLAG_REGISTER_NAMES for register in written
+			)
+		),
 	)
 
 

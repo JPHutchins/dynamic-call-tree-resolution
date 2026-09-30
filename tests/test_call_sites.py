@@ -2312,3 +2312,134 @@ def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset()
+
+
+@pytest.mark.parametrize(
+	("code", "callee", "candidates"),
+	[
+		pytest.param("42f20003019300f002f8019b98477047", 0xE, {0x2000}, id="kept-without-escape"),
+		pytest.param(
+			"42f20003 0193 6846 00f002f8 019b 9847 7047", 0x10, set[int](), id="passed-in-r0"
+		),
+		pytest.param(
+			"6946 44f20002 1160 42f20003 0193 00f002f8 019b 9847 7047",
+			0x16,
+			set[int](),
+			id="stored-to-a-global",
+		),
+		pytest.param(
+			"0028 00d0 6946 42f20003 0193 00f002f8 019b 9847 7047",
+			0x14,
+			set[int](),
+			id="lost-in-a-join",
+		),
+		pytest.param(
+			"6c46 44f00100 42f20003 0193 00f002f8 019b 9847 7047",
+			0x14,
+			set[int](),
+			id="derived-by-orr",
+		),
+		pytest.param(
+			"6c46 2578 42f20003 0193 00f002f8 019b 9847 7047",
+			0x12,
+			{0x2000},
+			id="kept-after-a-byte-load-through-it",
+		),
+		pytest.param(
+			"0deb0100 42f20003 0193 00f002f8 019b 9847 7047",
+			0x12,
+			set[int](),
+			id="indexed-by-add",
+		),
+		pytest.param(
+			"6c46 44f00100 42f20003 0193 2a60 019b 9847",
+			0x12,
+			set[int](),
+			id="wild-store-after-an-escape",
+		),
+		pytest.param("42f20003 0193 2a60 019b 9847", 0xC, {0x2000}, id="wild-store-without-escape"),
+	],
+)
+def test_thumb_frame_survives_calls_and_wild_stores_until_its_address_escapes(
+	code: str, callee: int, candidates: set[int]
+) -> None:
+	body = bytes.fromhex(code)
+	program = _program(
+		"EM_ARM",
+		body,
+		functions=(
+			("caller", 0x1000, callee),
+			*((("callee", 0x1000 + callee, len(body) - callee),) if callee < len(body) else ()),
+			("first", 0x2000, 4),
+		),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset(Address(address) for address in candidates)
+
+
+def test_thumb_call_forgets_the_writes_on_its_path() -> None:
+	body = bytes.fromhex("44f20004 42f20003 2360 00f002f8 2368 9847 44f20001 43f20002 0a60 7047")
+	program = build_program(
+		"EM_ARM",
+		(
+			("global_case", 0x1000, 0x12),
+			("install", 0x1012, len(body) - 0x12),
+			("a", 0x2000, 4),
+			("b", 0x3000, 4),
+			("baked", 0x5000, 4),
+		),
+		objects=(("handler", 0x4000, _pointer(0x5000, 4)),),
+		sections={0x1000: body},
+		writable=frozenset({0x4000}),
+		pointer_size=4,
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x2000), Address(0x3000), Address(0x5000)})
+
+
+def test_thumb_trap_leaves_the_writes_before_it_in_the_summary() -> None:
+	program = _thumb_slot_program(
+		{
+			0x1000: bytes.fromhex("44f20001 43f20002 0a60 00df 7047"),
+			0x1100: bytes.fromhex("44f20001 0b68 9847"),
+		}
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset({Address(0x2000), Address(0x3000)})
+
+
+@pytest.mark.parametrize(
+	("code", "callee"),
+	[
+		pytest.param(
+			"48c7c100300000 48894c2408 488d7c2410 e807000000 488b442408 ffd0 c3",
+			0x1D,
+			id="passed-in-rdi",
+		),
+		pytest.param(
+			"48c7c100300000 48894c2408 488d442410 50 e807000000 488b442410 ffd0 c3",
+			0x1E,
+			id="pushed",
+		),
+		pytest.param(
+			"488d442410 48c7c300400000 480103 48c7c100300000 48894c2408 e807000000 488b442408"
+			"ffd0 c3",
+			0x27,
+			id="added-to-memory",
+		),
+	],
+)
+def test_x86_call_clears_the_frame_after_its_address_escapes(code: str, callee: int) -> None:
+	body = bytes.fromhex(code)
+	program = _program(
+		"EM_X86_64",
+		body,
+		functions=(
+			("caller", 0x1000, callee),
+			("callee", 0x1000 + callee, len(body) - callee),
+			("target", 0x3000, 1),
+		),
+	)
+	(site,) = extract_call_sites(program)
+	assert site.candidates == frozenset()

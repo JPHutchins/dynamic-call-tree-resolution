@@ -43,6 +43,8 @@ from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
 	copy_register,
+	escaping,
+	frame_based,
 	set_offsets,
 	set_register,
 	stack_read,
@@ -99,7 +101,17 @@ def _apply_unconditional(
 	if base_mnemonic in ARM_STORE_WIDTHS:
 		return _arm_store(context, instruction, base_mnemonic, state)
 	if base_mnemonic.startswith(("st", "vst")):
-		return top_written(instruction, unknown_memory(state))
+		return top_written(
+			instruction,
+			escaping(
+				unknown_memory(state),
+				tuple(
+					operand.reg
+					for operand in _arm_operands(instruction)
+					if operand.type == arm_const.ARM_OP_REG
+				),
+			),
+		)
 	if base_mnemonic in ARM_MOVES:
 		destination, source = _arm_operands(instruction)
 		match source.type:
@@ -123,7 +135,15 @@ def _arm_store(context: Context, instruction: CsInsn, base_mnemonic: str, state:
 	)
 	stored = store_value(
 		context,
-		state,
+		escaping(
+			state,
+			tuple(
+				operand.reg
+				for operand in operands[
+					1 if base_mnemonic in ARM_EXCLUSIVE_STORES else 0 : memory_index
+				]
+			),
+		),
 		instruction,
 		instruction.operands[memory_index],
 		Store(
@@ -159,7 +179,7 @@ def _arm_store_multiple(
 	descending = base_mnemonic in ARM_DESCENDING_STORES
 	stored = store_at(
 		context,
-		state,
+		escaping(state, tuple(operand.reg for operand in listed)),
 		register_destination(context, state, base_register, -width if descending else 0),
 		Store(
 			words=()
@@ -206,6 +226,11 @@ def _arm_arithmetic(
 			state, destination.reg, register_operand.reg, sign * value_operand.imm
 		)
 	if value_operand.type == arm_const.ARM_OP_REG:
+		if any(
+			frame_based(state, context.program.machine, operand.reg)
+			for operand in (register_operand, value_operand)
+		):
+			return set_offsets(state, destination.reg, Top())
 		scale = _arm_shift_scale(value_operand)
 		if scale is None:
 			return top_written(instruction, state)

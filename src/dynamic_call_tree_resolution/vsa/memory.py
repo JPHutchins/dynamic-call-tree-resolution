@@ -26,6 +26,7 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	capped,
 	indexed,
 	indexed_offsets,
+	is_top,
 	join,
 	join_maps,
 	lookup,
@@ -37,6 +38,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	Store,
 	Writes,
 	frame_based,
+	frame_copies_lost,
 	frame_write,
 	image_write,
 	stack_read,
@@ -308,7 +310,7 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 				State(
 					registers=state.registers,
 					sp_offsets=state.sp_offsets,
-					stack=state.stack,
+					stack={} if state.escaped and is_top(addresses) else state.stack,
 					globals=image_write(state.globals, addresses, store, pointer_size),
 					escaped=state.escaped,
 				),
@@ -332,9 +334,10 @@ def _weak_across[T: Hashable](
 
 
 def weakened(context: Context, before: State, after: State) -> State:
+	sp_offsets = join_maps(before.sp_offsets, after.sp_offsets)
 	return State(
 		registers=join_maps(before.registers, after.registers),
-		sp_offsets=join_maps(before.sp_offsets, after.sp_offsets),
+		sp_offsets=sp_offsets,
 		stack=join_maps(before.stack, after.stack),
 		globals=Writes(
 			values={
@@ -345,7 +348,9 @@ def weakened(context: Context, before: State, after: State) -> State:
 			},
 			wild=after.globals.wild,
 		),
-		escaped=before.escaped or after.escaped,
+		escaped=before.escaped
+		or after.escaped
+		or frame_copies_lost(before.sp_offsets, after.sp_offsets, sp_offsets),
 	)
 
 

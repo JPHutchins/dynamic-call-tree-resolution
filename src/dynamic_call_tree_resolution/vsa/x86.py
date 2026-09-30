@@ -40,6 +40,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
 	copy_register,
+	escaping,
 	frame_based,
 	set_offsets,
 	set_register,
@@ -73,7 +74,7 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_REG):
 				return store_value(
 					context,
-					state,
+					escaping(state, (source.reg,)),
 					instruction,
 					destination,
 					Store(words=(lookup(state.registers, source.reg),), width=destination.size),
@@ -135,7 +136,12 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 			if operand.type == x86_const.X86_OP_REG
 			else load_value(context, state, instruction, operand)
 		)
-		return _push(context, state, SP_REGISTERS[machine][0], value)
+		return _push(
+			context,
+			escaping(state, (operand.reg,) if operand.type == x86_const.X86_OP_REG else ()),
+			SP_REGISTERS[machine][0],
+			value,
+		)
 	if instruction.mnemonic == "pop":
 		operand = _x86_operands(instruction)[0]
 		if operand.type != x86_const.X86_OP_REG:
@@ -158,7 +164,10 @@ def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
 		instruction,
 		store_at(
 			context,
-			state,
+			escaping(
+				state,
+				tuple(operand.reg for operand in operands if operand.type == x86_const.X86_OP_REG),
+			),
 			anywhere(destination)
 			if prefixes_and_name[0] in X86_REPEATS or prefixes_and_name[-1] in X86_UNBOUNDED_STORES
 			else destination,

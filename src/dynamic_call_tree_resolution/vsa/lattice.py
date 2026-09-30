@@ -48,6 +48,16 @@ def join_maps[K: int, T: Hashable](
 	}
 
 
+def is_top[T: Hashable](value: Lattice[T]) -> bool:
+	match value:
+		case Top():
+			return True
+		case Known():
+			return False
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 def lookup[K: int, T: Hashable](mapping: Mapping[K, frozenset[T]], key: K) -> Lattice[T]:
 	return Known(values=mapping[key]) if key in mapping else Top()
 
