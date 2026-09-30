@@ -1,8 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:20:6:posix_arch_init	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:30:6:posix_arch_clean_up	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:35:6:posix_swap	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:41:6:posix_main_thread_start	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:46:5:posix_new_thread	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:51:6:posix_abort_thread	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:56:5:posix_arch_get_unique_thread_id	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/posix_core_nsi.c:61:5:posix_arch_thread_name_set	32	dynamic,bounded

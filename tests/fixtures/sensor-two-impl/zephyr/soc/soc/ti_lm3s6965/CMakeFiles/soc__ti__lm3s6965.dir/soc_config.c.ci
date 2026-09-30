@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/ti/lm3s6965/soc_config.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/ti/lm3s6965/soc_config.c:uart_stellaris_init" label: "uart_stellaris_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/soc/ti/lm3s6965/soc_config.c:27:12\n0 bytes (static)\n0 dynamic objects" }
-}

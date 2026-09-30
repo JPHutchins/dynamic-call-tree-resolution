@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/reallocarray.c"
-node: { title: "reallocarray" label: "reallocarray\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/reallocarray.c:11:7\n4 bytes (static)\n0 dynamic objects" }
-node: { title: "realloc" label: "realloc\n/home/jp/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/arm-zephyr-eabi/sys-include/stdlib.h:243:7" shape : ellipse }
-edge: { sourcename: "reallocarray" targetname: "realloc" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/common/source/stdlib/reallocarray.c:17:9" }
-}

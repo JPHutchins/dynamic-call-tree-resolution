@@ -1,3 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats_shell.c:40:12:cmd_stats_list	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats_shell.c:10:12:stats_cb	48	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/stats/stats_shell.c:32:12:stats_group_cb	48	dynamic,bounded

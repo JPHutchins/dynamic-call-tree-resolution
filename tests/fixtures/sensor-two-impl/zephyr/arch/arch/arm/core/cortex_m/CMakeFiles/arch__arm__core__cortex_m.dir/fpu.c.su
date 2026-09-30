@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/fpu.c:17:6:z_arm_save_fp_context	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/fpu.c:45:6:z_arm_restore_fp_context	0	static

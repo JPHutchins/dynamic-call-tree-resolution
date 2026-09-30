@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/timer/sys_lpm_hooks_stubs.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/timer/sys_lpm_hooks_stubs.c:z_sys_clock_lpm_init" label: "z_sys_clock_lpm_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/timer/sys_lpm_hooks_stubs.c:13:13\n4 bytes (static)\n0 dynamic objects" }
-}

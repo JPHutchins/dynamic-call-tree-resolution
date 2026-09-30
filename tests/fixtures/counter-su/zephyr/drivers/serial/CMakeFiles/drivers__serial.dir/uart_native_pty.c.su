@@ -1,9 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:681:12:np_uart_configure	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:701:13:auto_attach_cmd_cb	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:707:13:auto_attach_cb	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:712:13:wait_pts_cb	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:169:12:np_uart_init	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:755:13:np_add_uart_options	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:799:13:np_cleanup_uart	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:299:12:np_uart_poll_in	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_native_pty.c:254:13:np_uart_poll_out	48	dynamic,bounded

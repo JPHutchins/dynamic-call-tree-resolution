@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/stacks.c:22:13:shell_stack_dump	112	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/stacks.c:60:12:cmd_kernel_thread_stacks	112	dynamic,bounded

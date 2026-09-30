@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/emul/emul.c:17:20:emul_get_binding	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/emul/emul.c:28:5:emul_init_for_bus	24	static

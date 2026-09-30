@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/misc/generated/configs.c"
-node: { title: "_ConfigAbsSyms" label: "_ConfigAbsSyms\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/misc/generated/configs.c:5:1\n0 bytes (static)\n0 dynamic objects" }
-}

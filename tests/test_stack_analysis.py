@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 from itertools import pairwise
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -33,10 +33,10 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 
-ARTIFACT_DIRECTORIES = (
-	Path(__file__).parent / "fixtures" / "counter-su",
-	Path(__file__).parent / "fixtures" / "sensor-two-impl",
-)
+if TYPE_CHECKING:
+	from pathlib import Path
+
+ARTIFACT_DIRECTORIES = ("counter-su", "sensor-two-impl")
 
 FRAMES = (
 	StackUsage(function="main", bytes=8, bounded=True),
@@ -563,19 +563,18 @@ def test_expand_indirect_calls_matches_path_qualified_callers() -> None:
 	)
 
 
-@pytest.mark.parametrize(
-	"artifacts",
-	ARTIFACT_DIRECTORIES,
-	ids=[artifacts.name for artifacts in ARTIFACT_DIRECTORIES],
-)
-def test_every_callgraph_node_meets_its_stack_usage_record(artifacts: Path) -> None:
-	usages = load_stack_usages(artifacts)
+@pytest.mark.image
+@pytest.mark.parametrize("artifacts", ARTIFACT_DIRECTORIES)
+def test_every_callgraph_node_meets_its_stack_usage_record(
+	zephyr_fixtures: Path, artifacts: str
+) -> None:
+	usages = load_stack_usages(zephyr_fixtures / artifacts)
 	keys = {frame_key(usage.function) for usage in usages}
 	roots = {usage.function.split(".")[0] for usage in usages}
 	assert (
 		sorted(
 			name
-			for edge in load_callgraph(artifacts)
+			for edge in load_callgraph(zephyr_fixtures / artifacts)
 			for name in (edge.caller, edge.callee)
 			if frame_key(name).split(".")[0] in roots and frame_key(name) not in keys
 		)
@@ -786,11 +785,11 @@ def test_deepest_path_of_an_unknown_entry_is_an_error() -> None:
 		deepest_path(stack_graph((CallEdge(caller="main", callee="leaf"),), FRAMES), "nope")
 
 
-def _counter_graph(*, expanded: bool) -> tuple[CallEdge, ...]:
-	edges = load_callgraph(ARTIFACT_DIRECTORIES[0])
+def _counter_graph(artifacts: Path, *, expanded: bool) -> tuple[CallEdge, ...]:
+	edges = load_callgraph(artifacts)
 	if not expanded:
 		return edges
-	program = load(ARTIFACT_DIRECTORIES[0] / "zephyr" / "zephyr.exe")
+	program = load(artifacts / "zephyr" / "zephyr.exe")
 	resolution = resolve(program)
 	return expand_indirect_calls(
 		edges, *per_caller_candidates(program, resolution.sites, resolution.assignments)
@@ -799,12 +798,14 @@ def _counter_graph(*, expanded: bool) -> tuple[CallEdge, ...]:
 
 @pytest.mark.image
 @pytest.mark.parametrize("expanded", [False, True], ids=["static", "expanded"])
-def test_every_counter_entry_has_a_deepest_path_as_deep_as_its_bound(expanded: bool) -> None:
-	edges = _counter_graph(expanded=expanded)
+def test_every_counter_entry_has_a_deepest_path_as_deep_as_its_bound(
+	zephyr_fixtures: Path, expanded: bool
+) -> None:
+	artifacts = zephyr_fixtures / ARTIFACT_DIRECTORIES[0]
 	graph = stack_graph(
-		edges,
-		load_stack_usages(ARTIFACT_DIRECTORIES[0]),
-		entry_edges=load_callgraph(ARTIFACT_DIRECTORIES[0]),
+		_counter_graph(artifacts, expanded=expanded),
+		load_stack_usages(artifacts),
+		entry_edges=load_callgraph(artifacts),
 	)
 	assert [
 		report.entry

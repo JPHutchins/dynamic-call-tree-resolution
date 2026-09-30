@@ -1,3 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c:41:13:sys_arch_reboot	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c:169:6:z_arm_save_scb_context	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/scb.c:211:6:z_arm_restore_scb_context	0	static

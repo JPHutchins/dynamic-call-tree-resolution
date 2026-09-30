@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/misc.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/misc.c:set_realtime_default" label: "set_realtime_default\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/misc.c:12:13\n32 bytes (dynamic,bounded)\n0 dynamic objects" }
-node: { title: "hwtimer_set_real_time_mode" label: "hwtimer_set_real_time_mode\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/scripts/native_simulator/native/src/include/nsi_timer_model.h:18:6" shape : ellipse }
-edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/misc.c:set_realtime_default" targetname: "hwtimer_set_real_time_mode" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/misc.c:14:2" }
-}

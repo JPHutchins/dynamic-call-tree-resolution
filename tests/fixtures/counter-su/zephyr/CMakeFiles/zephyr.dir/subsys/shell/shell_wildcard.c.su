@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_wildcard.c:106:6:z_shell_has_wildcard	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_wildcard.c:119:6:z_shell_wildcard_prepare	48	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_wildcard.c:159:28:z_shell_wildcard_process	112	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/shell_wildcard.c:185:6:z_shell_wildcard_finalize	16	static

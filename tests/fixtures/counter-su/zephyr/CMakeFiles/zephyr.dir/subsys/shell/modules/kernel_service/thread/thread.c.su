@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/thread.c:20:13:thread_valid_cb	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/kernel_service/thread/thread.c:29:6:z_thread_is_valid	48	dynamic,bounded

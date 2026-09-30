@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/exc_exit.c"
-node: { title: "z_arm_exc_exit" label: "z_arm_exc_exit\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/exc_exit.c:55:48\n0 bytes (static)\n0 dynamic objects" }
-}

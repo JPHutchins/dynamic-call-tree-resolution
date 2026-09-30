@@ -1,8 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:56:6:arm_irq_enable	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:61:6:arm_irq_disable	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:66:5:arm_irq_is_enabled	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:72:6:arm_irq_clear_pending	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:79:6:arm_irq_set_pending	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:86:6:arm_irq_is_pending	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:103:6:arm_irq_priority_set	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/irq_manage.c:148:6:z_irq_spurious	0	static

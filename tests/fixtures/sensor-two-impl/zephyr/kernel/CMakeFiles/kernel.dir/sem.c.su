@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sem.c:66:5:z_impl_k_sem_init	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sem.c:116:6:z_impl_k_sem_give	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sem.c:149:5:z_impl_k_sem_take	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/sem.c:184:6:z_impl_k_sem_reset	24	static

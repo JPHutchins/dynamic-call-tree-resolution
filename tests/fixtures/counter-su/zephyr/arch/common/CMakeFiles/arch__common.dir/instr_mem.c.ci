@@ -1,7 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:arch_is_instr_mem" label: "arch_is_instr_mem\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:9:13\n4 bytes (static)\n0 dynamic objects" }
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:arch_memset_instr" label: "arch_memset_instr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:21:14\n12 bytes (static)\n0 dynamic objects" }
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:arch_memcpy_to_instr" label: "arch_memcpy_to_instr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:26:14\n16 bytes (static)\n0 dynamic objects" }
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:arch_memcpy_from_instr" label: "arch_memcpy_from_instr\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:31:14\n4 bytes (static)\n0 dynamic objects" }
-edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:arch_memcpy_from_instr" targetname: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/instr_mem.c:arch_memcpy_to_instr.localalias" }
-}

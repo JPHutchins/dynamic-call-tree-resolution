@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/cbprintf.c:15:12:cbputc	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/cbprintf.c:23:5:cbvprintf	48	static

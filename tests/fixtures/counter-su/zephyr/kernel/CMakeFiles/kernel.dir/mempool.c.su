@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mempool.c:189:14:z_thread_alloc_helper	64	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mempool.c:58:6:k_free	48	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mempool.c:210:7:z_thread_aligned_alloc	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/mempool.c:215:7:z_thread_malloc	8	static

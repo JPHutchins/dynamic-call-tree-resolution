@@ -1,13 +1,15 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Pytest fixtures compiling the C fixture programs."""
+"""Pytest fixtures compiling the C fixture programs, and locating the Zephyr ones."""
 
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from tests.nix_fixtures import zephyr_fixtures_root
 from tests.toolchains import host_cc
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures"
@@ -129,3 +131,8 @@ def fixture_elfs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
 		"decl",
 	)
 	return variants
+
+
+@pytest.fixture(scope="session")
+def zephyr_fixtures() -> Path:
+	return zephyr_fixtures_root(os.environ)

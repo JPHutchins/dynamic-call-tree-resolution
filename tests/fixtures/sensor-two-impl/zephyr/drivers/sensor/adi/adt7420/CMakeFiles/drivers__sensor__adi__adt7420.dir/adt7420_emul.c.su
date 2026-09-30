@@ -1,7 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:110:12:adt7420_emul_set_channel	24	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:146:12:adt7420_emul_get_sample_range	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:53:12:adt7420_emul_transfer_i2c	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:28:6:adt7420_emul_set_reg	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:37:6:adt7420_emul_get_reg	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:45:6:adt7420_emul_reset	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/sensor/adi/adt7420/adt7420_emul.c:97:12:adt7420_emul_init	8	static

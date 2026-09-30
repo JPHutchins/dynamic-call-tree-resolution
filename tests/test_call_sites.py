@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import pytest
@@ -40,8 +39,7 @@ from tests.programs import build_program
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
-
-ARM_FIXTURES = Path(__file__).parent / "fixtures"
+	from pathlib import Path
 
 
 def _program(
@@ -592,14 +590,14 @@ def test_arm_empty_symbol_does_not_hide_its_sized_thumb_twin() -> None:
 @pytest.mark.parametrize(
 	("elf", "register_indirect_branches"),
 	[
-		("hello_zephyr_qemu_cortex_m3.elf", 23),
+		("hello/zephyr/zephyr.elf", 23),
 		("sensor-two-impl/zephyr/zephyr.elf", 38),
 	],
 )
 def test_arm_fixture_extracts_every_register_indirect_branch(
-	elf: str, register_indirect_branches: int
+	zephyr_fixtures: Path, elf: str, register_indirect_branches: int
 ) -> None:
-	assert len(extract_call_sites(load(ARM_FIXTURES / elf))) == register_indirect_branches
+	assert len(extract_call_sites(load(zephyr_fixtures / elf))) == register_indirect_branches
 
 
 def test_arm_call_in_window_clears_registers() -> None:
@@ -2193,13 +2191,15 @@ def test_address_taken_finds_stored_and_computed_function_addresses(
 @pytest.mark.parametrize(
 	"elf",
 	[
-		"hello_zephyr_qemu_cortex_m3.elf",
+		"hello/zephyr/zephyr.elf",
 		"sensor-two-impl/zephyr/zephyr.elf",
 		"counter-su/zephyr/zephyr.exe",
 	],
 )
-def test_every_function_a_site_candidate_names_is_address_taken(elf: str) -> None:
-	program = load(ARM_FIXTURES / elf)
+def test_every_function_a_site_candidate_names_is_address_taken(
+	zephyr_fixtures: Path, elf: str
+) -> None:
+	program = load(zephyr_fixtures / elf)
 	taken = address_taken(program)
 	assert [
 		program.functions[address].name

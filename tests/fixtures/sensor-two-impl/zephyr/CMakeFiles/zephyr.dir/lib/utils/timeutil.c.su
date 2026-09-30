@@ -1,9 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:49:9:timeutil_timegm64	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:63:8:timeutil_timegm	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:79:5:timeutil_sync_state_update	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:101:5:timeutil_sync_state_set_skew	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:118:7:timeutil_sync_estimate_skew	56	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:134:5:timeutil_sync_ref_from_local	40	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:164:5:timeutil_sync_local_from_ref	40	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:191:9:timeutil_sync_skew_to_ppb	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/timeutil.c:199:6:timespec_normalize	16	static

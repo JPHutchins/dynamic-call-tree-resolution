@@ -1,7 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c"
-node: { title: "arch_new_thread" label: "arch_new_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:90:6\n0 bytes (static)\n0 dynamic objects" }
-node: { title: "arch_coprocessors_disable" label: "arch_coprocessors_disable\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:541:5\n0 bytes (static)\n0 dynamic objects" }
-node: { title: "arch_switch_to_main_thread" label: "arch_switch_to_main_thread\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:578:6\n4 bytes (static)\n0 dynamic objects" }
-node: { title: "arch_irq_unlock_outlined" label: "arch_irq_unlock_outlined\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:672:13\n0 bytes (static)\n0 dynamic objects" }
-node: { title: "arch_irq_lock_outlined" label: "arch_irq_lock_outlined\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/arm/core/cortex_m/thread.c:681:21\n0 bytes (static)\n0 dynamic objects" }
-}

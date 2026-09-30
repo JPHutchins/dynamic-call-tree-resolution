@@ -1,9 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c"
-node: { title: "z_impl_zephyr_fputc" label: "z_impl_zephyr_fputc\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:11:5\n8 bytes (static)\n0 dynamic objects" }
-node: { title: "__indirect_call" label: "Indirect Call Placeholder" shape : ellipse }
-edge: { sourcename: "z_impl_zephyr_fputc" targetname: "__indirect_call" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:13:3" }
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:picolibc_put" label: "picolibc_put\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:41:12\n8 bytes (static)\n0 dynamic objects" }
-edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:picolibc_put" targetname: "z_impl_zephyr_fputc" label: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/sensor-two-impl/zephyr/include/generated/zephyr/syscalls/libc-hooks.h:81:9" }
-node: { title: "__stdout_hook_install" label: "__stdout_hook_install\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:60:6\n0 bytes (static)\n0 dynamic objects" }
-node: { title: "__stdin_hook_install" label: "__stdin_hook_install\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:66:6\n0 bytes (static)\n0 dynamic objects" }
-}

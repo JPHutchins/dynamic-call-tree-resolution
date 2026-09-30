@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/system_work_q.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/system_work_q.c:sys_work_q_init" label: "sys_work_q_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/system_work_q.c:22:13\n16 bytes (static)\n0 dynamic objects" }
-node: { title: "k_work_queue_start" label: "k_work_queue_start\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/include/zephyr/kernel.h:4210:6" shape : ellipse }
-edge: { sourcename: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/system_work_q.c:sys_work_q_init" targetname: "k_work_queue_start" label: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/system_work_q.c:31:2" }
-}

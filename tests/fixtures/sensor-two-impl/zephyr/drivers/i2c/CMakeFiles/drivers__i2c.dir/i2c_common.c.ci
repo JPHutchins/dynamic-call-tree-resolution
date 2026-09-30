@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/i2c/i2c_common.c"
-node: { title: "i2c_dump_msgs_rw" label: "i2c_dump_msgs_rw\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/i2c/i2c_common.c:39:6\n0 bytes (static)\n0 dynamic objects" }
-}

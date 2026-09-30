@@ -1,2 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:43:6:sys_getopt_init	16	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/utils/getopt/getopt.c:73:5:sys_getopt	48	dynamic,bounded

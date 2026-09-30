@@ -54,56 +54,9 @@
           };
           buildVersion = builtins.substring 0 12 zephyrProject.revision;
         };
-    in
-    {
-      devShells = forAllSystems (
-        system:
+      fixtures =
+        pkgs:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
-          devShell =
-            stdenv: packages:
-            (pkgs.mkShell.override { inherit stdenv; }) {
-              packages = [
-                pkgs.uv
-                pkgs.git-lfs
-                pkgs.gcc-arm-embedded-14
-                pkgs.qemu
-                pkgs.nixfmt
-                jphfmt.packages.${system}.default
-              ]
-              ++ packages;
-              hardeningDisable = [
-                "fortify"
-                "fortify3"
-              ];
-              env.UV_PYTHON_PREFERENCE = "only-managed";
-            };
-        in
-        {
-          default = devShell pkgs.gcc13Stdenv [ ];
-        }
-        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
-          testbeds =
-            let
-              toolchain = testbeds pkgs;
-            in
-            (devShell pkgs.multiStdenv [
-              toolchain.sdk
-              toolchain.west2nix.west2nix
-              pkgs.dtc
-            ]).overrideAttrs
-              (old: {
-                hardeningDisable = [ "all" ];
-                env = old.env // {
-                  USE_CCACHE = "0";
-                };
-              });
-        }
-      );
-
-      packages.x86_64-linux.fixtures =
-        let
-          pkgs = nixpkgs.legacyPackages.x86_64-linux;
           toolchain = testbeds pkgs;
         in
         pkgs.callPackage ./testbeds/fixtures.nix {
@@ -123,5 +76,53 @@
             ];
           };
         };
+    in
+    {
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          devShell =
+            stdenv: env: packages:
+            (pkgs.mkShell.override { inherit stdenv; }) {
+              packages = [
+                pkgs.uv
+                pkgs.git-lfs
+                pkgs.gcc-arm-embedded-14
+                pkgs.qemu
+                pkgs.nixfmt
+                jphfmt.packages.${system}.default
+              ]
+              ++ packages;
+              hardeningDisable = [
+                "fortify"
+                "fortify3"
+              ];
+              env = {
+                UV_PYTHON_PREFERENCE = "only-managed";
+              }
+              // env;
+            };
+        in
+        {
+          default = devShell pkgs.gcc13Stdenv (nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+            DCTR_FIXTURES = "${fixtures pkgs}";
+          }) [ ];
+        }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+          testbeds =
+            let
+              toolchain = testbeds pkgs;
+            in
+            (devShell pkgs.multiStdenv { USE_CCACHE = "0"; } [
+              toolchain.sdk
+              toolchain.west2nix.west2nix
+              pkgs.dtc
+            ]).overrideAttrs
+              { hardeningDisable = [ "all" ]; };
+        }
+      );
+
+      packages.x86_64-linux.fixtures = fixtures nixpkgs.legacyPackages.x86_64-linux;
     };
 }

@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import pytest
@@ -16,15 +15,13 @@ from dynamic_call_tree_resolution.model import aligned
 from dynamic_call_tree_resolution.points_to import memory_at
 
 if TYPE_CHECKING:
+	from pathlib import Path
+
 	from capstone import CsInsn
 
 pytestmark = pytest.mark.image
 
-FIXTURES = Path(__file__).parent / "fixtures"
-ARM_ELFS = (
-	FIXTURES / "hello_zephyr_qemu_cortex_m3.elf",
-	FIXTURES / "sensor-two-impl" / "zephyr" / "zephyr.elf",
-)
+ARM_IMAGES = ("hello/zephyr/zephyr.elf", "sensor-two-impl/zephyr/zephyr.elf")
 
 type Encoding = Literal["B T1", "B T2", "CBZ T1", "B T3", "B T4", "BL T1"]
 
@@ -88,11 +85,11 @@ def _instructions(elf: Path) -> list[CsInsn]:
 	]
 
 
-def test_capstone_reports_every_direct_branch_target_absolute() -> None:
+def test_capstone_reports_every_direct_branch_target_absolute(zephyr_fixtures: Path) -> None:
 	branches = [
 		(instruction, encoded)
-		for elf in ARM_ELFS
-		for instruction in _instructions(elf)
+		for image in ARM_IMAGES
+		for instruction in _instructions(zephyr_fixtures / image)
 		if (encoded := _encoded_branch(instruction)) is not None
 	]
 	assert {encoding for _, (encoding, _) in branches} == {
@@ -110,8 +107,8 @@ def test_capstone_reports_every_direct_branch_target_absolute() -> None:
 	] == []
 
 
-def test_hello_z_cstart_loop_site_has_no_candidates() -> None:
-	program = load(ARM_ELFS[0])
+def test_hello_z_cstart_loop_site_has_no_candidates(zephyr_fixtures: Path) -> None:
+	program = load(zephyr_fixtures / ARM_IMAGES[0])
 	resolved = {assignment.slot: assignment for assignment in assignments(program)}
 	(site,) = (site for site in extract_call_sites(program) if site.site_address == 0xEB4)
 	assert call_site_candidates(program, site, resolved) == frozenset()

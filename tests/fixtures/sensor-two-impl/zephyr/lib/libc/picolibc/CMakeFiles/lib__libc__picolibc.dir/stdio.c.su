@@ -1,4 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:11:5:z_impl_zephyr_fputc	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:41:12:picolibc_put	8	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:60:6:__stdout_hook_install	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/lib/libc/picolibc/stdio.c:66:6:__stdin_hook_install	0	static

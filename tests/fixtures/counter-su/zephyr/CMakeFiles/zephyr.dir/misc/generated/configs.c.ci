@@ -1,3 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/misc/generated/configs.c"
-node: { title: "_ConfigAbsSyms" label: "_ConfigAbsSyms\n/home/jp/repos/dynamic-call-tree-resolution/.camas/build/counter-su/zephyr/misc/generated/configs.c:5:1\n4 bytes (static)\n0 dynamic objects" }
-}

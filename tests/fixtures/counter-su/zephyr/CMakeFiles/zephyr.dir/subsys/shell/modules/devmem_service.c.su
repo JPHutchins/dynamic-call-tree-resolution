@@ -1,5 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/devmem_service.c:321:12:cmd_devmem	80	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/devmem_service.c:101:12:cmd_dump	96	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/devmem_service.c:154:12:set_bypass.isra	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/devmem_service.c:175:13:bypass_cb	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/subsys/shell/modules/devmem_service.c:227:12:cmd_load	48	dynamic,bounded

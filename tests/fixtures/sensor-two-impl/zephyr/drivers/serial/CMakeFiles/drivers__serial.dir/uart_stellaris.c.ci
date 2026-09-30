@@ -1,5 +1,0 @@
-graph: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c"
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:uart_stellaris_poll_in" label: "uart_stellaris_poll_in\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:265:12\n0 bytes (static)\n0 dynamic objects" }
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:uart_stellaris_poll_out" label: "uart_stellaris_poll_out\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:288:13\n0 bytes (static)\n0 dynamic objects" }
-node: { title: "/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:uart_stellaris_init" label: "uart_stellaris_init\n/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/drivers/serial/uart_stellaris.c:223:12\n20 bytes (static)\n0 dynamic objects" }
-}

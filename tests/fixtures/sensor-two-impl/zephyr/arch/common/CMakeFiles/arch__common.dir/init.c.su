@@ -1,3 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:27:13:arch_early_memset	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:40:13:arch_early_memcpy	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/common/init.c:51:6:arch_bss_zero	8	static

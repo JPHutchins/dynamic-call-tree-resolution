@@ -1,5 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/thread.c:32:6:arch_new_thread	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/thread.c:86:5:arch_thread_name_set	64	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/thread.c:120:6:posix_arch_thread_entry	32	dynamic,bounded
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/thread.c:146:5:arch_coprocessors_disable	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/arch/posix/core/thread.c:153:6:z_impl_k_thread_abort	64	dynamic,bounded

@@ -1,3 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/cmdline.c:9:6:native_add_command_line_opts	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/cmdline.c:14:6:native_get_cmd_line_args	4	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/boards/native/native_sim/cmdline.c:19:6:native_get_test_cmd_line_args	4	static

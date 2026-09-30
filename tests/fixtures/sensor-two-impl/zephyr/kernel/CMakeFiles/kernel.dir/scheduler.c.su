@@ -1,7 +1,0 @@
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:16:6:z_sched_init	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:27:6:k_sched_lock	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:41:6:k_sched_unlock	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:53:6:z_impl_k_reschedule	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:70:9:z_impl_k_sched_current_thread_query	0	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:84:5:z_sched_waitq_walk	32	static
-/home/jp/repos/dynamic-call-tree-resolution/testbeds/zephyr/kernel/scheduler.c:130:5:z_sched_wait	24	static
