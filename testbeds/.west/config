@@ -1,7 +1,6 @@
 [manifest]
-path = zephyr
+path = manifest
 file = west.yml
-project-filter = -.*,+cmsis_6
 
 [zephyr]
 base = zephyr

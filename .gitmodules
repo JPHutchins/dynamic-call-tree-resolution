@@ -1,6 +1,3 @@
-[submodule "testbeds/zephyr"]
-	path = testbeds/zephyr
-	url = https://github.com/zephyrproject-rtos/zephyr
 [submodule "references/pexplorer"]
 	path = references/pexplorer
 	url = https://github.com/paulwuertz/pexplorer

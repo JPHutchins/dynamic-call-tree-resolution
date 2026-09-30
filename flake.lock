@@ -159,6 +159,7 @@
       "inputs": {
         "jphfmt": "jphfmt",
         "nixpkgs": "nixpkgs",
+        "west2nix": "west2nix",
         "zephyr-nix": "zephyr-nix"
       }
     },
@@ -216,6 +217,29 @@
       "original": {
         "owner": "pyproject-nix",
         "repo": "uv-python.nix",
+        "type": "github"
+      }
+    },
+    "west2nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "zephyr-nix": [
+          "zephyr-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1753935156,
+        "narHash": "sha256-D6iH0d67AmlB7k3QIjUvNo7NafzWy03HOHV5o4w251s=",
+        "owner": "adisbladis",
+        "repo": "west2nix",
+        "rev": "f84670d66f881d9340b7d7626fbfe499438c134b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "adisbladis",
+        "repo": "west2nix",
         "type": "github"
       }
     },

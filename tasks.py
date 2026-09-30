@@ -3,7 +3,9 @@
 
 """Task definitions for dynamic-call-tree-resolution."""
 
+import json
 from pathlib import Path
+from typing import cast
 
 from camas import Claude, Config, Parallel, Sequential, Task, by_glob, by_suffix
 
@@ -35,10 +37,13 @@ c_format_check = Task(
 	help="the C fixtures must stay jphfmt-canonical",
 )
 nix_format = Task(
-	"nixfmt {paths}", mutates=True, paths=by_suffix((".nix",), default=("flake.nix",))
+	"nixfmt {paths}",
+	mutates=True,
+	paths=by_suffix((".nix",), default=("flake.nix", "testbeds/fixtures.nix")),
 )
 nix_format_check = Task(
-	"nixfmt --check {paths}", paths=by_suffix((".nix",), default=("flake.nix",))
+	"nixfmt --check {paths}",
+	paths=by_suffix((".nix",), default=("flake.nix", "testbeds/fixtures.nix")),
 )
 fix = Sequential(lint_fix, format, c_format, nix_format)
 actionlint = Task("uv run actionlint", when=".github")
@@ -87,55 +92,35 @@ matrix = Sequential(
 	"(astral-sh/uv#17437), so the GIL build is installed by its downloadable name first",
 )
 
-testbeds_init = Sequential(
-	Task("git submodule update --init --depth 1 testbeds/zephyr", mutates=True),
-	Task(
-		"uv run --group build west update --narrow --fetch-opt=--depth=1",
-		cwd=Path("testbeds"),
-		mutates=True,
-	),
-	help="check out the zephyr submodule and its west workspace, with the one module the "
+testbeds_init = Task(
+	"uv run --group build west update --narrow --fetch-opt=--depth=1",
+	cwd=Path("testbeds"),
+	mutates=True,
+	help="clone the west workspace testbeds/manifest/west.yml pins: zephyr, and the one module the "
 	"testbeds link, cmsis_6",
 )
-stack_usage_args = "-- '-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da'"
+testbeds_lock = Sequential(
+	testbeds_init,
+	Task("west2nix", cwd=Path("testbeds"), mutates=True),
+	help="regenerate testbeds/west2nix.toml, the Nix-hashed lock `nix build .#fixtures` fetches "
+	"from; run in `nix develop .#testbeds` after editing testbeds/manifest/west.yml",
+)
 testbeds = Parallel(
 	Task(
-		"uv run --group build west build -b {BOARD} -d ../.camas/build/{NAME} -s {SOURCE} {CMAKE_ARGS}",
+		"uv run --group build west build -b {BOARD} -d ../.camas/build/{NAME} -s {SOURCE} "
+		"-- '-DEXTRA_CFLAGS={EXTRA_CFLAGS}'",
 		cwd=Path("testbeds"),
 		env={"ZEPHYR_TOOLCHAIN_VARIANT": "{TOOLCHAIN}"},
 	),
-	variants=(
-		{
-			"NAME": "hello",
-			"BOARD": "qemu_cortex_m3",
-			"SOURCE": "zephyr/samples/hello_world",
-			"TOOLCHAIN": "zephyr",
-			"CMAKE_ARGS": "",
-		},
-		{
-			"NAME": "counter",
-			"BOARD": "native_sim",
-			"SOURCE": "zephyr/samples/drivers/can/counter",
-			"TOOLCHAIN": "host",
-			"CMAKE_ARGS": "",
-		},
-		{
-			"NAME": "counter-su",
-			"BOARD": "native_sim",
-			"SOURCE": "zephyr/samples/drivers/can/counter",
-			"TOOLCHAIN": "host",
-			"CMAKE_ARGS": stack_usage_args,
-		},
-		{
-			"NAME": "sensor-two-impl",
-			"BOARD": "qemu_cortex_m3",
-			"SOURCE": "../tests/fixtures/sensor-two-impl-app",
-			"TOOLCHAIN": "zephyr",
-			"CMAKE_ARGS": stack_usage_args,
-		},
+	variants=tuple(
+		cast(
+			"list[dict[str, str]]",
+			json.loads((Path(__file__).parent / "testbeds/builds.json").read_text()),
+		)
 	),
-	help="build the zephyr testbeds into .camas/build/{NAME}; run in `nix develop .#testbeds`, "
-	"which provides the Zephyr SDK, dtc and the multilib host gcc native_sim links with",
+	help="build the zephyr testbeds of testbeds/builds.json into .camas/build/{NAME}; run in "
+	"`nix develop .#testbeds`, which provides the Zephyr SDK, dtc and the multilib host gcc "
+	"native_sim links with",
 )
 
 pexplorer_testdata = Sequential(
