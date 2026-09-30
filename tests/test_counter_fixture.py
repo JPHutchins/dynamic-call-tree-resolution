@@ -37,8 +37,8 @@ def test_summary_pins_the_published_numbers() -> None:
 	)
 	assert summary == AnalysisSummary(
 		resolved_slots=106,
-		total_slots=234,
-		unresolved_slots=128,
+		total_slots=250,
+		unresolved_slots=144,
 		resolved_targets=200,
 		indirect_call_sites=100,
 		total_functions=734,

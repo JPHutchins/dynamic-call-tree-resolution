@@ -40,6 +40,9 @@ from dynamic_call_tree_resolution.model import (
 	Address as Address,
 )
 from dynamic_call_tree_resolution.model import (
+	ArrayMember as ArrayMember,
+)
+from dynamic_call_tree_resolution.model import (
 	CallSite as CallSite,
 )
 from dynamic_call_tree_resolution.model import (

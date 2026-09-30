@@ -23,6 +23,34 @@ void (*dynamic_cbs[2])(void);
 
 int counts[2] = {[0] = 0, [1] = 0};
 
+struct filter {
+	void (*rx_cb)(void);
+	void * cb_arg;
+};
+
+struct bus {
+	int id;
+	struct filter filters[2];
+	void (*hooks[2])(void);
+	void (*grid[2][2])(void);
+	int levels[2];
+};
+
+struct tailed {
+	int count;
+	void (*tail[])(void);
+};
+
+struct bus const rom_bus = {
+	.filters = {{.rx_cb = handler_a}, {.rx_cb = handler_b}},
+	.hooks = {handler_b, handler_a},
+	.grid = {{handler_a, handler_b}, {handler_b, handler_a}},
+};
+
+struct bus ram_bus;
+
+struct tailed tailed_bus;
+
 __asm__(
 	".section .rodata.vector,\"a\"\n"
 	".globl vector_table\n"

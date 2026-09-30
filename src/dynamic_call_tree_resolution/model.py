@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING, Final, Literal, NewType
 
-from salix import Struct
+from salix import Struct, replace
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -95,7 +95,37 @@ class EmbeddedStructMember(Struct):
 	"""Resolved in place."""
 
 
-type Member = FunctionPointerMember | StructPointerMember | EmbeddedStructMember
+class ArrayMember(Struct):
+	"""A by-value array member whose elements hold pointers."""
+
+	kind: Literal["array"]
+	name: str | None
+	offset: int
+	count: int
+	stride: int
+	element: Member
+	"""One element, at offset 0."""
+
+
+type Member = FunctionPointerMember | StructPointerMember | EmbeddedStructMember | ArrayMember
+
+
+def array_elements(member: ArrayMember) -> tuple[Member, ...]:
+	"""Each element as a member named by its index, at its offset within the array.
+
+	>>> element = StructPointerMember(kind="struct_pointer", name=None, offset=0, pointee=None)
+	>>> [
+	...     (item.name, item.offset)
+	...     for item in array_elements(
+	...         ArrayMember(kind="array", name="slots", offset=8, count=2, stride=4, element=element)
+	...     )
+	... ]
+	[('[0]', 0), ('[1]', 4)]
+	"""
+	return tuple(
+		replace(member.element, name=f"[{index}]", offset=index * member.stride)
+		for index in range(member.count)
+	)
 
 
 class StructureLayout(Struct):

@@ -18,6 +18,7 @@ from salix import Struct
 
 from dynamic_call_tree_resolution import (
 	Address,
+	ArrayMember,
 	EmbeddedStructMember,
 	Function,
 	FunctionPointerMember,
@@ -420,3 +421,50 @@ def test_load_records_a32_code_from_mapping_symbols(tmp_path: Path) -> None:
 	assert {
 		instruction_set_at(program, function.address) for function in program.functions.values()
 	} == {InstructionSet.A32}
+
+
+def test_load_records_pointer_valued_array_members(fixture_elfs: dict[str, Path]) -> None:
+	layouts = load(fixture_elfs["arrays"]).layouts
+	callback = FunctionPointerMember(
+		kind="function_pointer",
+		name=None,
+		offset=0,
+		signature=FunctionSignature(return_type="void", parameters=()),
+	)
+	assert layouts["struct bus"].members == (
+		ArrayMember(
+			kind="array",
+			name="filters",
+			offset=8,
+			count=2,
+			stride=16,
+			element=EmbeddedStructMember(
+				kind="embedded_struct",
+				name=None,
+				offset=0,
+				members=(
+					FunctionPointerMember(
+						kind="function_pointer",
+						name="rx_cb",
+						offset=0,
+						signature=FunctionSignature(return_type="void", parameters=()),
+					),
+					StructPointerMember(
+						kind="struct_pointer", name="cb_arg", offset=8, pointee=None
+					),
+				),
+			),
+		),
+		ArrayMember(kind="array", name="hooks", offset=40, count=2, stride=8, element=callback),
+		ArrayMember(
+			kind="array",
+			name="grid",
+			offset=56,
+			count=2,
+			stride=16,
+			element=ArrayMember(
+				kind="array", name=None, offset=0, count=2, stride=8, element=callback
+			),
+		),
+	)
+	assert layouts["struct tailed"].members == ()

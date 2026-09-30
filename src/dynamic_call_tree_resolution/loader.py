@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from itertools import groupby
+from math import prod
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from elftools.elf.descriptions import describe_reloc_type
@@ -21,6 +22,7 @@ from dynamic_call_tree_resolution.model import (
 	ARRAY_SUFFIX,
 	FUNCTION_POINTER,
 	Address,
+	ArrayMember,
 	DataObject,
 	EmbeddedStructMember,
 	Function,
@@ -60,6 +62,17 @@ _SHF_WRITE: Final = 0x1
 _SHF_ALLOC: Final = 0x2
 _SHF_EXECINSTR: Final = 0x4
 _MAPPING_SYMBOL: Final = re.compile(r"\$[adt](\..*)?")
+_CONSTANT_FORMS: Final = frozenset(
+	{
+		"DW_FORM_data1",
+		"DW_FORM_data2",
+		"DW_FORM_data4",
+		"DW_FORM_data8",
+		"DW_FORM_udata",
+		"DW_FORM_sdata",
+		"DW_FORM_implicit_const",
+	}
+)
 
 
 def load(path: Path) -> Program:
@@ -385,8 +398,14 @@ class _EmbeddedStruct(Struct):
 	members: tuple[Member, ...]
 
 
+class _Array(Struct):
+	count: int
+	stride: int
+	element: Member
+
+
 type _PointeeKind = _FunctionPointer | _StructPointer | None
-type _MemberKind = _FunctionPointer | _StructPointer | _EmbeddedStruct | None
+type _MemberKind = _FunctionPointer | _StructPointer | _EmbeddedStruct | _Array | None
 
 
 def _pointee_kind(type_die: DIE | None) -> _PointeeKind:
@@ -413,7 +432,84 @@ def _member_kind(type_die: DIE | None) -> _MemberKind:
 		return _pointee_kind(underlying)
 	if underlying.tag in ("DW_TAG_structure_type", "DW_TAG_union_type"):
 		return _EmbeddedStruct(members=tuple(_layout_members(underlying)))
+	if underlying.tag == "DW_TAG_array_type":
+		return _array_kind(underlying)
 	return None
+
+
+def _array_kind(array_die: DIE) -> _Array | None:
+	element = _member(_member_kind(_type_die(array_die)), None, 0)
+	stride = _byte_size(_strip_qualifiers(_type_die(array_die)))
+	counts = tuple(
+		_subrange_count(child)
+		for child in array_die.iter_children()
+		if child.tag == "DW_TAG_subrange_type"
+	)
+	if element is None or not stride or not counts or not all(counts):
+		return None
+	return _nested_array(tuple(count for count in counts if count is not None), stride, element)
+
+
+def _nested_array(counts: tuple[int, ...], stride: int, element: Member) -> _Array:
+	return _Array(
+		count=counts[0],
+		stride=stride * prod(counts[1:]),
+		element=element
+		if len(counts) == 1
+		else _array_member(_nested_array(counts[1:], stride, element), None, 0),
+	)
+
+
+def _subrange_count(subrange: DIE) -> int | None:
+	count = _constant(subrange.attributes.get("DW_AT_count"))
+	upper = _constant(subrange.attributes.get("DW_AT_upper_bound"))
+	lower = _constant(subrange.attributes.get("DW_AT_lower_bound")) or 0
+	return count if count is not None else None if upper is None else upper - lower + 1
+
+
+def _constant(attribute: AttributeValue | None) -> int | None:
+	return (
+		_int_value(attribute)
+		if attribute is not None and attribute.form in _CONSTANT_FORMS
+		else None
+	)
+
+
+def _byte_size(die: DIE | None) -> int | None:
+	return _constant(die.attributes.get("DW_AT_byte_size")) if die is not None else None
+
+
+def _member(kind: _MemberKind, name: str | None, offset: int) -> Member | None:
+	match kind:
+		case _FunctionPointer(signature):
+			return FunctionPointerMember(
+				kind="function_pointer", name=name, offset=offset, signature=signature
+			)
+		case _StructPointer(pointee):
+			return StructPointerMember(
+				kind="struct_pointer", name=name, offset=offset, pointee=pointee
+			)
+		case _EmbeddedStruct(members):
+			return EmbeddedStructMember(
+				kind="embedded_struct", name=name, offset=offset, members=members
+			)
+		case _Array() as array:
+			return _array_member(array, name, offset)
+		case None:
+			return None
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _array_member(array: _Array, name: str | None, offset: int) -> ArrayMember:
+	return ArrayMember(
+		kind="array",
+		name=name,
+		offset=offset,
+		count=array.count,
+		stride=array.stride,
+		element=array.element,
+	)
 
 
 def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
@@ -450,32 +546,9 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 		offset = _member_offset(child)
 		if offset is None:
 			continue  # pragma: no cover
-		match _member_kind(_type_die(child)):
-			case _FunctionPointer(signature):
-				yield FunctionPointerMember(
-					kind="function_pointer",
-					name=_member_name(child),
-					offset=offset,
-					signature=signature,
-				)
-			case _StructPointer(pointee):
-				yield StructPointerMember(
-					kind="struct_pointer",
-					name=_member_name(child),
-					offset=offset,
-					pointee=pointee,
-				)
-			case _EmbeddedStruct(members):
-				yield EmbeddedStructMember(
-					kind="embedded_struct",
-					name=_member_name(child),
-					offset=offset,
-					members=members,
-				)
-			case None:
-				pass
-			case _ as unreachable:
-				assert_never(unreachable)
+		member = _member(_member_kind(_type_die(child)), _member_name(child), offset)
+		if member is not None:
+			yield member
 
 
 def _member_name(member_die: DIE) -> str | None:
@@ -487,14 +560,7 @@ def _member_offset(member_die: DIE) -> int | None:
 	location = member_die.attributes.get("DW_AT_data_member_location")
 	if location is None:
 		return 0
-	if location.form not in (
-		"DW_FORM_data1",
-		"DW_FORM_data2",
-		"DW_FORM_data4",
-		"DW_FORM_data8",
-		"DW_FORM_udata",
-		"DW_FORM_implicit_const",
-	):
+	if location.form not in _CONSTANT_FORMS:
 		return None  # pragma: no cover
 	return _int_value(location)
 

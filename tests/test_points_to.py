@@ -226,12 +226,41 @@ def test_array_globals_descend_each_element(fixture_elfs: dict[str, Path]) -> No
 	assert _names(program, resolved["cbs.[1]"]) == {"handler_b"}
 
 
+def test_array_members_descend_each_element(fixture_elfs: dict[str, Path]) -> None:
+	resolved, program = _resolved(fixture_elfs["arrays"])
+	assert {
+		path: _names(program, assignment)
+		for path, assignment in resolved.items()
+		if path.startswith("rom_bus.")
+	} == {
+		"rom_bus.filters.[0].rx_cb": {"handler_a"},
+		"rom_bus.filters.[1].rx_cb": {"handler_b"},
+		"rom_bus.hooks.[0]": {"handler_b"},
+		"rom_bus.hooks.[1]": {"handler_a"},
+		"rom_bus.grid.[0].[0]": {"handler_a"},
+		"rom_bus.grid.[0].[1]": {"handler_b"},
+		"rom_bus.grid.[1].[0]": {"handler_b"},
+		"rom_bus.grid.[1].[1]": {"handler_a"},
+	}
+
+
 def test_array_globals_report_unresolved_elements(fixture_elfs: dict[str, Path]) -> None:
 	program = load(fixture_elfs["arrays"])
 	unresolved = {
 		render_path(slot.path): slot for slot in unresolved_slots(program, assignments(program))
 	}
-	assert set(unresolved) == {"dynamic_cbs.[0]", "dynamic_cbs.[1]"}
+	assert set(unresolved) == {
+		"dynamic_cbs.[0]",
+		"dynamic_cbs.[1]",
+		"ram_bus.filters.[0].rx_cb",
+		"ram_bus.filters.[1].rx_cb",
+		"ram_bus.hooks.[0]",
+		"ram_bus.hooks.[1]",
+		"ram_bus.grid.[0].[0]",
+		"ram_bus.grid.[0].[1]",
+		"ram_bus.grid.[1].[0]",
+		"ram_bus.grid.[1].[1]",
+	}
 	assert unresolved["dynamic_cbs.[0]"].signature == FunctionSignature(
 		return_type="void", parameters=()
 	)
