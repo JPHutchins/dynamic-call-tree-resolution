@@ -140,11 +140,6 @@ def test_exact_expansion_joins_both_threads_in_the_i2c_emulator_cycle(
 	)
 
 
-@pytest.mark.xfail(
-	strict=True,
-	raises=AssertionError,
-	reason="https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/58",
-)
 def test_no_entry_is_deeper_exact_than_sound(
 	exact_depths: Mapping[str, StackReport], sound_depths: Mapping[str, StackReport]
 ) -> None:

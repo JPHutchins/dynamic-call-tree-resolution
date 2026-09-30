@@ -110,8 +110,6 @@ def expand_indirect_calls(
 			raw_names_by_key.setdefault(frame_key(name), set()).add(name)
 
 	def graph_targets(target: str) -> frozenset[str]:
-		if not exact:
-			return frozenset({target})
 		raw_names = raw_names_by_key.get(frame_key(target))
 		return frozenset(raw_names) if raw_names is not None else frozenset({target})
 

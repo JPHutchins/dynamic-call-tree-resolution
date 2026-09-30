@@ -51,7 +51,7 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		total_functions=729,
 		entry_points=146,
 		discarded_entry_points=223,
-		worst_case_entry="cmd_date_set",
+		worst_case_entry="gpio_emul_port_set_masked_raw",
 		worst_case=summary.worst_case,
 	)
 	assert isinstance(summary.worst_case, UnboundedStack)
@@ -61,7 +61,7 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		len(summary.worst_case.unmeasured),
 		summary.worst_case.dynamic,
 		summary.worst_case.unresolved,
-	) == (3116, 99, 132, (), ())
+	) == (6288, 222, 153, (), ())
 
 
 def test_shell_readline_is_not_in_the_linked_executable(executable: Path) -> None:
