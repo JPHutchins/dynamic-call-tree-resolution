@@ -256,14 +256,12 @@ def _arm_arithmetic(
 
 
 def _arm_shift_destination(state: State, destination: int, source: int, delta: int) -> State:
-	if destination == arm_const.ARM_REG_SP:
-		return set_offsets(
-			state, destination, shift_offsets(lookup(state.sp_offsets, destination), delta)
-		)
-	if source == arm_const.ARM_REG_SP:
+	if source == arm_const.ARM_REG_SP or source in state.sp_offsets:
 		return set_offsets(
 			state, destination, shift_offsets(lookup(state.sp_offsets, source), delta)
 		)
+	if destination == arm_const.ARM_REG_SP:
+		return set_offsets(state, destination, Top())
 	return set_register(state, destination, shift_addresses(lookup(state.registers, source), delta))
 
 

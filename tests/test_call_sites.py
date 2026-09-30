@@ -2366,6 +2366,18 @@ def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
 			id="indexed-by-add",
 		),
 		pytest.param(
+			"6c46 201d 42f20003 0193 00f002f8 019b 9847 7047",
+			0x12,
+			set[int](),
+			id="offset-by-adds-from-a-copy",
+		),
+		pytest.param(
+			"6c46 a01e 42f20003 0193 00f002f8 019b 9847 7047",
+			0x12,
+			set[int](),
+			id="offset-by-subs-from-a-copy",
+		),
+		pytest.param(
 			"6c46 44f00100 42f20003 0193 2a60 019b 9847",
 			0x12,
 			set[int](),
