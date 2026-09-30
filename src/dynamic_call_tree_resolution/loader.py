@@ -85,6 +85,10 @@ def _load(stream: BinaryIO) -> Program:
 	raw_sections = _sections(elf)
 	relocations = _relocations(elf, raw_sections, pointer_size, byte_order)
 	sections = _relocated_sections(raw_sections, relocations, pointer_size, byte_order)
+	relro_spans = tuple(
+		(segment["p_vaddr"], segment["p_vaddr"] + segment["p_memsz"])
+		for segment in elf.iter_segments(type="PT_GNU_RELRO")
+	)
 	machine = Machine(elf.header["e_machine"])
 	return Program(
 		byte_order=byte_order,
@@ -102,11 +106,18 @@ def _load(stream: BinaryIO) -> Program:
 		relocations=relocations,
 		sections={
 			Address(section.address): Section(
-				data=section.data, writable=bool(section.flags & _SHF_WRITE)
+				data=section.data,
+				writable=bool(section.flags & _SHF_WRITE) and not _relro(relro_spans, section),
 			)
 			for section in sections.values()
 			if section.flags & _SHF_ALLOC
 		},
+	)
+
+
+def _relro(spans: tuple[tuple[int, int], ...], section: _SectionBytes) -> bool:
+	return any(
+		start <= section.address and section.address + section.size <= end for start, end in spans
 	)
 
 

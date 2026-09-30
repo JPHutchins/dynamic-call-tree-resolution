@@ -350,6 +350,12 @@ def test_committed_arm_images_hold_one_function_per_entry_point(elf: str) -> Non
 	[
 		("hello_zephyr_qemu_cortex_m3.elf", "datas", ("text", "rodata", "device_area")),
 		("counter-su/zephyr/zephyr.exe", ".data", (".text", ".rodata", "device_area")),
+		pytest.param(
+			"counter-su/zephyr/zephyr.exe",
+			".got.plt",
+			(".init_array", ".fini_array", ".dynamic", ".got"),
+			id="relro-sections-are-read-only-and-got-plt-straddles-the-end",
+		),
 	],
 )
 def test_committed_images_mark_data_writable_and_code_read_only(
@@ -364,3 +370,14 @@ def test_committed_images_mark_data_writable_and_code_read_only(
 	sections = load(path).sections
 	assert sections[starts[writable]].writable
 	assert [name for name in read_only if sections[starts[name]].writable] == []
+
+
+def test_load_marks_relro_sections_read_only(fixture_elfs: dict[str, Path]) -> None:
+	with fixture_elfs["nopie"].open("rb") as stream:
+		starts = {
+			section.name: Address(section.header.sh_addr)
+			for section in ELFFile(stream).iter_sections()
+		}
+	sections = load(fixture_elfs["nopie"]).sections
+	assert not sections[starts[".data.rel.ro"]].writable
+	assert sections[starts[".data"]].writable
