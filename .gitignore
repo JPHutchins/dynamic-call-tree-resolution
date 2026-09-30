@@ -1,7 +1,6 @@
 .venv/
 .camas/
 build/
-testbeds/.west/
 testbeds/modules/
 dist/
 __pycache__/

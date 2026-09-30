@@ -271,6 +271,16 @@ uv run camas matrix    # the same checks on each interpreter in .python-version
 uv manages the Python interpreters named in `.python-version`. Tools started from the
 shell, such as an editor or `camas mcp`, inherit its toolchain.
 
+The Zephyr testbeds build in their own shell, which adds the Zephyr SDK, dtc and the
+multilib host gcc that `native_sim` links with. Its host gcc is not the one the checks
+use, so run the checks from `nix develop`.
+
+```sh
+nix develop .#testbeds
+uv run camas testbeds_init            # the zephyr submodule and its west workspace
+uv run camas testbeds --NAME=hello    # one testbed, into .camas/build/hello
+```
+
 ## References
 
 - [pexplorer](https://paulwuertz.github.io/pexplorer/) — Paul Würtz's browser-based

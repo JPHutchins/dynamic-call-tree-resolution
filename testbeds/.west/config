@@ -1,0 +1,8 @@
+[manifest]
+path = zephyr
+file = west.yml
+project-filter = -.*,+cmsis_6
+
+[zephyr]
+base = zephyr
+

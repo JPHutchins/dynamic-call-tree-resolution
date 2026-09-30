@@ -87,35 +87,56 @@ matrix = Sequential(
 	"(astral-sh/uv#17437), so the GIL build is installed by its downloadable name first",
 )
 
-zephyr_sdk = Path("/home/jp/zephyr-sdk-1.0.1")
-hello = Task(
-	"uv run --group build west build -b qemu_cortex_m3 -d ../.camas/build/hello zephyr/samples/hello_world",
-	cwd=Path("testbeds"),
-	env={
-		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
-		"DTC": str(zephyr_sdk / "hosttools/sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
-	},
-	help="build the zephyr hello_world testbed for qemu_cortex_m3 (needs west update)",
+testbeds_init = Sequential(
+	Task("git submodule update --init --depth 1 testbeds/zephyr", mutates=True),
+	Task(
+		"uv run --group build west update --fetch-opt=--depth=1", cwd=Path("testbeds"), mutates=True
+	),
+	help="check out the zephyr submodule and its west workspace, with the one module the "
+	"testbeds link, cmsis_6",
 )
-counter = Task(
-	"uv run --group build west build -b native_sim -d ../.camas/build/counter zephyr/samples/drivers/can/counter",
-	cwd=Path("testbeds"),
-	env={
-		"ZEPHYR_TOOLCHAIN_VARIANT": "host",
-		"DTC": str(zephyr_sdk / "hosttools/sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
-	},
-	help="build the zephyr CAN counter testbed for native_sim (device API indirection)",
-)
-counter_su = Task(
-	"uv run --group build west build -b native_sim -d ../.camas/build/counter-su zephyr/samples/drivers/can/counter -- '-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da'",
-	cwd=Path("testbeds"),
-	env={
-		"ZEPHYR_TOOLCHAIN_VARIANT": "host",
-		"DTC": str(zephyr_sdk / "hosttools/sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
-	},
-	help="build the CAN counter testbed with -fstack-usage/-fcallgraph-info for WCS analysis",
+stack_usage_args = "-- '-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da'"
+testbeds = Parallel(
+	Task(
+		"uv run --group build west build -b {BOARD} -d ../.camas/build/{NAME} -s {SOURCE} {CMAKE_ARGS}",
+		cwd=Path("testbeds"),
+		env={"ZEPHYR_TOOLCHAIN_VARIANT": "{TOOLCHAIN}"},
+	),
+	variants=(
+		{
+			"NAME": "hello",
+			"BOARD": "qemu_cortex_m3",
+			"SOURCE": "zephyr/samples/hello_world",
+			"TOOLCHAIN": "zephyr",
+			"CMAKE_ARGS": "",
+		},
+		{
+			"NAME": "counter",
+			"BOARD": "native_sim",
+			"SOURCE": "zephyr/samples/drivers/can/counter",
+			"TOOLCHAIN": "host",
+			"CMAKE_ARGS": "",
+		},
+		{
+			"NAME": "counter-su",
+			"BOARD": "native_sim",
+			"SOURCE": "zephyr/samples/drivers/can/counter",
+			"TOOLCHAIN": "host",
+			"CMAKE_ARGS": stack_usage_args,
+		},
+		{
+			"NAME": "sensor-two-impl",
+			"BOARD": "qemu_cortex_m3",
+			"SOURCE": "../tests/fixtures/sensor-two-impl-app",
+			"TOOLCHAIN": "zephyr",
+			"CMAKE_ARGS": stack_usage_args,
+		},
+	),
+	help="build the zephyr testbeds into .camas/build/{NAME}; run in `nix develop .#testbeds`, "
+	"which provides the Zephyr SDK, dtc and the multilib host gcc native_sim links with",
 )
 
+zephyr_sdk = Path("/home/jp/zephyr-sdk-1.0.1")
 zephyr_sdk_legacy = Path("/home/jp/zephyr-sdk-0.17.4")
 zmk = Task(
 	"uv run --group build west build -b nice_nano -d ../../.camas/build/zmk -s /home/jp/repos/dynamic-call-tree-resolution/testbeds/zmk/app -- -DSHIELD=a_dux_left",
@@ -144,20 +165,15 @@ zswatch_build = Task(
 )
 zswatch = Sequential(zswatch_patch, zswatch_build)
 
-sensor_two_impl = Task(
-	"uv run --group build west build -b qemu_cortex_m3 -d ../.camas/build/sensor-two-impl -s /home/jp/repos/dynamic-call-tree-resolution/tests/fixtures/sensor-two-impl-app -- '-DEXTRA_CFLAGS=-fstack-usage -fcallgraph-info=su,da'",
-	cwd=Path("testbeds"),
-	env={
-		"ZEPHYR_SDK_INSTALL_DIR": str(zephyr_sdk),
-		"DTC": str(zephyr_sdk / "hosttools/sysroots/x86_64-pokysdk-linux/usr/bin/dtc"),
-	},
-	help="build the two-impl sensor fixture (qemu_cortex_m3) with stack/callgraph artifacts",
-)
-
-pexplorer_testdata = Task(
-	"uv run dctr compare references/pexplorer/testdata/elf_testdata",
-	help="run dctr's resolution rollup over pexplorer's shared testdata ELFs "
-	"(needs the references/pexplorer submodule and its git-lfs objects)",
+pexplorer_testdata = Sequential(
+	Task("git submodule update --init --depth 1 references/pexplorer", mutates=True),
+	Task(
+		"git -C references/pexplorer -c core.attributesFile=../pexplorer.gitattributes "
+		"lfs pull --include testdata/elf_testdata",
+		mutates=True,
+	),
+	Task("uv run dctr compare references/pexplorer/testdata/elf_testdata"),
+	help="run dctr's resolution rollup over pexplorer's shared testdata ELFs",
 )
 
 _ = Config(default_task=all, github_task=matrix, agent=Claude(fix=fix, check=gate))  # type: ignore[misc]
