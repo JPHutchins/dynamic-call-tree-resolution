@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
@@ -2658,3 +2658,98 @@ def test_thumb_data_in_code_is_not_decoded(
 			(site.site_address, site.candidates) for site in extract_call_sites(program)
 		)
 	] == [frozenset(Address(address) for address in expected) for expected in sites]
+
+
+def _thumb_dispatch_program(code: str, data_in_code: tuple[tuple[int, int], ...] = ()) -> Program:
+	body = bytes.fromhex(code)
+	return build_program(
+		"EM_ARM",
+		(
+			("caller", 0x1000, len(body)),
+			*((f"case_{address:x}", address, 4) for address in (0x2000, 0x3000, 0x5000, 0x6000)),
+		),
+		objects=(("table", 0x4000, _pointer(0x2000, 4) + _pointer(0x3000, 4)),),
+		sections={0x1000: body},
+		pointer_size=4,
+		data_in_code=data_in_code,
+	)
+
+
+_TBB: Final = "02280cd8dfe800f00205080042f2000307e043f2000304e045f2000301e046f2000398477047"
+
+
+@pytest.mark.parametrize(
+	("code", "data_in_code"),
+	[
+		pytest.param(_TBB, (), id="tbb"),
+		pytest.param(_TBB, ((0x1008, 0x100C),), id="tbb-with-a-marked-table"),
+		pytest.param(
+			"02280dd8dfe810f003000600090042f2000307e043f2000304e045f2000301e046f2000398477047",
+			(),
+			id="tbh",
+		),
+		pytest.param(
+			"022812d801a252f820f000bf191000001f1000002510000042f2000307e043f2000304e045f2000301e0"
+			"46f200039847704700bf",
+			(),
+			id="adr-and-ldr-pc",
+		),
+	],
+)
+def test_thumb_bounded_dispatch_reaches_every_case(
+	code: str, data_in_code: tuple[tuple[int, int], ...]
+) -> None:
+	(site,) = extract_call_sites(_thumb_dispatch_program(code, data_in_code))
+	assert site.candidates == frozenset(
+		Address(address) for address in (0x2000, 0x3000, 0x5000, 0x6000)
+	)
+
+
+@pytest.mark.parametrize(
+	"code",
+	[
+		pytest.param(
+			"002901d002280cd8dfe800f00205080042f2000307e043f2000304e045f2000301e046f2000398477047",
+			id="a-branch-into-the-dispatch-bypasses-the-bound",
+		),
+		pytest.param(
+			"00290cd0dfe800f00205080042f2000307e043f2000304e045f2000301e046f2000398477047",
+			id="no-bound",
+		),
+		pytest.param(
+			"002906d0874442f2000304e043f2000301e046f2000398477047", id="add-pc-has-no-table"
+		),
+		pytest.param(
+			"dfe800f0000042f2000304e043f2000301e046f2000398477047", id="dispatch-before-any-guard"
+		),
+		pytest.param(
+			"c82808d8dfe800f0010342f2000304e043f2000301e046f2000398477047",
+			id="table-past-the-section",
+		),
+		pytest.param(
+			"012808d8dfe800f07f7f42f2000304e043f2000301e046f2000398477047",
+			id="targets-outside-the-function",
+		),
+		pytest.param(
+			"012808d80a4652f820f042f2000304e043f2000301e046f2000398477047",
+			id="ldr-pc-without-adr",
+		),
+	],
+)
+def test_thumb_unbounded_dispatch_reaches_every_block(code: str) -> None:
+	sites = [site for site in extract_call_sites(_thumb_dispatch_program(code)) if site.candidates]
+	assert sites == []
+
+
+@pytest.mark.parametrize(
+	("code", "candidates"),
+	[
+		pytest.param("00b5 42f20003 5df804fb 9847", set[int](), id="ldr-pc-from-sp-returns"),
+		pytest.param("42f20003 f746 9847", set[int](), id="mov-pc-lr-returns"),
+		pytest.param("42f20003 9f46", {0x2000}, id="mov-pc-is-a-site"),
+		pytest.param("44f20003 d3f804f0", {0x3000}, id="ldr-pc-is-a-site"),
+	],
+)
+def test_thumb_pc_write_is_a_return_or_a_site(code: str, candidates: set[int]) -> None:
+	(site,) = extract_call_sites(_thumb_dispatch_program(code))
+	assert site.candidates == frozenset(Address(address) for address in candidates)
