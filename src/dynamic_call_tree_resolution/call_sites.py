@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
+	from dynamic_call_tree_resolution.vsa.analysis import ThreadSites
 
 
 def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
@@ -45,13 +46,15 @@ class ProgramResolution(Struct):
 	assignments: tuple[SlotAssignment, ...]
 	"""RAM initializers include the program's stores, and drop out when a store is unknown."""
 	seeded: frozenset[str]
+	threads: Mapping[str, ThreadSites]
 
 
 def resolve(program: Program, rtos: RtosModel = BARE_METAL) -> ProgramResolution:
-	analysis = analyze(program, rtos.threads)
+	analysis = analyze(program, rtos)
 	return ProgramResolution(
 		sites=analysis.sites,
 		seeded=analysis.seeded,
+		threads=analysis.threads,
 		assignments=tuple(
 			runtime
 			for assignment in assignments(program)

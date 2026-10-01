@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.callgraph import CallEdge
-	from dynamic_call_tree_resolution.model import Program
+	from dynamic_call_tree_resolution.model import CallSite, Program
 
 ARM_LEVELS = ("-O0", "-O2", "-Os")
 
@@ -203,12 +203,22 @@ ESCAPED_RECORD_IMAGES = tuple(
 	for image in THREAD_RECORD_IMAGES
 )
 
+SHARED_ENTRY_IMAGES = tuple(
+	Image(source="shared_entry.c", platform=image.platform, flags=image.flags)
+	for image in THREAD_RECORD_IMAGES
+)
+
 OBSERVED_CASES = (
 	*(case for case, _ in CANDIDATES),
 	*(Case(image=image, caller="main") for image in STACK_IMAGES),
 	*(
 		Case(image=image, caller="worker")
 		for image in (*THREAD_RECORD_IMAGES, *ESCAPED_RECORD_IMAGES)
+	),
+	*(
+		Case(image=image, caller=thread)
+		for image in SHARED_ENTRY_IMAGES
+		for thread in ("thread_a", "thread_b")
 	),
 )
 
@@ -221,6 +231,7 @@ IMAGES = tuple(
 				*STACK_IMAGES,
 				*THREAD_RECORD_IMAGES,
 				*ESCAPED_RECORD_IMAGES,
+				*SHARED_ENTRY_IMAGES,
 			)
 		),
 		key=_image_id,
@@ -442,26 +453,30 @@ def test_a32_sites_are_objdumps_register_indirect_branches(
 	assert len(outcomes[image].sites) == sum(1 for _ in REGISTER_INDIRECT_BRANCH.finditer(listing))
 
 
-def _record_thread(program: Program) -> ThreadRoot:
+def _record_thread(program: Program, name: str, index: int) -> ThreadRoot:
 	(records,) = (item for item in program.objects.values() if item.name == "records")
+	layout = program.layouts["struct thread_record"]
 	offsets = {
-		member.name: member.offset for member in program.layouts["struct thread_record"].members
+		member.name: records.address + index * layout.size + member.offset
+		for member in layout.members
 	}
 	return ThreadRoot(
-		name="record",
-		entry=Address(pointer_at(program, Address(records.address + offsets["entry"])) or 0),
-		entry_slot=Address(records.address + offsets["entry"]),
+		name=name,
+		entry=Address(pointer_at(program, Address(offsets["entry"])) or 0),
+		entry_slot=Address(offsets["entry"]),
 		arguments=tuple(
-			Address(pointer_at(program, Address(records.address + offsets[name])) or 0)
-			for name in ("p1", "p2", "p3")
+			Address(pointer_at(program, Address(offsets[member])) or 0)
+			for member in ("p1", "p2", "p3")
 		),
 	)
 
 
-def _worker_targets(program: Program, resolution: ProgramResolution) -> frozenset[str]:
+def _worker_targets(
+	program: Program, resolution: ProgramResolution, sites: tuple[CallSite, ...]
+) -> frozenset[str]:
 	return frozenset(
 		candidate.name
-		for site in build_report(program, resolution.assignments, resolution.sites).call_sites
+		for site in build_report(program, resolution.assignments, sites).call_sites
 		if site.caller == "worker"
 		for candidate in site.candidates
 	)
@@ -470,7 +485,12 @@ def _worker_targets(program: Program, resolution: ProgramResolution) -> frozense
 def _with_record_thread(program: Program) -> ProgramResolution:
 	return resolve(
 		program,
-		RtosModel(name="test", evidence=(), threads=(_record_thread(program),), trampoline=None),
+		RtosModel(
+			name="test",
+			evidence=(),
+			threads=(_record_thread(program, "record", 0),),
+			trampoline=None,
+		),
 	)
 
 
@@ -482,10 +502,11 @@ def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
 ) -> None:
 	program = load(outcomes[image].elf)
 	seeded = _with_record_thread(program)
+	unseeded = resolve(program)
 	assert (
-		_worker_targets(program, resolve(program)),
+		_worker_targets(program, unseeded, unseeded.sites),
 		seeded.seeded,
-		_worker_targets(program, seeded),
+		_worker_targets(program, seeded, seeded.sites),
 	) == (frozenset(), frozenset({"record"}), outcomes[image].observations["worker"])
 
 
@@ -497,7 +518,10 @@ def test_an_entry_whose_address_is_also_stored_elsewhere_is_not_seeded(
 ) -> None:
 	program = load(outcomes[image].elf)
 	seeded = _with_record_thread(program)
-	assert (seeded.seeded, _worker_targets(program, seeded)) == (frozenset(), frozenset())
+	assert (seeded.seeded, _worker_targets(program, seeded, seeded.sites)) == (
+		frozenset(),
+		frozenset(),
+	)
 
 
 @pytest.mark.parametrize(
@@ -516,3 +540,34 @@ def test_a_null_record_argument_leads_to_no_object_at_address_zero(
 		for assignment in assignments(load(outcomes[image].elf))
 		if assignment.path[0] == "records"
 	) == ["records.[0].entry", "records.[0].p1.operations.run"]
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in SHARED_ENTRY_IMAGES]
+)
+def test_each_thread_of_a_shared_entry_resolves_to_what_its_own_record_passes(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	program = load(outcomes[image].elf)
+	resolution = resolve(
+		program,
+		RtosModel(
+			name="test",
+			evidence=(),
+			threads=(
+				_record_thread(program, "thread_a", 0),
+				_record_thread(program, "thread_b", 1),
+			),
+			trampoline="thread_entry",
+		),
+	)
+	assert (
+		_worker_targets(program, resolution, resolution.sites),
+		{
+			name: _worker_targets(program, resolution, thread.sites)
+			for name, thread in resolution.threads.items()
+		},
+	) == (
+		outcomes[image].observations["thread_a"] | outcomes[image].observations["thread_b"],
+		{name: outcomes[image].observations[name] for name in ("thread_a", "thread_b")},
+	)
