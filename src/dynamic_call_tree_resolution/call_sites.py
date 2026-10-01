@@ -24,7 +24,7 @@ from dynamic_call_tree_resolution.points_to import (
 	signatures_by_slot,
 	unresolved_slots,
 )
-from dynamic_call_tree_resolution.stack_analysis import frame_key
+from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, frame_key
 from dynamic_call_tree_resolution.vsa import Analysis, address_taken, analyze, runtime_value
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 
@@ -155,10 +155,14 @@ def per_caller_candidates(
 
 	targets_by_caller = {
 		caller: frozenset(
-			program.functions[address].name
+			name
 			for site in group
-			for address in (
-				call_site_candidates(program, site, resolved_map, signatures) or fallback_addresses
+			for name in (
+				frozenset(
+					program.functions[address].name
+					for address in call_site_candidates(program, site, resolved_map, signatures)
+				)
+				or {INDIRECT_CALLEE}
 			)
 		)
 		for caller, group in groupby(sorted(sites, key=caller_name), key=caller_name)

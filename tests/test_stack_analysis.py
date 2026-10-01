@@ -581,6 +581,19 @@ def test_expand_indirect_calls_unions_the_fallback_into_caller_sets() -> None:
 	)
 
 
+@pytest.mark.parametrize("exact", [False, True], ids=["sound", "exact"])
+def test_expand_indirect_calls_expands_a_site_without_candidates_to_the_fallback(
+	exact: bool,
+) -> None:
+	edges = (CallEdge(caller="main", callee="__indirect_call"),)
+	assert expand_indirect_calls(
+		edges, {"main": frozenset({"cb", INDIRECT_CALLEE})}, frozenset({"fb"}), exact=exact
+	) == (
+		CallEdge(caller="main", callee="cb", kind=EdgeKind.CANDIDATE),
+		CallEdge(caller="main", callee="fb", kind=EdgeKind.FALLBACK),
+	)
+
+
 def test_expand_indirect_calls_without_candidates_keeps_placeholders() -> None:
 	edges = (CallEdge(caller="main", callee="__indirect_call"),)
 	assert expand_indirect_calls(edges, {}, frozenset()) == edges

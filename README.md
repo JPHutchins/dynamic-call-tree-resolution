@@ -169,7 +169,7 @@ poll_state_thread +80 = 80 bytes (recursion)
 can_msgq_put +32 = 112 bytes via indirect: fallback (recursion)
 z_impl_k_msgq_put +8 = 120 bytes via static (recursion)
 ...
-tx_thread +112 = 624 bytes via indirect: candidate (recursion)
+tx_thread +112 = 624 bytes via indirect: fallback (recursion)
 ...
 timer_core_arm +48 = 6192 bytes via static
 hwtimer_set_tick_one_shot +0 = 6192 bytes via static (unmeasured)
@@ -193,8 +193,7 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   RTOS model when one is detected.
 - `stack --elf` expands every indirect edge to its site candidates plus the fallback,
   every address-taken function. `z_shell_write` has no candidates, so its edge is the
-  fallback
-  alone.
+  fallback alone, and every function it reaches that way is `indirect: fallback`.
 - An `unbounded` entry's number is only a lower bound. The counts name what breaks the
   bound anywhere in the entry's subtree:
   - `recursion`: functions on a cycle;
