@@ -62,7 +62,7 @@ if TYPE_CHECKING:
 
 
 class CallObservation(Struct):
-	"""One direct call to a known function."""
+	"""One call to a known function."""
 
 	callee: Address
 	arguments: Mapping[int, ValueSet]
@@ -119,6 +119,9 @@ class FunctionResult(Struct):
 	sites: tuple[CallSite, ...]
 	writes: Writes
 	observations: tuple[CallObservation, ...]
+	"""Of direct calls."""
+	indirect_observations: tuple[CallObservation, ...]
+	"""Of calls through a site the analysis tracked to known functions."""
 
 
 def analyze_function(
@@ -152,19 +155,22 @@ def analyze_function(
 		)
 		if observation is not None:
 			observations.append(observation)
+	sites = tuple(
+		(block, site)
+		for block in blocks
+		if (site := _site_resolution(context, block, function.address, in_states.get(block.start)))
+		is not None
+	)
 	return FunctionResult(
-		sites=tuple(
-			site
-			for block in blocks
-			if (
-				site := _site_resolution(
-					context, block, function.address, in_states.get(block.start)
-				)
-			)
-			is not None
-		),
+		sites=tuple(site for _, site in sites),
 		writes=writes,
 		observations=tuple(observations),
+		indirect_observations=tuple(
+			observation
+			for block, site in sites
+			if (state := in_states.get(block.start)) is not None
+			for observation in _indirect_observations(context, block, site, state)
+		),
 	)
 
 
@@ -182,6 +188,25 @@ def _call_observation(
 			return CallObservation(callee=callee, arguments=_call_arguments(context, state, 1))
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _indirect_observations(
+	context: Context, block: Block, site: CallSite, state: State
+) -> tuple[CallObservation, ...]:
+	return tuple(
+		CallObservation(
+			callee=callee,
+			arguments=_call_arguments(
+				context, state, 1 if block.instructions[-1].mnemonic == "jmp" else 0
+			),
+		)
+		for callee in sorted(
+			frozenset(
+				normalized(candidate, context.program.machine) for candidate in site.candidates
+			)
+			& context.function_starts
+		)
+	)
 
 
 def _call_arguments(

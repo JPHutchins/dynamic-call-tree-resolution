@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.model import Address, CallSite, Machine
+from dynamic_call_tree_resolution.model import BARE_METAL, Address, CallSite, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	SP_REGISTERS,
@@ -32,12 +32,21 @@ from dynamic_call_tree_resolution.vsa.state import NO_WRITES, State, Writes, joi
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
+	from concurrent.futures import Executor
 
 	from capstone import ArmCsOperand
 
-	from dynamic_call_tree_resolution.model import Function, Program, ThreadRoot
+	from dynamic_call_tree_resolution.model import Function, Program, RtosModel, ThreadRoot
 
 _WIDENING_ROUND: Final = 8
+
+
+class ThreadSites(Struct):
+	"""What one static thread's own execution reaches, started from its record."""
+
+	reached: frozenset[Address]
+	"""The functions the thread runs, up to its calls whose target is unknown."""
+	sites: tuple[CallSite, ...]
 
 
 class Analysis(Struct):
@@ -48,15 +57,17 @@ class Analysis(Struct):
 	"""Holds the stores of every function, as the final round saw them."""
 	seeded: frozenset[str]
 	"""The threads whose entry started from its record's arguments rather than unknown ones."""
+	threads: Mapping[str, ThreadSites]
 
 
-def analyze(program: Program, threads: tuple[ThreadRoot, ...] = ()) -> Analysis:
+def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())
 	_prewarm_instructions(functions, program.machine)
 	top = top_seed(program.machine)
 	threads_by_entry = {
-		entry: tuple(group) for entry, group in groupby(sorted(threads, key=_entry), key=_entry)
+		entry: tuple(group)
+		for entry, group in groupby(sorted(rtos.threads, key=_entry), key=_entry)
 	}
 	seeded_entries = referenced_only_at(
 		program,
@@ -89,7 +100,7 @@ def analyze(program: Program, threads: tuple[ThreadRoot, ...] = ()) -> Analysis:
 				observations.extend(result.observations)
 			observed = _observed_seeds(observations, roots, entry_seeds, program)
 			next_seeds = {
-				**(observed if round_number < _WIDENING_ROUND else _widened(seeds, observed, top)),
+				**_next_seeds(seeds, observed, top, round_number),
 				**roots,
 			}
 			accumulated = accumulate_writes(global_writes, written)
@@ -114,6 +125,13 @@ def analyze(program: Program, threads: tuple[ThreadRoot, ...] = ()) -> Analysis:
 			seeded=frozenset(
 				thread.name for entry in seeded_entries for thread in threads_by_entry[entry]
 			),
+			threads={
+				thread.name: _thread_sites(
+					program, functions, final_context, executor, trampoline, thread
+				)
+				for trampoline in _trampoline(program, rtos)
+				for thread in rtos.threads
+			},
 		)
 
 
@@ -243,6 +261,15 @@ def _observed_seeds(
 	}
 
 
+def _next_seeds(
+	seeds: Mapping[Address, State],
+	observed: Mapping[Address, State],
+	top: State,
+	round_number: int,
+) -> Mapping[Address, State]:
+	return observed if round_number < _WIDENING_ROUND else _widened(seeds, observed, top)
+
+
 def _widened(
 	previous: Mapping[Address, State], observed: Mapping[Address, State], top: State
 ) -> dict[Address, State]:
@@ -304,6 +331,78 @@ def _prewarm_instructions(
 						_ = cast("ArmCsOperand", operand).shift
 					else:
 						_ = operand.mem
+
+
+def _trampoline(program: Program, rtos: RtosModel) -> tuple[Address, ...]:
+	return tuple(
+		normalized(function.address, program.machine)
+		for function in program.functions.values()
+		if function.name == rtos.trampoline
+	)[:1]
+
+
+def _thread_sites(
+	program: Program,
+	functions: tuple[tuple[Function, tuple[Block, ...]], ...],
+	context: Context,
+	executor: Executor,
+	trampoline: Address,
+	thread: ThreadRoot,
+) -> ThreadSites:
+	start = {
+		trampoline: _seed_from_observation(
+			CallObservation(
+				callee=trampoline,
+				arguments={
+					position: Known(values=frozenset({value}))
+					for position, value in enumerate((thread.entry, *thread.arguments))
+				},
+			),
+			program,
+		)
+	}
+	seeds = _thread_fixpoint(program, functions, context, executor, start, start, 1)
+	reached = _reached(functions, seeds, program.machine)
+	return ThreadSites(
+		reached=frozenset(function.address for function, _ in reached),
+		sites=tuple(
+			site
+			for sites in executor.map(partial(_final_sites, program, context, seeds), reached)
+			for site in sites
+		),
+	)
+
+
+def _thread_fixpoint(
+	program: Program,
+	functions: tuple[tuple[Function, tuple[Block, ...]], ...],
+	context: Context,
+	executor: Executor,
+	start: Mapping[Address, State],
+	seeds: Mapping[Address, State],
+	round_number: int,
+) -> Mapping[Address, State]:
+	observed = _observed_seeds(
+		[
+			observation
+			for result in executor.map(
+				partial(_round_analysis, program, context, seeds),
+				_reached(functions, seeds, program.machine),
+			)
+			for observation in (*result.observations, *result.indirect_observations)
+		],
+		{},
+		start,
+		program,
+	)
+	next_seeds = _next_seeds(seeds, observed, top_seed(program.machine), round_number)
+	return (
+		seeds
+		if next_seeds == seeds
+		else _thread_fixpoint(
+			program, functions, context, executor, start, next_seeds, round_number + 1
+		)
+	)
 
 
 def _seed_from_thread(thread: ThreadRoot, program: Program) -> State:
