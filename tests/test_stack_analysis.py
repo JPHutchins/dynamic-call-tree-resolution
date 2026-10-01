@@ -160,6 +160,42 @@ def test_a_thread_follows_the_sites_its_own_analysis_resolved(
 	)
 
 
+def test_no_image_node_calls_into_a_threads_own_nodes() -> None:
+	edges = (
+		*expand_indirect_calls(
+			SHARED_ENTRY_EDGES,
+			{"entry": frozenset({"cheap", "costly"})},
+			frozenset({"entry", "cheap", "costly"}),
+		),
+		*own_thread_edges(
+			SHARED_ENTRY_EDGES,
+			"trampoline",
+			"worker_tid",
+			"entry",
+			ThreadTargets(
+				reached=frozenset({"trampoline", "entry", "cheap"}),
+				targets_by_caller={
+					"trampoline": frozenset({"entry"}),
+					"entry": frozenset({"cheap"}),
+				},
+				sites_by_caller={"trampoline": 1, "entry": 1},
+			),
+			{"entry": frozenset({"cheap", "costly"})},
+			frozenset({"entry", "cheap", "costly"}),
+		),
+	)
+	assert (
+		sorted(edge.callee for edge in edges if edge.callee.startswith("worker_tid/:")),
+		[
+			edge
+			for edge in edges
+			if edge.callee.startswith("worker_tid/:")
+			and edge.caller != "worker_tid"
+			and not edge.caller.startswith("worker_tid/:")
+		],
+	) == (["worker_tid/:/src/app.c:entry", "worker_tid/:/src/app.c:entry", "worker_tid/:cheap"], [])
+
+
 @pytest.mark.parametrize(
 	("own", "edges"),
 	[
