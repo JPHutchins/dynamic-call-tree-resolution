@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 
 def _program(
-	machine: str,
+	machine: Machine,
 	code: bytes,
 	*,
 	functions: tuple[tuple[str, int, int], ...] = (),
@@ -66,7 +66,7 @@ def _pointer(value: int, size: int) -> bytes:
 
 def _x86(code: bytes, *, objects: tuple[tuple[str, int, bytes], ...] = ()) -> Program:
 	return _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 		objects=objects,
@@ -121,7 +121,7 @@ def test_x86_callee_saved_register_survives_a_direct_call() -> None:
 def test_x86_32_direct_call_in_window_clears_caller_saved_registers() -> None:
 	code = bytes.fromhex("b8 00 30 00 00e8 00 00 00 00ff d0")
 	program = _program(
-		"EM_386",
+		Machine.EM_386,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 		pointer_size=4,
@@ -134,7 +134,7 @@ def test_x86_32_direct_call_in_window_clears_caller_saved_registers() -> None:
 def test_x86_32_callee_saved_register_survives_a_direct_call() -> None:
 	code = bytes.fromhex("bb 00 30 00 00e8 00 00 00 00ff d3")
 	program = _program(
-		"EM_386",
+		Machine.EM_386,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 		pointer_size=4,
@@ -189,7 +189,7 @@ def test_x86_loop_back_edge_carries_state() -> None:
 def test_x86_conditional_paths_union_into_the_site_candidates() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00ff d3")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(
 			("caller", 0x1000, len(code)),
@@ -206,7 +206,7 @@ def test_x86_conditional_paths_union_into_the_site_candidates() -> None:
 def test_conflicting_paths_fall_back_to_the_resolved_union() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00ff d3")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(
 			("caller", 0x1000, len(code)),
@@ -334,7 +334,7 @@ def test_x86_definitions_beyond_the_former_window_resolve() -> None:
 def test_arm_thumb_bit_twins_are_deduplicated() -> None:
 	body = bytes.fromhex("00 4b 98 47") + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(
 			("caller", 0x1000, len(body)),
@@ -352,7 +352,7 @@ def test_arm_thumb_bit_twins_are_deduplicated() -> None:
 def test_arm_thumb_bit_only_symbol_decodes_aligned() -> None:
 	body = bytes.fromhex("00 4b 98 47") + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1001, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -366,7 +366,7 @@ def test_arm_thumb_bit_only_symbol_decodes_aligned() -> None:
 def test_arm_literal_pool_load_resolves() -> None:
 	body = bytes.fromhex("02 4b 98 47") + b"\x00\xbf" * 4 + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -383,7 +383,7 @@ def test_arm_register_load_chain_dereferences_data() -> None:
 		+ _pointer(0x3000, 4)  # ldr r3,[pc,#4]; ldr r0,[r3]; blx r0; pool=0x3000
 	)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
@@ -398,7 +398,7 @@ def test_arm_register_load_chain_dereferences_data() -> None:
 def test_site_slot_joins_resolved_assignments() -> None:
 	body = bytes.fromhex("00 4b 98 47") + _pointer(0x3000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -419,7 +419,7 @@ def test_site_slot_joins_resolved_assignments() -> None:
 
 def test_arm_bx_lr_is_a_return_not_a_site() -> None:
 	program = _program(
-		"EM_ARM", bytes.fromhex("70 47"), functions=(("caller", 0x1000, 2),), pointer_size=4
+		Machine.EM_ARM, bytes.fromhex("70 47"), functions=(("caller", 0x1000, 2),), pointer_size=4
 	)
 	assert extract_call_sites(program) == ()
 
@@ -427,7 +427,7 @@ def test_arm_bx_lr_is_a_return_not_a_site() -> None:
 def test_arm_bx_tail_site() -> None:
 	body = bytes.fromhex("00 4b 18 47") + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -440,7 +440,7 @@ def test_arm_bx_tail_site() -> None:
 def test_arm_register_moves() -> None:
 	body = bytes.fromhex("01 4b 18 46 01 21 80 47") + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -452,7 +452,10 @@ def test_arm_register_moves() -> None:
 
 def test_arm_stack_load_is_unresolved() -> None:
 	program = _program(
-		"EM_ARM", bytes.fromhex("00 98 80 47"), functions=(("caller", 0x1000, 4),), pointer_size=4
+		Machine.EM_ARM,
+		bytes.fromhex("00 98 80 47"),
+		functions=(("caller", 0x1000, 4),),
+		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot is None
@@ -460,7 +463,10 @@ def test_arm_stack_load_is_unresolved() -> None:
 
 def test_arm_load_with_untracked_base_is_unresolved() -> None:
 	program = _program(
-		"EM_ARM", bytes.fromhex("18 68 80 47"), functions=(("caller", 0x1000, 4),), pointer_size=4
+		Machine.EM_ARM,
+		bytes.fromhex("18 68 80 47"),
+		functions=(("caller", 0x1000, 4),),
+		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot is None
@@ -468,7 +474,10 @@ def test_arm_load_with_untracked_base_is_unresolved() -> None:
 
 def test_arm_indexed_load_is_unresolved() -> None:
 	program = _program(
-		"EM_ARM", bytes.fromhex("88 58 80 47"), functions=(("caller", 0x1000, 4),), pointer_size=4
+		Machine.EM_ARM,
+		bytes.fromhex("88 58 80 47"),
+		functions=(("caller", 0x1000, 4),),
+		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot is None
@@ -477,7 +486,7 @@ def test_arm_indexed_load_is_unresolved() -> None:
 def test_arm_callee_saved_register_survives_a_bl() -> None:
 	body = bytes.fromhex("02 4c00 f0 00 f8a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
@@ -492,7 +501,7 @@ def test_arm_callee_saved_register_survives_a_bl() -> None:
 def test_arm_direct_branch_to_the_site_carries_state() -> None:
 	body = bytes.fromhex("02 4c00 e000 24a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
@@ -507,7 +516,7 @@ def test_arm_direct_branch_to_the_site_carries_state() -> None:
 def test_arm_cbz_to_the_site_joins_the_taken_state() -> None:
 	body = bytes.fromhex("02 4c00 b100 24a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
@@ -521,7 +530,7 @@ def test_arm_cbz_to_the_site_joins_the_taken_state() -> None:
 def test_arm_conditional_branch_past_the_site_keeps_fallthrough_state() -> None:
 	body = bytes.fromhex("02 4ca4 4201 d0a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
@@ -536,7 +545,7 @@ def test_arm_conditional_branch_past_the_site_keeps_fallthrough_state() -> None:
 def test_arm_movw_movt_pair_resolves() -> None:
 	body = bytes.fromhex("41 f2 34 23c5 f2 78 6398 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x56781234, 4)),
 		pointer_size=4,
@@ -550,7 +559,7 @@ def test_arm_movw_movt_pair_resolves() -> None:
 def test_arm_movt_without_movw_is_unresolved() -> None:
 	body = bytes.fromhex("c5 f2 78 6398 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)),),
 		pointer_size=4,
@@ -564,7 +573,7 @@ def test_arm_movt_without_movw_is_unresolved() -> None:
 def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
 	body = bytes.fromhex("02 4c0c b3a0 47") + b"\x00\xbf" * 3 + _pointer(0x3000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		objects=(("slot", 0x3000, _pointer(0x2000, 4)),),
@@ -579,7 +588,7 @@ def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
 def test_arm_empty_symbol_does_not_hide_its_sized_thumb_twin() -> None:
 	body = bytes.fromhex("98 47 00 bf")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("stub", 0x1000, 0), ("caller", 0x1001, len(body))),
 		pointer_size=4,
@@ -604,7 +613,7 @@ def test_arm_fixture_extracts_every_register_indirect_branch(
 def test_arm_call_in_window_clears_registers() -> None:
 	body = bytes.fromhex("00 4b 00 f0 00 f8 98 47") + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -617,7 +626,7 @@ def test_arm_call_in_window_clears_registers() -> None:
 def test_arm_elementwise_add_shifts_the_tracked_address() -> None:
 	body = bytes.fromhex("01 4b 04 33 98 4700 bf") + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -639,7 +648,7 @@ def test_chasing_self_referential_pointer_stops() -> None:
 def test_skipped_bytes_in_the_window_are_ignored() -> None:
 	body = bytes.fromhex("df f7 02 4b 98 47") + b"\x00\xbf" * 3 + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -652,7 +661,7 @@ def test_skipped_bytes_in_the_window_are_ignored() -> None:
 def test_skipped_bytes_are_not_sites() -> None:
 	body = bytes.fromhex("02 4b 98 47 df f7") + b"\x00\xbf" * 3 + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x2000, 4)),
 		pointer_size=4,
@@ -667,13 +676,8 @@ def test_analyze_is_deterministic(fixture_elfs: dict[str, Path]) -> None:
 	assert extract_call_sites(program) == extract_call_sites(program)
 
 
-def test_unsupported_machine_is_rejected_at_construction() -> None:
-	with pytest.raises(ValueError, match="EM_RISCV"):
-		_program("EM_RISCV", b"")
-
-
 def test_function_without_code_bytes_has_no_sites() -> None:
-	program = _program("EM_X86_64", b"", functions=(("bare", 0x5000, 4),))
+	program = _program(Machine.EM_X86_64, b"", functions=(("bare", 0x5000, 4),))
 	assert extract_call_sites(program) == ()
 
 
@@ -744,7 +748,7 @@ def test_per_caller_candidates_keeps_a_site_without_candidates_an_indirect_call(
 def test_x86_loop_merges_conditional_paths_into_a_union() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 85 c074 0a48 c7 c3 00 40 00 0048 ff c975 efff d3")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 	)
@@ -760,7 +764,7 @@ def test_x86_loop_carried_union_overflows_k_to_top() -> None:
 		"48 c7 c1 41 00 00 0048 c7 c3 00 20 00 0048 8b 0348 83 c3 0848 ff c975 f4ff d0"
 	)
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 		objects=(("table", 0x2000, table),),
@@ -773,7 +777,7 @@ def test_x86_loop_carried_union_overflows_k_to_top() -> None:
 def test_x86_top_index_over_baked_object_enumerates_its_slots() -> None:
 	code = bytes.fromhex("48 c7 c3 00 20 00 0048 8b 04 cbff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 		objects=(("table", 0x2000, _pointer(0x3000, 8) + _pointer(0x4000, 8)),),
@@ -786,7 +790,7 @@ def test_x86_top_index_over_baked_object_enumerates_its_slots() -> None:
 def test_x86_top_index_without_an_enclosing_object_is_unresolved() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 8b 04 cbff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -900,7 +904,7 @@ def test_x86_bss_slot_read_is_unknown() -> None:
 def test_x86_read_of_unmapped_memory_drops_the_value() -> None:
 	code = bytes.fromhex("48 8b 05 f9 07 00 00ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -911,7 +915,7 @@ def test_x86_read_of_unmapped_memory_drops_the_value() -> None:
 def test_x86_join_with_one_path_missing_the_register_is_top() -> None:
 	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00eb 02ff d3")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -923,7 +927,7 @@ def test_x86_join_with_one_path_missing_the_register_is_top() -> None:
 def test_x86_join_with_the_other_path_missing_the_register_is_top() -> None:
 	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c075 0748 c7 c3 00 40 00 00eb 02ff d3")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -935,7 +939,7 @@ def test_x86_join_with_the_other_path_missing_the_register_is_top() -> None:
 def test_x86_loop_instruction_top_out_the_counter_and_keep_values() -> None:
 	code = bytes.fromhex("b9 03 00 00 0048 c7 c0 00 30 00 00e2 f8ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -947,7 +951,7 @@ def test_x86_loop_instruction_top_out_the_counter_and_keep_values() -> None:
 def test_x86_stack_copy_survives_an_intervening_call() -> None:
 	code = bytes.fromhex("5548 89 e548 c7 c3 00 30 00 0048 89 5d f8e8 00 00 00 0048 8b 45 f8ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -959,7 +963,7 @@ def test_x86_stack_copy_survives_an_intervening_call() -> None:
 def test_x86_frame_slot_aliases_between_rbp_and_rsp() -> None:
 	code = bytes.fromhex("5548 89 e548 c7 c3 00 30 00 0048 89 5d f848 8b 44 24 f8ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -971,7 +975,7 @@ def test_x86_frame_slot_aliases_between_rbp_and_rsp() -> None:
 def test_x86_push_pop_round_trip_carries_the_value() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 005358ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -982,7 +986,7 @@ def test_x86_push_pop_round_trip_carries_the_value() -> None:
 def test_x86_push_immediate_pop_round_trip_carries_the_value() -> None:
 	code = bytes.fromhex("68 00 30 00 0058ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -993,7 +997,7 @@ def test_x86_push_immediate_pop_round_trip_carries_the_value() -> None:
 def test_x86_sub_rsp_keeps_frame_offsets_consistent() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 83 ec 1048 89 1c 2448 8b 04 24ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -1007,7 +1011,7 @@ def test_x86_indexed_stack_read_with_a_known_index() -> None:
 		"48 c7 c1 00 00 00 0048 8b 44 cd f8ff d0"
 	)
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 	)
@@ -1021,7 +1025,7 @@ def test_x86_indexed_stack_read_with_a_top_index_is_unresolved() -> None:
 		"48 8b 44 cd f8ff d0"
 	)
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 	)
@@ -1032,7 +1036,7 @@ def test_x86_indexed_stack_read_with_a_top_index_is_unresolved() -> None:
 def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 89 5c 24 0848 89 04 cc48 8b 44 24 08ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -1069,7 +1073,7 @@ def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
 def test_x86_store_clobbers_the_frame_slots_it_may_cover(code: str) -> None:
 	body = bytes.fromhex(code)
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 1)),
 	)
@@ -1096,7 +1100,7 @@ def test_x86_store_to_writable_memory_clobbers_what_it_may_cover(
 ) -> None:
 	body = bytes.fromhex(code)
 	program = build_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		(("caller", 0x1000, len(body)), ("first", 0x3000, 1), ("second", 0x3100, 1)),
 		objects=(("table", 0x4000, _pointer(0x3000, 8) + _pointer(0x3100, 8)),),
 		sections={0x1000: body},
@@ -1141,7 +1145,7 @@ def test_x86_store_to_writable_memory_clobbers_what_it_may_cover(
 def test_x86_rbp_addresses_the_frame_only_as_an_sp_copy(code: str, candidates: set[int]) -> None:
 	body = bytes.fromhex(code)
 	program = build_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		(("caller", 0x1000, len(body)), ("first", 0x3000, 1), ("second", 0x3100, 1)),
 		objects=(("table", 0x4000, _pointer(0x3000, 8) + _pointer(0x3100, 8)),),
 		sections={0x1000: body},
@@ -1154,7 +1158,7 @@ def test_x86_rbp_addresses_the_frame_only_as_an_sp_copy(code: str, candidates: s
 def test_x86_inc_shifts_the_tracked_address() -> None:
 	code = bytes.fromhex("48 c7 c0 ff 2f 00 0048 ff c0ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -1165,7 +1169,7 @@ def test_x86_inc_shifts_the_tracked_address() -> None:
 def test_x86_xor_self_yields_zero_and_does_not_resolve() -> None:
 	code = bytes.fromhex("48 31 c0ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -1178,7 +1182,7 @@ def test_x86_xor_self_yields_zero_and_does_not_resolve() -> None:
 def test_x86_lea_frame_offset_then_memory_site_resolves() -> None:
 	code = bytes.fromhex("5548 89 e548 c7 c3 00 30 00 0048 89 5d f848 8d 45 f8ff 10")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -1190,7 +1194,7 @@ def test_x86_lea_frame_offset_then_memory_site_resolves() -> None:
 def test_x86_32_frame_relative_memory_site_has_no_slot_address() -> None:
 	code = bytes.fromhex("ff 55 08")
 	program = _program(
-		"EM_386",
+		Machine.EM_386,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 		pointer_size=4,
@@ -1204,7 +1208,7 @@ def test_x86_32_frame_relative_memory_site_has_no_slot_address() -> None:
 def test_arm_post_indexed_load_advances_the_base() -> None:
 	body = bytes.fromhex("42 f2 00 0454 f8 04 3b98 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		objects=(("slot", 0x2000, _pointer(0x3000, 4)),),
@@ -1218,7 +1222,7 @@ def test_arm_post_indexed_load_advances_the_base() -> None:
 def test_arm_push_then_sp_post_indexed_load_resolves() -> None:
 	body = bytes.fromhex("43 f2 00 0410 b45d f8 04 3b98 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		pointer_size=4,
@@ -1231,7 +1235,7 @@ def test_arm_push_then_sp_post_indexed_load_resolves() -> None:
 def test_arm_mov_from_sp_then_load_through_it_resolves() -> None:
 	body = bytes.fromhex("43 f2 00 0410 b468 4601 6888 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		pointer_size=4,
@@ -1244,7 +1248,7 @@ def test_arm_mov_from_sp_then_load_through_it_resolves() -> None:
 def test_arm_scaled_add_with_top_index_enumerates_the_object() -> None:
 	body = bytes.fromhex("02 4a02 eb c3 0149 6888 47") + b"\x00\xbf" + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("second", 0x4000, 4), ("fourth", 0x6000, 4)),
 		objects=(
@@ -1267,7 +1271,7 @@ def test_arm_scaled_add_with_top_index_enumerates_the_object() -> None:
 def test_arm_non_lsl_shifted_add_tops_the_destination() -> None:
 	body = bytes.fromhex("02 4a02 eb d3 0149 6888 47") + b"\x00\xbf" * 2 + _pointer(0x2000, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)),),
 		objects=(("table", 0x2000, _pointer(0x3000, 4) + _pointer(0x4000, 4)),),
@@ -1281,7 +1285,7 @@ def test_arm_non_lsl_shifted_add_tops_the_destination() -> None:
 def test_arm_three_operand_immediate_add_shifts_the_value() -> None:
 	body = bytes.fromhex("03 4b03 f1 04 0188 47") + b"\x00\xbf" * 4 + _pointer(0x2FFC, 4)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		pointer_size=4,
@@ -1294,7 +1298,7 @@ def test_arm_three_operand_immediate_add_shifts_the_value() -> None:
 def test_x86_indexed_load_with_a_known_index_resolves() -> None:
 	code = bytes.fromhex("48 c7 c3 00 20 00 0048 c7 c1 01 00 00 0048 8b 04 cbff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 		objects=(("table", 0x2000, _pointer(0x3000, 8) + _pointer(0x4000, 8)),),
@@ -1307,7 +1311,7 @@ def test_x86_indexed_load_with_a_known_index_resolves() -> None:
 def test_x86_store_of_an_unknown_value_tops_the_slot() -> None:
 	code = bytes.fromhex("5548 89 e548 89 4d f848 8b 45 f8ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -1319,7 +1323,7 @@ def test_x86_store_of_an_unknown_value_tops_the_slot() -> None:
 def test_x86_push_of_a_memory_operand_resolves() -> None:
 	code = bytes.fromhex("48 c7 c0 00 20 00 00ff 3059ff d1")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 		objects=(("slot", 0x2000, _pointer(0x3000, 8)),),
@@ -1332,7 +1336,7 @@ def test_x86_push_of_a_memory_operand_resolves() -> None:
 def test_x86_add_to_a_memory_operand_writes_no_registers() -> None:
 	code = bytes.fromhex("48 83 05 f9 0f 00 00 04ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -1344,7 +1348,7 @@ def test_x86_add_to_a_memory_operand_writes_no_registers() -> None:
 def test_x86_inc_of_a_memory_operand_writes_no_registers() -> None:
 	code = bytes.fromhex("48 ff 00ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -1356,7 +1360,7 @@ def test_x86_inc_of_a_memory_operand_writes_no_registers() -> None:
 def test_arm_str_then_reload_from_the_frame_resolves() -> None:
 	body = bytes.fromhex("82 b043 f2 00 0001 9001 9988 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		pointer_size=4,
@@ -1369,7 +1373,7 @@ def test_arm_str_then_reload_from_the_frame_resolves() -> None:
 def test_arm_add_from_sp_then_load_through_it_resolves() -> None:
 	body = bytes.fromhex("43 f2 00 0410 b400 a909 6888 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		pointer_size=4,
@@ -1382,7 +1386,7 @@ def test_arm_add_from_sp_then_load_through_it_resolves() -> None:
 def test_arm_pop_round_trip_carries_the_value() -> None:
 	body = bytes.fromhex("43 f2 00 0410 b402 bc88 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		pointer_size=4,
@@ -1395,7 +1399,7 @@ def test_arm_pop_round_trip_carries_the_value() -> None:
 def test_arm_unshifted_register_add_uses_scale_one() -> None:
 	body = bytes.fromhex("42 f2 00 0200 2302 eb 03 0109 6888 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		objects=(("slot", 0x2000, _pointer(0x3000, 4)),),
@@ -1409,7 +1413,7 @@ def test_arm_unshifted_register_add_uses_scale_one() -> None:
 def test_x86_known_index_with_a_top_base_is_unresolved() -> None:
 	code = bytes.fromhex("48 c7 c1 01 00 00 0048 8b 04 cbff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -1426,7 +1430,7 @@ def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
 		"48 8b 04 cb48 89 45 f848 8b 45 f8ff d0"
 	)
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 		objects=(("table_one", 0x2000, table_one), ("table_two", 0x4000, table_two)),
@@ -1439,7 +1443,7 @@ def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
 def test_x86_global_store_is_a_no_op_in_this_pass() -> None:
 	code = bytes.fromhex("48 c7 c3 00 30 00 0048 89 0d f9 0f 00 00ff d3")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -1451,7 +1455,7 @@ def test_x86_global_store_is_a_no_op_in_this_pass() -> None:
 def test_x86_xor_of_distinct_registers_tops_the_destination() -> None:
 	code = bytes.fromhex("48 c7 c0 00 30 00 0048 31 d8ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -1463,7 +1467,7 @@ def test_x86_xor_of_distinct_registers_tops_the_destination() -> None:
 def test_arm_pointer_store_is_a_no_op_in_this_pass() -> None:
 	body = bytes.fromhex("43 f2 00 0242 f2 00 0108 6090 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 4)),
 		pointer_size=4,
@@ -1476,7 +1480,7 @@ def test_arm_pointer_store_is_a_no_op_in_this_pass() -> None:
 def test_arm_post_indexed_store_advances_the_base() -> None:
 	body = bytes.fromhex("42 f2 00 0143 f2 00 0041 f8 04 0b0a 6890 47")
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("second", 0x4000, 4)),
 		objects=(("slot", 0x2004, _pointer(0x4000, 4)),),
@@ -1488,7 +1492,7 @@ def test_arm_post_indexed_store_advances_the_base() -> None:
 
 
 def _multi_program(
-	machine: str,
+	machine: Machine,
 	code_by_address: dict[int, bytes],
 	functions: tuple[tuple[str, int, int], ...],
 	objects: tuple[tuple[str, int, bytes], ...] = (),
@@ -1505,7 +1509,7 @@ def _multi_program(
 
 def test_x86_64_callee_is_seeded_from_the_caller_register_argument() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 c7 00 30 00 00e8 f4 0f 00 00"),
 			0x2000: bytes.fromhex("ff d7"),
@@ -1519,7 +1523,7 @@ def test_x86_64_callee_is_seeded_from_the_caller_register_argument() -> None:
 
 def test_x86_32_callee_is_seeded_from_the_callers_first_stack_argument() -> None:
 	program = _multi_program(
-		"EM_386",
+		Machine.EM_386,
 		{
 			0x1000: bytes.fromhex("68 00 30 00 00e8 f6 0f 00 00"),
 			0x2000: bytes.fromhex("5589 e58b 45 08ff d0"),
@@ -1535,7 +1539,7 @@ def test_x86_32_callee_is_seeded_from_the_callers_first_stack_argument() -> None
 
 def test_x86_32_callee_is_seeded_from_the_callers_second_stack_argument() -> None:
 	program = _multi_program(
-		"EM_386",
+		Machine.EM_386,
 		{
 			0x1000: bytes.fromhex("68 00 40 00 0068 00 30 00 00e8 f1 0f 00 00"),
 			0x2000: bytes.fromhex("5589 e58b 45 0cff d0"),
@@ -1551,7 +1555,7 @@ def test_x86_32_callee_is_seeded_from_the_callers_second_stack_argument() -> Non
 
 def test_arm_callee_is_seeded_from_the_caller_register_argument() -> None:
 	program = _multi_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		{
 			0x1000: bytes.fromhex("43 f2 00 0000 f0 fc ff"),
 			0x2000: bytes.fromhex("80 47"),
@@ -1566,7 +1570,7 @@ def test_arm_callee_is_seeded_from_the_caller_register_argument() -> None:
 
 def test_arm_callee_known_only_by_its_thumb_symbol_is_seeded() -> None:
 	program = _multi_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		{
 			0x1000: bytes.fromhex("43 f2 01 0000 f0 fc ff"),
 			0x2000: bytes.fromhex("80 47"),
@@ -1581,7 +1585,7 @@ def test_arm_callee_known_only_by_its_thumb_symbol_is_seeded() -> None:
 
 def test_seeds_propagate_along_a_call_chain() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 c7 00 30 00 00e8 f4 0f 00 00"),
 			0x2000: bytes.fromhex("e8 fb 1f 00 00"),
@@ -1601,7 +1605,7 @@ def test_seeds_propagate_along_a_call_chain() -> None:
 
 def test_callee_seed_joins_across_callers() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 c7 00 30 00 00e8 f4 0f 00 00"),
 			0x1200: bytes.fromhex("48 c7 c7 00 40 00 00e8 f4 0d 00 00"),
@@ -1622,7 +1626,7 @@ def test_callee_seed_joins_across_callers() -> None:
 
 def test_cross_function_global_write_propagates_between_rounds() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 05 f5 3f 00 0000 30 00 00c3"),
 			0x2000: bytes.fromhex("48 8b 05 f9 2f 00 00ff d0"),
@@ -1637,7 +1641,7 @@ def test_cross_function_global_write_propagates_between_rounds() -> None:
 
 def test_global_write_chain_propagates_to_a_fixpoint() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 05 f5 0f 00 0000 30 00 00c3"),
 			0x1100: bytes.fromhex("48 8b 05 f9 0e 00 0048 89 05 02 0f 00 00c3"),
@@ -1665,7 +1669,7 @@ def test_global_write_union_overflow_is_top() -> None:
 	table_one = b"".join((0x3000 + index * 8).to_bytes(8, "little") for index in range(33))
 	table_two = b"".join((0x5000 + index * 8).to_bytes(8, "little") for index in range(33))
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 c3 00 60 00 0048 8b 04 cb48 89 05 ee 0f 00 00c3"),
 			0x1100: bytes.fromhex("48 c7 c3 00 70 00 0048 8b 04 cb48 89 05 ee 0e 00 00c3"),
@@ -1685,7 +1689,7 @@ def test_global_write_union_overflow_is_top() -> None:
 
 def test_recursive_seeding_converges() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{0x1000: bytes.fromhex("e8 fb ff ff ffff d7")},
 		functions=(("recursive", 0x1000, 7),),
 	)
@@ -1698,7 +1702,7 @@ def test_recursive_seeding_converges() -> None:
 def test_x86_call_arguments_with_a_top_stack_pointer_are_top() -> None:
 	code = bytes.fromhex("83 e4 f0e8 00 00 00 00ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
@@ -1709,7 +1713,7 @@ def test_x86_call_arguments_with_a_top_stack_pointer_are_top() -> None:
 
 def test_x86_32_callee_seed_joins_across_callers() -> None:
 	program = _multi_program(
-		"EM_386",
+		Machine.EM_386,
 		{
 			0x1000: bytes.fromhex("68 00 30 00 00e8 f6 0f 00 00"),
 			0x1100: bytes.fromhex("68 00 40 00 00e8 f6 0e 00 00"),
@@ -1733,7 +1737,7 @@ def test_x86_64_callee_seed_overflow_is_top() -> None:
 	table_one = b"".join((0x3000 + index * 8).to_bytes(8, "little") for index in range(33))
 	table_two = b"".join((0x5000 + index * 8).to_bytes(8, "little") for index in range(33))
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 c3 00 60 00 0048 8b 3c cbe8 f0 0f 00 00"),
 			0x1100: bytes.fromhex("48 c7 c3 00 70 00 0048 8b 3c cbe8 f0 0e 00 00"),
@@ -1755,7 +1759,7 @@ def test_x86_32_callee_seed_overflow_is_top() -> None:
 	table_one = b"".join((0x3000 + index * 4).to_bytes(4, "little") for index in range(33))
 	table_two = b"".join((0x5000 + index * 4).to_bytes(4, "little") for index in range(33))
 	program = _multi_program(
-		"EM_386",
+		Machine.EM_386,
 		{
 			0x1000: bytes.fromhex("bb 00 60 00 008b 04 8b50e8 f2 0f 00 00"),
 			0x1100: bytes.fromhex("bb 00 70 00 008b 04 8b50e8 f2 0e 00 00"),
@@ -1776,7 +1780,7 @@ def test_x86_32_callee_seed_overflow_is_top() -> None:
 
 def test_a_global_write_feeding_a_call_argument_grows_the_seed_late() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 05 f5 3f 00 0000 30 00 00c3"),
 			0x1100: bytes.fromhex("48 8b 3d f9 3e 00 00e8 f4 0e 00 00"),
@@ -1796,7 +1800,7 @@ def test_a_global_write_feeding_a_call_argument_grows_the_seed_late() -> None:
 
 def test_the_round_budget_exhausts_on_a_deep_chain() -> None:
 	program = _multi_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		{
 			0x1000: bytes.fromhex("48 c7 c7 00 30 00 0048 89 3d f2 0f 00 00e8 ed 00 00 00"),
 			0x1100: bytes.fromhex("48 89 3d 09 0f 00 00e8 f4 00 00 00"),
@@ -1828,7 +1832,7 @@ def test_the_round_budget_exhausts_on_a_deep_chain() -> None:
 
 def test_x86_32_tail_jump_seeds_the_callee_from_the_arguments_above_the_return_address() -> None:
 	program = _multi_program(
-		"EM_386",
+		Machine.EM_386,
 		{
 			0x1000: bytes.fromhex("68 00 30 00 00e8 f6 00 00 00c3"),
 			0x1100: bytes.fromhex("e9 fb 00 00 00"),
@@ -1849,7 +1853,7 @@ def test_x86_32_tail_jump_seeds_the_callee_from_the_arguments_above_the_return_a
 
 def test_x86_32_seed_is_top_where_any_caller_passes_top() -> None:
 	program = _multi_program(
-		"EM_386",
+		Machine.EM_386,
 		{
 			0x1000: bytes.fromhex("5368 00 30 00 00e8 f5 0f 00 00"),
 			0x1100: bytes.fromhex("68 00 40 00 0053e8 f5 0e 00 00"),
@@ -1872,7 +1876,7 @@ def test_x86_32_seed_is_top_where_any_caller_passes_top() -> None:
 def test_x86_global_store_then_load_resolves_within_the_function() -> None:
 	code = bytes.fromhex("48 c7 c0 00 30 00 0048 89 05 f2 0f 00 0048 8b 05 eb 0f 00 00ff d0")
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
@@ -2084,7 +2088,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 	("machine", "code", "functions", "objects", "taken"),
 	[
 		pytest.param(
-			"EM_X86_64",
+			Machine.EM_X86_64,
 			"c3",
 			(("caller", 0x1000, 1), ("target", 0x3000, 1)),
 			(("slot", 0x2000, (0x3000).to_bytes(8, "little")),),
@@ -2092,7 +2096,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="x86-64 data slot",
 		),
 		pytest.param(
-			"EM_386",
+			Machine.EM_386,
 			"68 00 30 00 00",
 			(("caller", 0x1000, 5), ("target", 0x3000, 1)),
 			(),
@@ -2100,7 +2104,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="x86 push imm32 stored in code",
 		),
 		pytest.param(
-			"EM_X86_64",
+			Machine.EM_X86_64,
 			"bf 00 30 00 00",
 			(("caller", 0x1000, 5), ("target", 0x3000, 1)),
 			(),
@@ -2108,7 +2112,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="x86-64 mov imm32",
 		),
 		pytest.param(
-			"EM_X86_64",
+			Machine.EM_X86_64,
 			"48 8d 3d f9 1f 00 00",
 			(("caller", 0x1000, 7), ("target", 0x3000, 1)),
 			(),
@@ -2116,7 +2120,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="x86-64 rip-relative lea",
 		),
 		pytest.param(
-			"EM_X86_64",
+			Machine.EM_X86_64,
 			"e8 fb 1f 00 00",
 			(("caller", 0x1000, 5), ("target", 0x3000, 1)),
 			(),
@@ -2124,7 +2128,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="x86-64 call target",
 		),
 		pytest.param(
-			"EM_ARM",
+			Machine.EM_ARM,
 			"40 f2 01 00 c0 f2 01 00",
 			(("caller", 0x1001, 8), ("target", 0x10001, 2)),
 			(),
@@ -2132,7 +2136,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="thumb movw movt",
 		),
 		pytest.param(
-			"EM_ARM",
+			Machine.EM_ARM,
 			"c0 f2 01 00",
 			(("caller", 0x1001, 4), ("target", 0x10001, 2)),
 			(),
@@ -2140,7 +2144,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="thumb movt alone",
 		),
 		pytest.param(
-			"EM_ARM",
+			Machine.EM_ARM,
 			"01 a0",
 			(("caller", 0x1001, 2), ("target", 0x1009, 2)),
 			(),
@@ -2148,7 +2152,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="thumb adr",
 		),
 		pytest.param(
-			"EM_ARM",
+			Machine.EM_ARM,
 			"0f f2 04 00",
 			(("caller", 0x1001, 4), ("target", 0x1009, 2)),
 			(),
@@ -2156,7 +2160,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="thumb addw pc",
 		),
 		pytest.param(
-			"EM_ARM",
+			Machine.EM_ARM,
 			"af f2 08 00",
 			(("caller", 0x1001, 4), ("target", 0xFFD, 2)),
 			(),
@@ -2164,7 +2168,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 			id="thumb subw pc",
 		),
 		pytest.param(
-			"EM_ARM",
+			Machine.EM_ARM,
 			"00 f0 fe ff",
 			(("caller", 0x1001, 4), ("target", 0x2001, 2)),
 			(),
@@ -2174,7 +2178,7 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 	],
 )
 def test_address_taken_finds_stored_and_computed_function_addresses(
-	machine: str,
+	machine: Machine,
 	code: str,
 	functions: tuple[tuple[str, int, int], ...],
 	objects: tuple[tuple[str, int, bytes], ...],
@@ -2185,7 +2189,7 @@ def test_address_taken_finds_stored_and_computed_function_addresses(
 		bytes.fromhex(code),
 		functions=functions,
 		objects=objects,
-		pointer_size=8 if machine == "EM_X86_64" else 4,
+		pointer_size=8 if machine == Machine.EM_X86_64 else 4,
 	)
 	assert {program.functions[address].name for address in address_taken(program)} == taken
 
@@ -2216,46 +2220,70 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 	("machine", "code", "target", "candidates"),
 	[
 		pytest.param(
-			"EM_ARM", "42f20004 c0f20004 abbe a047", 0x2000, {0x2000}, id="thumb-bkpt-keeps-r4"
+			Machine.EM_ARM,
+			"42f20004 c0f20004 abbe a047",
+			0x2000,
+			{0x2000},
+			id="thumb-bkpt-keeps-r4",
 		),
 		pytest.param(
-			"EM_ARM", "42f20004 c0f20004 03df a047", 0x2000, {0x2000}, id="thumb-svc-keeps-r4"
+			Machine.EM_ARM, "42f20004 c0f20004 03df a047", 0x2000, {0x2000}, id="thumb-svc-keeps-r4"
 		),
 		pytest.param(
-			"EM_ARM", "42f20000 c0f20000 abbe 8047", 0x2000, set[int](), id="thumb-bkpt-clobbers-r0"
+			Machine.EM_ARM,
+			"42f20000 c0f20000 abbe 8047",
+			0x2000,
+			set[int](),
+			id="thumb-bkpt-clobbers-r0",
 		),
 		pytest.param(
-			"EM_ARM", "42f20004 c0f20004 00de a047", 0x2000, set[int](), id="thumb-udf-is-terminal"
+			Machine.EM_ARM,
+			"42f20004 c0f20004 00de a047",
+			0x2000,
+			set[int](),
+			id="thumb-udf-is-terminal",
 		),
 		pytest.param(
-			"EM_X86_64", "48c7c300300000 cc ffd3", 0x3000, {0x3000}, id="x86-int3-keeps-rbx"
+			Machine.EM_X86_64, "48c7c300300000 cc ffd3", 0x3000, {0x3000}, id="x86-int3-keeps-rbx"
 		),
 		pytest.param(
-			"EM_X86_64", "48c7c300300000 0f05 ffd3", 0x3000, {0x3000}, id="x86-syscall-keeps-rbx"
+			Machine.EM_X86_64,
+			"48c7c300300000 0f05 ffd3",
+			0x3000,
+			{0x3000},
+			id="x86-syscall-keeps-rbx",
 		),
 		pytest.param(
-			"EM_X86_64", "48c7c300300000 cd80 ffd3", 0x3000, {0x3000}, id="x86-int-keeps-rbx"
+			Machine.EM_X86_64, "48c7c300300000 cd80 ffd3", 0x3000, {0x3000}, id="x86-int-keeps-rbx"
 		),
 		pytest.param(
-			"EM_X86_64", "48c7c300300000 f4 ffd3", 0x3000, {0x3000}, id="x86-hlt-keeps-rbx"
+			Machine.EM_X86_64, "48c7c300300000 f4 ffd3", 0x3000, {0x3000}, id="x86-hlt-keeps-rbx"
 		),
 		pytest.param(
-			"EM_X86_64", "48c7c000300000 cc ffd0", 0x3000, set[int](), id="x86-int3-clobbers-rax"
+			Machine.EM_X86_64,
+			"48c7c000300000 cc ffd0",
+			0x3000,
+			set[int](),
+			id="x86-int3-clobbers-rax",
 		),
 		pytest.param(
-			"EM_X86_64", "48c7c300300000 0f0b ffd3", 0x3000, set[int](), id="x86-ud2-is-terminal"
+			Machine.EM_X86_64,
+			"48c7c300300000 0f0b ffd3",
+			0x3000,
+			set[int](),
+			id="x86-ud2-is-terminal",
 		),
 	],
 )
 def test_a_returning_trap_falls_through_and_clobbers_caller_saved_registers(
-	machine: str, code: str, target: int, candidates: set[int]
+	machine: Machine, code: str, target: int, candidates: set[int]
 ) -> None:
 	body = bytes.fromhex(code)
 	program = _program(
 		machine,
 		body,
 		functions=(("caller", 0x1000, len(body)), ("target", target, 4)),
-		pointer_size=4 if machine == "EM_ARM" else 8,
+		pointer_size=4 if machine == Machine.EM_ARM else 8,
 	)
 	(site,) = extract_call_sites(program)
 	assert site.candidates == frozenset(Address(address) for address in candidates)
@@ -2290,7 +2318,7 @@ def test_a_returning_trap_falls_through_and_clobbers_caller_saved_registers(
 def test_thumb_store_writes_the_words_it_covers(code: str, candidates: set[int]) -> None:
 	body = bytes.fromhex(code)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(
 			("caller", 0x1000, len(body)),
@@ -2306,7 +2334,7 @@ def test_thumb_store_writes_the_words_it_covers(code: str, candidates: set[int])
 
 def _thumb_slot_program(sections: Mapping[int, bytes]) -> Program:
 	return build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(
 			*((f"code_{address:x}", address, len(code)) for address, code in sections.items()),
 			("first", 0x2000, 4),
@@ -2401,7 +2429,7 @@ def test_thumb_frame_survives_calls_and_wild_stores_until_its_address_escapes(
 ) -> None:
 	body = bytes.fromhex(code)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(
 			("caller", 0x1000, callee),
@@ -2417,7 +2445,7 @@ def test_thumb_frame_survives_calls_and_wild_stores_until_its_address_escapes(
 def test_thumb_call_forgets_the_writes_on_its_path() -> None:
 	body = bytes.fromhex("44f20004 42f20003 2360 00f002f8 2368 9847 44f20001 43f20002 0a60 7047")
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(
 			("global_case", 0x1000, 0x12),
 			("install", 0x1012, len(body) - 0x12),
@@ -2469,7 +2497,7 @@ def test_thumb_trap_leaves_the_writes_before_it_in_the_summary() -> None:
 def test_x86_call_clears_the_frame_after_its_address_escapes(code: str, callee: int) -> None:
 	body = bytes.fromhex(code)
 	program = _program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		body,
 		functions=(
 			("caller", 0x1000, callee),
@@ -2481,7 +2509,7 @@ def test_x86_call_clears_the_frame_after_its_address_escapes(code: str, callee: 
 	assert site.candidates == frozenset()
 
 
-def _hook_program(machine: str, code: bytes, *, writable: bool, pointer_size: int) -> Program:
+def _hook_program(machine: Machine, code: bytes, *, writable: bool, pointer_size: int) -> Program:
 	return Program(
 		byte_order="little",
 		pointer_size=pointer_size,
@@ -2527,7 +2555,7 @@ def _hook_program(machine: str, code: bytes, *, writable: bool, pointer_size: in
 def test_ram_initializer_holds_what_the_program_stores_to_its_slot(
 	code: str, candidates: set[int] | None
 ) -> None:
-	program = _hook_program("EM_ARM", bytes.fromhex(code), writable=True, pointer_size=4)
+	program = _hook_program(Machine.EM_ARM, bytes.fromhex(code), writable=True, pointer_size=4)
 	resolved = resolve(program).assignments
 	assert {
 		assignment.slot: (assignment.provenance, assignment.candidates) for assignment in resolved
@@ -2552,7 +2580,9 @@ def test_ram_initializer_holds_what_the_program_stores_to_its_slot(
 	],
 )
 def test_unknown_store_unresolves_only_writable_slots(writable: bool, candidates: set[int]) -> None:
-	program = _hook_program("EM_ARM", bytes.fromhex("2c60 7047"), writable=writable, pointer_size=4)
+	program = _hook_program(
+		Machine.EM_ARM, bytes.fromhex("2c60 7047"), writable=writable, pointer_size=4
+	)
 	resolved = resolve(program).assignments
 	assert {candidate for assignment in resolved for candidate in assignment.candidates} == {
 		Address(address) for address in candidates
@@ -2570,7 +2600,9 @@ def test_unknown_store_unresolves_only_writable_slots(writable: bool, candidates
 def test_chasing_a_slot_reads_its_image_value_only_when_read_only(
 	writable: bool, candidates: set[int]
 ) -> None:
-	program = _hook_program("EM_ARM", bytes.fromhex("7047"), writable=writable, pointer_size=4)
+	program = _hook_program(
+		Machine.EM_ARM, bytes.fromhex("7047"), writable=writable, pointer_size=4
+	)
 	site = CallSite(
 		caller_address=Address(0x1000),
 		site_address=Address(0x1000),
@@ -2584,7 +2616,7 @@ def test_chasing_a_slot_reads_its_image_value_only_when_read_only(
 
 def test_site_through_an_unresolved_slot_keeps_its_member_path() -> None:
 	program = _hook_program(
-		"EM_X86_64", bytes.fromhex("488916 ff142500400000"), writable=True, pointer_size=8
+		Machine.EM_X86_64, bytes.fromhex("488916 ff142500400000"), writable=True, pointer_size=8
 	)
 	resolution = resolve(program)
 	(site,) = build_report(program, resolution.assignments, resolution.sites).call_sites
@@ -2617,7 +2649,7 @@ def test_thumb_predicated_transfer_also_falls_through(
 	body = bytes.fromhex(code)
 	caller_size = callee if callee is not None else len(body)
 	program = _program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		body,
 		functions=(
 			("caller", 0x1000, caller_size),
@@ -2645,7 +2677,7 @@ def test_thumb_predicated_transfer_also_falls_through(
 def test_thumb_pre_indexed_writeback_advances_the_base(code: str, candidates: set[int]) -> None:
 	body = bytes.fromhex(code)
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("a", 0x2000, 4), ("b", 0x3000, 4), ("c", 0x5000, 4)),
 		objects=(
 			("table", 0x4000, _pointer(0x2000, 4) + _pointer(0x3000, 4) + _pointer(0x5000, 4)),
@@ -2669,7 +2701,7 @@ def test_thumb_data_in_code_is_not_decoded(
 ) -> None:
 	body = bytes.fromhex("42f20003 9847 7047 90470000")
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("first", 0x2000, 4)),
 		sections={0x1000: body},
 		pointer_size=4,
@@ -2686,7 +2718,7 @@ def test_thumb_data_in_code_is_not_decoded(
 def _thumb_dispatch_program(code: str, data_in_code: tuple[tuple[int, int], ...] = ()) -> Program:
 	body = bytes.fromhex(code)
 	return build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(
 			("caller", 0x1000, len(body)),
 			*((f"case_{address:x}", address, 4) for address in (0x2000, 0x3000, 0x5000, 0x6000)),
@@ -2814,7 +2846,7 @@ def test_a32_code_decodes_only_inside_its_mapping_span(
 ) -> None:
 	body = _a32("e59f3000 e12fff33") + _pointer(0x2000, 4)
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("a", 0x2000, 4), ("b", 0x3000, 4)),
 		sections={0x1000: body},
 		pointer_size=4,
@@ -2832,7 +2864,7 @@ def test_a32_and_thumb_functions_each_decode_in_their_own_set() -> None:
 		+ _pointer(0x2000, 4)
 	)
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(
 			("arm_caller", 0x1000, 0xC),
 			("thumb_caller", 0x100D, 8),
@@ -2853,7 +2885,7 @@ def test_a32_and_thumb_functions_each_decode_in_their_own_set() -> None:
 def test_a32_pc_relative_load_with_an_index_is_unknown() -> None:
 	body = _a32("e79f3102 e12fff33") + _pointer(0x2000, 4)
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("a", 0x2000, 4)),
 		sections={0x1000: body},
 		pointer_size=4,
@@ -2877,7 +2909,7 @@ def test_a32_sp_rebuilt_from_a_register_keeps_the_frame_only_when_it_is_an_sp_co
 ) -> None:
 	body = _a32(f"e3a03a02 e58d3000 {restore} e59d3000 e12fff33")
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("a", 0x2000, 4)),
 		sections={0x1000: body},
 		pointer_size=4,
@@ -2906,7 +2938,7 @@ def test_a_pc_relative_address_takes_the_thumb_bit_of_its_target(
 	caller: int, body: bytes, targets: tuple[int, ...], arm_code: tuple[tuple[int, int], ...]
 ) -> None:
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(("caller", caller, len(body)), *((f"f_{target:x}", target, 4) for target in targets)),
 		sections={0x1000: body},
 		pointer_size=4,
@@ -2917,7 +2949,7 @@ def test_a_pc_relative_address_takes_the_thumb_bit_of_its_target(
 
 def test_instruction_runs_split_where_a32_code_ends() -> None:
 	program = build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(("mixed", 0x1000, 16),),
 		sections={0x1000: bytes(16)},
 		pointer_size=4,
@@ -2939,7 +2971,7 @@ def _a32_dispatch_program(
 ) -> Program:
 	body = bytes.fromhex(code)
 	return build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		(
 			("caller", 0x1000, len(body)),
 			*((f"case_{address:x}", address, 4) for address in (0x2000, 0x3000, 0x5000, 0x6000)),

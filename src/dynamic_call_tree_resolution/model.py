@@ -303,4 +303,4 @@ def render_path(path: tuple[str | None, ...]) -> str:
 	>>> render_path(("dev_a", None, "open"))
 	'dev_a.<anonymous>.open'
 	"""
-	return ".".join("<anonymous>" if name is None else name for name in path)
+	return ".".join(ANONYMOUS if name is None else name for name in path)

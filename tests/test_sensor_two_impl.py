@@ -5,9 +5,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
 from typing import TYPE_CHECKING, assert_never
 
 import msgspec
@@ -30,9 +27,11 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
+from tests.dctr import dctr
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
+	from pathlib import Path
 
 	from dynamic_call_tree_resolution.callgraph import CallEdge
 	from dynamic_call_tree_resolution.stack_usage import StackUsage
@@ -50,19 +49,8 @@ def executable(artifacts: Path) -> Path:
 	return artifacts / "zephyr" / "zephyr.elf"
 
 
-def _dctr(*arguments: str) -> str:
-	executable = Path(sys.executable).with_name("dctr")
-	result = subprocess.run(
-		[str(executable), *arguments],
-		check=True,
-		capture_output=True,
-		text=True,
-	)
-	return result.stdout
-
-
 def test_analyze_resolves_each_threads_dispatch_to_its_own_impl(executable: Path) -> None:
-	report = msgspec.json.decode(_dctr("analyze", "--json", str(executable)), type=AnalysisReport)
+	report = msgspec.json.decode(dctr("analyze", "--json", str(executable)), type=AnalysisReport)
 	sites_by_caller: dict[str, set[str]] = {}
 	for site in report.call_sites:
 		sites_by_caller.setdefault(site.caller, set()).update(

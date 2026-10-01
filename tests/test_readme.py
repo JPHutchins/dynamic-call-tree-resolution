@@ -4,11 +4,11 @@
 """Every README depth is tool output: each console block runs and matches, in order."""
 
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from tests.dctr import dctr
 
 pytestmark = pytest.mark.image
 
@@ -31,18 +31,12 @@ def _transcripts(readme: Path) -> list[list[str]]:
 )
 def test_readme_transcript_runs(zephyr_fixtures: Path, transcript: list[str]) -> None:
 	command, *expected = transcript
-	executable = Path(sys.executable).with_name("dctr")
-	result = subprocess.run(
-		[
-			str(executable),
-			*command.removeprefix("$ ").replace("$DCTR_FIXTURES", str(zephyr_fixtures)).split()[1:],
-		],
-		check=True,
-		capture_output=True,
-		text=True,
-		cwd=REPOSITORY_ROOT,
+	assert _matches(
+		expected,
+		dctr(
+			*command.removeprefix("$ ").replace("$DCTR_FIXTURES", str(zephyr_fixtures)).split()[1:]
+		).splitlines(),
 	)
-	assert _matches(expected, result.stdout.splitlines())
 
 
 def _matches(expected: list[str], actual: list[str]) -> bool:

@@ -13,6 +13,7 @@ import pytest
 from dynamic_call_tree_resolution import (
 	Address,
 	ComparisonReport,
+	Machine,
 	PexplorerCallee,
 	PexplorerFunction,
 	PexplorerReport,
@@ -151,7 +152,7 @@ def test_missing_dynamic_flag_fails_loud(tmp_path: Path) -> None:
 def _arm_slot_program(caller_name: str) -> Program:
 	body = bytes.fromhex("00 4b 98 47") + (0x2000).to_bytes(4, "little")
 	return build_program(
-		"EM_ARM",
+		Machine.EM_ARM,
 		functions=((caller_name, 0x1001, 8), ("target", 0x2000, 4)),
 		objects=(("slot", 0x3000, (0x2000).to_bytes(4, "little")),),
 		sections={0x1000: body},

@@ -29,6 +29,8 @@ from dynamic_call_tree_resolution.vsa.arm import apply_arm
 from dynamic_call_tree_resolution.vsa.cfg import (
 	Block,
 	DirectCall,
+	MemorySite,
+	RegisterSite,
 	TailJump,
 	direct_transfer,
 	indirect_operand,
@@ -219,14 +221,15 @@ def _call_arguments(
 			for position, register in enumerate(X86_64_ARGUMENT_REGISTERS)
 		}
 	if machine is Machine.EM_386:
-		# at the call instruction the return address is not pushed yet, so
-		# the first argument sits at the top of the caller's stack
 		offsets = lookup(state.sp_offsets, SP_REGISTERS[machine][0])
 		return {
 			position: stack_read(
 				state.stack,
 				shift_offsets(
-					offsets, context.program.pointer_size * (position + pushed_return_addresses)
+					offsets,
+					_stack_argument_offset(
+						position, pushed_return_addresses, context.program.pointer_size
+					),
 				),
 			)
 			for position in range(EM_386_STACK_ARGUMENTS)
@@ -235,6 +238,21 @@ def _call_arguments(
 		position: lookup(state.registers, register)
 		for position, register in enumerate(ARM_ARGUMENT_REGISTERS)
 	}
+
+
+def _stack_argument_offset(position: int, pushed_return_addresses: int, pointer_size: int) -> int:
+	"""How far above the stack pointer an EM_386 argument sits at a call or tail jump.
+
+	At a ``call`` the return address is not pushed yet, so the first argument is at the
+	stack pointer itself; at a tail ``jmp`` the caller's return address is still at the
+	stack pointer, so every argument sits one pointer higher.
+
+	>>> _stack_argument_offset(0, 0, 4), _stack_argument_offset(0, 1, 4)
+	(0, 4)
+	>>> _stack_argument_offset(2, 0, 4)
+	8
+	"""
+	return pointer_size * (position + pushed_return_addresses)
 
 
 def _site_operand_addresses(
@@ -264,21 +282,24 @@ def _site_resolution(
 			slot=None,
 			candidates=frozenset(),
 		)
-	kind, operand = site_operand
-	if kind == "register":
-		value = lookup(state.registers, operand.reg)
-		return CallSite(
-			caller_address=caller_address,
-			site_address=Address(instruction.address),
-			slot=_single(value),
-			candidates=_candidates(value),
-		)
-	return CallSite(
-		caller_address=caller_address,
-		site_address=Address(instruction.address),
-		slot=_single(_site_operand_addresses(context, state, instruction, operand)),
-		candidates=_candidates(load_value(context, state, instruction, operand)),
-	)
+	match site_operand:
+		case RegisterSite(operand=operand):
+			value = lookup(state.registers, operand.reg)
+			return CallSite(
+				caller_address=caller_address,
+				site_address=Address(instruction.address),
+				slot=_single(value),
+				candidates=_candidates(value),
+			)
+		case MemorySite(operand=operand):
+			return CallSite(
+				caller_address=caller_address,
+				site_address=Address(instruction.address),
+				slot=_single(_site_operand_addresses(context, state, instruction, operand)),
+				candidates=_candidates(load_value(context, state, instruction, operand)),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _single(value: ValueSet) -> Address | None:

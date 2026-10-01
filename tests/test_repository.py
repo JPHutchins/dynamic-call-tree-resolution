@@ -3,9 +3,12 @@
 
 """Firmware builds come from `nix build .#fixtures`, never from files committed here."""
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 
+import msgspec
 import pytest
 
 from tests.nix_fixtures import zephyr_fixtures_root
@@ -64,3 +67,23 @@ def test_image_tests_fail_naming_dctr_fixtures_when_it_is_unset(
 ) -> None:
 	with pytest.raises(pytest.fail.Exception, match="DCTR_FIXTURES is unset"):
 		zephyr_fixtures_root(environment)
+
+
+def test_ci_hands_each_check_job_one_python_version_from_the_variants_matrix() -> None:
+	workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yaml").read_text()
+	matrix = msgspec.json.decode(
+		subprocess.run(
+			[str(Path(sys.executable).with_name("camas")), "--github-matrix=variants"],
+			check=True,
+			capture_output=True,
+			text=True,
+			cwd=REPOSITORY_ROOT,
+			env={**os.environ, "GITHUB_ACTIONS": "true", "CAMAS_NO_MCP_HINT": "1"},
+		).stdout,
+		type=dict[str, tuple[dict[str, str], ...]],
+	)
+	assert (
+		"uvx camas --github-matrix=variants" in workflow,
+		"matrix.PY" in workflow,
+		sorted(variant["PY"] for variant in matrix["include"]),
+	) == (True, True, sorted((REPOSITORY_ROOT / ".python-version").read_text().split()))
