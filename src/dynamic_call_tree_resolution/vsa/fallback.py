@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, assert_never
 
 from capstone import (
 	CS_GRP_BRANCH_RELATIVE,
@@ -17,7 +17,12 @@ from capstone import (
 	x86_const,
 )
 
-from dynamic_call_tree_resolution.model import Address, InstructionSet, Machine, thumb_twin
+from dynamic_call_tree_resolution.model import (
+	Address,
+	InstructionFamily,
+	InstructionSet,
+	thumb_twin,
+)
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
 from dynamic_call_tree_resolution.vsa.abi import disassemblers, normalized, program_counter
 
@@ -79,12 +84,20 @@ def _computed_addresses(program: Program) -> Iterator[int]:
 			for instruction in decoders[instruction_set_at(program, address)].disasm(code, address)
 			if instruction.id != 0 and not any(instruction.group(group) for group in _BRANCH_GROUPS)
 		)
-		for index, instruction in enumerate(instructions):
-			yield from (
-				_arm_addresses(program, instruction, instructions[:index])
-				if program.machine is Machine.EM_ARM
-				else _x86_addresses(program, instruction)
-			)
+		for index in range(len(instructions)):
+			yield from _instruction_addresses(program, instructions, index)
+
+
+def _instruction_addresses(
+	program: Program, instructions: tuple[CsInsn, ...], index: int
+) -> Iterator[int]:
+	match program.machine.family:
+		case InstructionFamily.ARM:
+			return _arm_addresses(program, instructions[index], instructions[:index])
+		case InstructionFamily.X86:
+			return _x86_addresses(program, instructions[index])
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 _BRANCH_GROUPS: Final = (CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_GRP_BRANCH_RELATIVE)

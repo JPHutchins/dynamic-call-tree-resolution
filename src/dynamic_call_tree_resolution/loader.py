@@ -28,6 +28,7 @@ from dynamic_call_tree_resolution.model import (
 	Function,
 	FunctionPointerMember,
 	FunctionSignature,
+	InstructionFamily,
 	Machine,
 	Program,
 	Relocation,
@@ -284,11 +285,7 @@ def _merge_functions(
 def _at_symbol(
 	function: Function, from_symtab: Mapping[Address, Function], machine: Machine
 ) -> Function:
-	address = (
-		thumb_twin(function.address)
-		if machine is Machine.EM_ARM and thumb_twin(function.address) in from_symtab
-		else function.address
-	)
+	address = _symbol_address(function, from_symtab, machine)
 	symbol = from_symtab.get(address)
 	return Function(
 		name=symbol.name if symbol is not None else function.name,
@@ -296,6 +293,18 @@ def _at_symbol(
 		size=function.size,
 		signature=function.signature,
 	)
+
+
+def _symbol_address(
+	function: Function, from_symtab: Mapping[Address, Function], machine: Machine
+) -> Address:
+	match machine.family:
+		case InstructionFamily.ARM if thumb_twin(function.address) in from_symtab:
+			return thumb_twin(function.address)
+		case InstructionFamily.ARM | InstructionFamily.X86:
+			return function.address
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _symbol_size(symbol: Symbol) -> int:

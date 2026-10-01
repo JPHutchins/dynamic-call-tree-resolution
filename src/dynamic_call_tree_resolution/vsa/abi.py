@@ -19,7 +19,13 @@ from capstone import (
 	x86_const,
 )
 
-from dynamic_call_tree_resolution.model import Address, InstructionSet, Machine, aligned
+from dynamic_call_tree_resolution.model import (
+	Address,
+	InstructionFamily,
+	InstructionSet,
+	Machine,
+	aligned,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -34,11 +40,20 @@ DISASSEMBLERS: Final[Mapping[InstructionSet, tuple[int, int]]] = {
 	InstructionSet.T32: (CS_ARCH_ARM, CS_MODE_THUMB),
 }
 
-SP_REGISTERS: Final[Mapping[Machine, tuple[int, ...]]] = {
-	Machine.EM_X86_64: (x86_const.X86_REG_RSP, x86_const.X86_REG_RBP),
-	Machine.EM_386: (x86_const.X86_REG_ESP, x86_const.X86_REG_EBP),
-	Machine.EM_ARM: (arm_const.ARM_REG_SP,),
-}
+
+def _stack_pointers(machine: Machine) -> tuple[int, ...]:
+	match machine:
+		case Machine.EM_X86_64:
+			return (x86_const.X86_REG_RSP, x86_const.X86_REG_RBP)
+		case Machine.EM_386:
+			return (x86_const.X86_REG_ESP, x86_const.X86_REG_EBP)
+		case Machine.EM_ARM:
+			return (arm_const.ARM_REG_SP,)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+SP_REGISTERS: Final = {machine: _stack_pointers(machine) for machine in Machine}
 
 X86_TRANSFERS: Final = (
 	"call",
@@ -217,11 +232,21 @@ ARM_ARGUMENT_REGISTERS: Final = (
 	arm_const.ARM_REG_R3,
 )
 EM_386_STACK_ARGUMENTS: Final = 8
-REGISTER_ARGUMENTS: Final[Mapping[Machine, tuple[int, ...]]] = {
-	Machine.EM_X86_64: X86_64_ARGUMENT_REGISTERS,
-	Machine.EM_386: (),
-	Machine.EM_ARM: ARM_ARGUMENT_REGISTERS,
-}
+
+
+def _register_arguments(machine: Machine) -> tuple[int, ...]:
+	match machine:
+		case Machine.EM_X86_64:
+			return X86_64_ARGUMENT_REGISTERS
+		case Machine.EM_386:
+			return ()
+		case Machine.EM_ARM:
+			return ARM_ARGUMENT_REGISTERS
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+REGISTER_ARGUMENTS: Final = {machine: _register_arguments(machine) for machine in Machine}
 FLAG_REGISTER_NAMES: Final = frozenset(
 	{
 		"apsr",
@@ -261,7 +286,13 @@ def normalized(address: Address, machine: Machine) -> Address:
 	>>> hex(normalized(Address(0x1001), Machine.EM_X86_64))
 	'0x1001'
 	"""
-	return aligned(address) if machine is Machine.EM_ARM else address
+	match machine.family:
+		case InstructionFamily.ARM:
+			return aligned(address)
+		case InstructionFamily.X86:
+			return address
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def disassemblers() -> Mapping[InstructionSet, Cs]:

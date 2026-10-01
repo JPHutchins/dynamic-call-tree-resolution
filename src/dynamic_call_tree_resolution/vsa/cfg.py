@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from functools import partial, reduce
 from itertools import takewhile
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from capstone import arm_const, x86_const
 from salix import Struct
 
-from dynamic_call_tree_resolution.model import Address, Machine, aligned
+from dynamic_call_tree_resolution.model import Address, InstructionFamily, Machine, aligned
 from dynamic_call_tree_resolution.points_to import (
 	in_writable_memory,
 	instruction_runs,
@@ -119,7 +119,7 @@ def _decoded(
 	while offset < len(code):
 		for instruction in disassembler.disasm(code[offset:], start + offset):
 			instructions.append(instruction)
-			if program.machine is Machine.EM_ARM and _dispatches(instruction):
+			if _dispatches(instruction, program.machine):
 				table = _jump_table(instructions, program, function)
 				dispatches[instruction.address] = table
 				if table is not None and table.skip is not None:
@@ -130,7 +130,17 @@ def _decoded(
 	return tuple(instructions), dispatches
 
 
-def _dispatches(instruction: CsInsn) -> bool:
+def _dispatches(instruction: CsInsn, machine: Machine) -> bool:
+	match machine.family:
+		case InstructionFamily.X86:
+			return False
+		case InstructionFamily.ARM:
+			return _arm_dispatches(instruction)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _arm_dispatches(instruction: CsInsn) -> bool:
 	match arm_mnemonic(instruction):
 		case "tbb" | "tbh":
 			return True
@@ -392,21 +402,33 @@ class _BranchTarget(Struct):
 
 
 def branch_target(instruction: CsInsn, machine: Machine) -> _BranchTarget | None:
-	if machine.is_x86:
-		if instruction.mnemonic == "jmp":
-			conditional = False
-		elif instruction.mnemonic.startswith("j") or instruction.mnemonic in (
-			"loop",
-			"loope",
-			"loopne",
-		):
-			conditional = True
-		else:
-			return None
-		operand = instruction.operands[0]
-		if operand.type != x86_const.X86_OP_IMM:
-			return None
-		return _BranchTarget(target=operand.imm, conditional=conditional)
+	match machine.family:
+		case InstructionFamily.X86:
+			return _x86_branch_target(instruction)
+		case InstructionFamily.ARM:
+			return _arm_branch_target(instruction)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _x86_branch_target(instruction: CsInsn) -> _BranchTarget | None:
+	if instruction.mnemonic == "jmp":
+		conditional = False
+	elif instruction.mnemonic.startswith("j") or instruction.mnemonic in (
+		"loop",
+		"loope",
+		"loopne",
+	):
+		conditional = True
+	else:
+		return None
+	operand = instruction.operands[0]
+	if operand.type != x86_const.X86_OP_IMM:
+		return None
+	return _BranchTarget(target=operand.imm, conditional=conditional)
+
+
+def _arm_branch_target(instruction: CsInsn) -> _BranchTarget | None:
 	base = instruction.mnemonic.split(".")[0]
 	if base == "b":
 		conditional = False
@@ -452,13 +474,25 @@ def direct_transfer(
 
 
 def call_target(instruction: CsInsn, machine: Machine) -> int | None:
-	if machine.is_x86:
-		if instruction.mnemonic != "call":
-			return None
-		operand = instruction.operands[0]
-		if operand.type != x86_const.X86_OP_IMM:
-			return None
-		return operand.imm
+	match machine.family:
+		case InstructionFamily.X86:
+			return _x86_call_target(instruction)
+		case InstructionFamily.ARM:
+			return _arm_call_target(instruction)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _x86_call_target(instruction: CsInsn) -> int | None:
+	if instruction.mnemonic != "call":
+		return None
+	operand = instruction.operands[0]
+	if operand.type != x86_const.X86_OP_IMM:
+		return None
+	return operand.imm
+
+
+def _arm_call_target(instruction: CsInsn) -> int | None:
 	if arm_mnemonic(instruction) not in ARM_CALLS:
 		return None
 	operand = instruction.operands[0]
@@ -468,11 +502,15 @@ def call_target(instruction: CsInsn, machine: Machine) -> int | None:
 
 
 def _is_control_transfer(instruction: CsInsn, machine: Machine) -> bool:
-	if machine.is_x86:
-		return instruction.mnemonic in X86_TRANSFERS
-	return arm_mnemonic(instruction) in ARM_TRANSFERS or (
-		arm_mnemonic(instruction) in ("ldr", "mov", "add") and _writes_pc(instruction)
-	)
+	match machine.family:
+		case InstructionFamily.X86:
+			return instruction.mnemonic in X86_TRANSFERS
+		case InstructionFamily.ARM:
+			return arm_mnemonic(instruction) in ARM_TRANSFERS or (
+				arm_mnemonic(instruction) in ("ldr", "mov", "add") and _writes_pc(instruction)
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 class RegisterSite(Struct):
@@ -492,15 +530,27 @@ def indirect_operand(instruction: CsInsn, machine: Machine) -> RegisterSite | Me
 		return None
 	if not instruction.operands:
 		return None
+	match machine.family:
+		case InstructionFamily.X86:
+			return _x86_indirect_operand(instruction)
+		case InstructionFamily.ARM:
+			return _arm_indirect_operand(instruction)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _x86_indirect_operand(instruction: CsInsn) -> RegisterSite | MemorySite | None:
 	operand = instruction.operands[0]
-	mnemonic = instruction.mnemonic
-	if machine.is_x86:
-		if mnemonic in ("call", "jmp"):
-			if operand.type == x86_const.X86_OP_MEM:
-				return MemorySite(operand=operand)
-			if operand.type == x86_const.X86_OP_REG:
-				return RegisterSite(operand=operand)
-		return None
+	if instruction.mnemonic in ("call", "jmp"):
+		if operand.type == x86_const.X86_OP_MEM:
+			return MemorySite(operand=operand)
+		if operand.type == x86_const.X86_OP_REG:
+			return RegisterSite(operand=operand)
+	return None
+
+
+def _arm_indirect_operand(instruction: CsInsn) -> RegisterSite | MemorySite | None:
+	operand = instruction.operands[0]
 	base_mnemonic = arm_mnemonic(instruction)
 	if base_mnemonic == "blx" and operand.type == arm_const.ARM_OP_REG:
 		return RegisterSite(operand=operand)
@@ -532,31 +582,35 @@ def _block_end_successors(
 	fallthrough = (Address(next_address),) if next_address is not None else ()
 	if instruction.mnemonic == ".byte":
 		return fallthrough
-	if machine.is_x86:
-		return (
-			fallthrough
-			if instruction.mnemonic in X86_CALLS or is_returning_trap(instruction, machine)
-			else ()
-		)
-	if (
-		arm_mnemonic(instruction) in ARM_CALLS
-		or (
-			arm_mnemonic(instruction) == "pop"
-			and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
-		)
-		or is_returning_trap(instruction, machine)
-		or arm_predicated(instruction)
-	):
-		return fallthrough
-	return ()
+	return fallthrough if _transfer_returns(instruction, machine) else ()
+
+
+def _transfer_returns(instruction: CsInsn, machine: Machine) -> bool:
+	match machine.family:
+		case InstructionFamily.X86:
+			return instruction.mnemonic in X86_CALLS or is_returning_trap(instruction, machine)
+		case InstructionFamily.ARM:
+			return (
+				arm_mnemonic(instruction) in ARM_CALLS
+				or (
+					arm_mnemonic(instruction) == "pop"
+					and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
+				)
+				or is_returning_trap(instruction, machine)
+				or arm_predicated(instruction)
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
-	return (
-		instruction.mnemonic in X86_RETURNING_TRAPS
-		if machine.is_x86
-		else arm_mnemonic(instruction) in ARM_RETURNING_TRAPS
-	)
+	match machine.family:
+		case InstructionFamily.X86:
+			return instruction.mnemonic in X86_RETURNING_TRAPS
+		case InstructionFamily.ARM:
+			return arm_mnemonic(instruction) in ARM_RETURNING_TRAPS
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _block_ends(instruction: CsInsn, machine: Machine) -> bool:

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, assert_never
 from capstone import arm_const, x86_const
 from salix import Struct
 
-from dynamic_call_tree_resolution.model import Address
+from dynamic_call_tree_resolution.model import Address, InstructionFamily
 from dynamic_call_tree_resolution.points_to import instruction_set_at, read_pointer
 from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized, program_counter
 from dynamic_call_tree_resolution.vsa.lattice import (
@@ -218,14 +218,30 @@ def memory_addresses(context: Context, state: State, memory: CsMemOperand) -> Va
 
 
 def load_value(context: Context, state: State, instruction: CsInsn, operand: CsOperand) -> ValueSet:
-	machine = context.program.machine
+	match context.program.machine.family:
+		case InstructionFamily.X86:
+			return _x86_load_value(context, state, instruction, operand)
+		case InstructionFamily.ARM:
+			return _arm_load_value(context, state, instruction, operand)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _x86_load_value(
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand
+) -> ValueSet:
 	memory = operand.mem
-	if machine.is_x86:
-		if memory.base == x86_const.X86_REG_RIP:
-			return _pc_relative_value(context, state, instruction, memory.disp)
-		if frame_based(state, machine, memory.base):
-			return stack_read(state.stack, stack_offsets(state, memory, memory.base))
-		return _image_value(context, state, memory_addresses(context, state, memory))
+	if memory.base == x86_const.X86_REG_RIP:
+		return _pc_relative_value(context, state, instruction, memory.disp)
+	if frame_based(state, context.program.machine, memory.base):
+		return stack_read(state.stack, stack_offsets(state, memory, memory.base))
+	return _image_value(context, state, memory_addresses(context, state, memory))
+
+
+def _arm_load_value(
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand
+) -> ValueSet:
+	memory = operand.mem
 	if memory.base == arm_const.ARM_REG_PC and memory.index == 0:
 		return _pc_relative_value(context, state, instruction, memory.disp)
 	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
@@ -382,9 +398,12 @@ def weakened(context: Context, before: State, after: State) -> State:
 def _store_addresses(
 	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
 ) -> ValueSet:
-	machine = context.program.machine
-	if machine.is_x86 and memory.base == x86_const.X86_REG_RIP:
-		return Known(
-			values=frozenset({Address(instruction.address + instruction.size + memory.disp)})
-		)
-	return memory_addresses(context, state, memory)
+	match context.program.machine.family:
+		case InstructionFamily.X86 if memory.base == x86_const.X86_REG_RIP:
+			return Known(
+				values=frozenset({Address(instruction.address + instruction.size + memory.disp)})
+			)
+		case InstructionFamily.X86 | InstructionFamily.ARM:
+			return memory_addresses(context, state, memory)
+		case _ as unreachable:
+			assert_never(unreachable)
