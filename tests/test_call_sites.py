@@ -34,6 +34,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.model import FUNCTION_POINTER, InstructionSet
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
 from dynamic_call_tree_resolution.report import slot_counts
+from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE
 from dynamic_call_tree_resolution.vsa import address_taken
 from tests.programs import build_program
 
@@ -724,12 +725,14 @@ def test_fixture_main_sites_resolve_across_variants(
 	} <= set().union(*names)
 
 
-def test_per_caller_candidates_unions_sites_with_fallback(fixture_elfs: dict[str, Path]) -> None:
+def test_per_caller_candidates_keeps_a_site_without_candidates_an_indirect_call(
+	fixture_elfs: dict[str, Path],
+) -> None:
 	program = load(fixture_elfs["nopie"])
 	resolved = assignments(program)
 	by_caller, fallback = per_caller_candidates(program, extract_call_sites(program), resolved)
 	assert set(by_caller) <= {function.name for function in program.functions.values()}
-	assert by_caller["main"] == fallback  # main's bss_cb site pulls in the fallback union
+	assert INDIRECT_CALLEE in by_caller["main"]  # main's bss_cb site has no candidates
 	assert fallback == {program.functions[address].name for address in address_taken(program)}
 	assert {
 		program.functions[address].name
@@ -2060,7 +2063,7 @@ def test_stack_expansion_narrows_a_bss_site_to_its_slot_signature_only_when_aske
 	program = _bss_slot_site_program()
 	sites = extract_call_sites(program)
 	assert per_caller_candidates(program, sites, ()) == (
-		{"caller": frozenset({"non_matching"})},
+		{"caller": frozenset({INDIRECT_CALLEE})},
 		frozenset({"non_matching"}),
 	)
 	assert per_caller_candidates(program, sites, (), narrow_by_signature=True) == (

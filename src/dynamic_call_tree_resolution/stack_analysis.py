@@ -17,7 +17,7 @@ from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
 from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable, Mapping
+	from collections.abc import Callable, Iterable, Mapping
 
 
 class Bounded(Struct):
@@ -109,21 +109,32 @@ def expand_indirect_calls(
 		CallEdge(caller=edge.caller, callee=callee, kind=kind)
 		for edge in edges_tuple
 		for callee, kind in (
-			sorted(
-				(
-					graph_target,
-					EdgeKind.CANDIDATE
-					if target in targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
-					else EdgeKind.FALLBACK,
-				)
-				for target in targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
-				| (frozenset[str]() if exact else fallback)
-				for graph_target in graph_targets(target)
+			_expansion(
+				targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
+				fallback,
+				graph_targets,
+				exact=exact,
 			)
 			or [(INDIRECT_CALLEE, edge.kind)]
 			if edge.callee == INDIRECT_CALLEE
 			else ((edge.callee, edge.kind),)
 		)
+	)
+
+
+def _expansion(
+	targets: frozenset[str],
+	fallback: frozenset[str],
+	graph_targets: Callable[[str], frozenset[str]],
+	*,
+	exact: bool,
+) -> list[tuple[str, EdgeKind]]:
+	candidates = targets - {INDIRECT_CALLEE}
+	return sorted(
+		(graph_target, EdgeKind.CANDIDATE if target in candidates else EdgeKind.FALLBACK)
+		for target in candidates
+		| (fallback if INDIRECT_CALLEE in targets or not exact else frozenset[str]())
+		for graph_target in graph_targets(target)
 	)
 
 
