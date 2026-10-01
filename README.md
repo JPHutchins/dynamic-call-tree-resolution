@@ -289,9 +289,9 @@ adt7420_init +8 = 156 bytes via indirect: fallback (recursion)
 ...
 ```
 
-- Below `sensor_thread`, `thermal_tid` calls only the ADT7420 driver and `motion_tid`
-  only the BMI160 driver. `i2c_write_read`, which `analyze` leaves unresolved, calls
-  `i2c_emul_transfer` alone in `thermal_tid`'s tree.
+- Down to its bus emulator, each thread calls only its own driver: `thermal_tid` the
+  ADT7420 and `motion_tid` the BMI160. `i2c_write_read`, which `analyze` leaves
+  unresolved, calls `i2c_emul_transfer` alone in `thermal_tid`'s tree.
 - The trees rejoin below the bus emulators. `i2c_emul_transfer` and `spi_emul_io` find
   their target in a list that init code builds in RAM, so their calls expand to the
   fallback. From there both threads share the image's tree and its recursion ([#151],
