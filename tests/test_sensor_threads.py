@@ -11,6 +11,7 @@ import pytest
 from salix import Struct
 
 from dynamic_call_tree_resolution import build_report, load, resolve
+from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from tests.toolchains import zephyr_console_cortex_m3
 
@@ -31,6 +32,37 @@ def test_each_thread_reports_its_own_stack_high_water_on_qemu(zephyr_fixtures: P
 		"thermal_tid unused 840 of 1024",
 		"motion_tid unused 864 of 1024",
 		"done",
+	)
+
+
+def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="thermal_tid")
+	thermal = capsys.readouterr().out.splitlines()[1:8]
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="motion_tid")
+	assert (thermal, capsys.readouterr().out.splitlines()[1:10]) == (
+		[
+			"thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)",
+			"thermal_tid +8 = 8 bytes",
+			"sensor_thread +32 = 40 bytes via thread record",
+			"adt7420_sample_fetch +32 = 72 bytes via indirect: candidate",
+			"i2c_write_read +32 = 104 bytes via static",
+			"i2c_emul_transfer +32 = 136 bytes via indirect: candidate",
+			"adt7420_init +8 = 144 bytes via indirect: fallback (recursion)",
+		],
+		[
+			"motion_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 15)",
+			"motion_tid +8 = 8 bytes",
+			"sensor_thread +32 = 40 bytes via thread record",
+			"bmi160_sample_fetch +24 = 64 bytes via indirect: candidate",
+			"bmi160_byte_read +0 = 64 bytes via static",
+			"bmi160_read +4 = 68 bytes via static",
+			"bmi160_read_spi +48 = 116 bytes via indirect: candidate",
+			"spi_emul_io +32 = 148 bytes via indirect: candidate",
+			"adt7420_init +8 = 156 bytes via indirect: fallback (recursion)",
+		],
 	)
 
 
