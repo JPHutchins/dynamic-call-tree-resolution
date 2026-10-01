@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,23 +17,38 @@ from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from tests.toolchains import zephyr_console_cortex_m3
 
 if TYPE_CHECKING:
-	from pathlib import Path
-
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.model import Program
 
 pytestmark = pytest.mark.image
 
 
+QEMU_CONSOLE = (
+	"*** Booting Zephyr OS build e560c91b1f74 ***",
+	"thermal_tid unused 840 of 1024",
+	"motion_tid unused 864 of 1024",
+	"done",
+)
+
+
 def test_each_thread_reports_its_own_stack_high_water_on_qemu(zephyr_fixtures: Path) -> None:
-	assert zephyr_console_cortex_m3(
-		zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf", 4
-	) == (
-		"*** Booting Zephyr OS build e560c91b1f74 ***",
-		"thermal_tid unused 840 of 1024",
-		"motion_tid unused 864 of 1024",
-		"done",
+	assert (
+		zephyr_console_cortex_m3(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf", 4)
+		== QEMU_CONSOLE
 	)
+
+
+def test_the_readme_quotes_each_threads_high_water_as_qemu_prints_it() -> None:
+	assert [
+		line
+		for line in QEMU_CONSOLE
+		if " unused " in line
+		and line
+		not in {
+			readme_line.strip()
+			for readme_line in (Path(__file__).parent.parent / "README.md").read_text().splitlines()
+		}
+	] == []
 
 
 def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
