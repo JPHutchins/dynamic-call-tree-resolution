@@ -227,6 +227,88 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   `indirect: candidate`, `indirect: fallback`, or `thread record`), and what its own
   frame, calls, or cycle add to an unbounded depth. The last total is the entry's depth.
 
+## Per-thread trees
+
+The sensor-threads fixture (`tests/fixtures/sensor-threads-app`, built at
+`$DCTR_FIXTURES/sensor-threads`) runs one entry function, `sensor_thread`, as two Zephyr
+static threads. Each `K_THREAD_DEFINE` passes it a `static const` binding as `p1`:
+`thermal_tid` an ADT7420 temperature sensor on an emulated I2C bus, and `motion_tid` a
+BMI160 accelerometer on an emulated SPI bus.
+
+The whole-image analysis sees one `sensor_thread`, so its dispatch is the union of both
+bindings, and the drivers' own bus calls stay unresolved:
+
+```console
+$ dctr analyze $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
+rtos: zephyr (detected: z_thread_entry, struct _static_thread_data)
+thread motion_tid: sensor_thread (seeded from its record)
+thread thermal_tid: sensor_thread (seeded from its record)
+...
+sensor_thread@0x2fe2: adt7420_sample_fetch, bmi160_sample_fetch
+sensor_thread@0x2fee: adt7420_channel_get, bmi160_channel_get
+...
+i2c_write_read.constprop.0@0x3308: <unresolved>
+...
+```
+
+`stack` analyzes each thread on its own, from its record:
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
+resolved slots: 127 | indirect call sites: 60 | not in the image: 337 | rtos: zephyr
+motion_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 15)
+thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)
+...
+```
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
+resolved slots: 127 | indirect call sites: 60 | not in the image: 337 | rtos: zephyr
+thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)
+thermal_tid +8 = 8 bytes
+sensor_thread +32 = 40 bytes via thread record
+adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
+i2c_write_read +32 = 104 bytes via static
+i2c_emul_transfer +32 = 136 bytes via indirect: candidate
+adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
+...
+```
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
+resolved slots: 127 | indirect call sites: 60 | not in the image: 337 | rtos: zephyr
+motion_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 15)
+motion_tid +8 = 8 bytes
+sensor_thread +32 = 40 bytes via thread record
+bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
+bmi160_byte_read +0 = 64 bytes via static
+bmi160_read +4 = 68 bytes via static
+bmi160_read_spi +48 = 116 bytes via indirect: candidate
+spi_emul_io +32 = 148 bytes via indirect: candidate
+adt7420_init +8 = 156 bytes via indirect: fallback (recursion)
+...
+```
+
+- Below `sensor_thread`, `thermal_tid` calls only the ADT7420 driver and `motion_tid`
+  only the BMI160 driver. `i2c_write_read`, which `analyze` leaves unresolved, calls
+  `i2c_emul_transfer` alone in `thermal_tid`'s tree.
+- The trees rejoin below the bus emulators. `i2c_emul_transfer` and `spi_emul_io` find
+  their target in a list that init code builds in RAM, so their calls expand to the
+  fallback. From there both threads share the image's tree and its recursion ([#151],
+  [#159]).
+- Both rows are unbounded. Each `at least` is one depth-first path through that shared
+  cycle, and it differs by where the thread enters it.
+- On QEMU, the fixture prints each thread's unused stack (`CONFIG_INIT_STACKS`,
+  `k_thread_stack_space_get`), and `test_sensor_threads` pins the output:
+
+  ```text
+  thermal_tid unused 840 of 1024
+  motion_tid unused 864 of 1024
+  ```
+
+- Checking each measured mark against a static bound needs bounded rows, and is
+  deferred to [#169].
+
 ## Related tools
 
 - [puncover](https://github.com/HBehrens/puncover) 0.8.0 reads `-fstack-usage` but not
@@ -346,3 +428,4 @@ a machine builds it.
 [#146]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/146
 [#151]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/151
 [#159]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/159
+[#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
