@@ -45,7 +45,7 @@ class ThreadSites(Struct):
 	"""What one static thread's own execution reaches, started from its record."""
 
 	reached: frozenset[Address]
-	"""The functions the thread calls, up to its calls whose target is unknown."""
+	"""The functions the thread runs, up to its calls whose target is unknown."""
 	sites: tuple[CallSite, ...]
 
 
@@ -362,14 +362,12 @@ def _thread_sites(
 		)
 	}
 	seeds = _thread_fixpoint(program, functions, context, executor, start, start, 1)
+	reached = _reached(functions, seeds, program.machine)
 	return ThreadSites(
-		reached=frozenset(seeds),
+		reached=frozenset(function.address for function, _ in reached),
 		sites=tuple(
 			site
-			for sites in executor.map(
-				partial(_final_sites, program, context, seeds),
-				_reached(functions, seeds, program.machine),
-			)
+			for sites in executor.map(partial(_final_sites, program, context, seeds), reached)
 			for site in sites
 		),
 	)
