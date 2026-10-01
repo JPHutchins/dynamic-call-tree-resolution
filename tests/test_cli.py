@@ -3,9 +3,8 @@
 
 """Tests for :mod:`dynamic_call_tree_resolution.cli`."""
 
-import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import msgspec
 import pytest
@@ -23,18 +22,17 @@ from dynamic_call_tree_resolution import (
 	UnboundedStack,
 )
 from dynamic_call_tree_resolution.cli import analyze, compare, main, stack, summary
+from tests.dctr import dctr
 from tests.expected import EXPECTED_PATHS
+
+if TYPE_CHECKING:
+	from pathlib import Path
 
 
 def test_cli_analyze_json(fixture_elfs: dict[str, Path]) -> None:
-	executable = Path(sys.executable).with_name("dctr")
-	result = subprocess.run(
-		[str(executable), "analyze", "--json", str(fixture_elfs["nopie"])],
-		check=True,
-		capture_output=True,
-		text=True,
+	report = msgspec.json.decode(
+		dctr("analyze", "--json", str(fixture_elfs["nopie"])), type=AnalysisReport
 	)
-	report = msgspec.json.decode(result.stdout, type=AnalysisReport)
 	assert report.resolved_slots == 11
 	assert {assignment.member_path for assignment in report.assignments} == EXPECTED_PATHS
 
@@ -51,14 +49,9 @@ def test_cli_analyze_plain_text(
 
 
 def test_cli_compare_json(fixture_elfs: dict[str, Path]) -> None:
-	executable = Path(sys.executable).with_name("dctr")
-	result = subprocess.run(
-		[str(executable), "compare", "--json", str(fixture_elfs["nopie"])],
-		check=True,
-		capture_output=True,
-		text=True,
+	comparisons = msgspec.json.decode(
+		dctr("compare", "--json", str(fixture_elfs["nopie"])), type=list[ComparisonReport]
 	)
-	comparisons = msgspec.json.decode(result.stdout, type=list[ComparisonReport])
 	assert [comparison.elf for comparison in comparisons] == ["device_model.nopie.elf"]
 	assert comparisons[0].call_sites == 7
 

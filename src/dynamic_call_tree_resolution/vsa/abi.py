@@ -252,6 +252,15 @@ def arm_predicated(instruction: CsInsn) -> bool:
 
 
 def normalized(address: Address, machine: Machine) -> Address:
+	"""Where the code at a function or call target address starts.
+
+	An ARM address carries the Thumb bit, which is not part of where its code starts.
+
+	>>> hex(normalized(Address(0x1001), Machine.EM_ARM))
+	'0x1000'
+	>>> hex(normalized(Address(0x1001), Machine.EM_X86_64))
+	'0x1001'
+	"""
 	return aligned(address) if machine is Machine.EM_ARM else address
 
 

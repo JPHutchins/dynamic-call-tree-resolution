@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def build_program(
-	machine: str,
+	machine: Machine,
 	functions: tuple[tuple[str, int, int], ...] = (),
 	*,
 	objects: tuple[tuple[str, int, bytes], ...] = (),
@@ -25,7 +25,7 @@ def build_program(
 	return Program(
 		byte_order="little",
 		pointer_size=pointer_size,
-		machine=Machine(machine),
+		machine=machine,
 		functions={
 			Address(address): Function(
 				name=name, address=Address(address), size=size, signature=None

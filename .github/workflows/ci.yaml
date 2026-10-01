@@ -17,8 +17,6 @@ jobs:
 
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
-      # The shape is pinned so a tasks.py refactor fails here rather than handing
-      # the downstream jobs a differently-shaped object.
       - id: emit
         run: echo "matrix=$(uvx camas --github-matrix=variants)" >> "$GITHUB_OUTPUT"
 

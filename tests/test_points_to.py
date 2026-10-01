@@ -13,6 +13,7 @@ from dynamic_call_tree_resolution import (
 	Address,
 	FunctionPointerMember,
 	FunctionSignature,
+	Machine,
 	Program,
 	Provenance,
 	Residue,
@@ -182,7 +183,7 @@ def test_null_fixture_resolves_nothing(fixture_elfs: dict[str, Path]) -> None:
 
 def _program_with_slot(stored: int) -> Program:
 	return build_program(
-		"EM_X86_64",
+		Machine.EM_X86_64,
 		functions=(("phantom", 0, 8), ("real_target", 0x1000, 8)),
 		objects=(("fp_slot", 0x2000, stored.to_bytes(8, "little")),),
 	)

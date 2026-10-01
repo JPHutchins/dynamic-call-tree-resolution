@@ -254,26 +254,6 @@ def unresolved_slots(
 	program: Program, resolved: tuple[SlotAssignment, ...]
 ) -> tuple[UnresolvedSlot, ...]:
 	resolved_by_slot = {assignment.slot for assignment in resolved}
-	universe: dict[Address, _SlotUniverseEntry] = {}
-	for data_object in program.objects.values():
-		layout = _layout_of(program, data_object)
-		if layout is None:
-			if data_object.type_name == FUNCTION_POINTER:
-				universe.setdefault(
-					data_object.address,
-					_SlotUniverseEntry(path=(data_object.name,), signature=data_object.signature),
-				)
-			elif data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
-				_array_element_slots(program, data_object, (data_object.name,), universe)
-			continue
-		_collect_member_slots(data_object, 0, layout.members, (data_object.name,), universe)
-	for relocation in program.relocations:
-		if relocation.target not in program.functions:
-			continue
-		universe.setdefault(
-			relocation.slot,
-			_SlotUniverseEntry(path=_slot_path(program, relocation.slot), signature=None),
-		)
 	return tuple(
 		sorted(
 			(
@@ -283,12 +263,34 @@ def unresolved_slots(
 					signature=entry.signature,
 					residue=_residue(program, slot),
 				)
-				for slot, entry in universe.items()
+				for slot, entry in dict(reversed(tuple(_slot_universe(program)))).items()
 				if slot not in resolved_by_slot
 			),
 			key=_slot_address,
 		)
 	)
+
+
+def _slot_universe(program: Program) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
+	for data_object in program.objects.values():
+		layout = _layout_of(program, data_object)
+		if layout is None:
+			if data_object.type_name == FUNCTION_POINTER:
+				yield (
+					data_object.address,
+					_SlotUniverseEntry(path=(data_object.name,), signature=data_object.signature),
+				)
+			elif data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
+				yield from _array_element_slots(program, data_object, (data_object.name,))
+			continue
+		yield from _member_slots(data_object, 0, layout.members, (data_object.name,))
+	for relocation in program.relocations:
+		if relocation.target not in program.functions:
+			continue
+		yield (
+			relocation.slot,
+			_SlotUniverseEntry(path=_slot_path(program, relocation.slot), signature=None),
+		)
 
 
 def _residue(program: Program, slot: Address) -> Residue:
@@ -305,53 +307,45 @@ def _residue(program: Program, slot: Address) -> Residue:
 
 
 def _array_element_slots(
-	program: Program,
-	data_object: DataObject,
-	path: tuple[str | None, ...],
-	universe: dict[Address, _SlotUniverseEntry],
-) -> None:
+	program: Program, data_object: DataObject, path: tuple[str | None, ...]
+) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
 	element_name = array_element_type(data_object.type_name) if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
 	if element_layout is None:
 		if element_name == FUNCTION_POINTER:
 			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
-				universe.setdefault(
+				yield (
 					Address(data_object.address + base_offset),
 					_SlotUniverseEntry(path=(*path, f"[{index}]"), signature=data_object.signature),
 				)
 		return
 	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
-		_collect_member_slots(
-			data_object,
-			base_offset,
-			element_layout.members,
-			(*path, f"[{index}]"),
-			universe,
+		yield from _member_slots(
+			data_object, base_offset, element_layout.members, (*path, f"[{index}]")
 		)
 
 
-def _collect_member_slots(
+def _member_slots(
 	data_object: DataObject,
 	base_offset: int,
 	members: tuple[Member, ...],
 	path: tuple[str | None, ...],
-	universe: dict[Address, _SlotUniverseEntry],
-) -> None:
+) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
 	for member in members:
 		member_path = (*path, member.name)
 		match member:
 			case FunctionPointerMember(offset=offset, signature=signature):
-				universe.setdefault(
+				yield (
 					Address(data_object.address + base_offset + offset),
 					_SlotUniverseEntry(path=member_path, signature=signature),
 				)
 			case EmbeddedStructMember(offset=offset, members=inner_members):
-				_collect_member_slots(
-					data_object, base_offset + offset, inner_members, member_path, universe
+				yield from _member_slots(
+					data_object, base_offset + offset, inner_members, member_path
 				)
 			case ArrayMember(offset=offset):
-				_collect_member_slots(
-					data_object, base_offset + offset, array_elements(member), member_path, universe
+				yield from _member_slots(
+					data_object, base_offset + offset, array_elements(member), member_path
 				)
 			case StructPointerMember() | SkippedMember():
 				pass

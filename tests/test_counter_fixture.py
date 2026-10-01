@@ -5,14 +5,16 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import msgspec
 import pytest
 
 from dynamic_call_tree_resolution import AnalysisSummary, UnboundedStack, load
+from tests.dctr import dctr
+
+if TYPE_CHECKING:
+	from pathlib import Path
 
 pytestmark = pytest.mark.image
 
@@ -27,20 +29,9 @@ def executable(artifacts: Path) -> Path:
 	return artifacts / "zephyr" / "zephyr.exe"
 
 
-def _dctr(*arguments: str) -> str:
-	executable = Path(sys.executable).with_name("dctr")
-	result = subprocess.run(
-		[str(executable), *arguments],
-		check=True,
-		capture_output=True,
-		text=True,
-	)
-	return result.stdout
-
-
 def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -> None:
 	summary = msgspec.json.decode(
-		_dctr("summary", str(artifacts), str(executable)), type=AnalysisSummary
+		dctr("summary", str(artifacts), str(executable)), type=AnalysisSummary
 	)
 	assert summary == AnalysisSummary(
 		resolved_slots=106,

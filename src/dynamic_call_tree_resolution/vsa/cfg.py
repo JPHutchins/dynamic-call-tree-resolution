@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from functools import partial, reduce
 from itertools import takewhile
-from typing import TYPE_CHECKING, Final, Literal, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from capstone import arm_const, x86_const
 from salix import Struct
@@ -63,18 +63,14 @@ def _function_address(function: Function) -> Address:
 
 def control_flow_graphs(program: Program) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
 	decoders = disassemblers()
-	seen: set[Address] = set()
 	blocks: dict[Address, tuple[Function, tuple[Block, ...]]] = {}
 	for function in sorted(program.functions.values(), key=_function_address):
-		# ARM symbol addresses carry the Thumb bit; strip it so the code
-		# decodes from the aligned start, and skip the symbol/DWARF twin.
-		start = aligned(function.address) if program.machine is Machine.EM_ARM else function.address
-		if start in seen:
+		start = normalized(function.address, program.machine)
+		if start in blocks:
 			continue
 		runs = instruction_runs(program, start, function.size)
 		if not any(code for _, code in runs):
 			continue
-		seen.add(start)
 		decoded = tuple(
 			_decoded(
 				decoders[instruction_set_at(program, address)],
@@ -479,9 +475,19 @@ def _is_control_transfer(instruction: CsInsn, machine: Machine) -> bool:
 	)
 
 
-def indirect_operand(
-	instruction: CsInsn, machine: Machine
-) -> tuple[Literal["memory", "register"], CsOperand] | None:
+class RegisterSite(Struct):
+	"""An indirect call or branch whose target is a register's value."""
+
+	operand: CsOperand
+
+
+class MemorySite(Struct):
+	"""An indirect call or branch whose target is loaded from memory."""
+
+	operand: CsOperand
+
+
+def indirect_operand(instruction: CsInsn, machine: Machine) -> RegisterSite | MemorySite | None:
 	if instruction.mnemonic == ".byte":
 		return None
 	if not instruction.operands:
@@ -491,28 +497,28 @@ def indirect_operand(
 	if machine.is_x86:
 		if mnemonic in ("call", "jmp"):
 			if operand.type == x86_const.X86_OP_MEM:
-				return "memory", operand
+				return MemorySite(operand=operand)
 			if operand.type == x86_const.X86_OP_REG:
-				return "register", operand
+				return RegisterSite(operand=operand)
 		return None
 	base_mnemonic = arm_mnemonic(instruction)
 	if base_mnemonic == "blx" and operand.type == arm_const.ARM_OP_REG:
-		return "register", operand
+		return RegisterSite(operand=operand)
 	if base_mnemonic == "bx" and operand.reg not in (arm_const.ARM_REG_LR, arm_const.ARM_REG_PC):
-		return "register", operand
+		return RegisterSite(operand=operand)
 	if base_mnemonic == "mov" and _writes_pc(instruction):
 		source = instruction.operands[1]
 		if source.type == arm_const.ARM_OP_REG and source.reg != arm_const.ARM_REG_LR:
-			return "register", source
+			return RegisterSite(operand=source)
 		return None
 	if base_mnemonic == "ldr" and _writes_pc(instruction):
 		memory = instruction.operands[1]
 		if memory.mem.base != arm_const.ARM_REG_SP and memory.mem.index == 0:
-			return "memory", memory
+			return MemorySite(operand=memory)
 	return None
 
 
-def _successors(
+def _block_end_successors(
 	instruction: CsInsn, machine: Machine, by_address: Mapping[int, int], next_address: int | None
 ) -> tuple[Address, ...]:
 	branch = branch_target(instruction, machine)
@@ -526,25 +532,23 @@ def _successors(
 	fallthrough = (Address(next_address),) if next_address is not None else ()
 	if instruction.mnemonic == ".byte":
 		return fallthrough
-	if _is_control_transfer(instruction, machine):
-		if machine.is_x86:
-			return (
-				fallthrough
-				if instruction.mnemonic in X86_CALLS or is_returning_trap(instruction, machine)
-				else ()
-			)
-		if (
-			arm_mnemonic(instruction) in ARM_CALLS
-			or (
-				arm_mnemonic(instruction) == "pop"
-				and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
-			)
-			or is_returning_trap(instruction, machine)
-			or arm_predicated(instruction)
-		):
-			return fallthrough
-		return ()
-	raise AssertionError  # every block-ending instruction matches an arm above
+	if machine.is_x86:
+		return (
+			fallthrough
+			if instruction.mnemonic in X86_CALLS or is_returning_trap(instruction, machine)
+			else ()
+		)
+	if (
+		arm_mnemonic(instruction) in ARM_CALLS
+		or (
+			arm_mnemonic(instruction) == "pop"
+			and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
+		)
+		or is_returning_trap(instruction, machine)
+		or arm_predicated(instruction)
+	):
+		return fallthrough
+	return ()
 
 
 def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
@@ -619,7 +623,7 @@ def _build_blocks(
 					if instruction.address in cases
 					else ()
 					if instruction.address in dispatches
-					else _successors(instruction, machine, by_address, next_address),
+					else _block_end_successors(instruction, machine, by_address, next_address),
 				)
 			)
 			current = []
