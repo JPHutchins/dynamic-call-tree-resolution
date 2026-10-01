@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING, Final, Literal, NewType
+from typing import TYPE_CHECKING, Final, Literal, NewType, assert_never
 
 from salix import Struct, replace
 
@@ -18,6 +18,13 @@ Address = NewType("Address", int)
 type ByteOrder = Literal["little", "big"]
 
 
+class InstructionFamily(StrEnum):
+	"""The instruction architectures whose code the analyzer decodes and interprets."""
+
+	ARM = "ARM"
+	X86 = "X86"
+
+
 class Machine(StrEnum):
 	"""The ``e_machine`` values the analyzer can lift."""
 
@@ -26,8 +33,14 @@ class Machine(StrEnum):
 	EM_ARM = "EM_ARM"
 
 	@property
-	def is_x86(self) -> bool:
-		return self is Machine.EM_X86_64 or self is Machine.EM_386
+	def family(self) -> InstructionFamily:
+		match self:
+			case Machine.EM_X86_64 | Machine.EM_386:
+				return InstructionFamily.X86
+			case Machine.EM_ARM:
+				return InstructionFamily.ARM
+			case _ as unreachable:
+				assert_never(unreachable)
 
 
 class InstructionSet(StrEnum):

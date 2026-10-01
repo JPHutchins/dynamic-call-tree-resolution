@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, assert_never
 from capstone import x86_const
 from salix import Struct
 
-from dynamic_call_tree_resolution.model import Address, CallSite, Machine
+from dynamic_call_tree_resolution.model import Address, CallSite, InstructionFamily, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	ARM_CALLER_SAVED,
@@ -72,14 +72,15 @@ class CallObservation(Struct):
 
 
 def _clobber_caller_saved(state: State, machine: Machine) -> State:
-	registers = (
-		X86_CALLER_SAVED_32
-		if machine is Machine.EM_386
-		else X86_CALLER_SAVED_64
-		if machine is Machine.EM_X86_64
-		else ARM_CALLER_SAVED
-	)
-	return top_registers(state, registers)
+	match machine:
+		case Machine.EM_386:
+			return top_registers(state, X86_CALLER_SAVED_32)
+		case Machine.EM_X86_64:
+			return top_registers(state, X86_CALLER_SAVED_64)
+		case Machine.EM_ARM:
+			return top_registers(state, ARM_CALLER_SAVED)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _called(state: State, machine: Machine) -> State:
@@ -97,22 +98,37 @@ def _called(state: State, machine: Machine) -> State:
 
 
 def _transfer(context: Context, instruction: CsInsn, state: State) -> State:
-	machine = context.program.machine
 	if instruction.mnemonic == ".byte":
 		return state
-	if (
-		instruction.mnemonic in X86_CALLS
-		if machine.is_x86
-		else arm_mnemonic(instruction) in ARM_CALLS
-	) or is_returning_trap(instruction, machine):
-		return _called(state, machine)
+	if _calls(instruction, context.program.machine) or is_returning_trap(
+		instruction, context.program.machine
+	):
+		return _called(state, context.program.machine)
+	match context.program.machine:
+		case Machine.EM_386:
+			return _x86_transfer(context, instruction, state, x86_const.X86_REG_ECX)
+		case Machine.EM_X86_64:
+			return _x86_transfer(context, instruction, state, x86_const.X86_REG_RCX)
+		case Machine.EM_ARM:
+			return apply_arm(context, instruction, state)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _calls(instruction: CsInsn, machine: Machine) -> bool:
+	match machine.family:
+		case InstructionFamily.X86:
+			return instruction.mnemonic in X86_CALLS
+		case InstructionFamily.ARM:
+			return arm_mnemonic(instruction) in ARM_CALLS
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _x86_transfer(context: Context, instruction: CsInsn, state: State, loop_counter: int) -> State:
 	if instruction.mnemonic in ("loop", "loope", "loopne"):
-		return top_registers(
-			state, (x86_const.X86_REG_ECX if machine is Machine.EM_386 else x86_const.X86_REG_RCX,)
-		)
-	if machine.is_x86:
-		return apply_x86(context, instruction, state)
-	return apply_arm(context, instruction, state)
+		return top_registers(state, (loop_counter,))
+	return apply_x86(context, instruction, state)
 
 
 class FunctionResult(Struct):
@@ -214,30 +230,32 @@ def _indirect_observations(
 def _call_arguments(
 	context: Context, state: State, pushed_return_addresses: int
 ) -> Mapping[int, ValueSet]:
-	machine = context.program.machine
-	if machine is Machine.EM_X86_64:
-		return {
-			position: lookup(state.registers, register)
-			for position, register in enumerate(X86_64_ARGUMENT_REGISTERS)
-		}
-	if machine is Machine.EM_386:
-		offsets = lookup(state.sp_offsets, SP_REGISTERS[machine][0])
-		return {
-			position: stack_read(
-				state.stack,
-				shift_offsets(
-					offsets,
-					_stack_argument_offset(
-						position, pushed_return_addresses, context.program.pointer_size
+	match context.program.machine:
+		case Machine.EM_X86_64:
+			return {
+				position: lookup(state.registers, register)
+				for position, register in enumerate(X86_64_ARGUMENT_REGISTERS)
+			}
+		case Machine.EM_386:
+			return {
+				position: stack_read(
+					state.stack,
+					shift_offsets(
+						lookup(state.sp_offsets, SP_REGISTERS[Machine.EM_386][0]),
+						_stack_argument_offset(
+							position, pushed_return_addresses, context.program.pointer_size
+						),
 					),
-				),
-			)
-			for position in range(EM_386_STACK_ARGUMENTS)
-		}
-	return {
-		position: lookup(state.registers, register)
-		for position, register in enumerate(ARM_ARGUMENT_REGISTERS)
-	}
+				)
+				for position in range(EM_386_STACK_ARGUMENTS)
+			}
+		case Machine.EM_ARM:
+			return {
+				position: lookup(state.registers, register)
+				for position, register in enumerate(ARM_ARGUMENT_REGISTERS)
+			}
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _stack_argument_offset(position: int, pushed_return_addresses: int, pointer_size: int) -> int:

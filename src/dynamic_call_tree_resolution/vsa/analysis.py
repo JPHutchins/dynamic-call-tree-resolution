@@ -12,7 +12,13 @@ from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.model import BARE_METAL, Address, CallSite, Machine
+from dynamic_call_tree_resolution.model import (
+	BARE_METAL,
+	Address,
+	CallSite,
+	InstructionFamily,
+	Machine,
+)
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	SP_REGISTERS,
@@ -34,7 +40,7 @@ if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
 	from concurrent.futures import Executor
 
-	from capstone import ArmCsOperand
+	from capstone import ArmCsOperand, CsOperand
 
 	from dynamic_call_tree_resolution.model import Function, Program, RtosModel, ThreadRoot
 
@@ -327,10 +333,17 @@ def _prewarm_instructions(
 				if instruction.mnemonic == ".byte":
 					continue
 				for operand in instruction.operands:
-					if machine is Machine.EM_ARM:
-						_ = cast("ArmCsOperand", operand).shift
-					else:
-						_ = operand.mem
+					_prewarm_operand(operand, machine)
+
+
+def _prewarm_operand(operand: CsOperand, machine: Machine) -> None:
+	match machine.family:
+		case InstructionFamily.ARM:
+			_ = cast("ArmCsOperand", operand).shift
+		case InstructionFamily.X86:
+			_ = operand.mem
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _trampoline(program: Program, rtos: RtosModel) -> tuple[Address, ...]:
@@ -426,12 +439,15 @@ def _seed_from_observation(observation: CallObservation, program: Program) -> St
 			case Top():
 				continue
 			case Known(values=values):
-				if program.machine is Machine.EM_386:
-					stack[program.pointer_size * (position + 1)] = values
-				elif program.machine is Machine.EM_X86_64:
-					registers[X86_64_ARGUMENT_REGISTERS[position]] = values
-				else:
-					registers[ARM_ARGUMENT_REGISTERS[position]] = values
+				match program.machine:
+					case Machine.EM_386:
+						stack[program.pointer_size * (position + 1)] = values
+					case Machine.EM_X86_64:
+						registers[X86_64_ARGUMENT_REGISTERS[position]] = values
+					case Machine.EM_ARM:
+						registers[ARM_ARGUMENT_REGISTERS[position]] = values
+					case _ as unreachable:
+						assert_never(unreachable)
 			case _ as unreachable:
 				assert_never(unreachable)
 	return State(
