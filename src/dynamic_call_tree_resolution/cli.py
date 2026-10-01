@@ -12,7 +12,7 @@ from cyclopts import App, Parameter
 from elftools.common.exceptions import ELFError
 from salix import Struct
 
-from dynamic_call_tree_resolution.call_sites import per_caller_candidates, resolve
+from dynamic_call_tree_resolution.call_sites import own_targets, per_caller_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
 from dynamic_call_tree_resolution.loader import defined_function_names, elf_machine, load
 from dynamic_call_tree_resolution.model import Machine, Residue
@@ -37,20 +37,25 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	Bounded,
 	PathStep,
+	StackGraph,
 	StackReport,
 	Unbounded,
 	deepest_path,
 	expand_indirect_calls,
 	frame_key,
+	own_thread_edges,
 	stack_graph,
 	stack_reports,
 	thread_edges,
 	thread_frames,
-	worst_case_depths,
+	thread_reports,
 )
 from dynamic_call_tree_resolution.stack_usage import StackUsage, load_stack_usages
 
 if TYPE_CHECKING:
+	from collections.abc import Mapping
+
+	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.model import Program, RtosModel, UnresolvedSlot
 
 app = App(name="dctr")
@@ -267,6 +272,8 @@ class _Expansion(Struct):
 	in_image_edges: tuple[CallEdge, ...]
 	frames: tuple[StackUsage, ...]
 	threads: frozenset[str]
+	own_edges: Mapping[str, tuple[CallEdge, ...]]
+	"""Each thread's tree from its own analysis, by thread."""
 	indirect_sites: int
 	program: Program
 	rtos: RtosModel
@@ -294,11 +301,18 @@ def _expand_from_elf(
 	)
 	unresolved = unresolved_slots(program, resolution.assignments)
 	threads_edges, threads_frames = _thread_graph(program, model, in_image_edges, frames)
+	expanded = expand_indirect_calls(edges, targets_by_caller, fallback)
 	return _Expansion(
-		expanded=(*expand_indirect_calls(edges, targets_by_caller, fallback), *threads_edges),
+		expanded=(*expanded, *threads_edges),
 		in_image_edges=(*in_image_edges, *threads_edges),
 		frames=(*frames, *threads_frames),
 		threads=frozenset(thread.name for thread in model.threads),
+		own_edges={
+			thread: (*expanded, *own)
+			for thread, own in _own_thread_graphs(
+				program, model, resolution, in_image_edges, targets_by_caller, fallback
+			).items()
+		},
 		indirect_sites=indirect_sites,
 		program=program,
 		rtos=model,
@@ -325,6 +339,35 @@ def _thread_graph(
 				thread_edges(edges, trampoline, entries_by_thread),
 				thread_frames(frames, trampoline, entries_by_thread),
 			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _own_thread_graphs(
+	program: Program,
+	model: RtosModel,
+	resolution: ProgramResolution,
+	edges: tuple[CallEdge, ...],
+	targets_by_caller: Mapping[str, frozenset[str]],
+	fallback: frozenset[str],
+) -> Mapping[str, tuple[CallEdge, ...]]:
+	entries = {thread.name: thread.entry for thread in model.threads}
+	match model.trampoline:
+		case None:
+			return {}
+		case str() as trampoline:
+			return {
+				thread: own_thread_edges(
+					edges,
+					trampoline,
+					thread,
+					frame_key(program.functions[entries[thread]].name),
+					own_targets(program, sites, resolution.assignments),
+					targets_by_caller,
+					fallback,
+				)
+				for thread, sites in resolution.threads.items()
+			}
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -373,9 +416,14 @@ def stack(
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
 	)
 	reports = stack_reports(graph)
-	kept = _in_image(reports, expansion) if expansion is not None else reports
+	own_graphs = _own_graphs(expansion)
+	kept = (
+		_in_image(thread_reports(reports, own_graphs), expansion)
+		if expansion is not None
+		else reports
+	)
 	shown = kept if path is None else _entry_report(kept, path)
-	steps = None if path is None else deepest_path(graph, path)
+	steps = None if path is None else deepest_path(own_graphs.get(path, graph), path)
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(_stack_document(shown, steps)).decode()))
 		return
@@ -391,6 +439,17 @@ def stack(
 		print(_render(report))
 	for step in steps or ():
 		print(_render_step(step))
+
+
+def _own_graphs(expansion: _Expansion | None) -> Mapping[str, StackGraph]:
+	return (
+		{
+			thread: stack_graph(edges, expansion.frames)
+			for thread, edges in expansion.own_edges.items()
+		}
+		if expansion is not None
+		else {}
+	)
 
 
 def _stack_document(
@@ -433,10 +492,10 @@ def summary(
 		narrow_by_signature=narrow_by_signature,
 		rtos=rtos,
 	)
-	reports = worst_case_depths(
-		expansion.expanded, expansion.frames, entry_edges=expansion.in_image_edges
+	reports = stack_reports(
+		stack_graph(expansion.expanded, expansion.frames, entry_edges=expansion.in_image_edges)
 	)
-	kept = _in_image(reports, expansion)
+	kept = _in_image(thread_reports(reports, _own_graphs(expansion)), expansion)
 	worst = next(iter(kept), StackReport(entry="", bound=Bounded(bytes=0)))
 	report = AnalysisSummary(
 		resolved_slots=expansion.counts.resolved_slots,

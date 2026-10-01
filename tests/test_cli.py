@@ -242,6 +242,41 @@ def test_cli_stack_with_elf_makes_each_static_thread_an_entry(
 	) == (["escaped_tid: 64 bytes", "rom_tid: 48 bytes"], [])
 
 
+def test_cli_stack_with_elf_bounds_each_thread_of_a_shared_entry_by_its_own_record(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "threads.c.ci").write_text(
+		"graph: { "
+		'edge: { sourcename: "z_thread_entry" targetname: "__indirect_call" } '
+		'edge: { sourcename: "sensor_thread" targetname: "__indirect_call" } '
+		"}\n"
+	)
+	(build_directory / "threads.c.su").write_text(
+		"threads.c:19:6:z_thread_entry\t16\tstatic\n"
+		"threads.c:28:6:sensor_thread\t32\tstatic\n"
+		"threads.c:12:6:run_small\t8\tstatic\n"
+		"threads.c:14:6:run_big\t64\tstatic\n"
+	)
+	stack(build_directory, fixture_elfs["shared_threads"])
+	rows = capsys.readouterr().out.splitlines()
+	stack(build_directory, fixture_elfs["shared_threads"], path="small_tid")
+	assert (
+		[row for row in rows if row.split(":")[0] in {"small_tid", "big_tid"}],
+		capsys.readouterr().out.splitlines()[2:],
+	) == (
+		["big_tid: 112 bytes", "small_tid: 56 bytes"],
+		[
+			"small_tid +16 = 16 bytes",
+			"sensor_thread +32 = 48 bytes via thread record",
+			"run_small +8 = 56 bytes via indirect: candidate",
+		],
+	)
+
+
 def test_cli_stack_json_carries_every_name(
 	tmp_path: Path,
 	capsys: pytest.CaptureFixture[str],

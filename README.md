@@ -32,12 +32,14 @@ with no target.
    over every function's machine code, seeded from observed direct calls. The narrowed
    sets are refinements, not over-approximations. With `--narrow-by-signature`, a site
    whose slot the image leaves unset also narrows to the functions of the slot's DWARF
-   signature.
+   signature. Each RTOS static thread is also analyzed on its own, started from its
+   record.
 
 Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts. Each indirect call also expands to
 the fallback: every function whose address the image stores, or a non-branch
-instruction computes.
+instruction computes. The exception is a site inside a thread's tree that the thread's
+own analysis resolved.
 
 ## Usage
 
@@ -79,7 +81,8 @@ do_device_init@0x1dca: <unresolved>
   An entry is *seeded* when its thread's read-only record is the only place the image
   holds its address: the analysis then starts it with the record's `p1`..`p3` instead
   of unknown arguments. This assumes the kernel's static-thread start is the only code
-  that reads the records.
+  that reads the records. `analyze` prints this whole-image analysis; `stack --elf`
+  also analyzes each static thread on its own (below).
 - `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, read from their linker
   sections; `__device_dts_ord_22.ops.init` is the device struct's init function.
 - `<unresolved>` means the analysis has no function address for a writable slot. That
@@ -192,8 +195,9 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   `__indirect_call` edges in the `.ci` files. The `stack --elf` header ends with the
   RTOS model when one is detected.
 - `stack --elf` expands every indirect edge to its site candidates plus the fallback,
-  every address-taken function. `z_shell_write` has no candidates, so its edge is the
-  fallback alone, and every function it reaches that way is `indirect: fallback`.
+  every address-taken function, except inside a thread's tree (below). `z_shell_write`
+  has no candidates, so its edge is the fallback alone, and every function it reaches
+  that way is `indirect: fallback`.
 - An `unbounded` entry's number is only a lower bound. The counts name what breaks the
   bound anywhere in the entry's subtree:
   - `recursion`: functions on a cycle;
@@ -211,6 +215,12 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   such as `thermal_tid`. It is `z_thread_entry`'s frame and calls, with the indirect call
   that starts the thread going to that thread's entry alone. The entry function is then
   no longer an entry of its own.
+- Below that, a thread's tree comes from an analysis of the thread alone, started from
+  its record. A site that analysis tracked to known functions expands to those functions
+  without the fallback, provided it decoded as many indirect calls in the function as
+  `.ci` records. So two threads that share an entry but pass it different bindings get
+  different trees. Any other site expands as it does everywhere else, and below it the
+  thread's tree is the image's.
 - `stack --json` carries the full function names behind each count.
 - `stack --path ENTRY` prints that entry alone, then its deepest path, one function per
   line: its frame, the running total, the edge it is called through (`static`,
@@ -258,6 +268,11 @@ contradicts does not hold.
 - Value-set analysis per-site sets are refinements, not over-approximations: its
   control-flow graph misses x86 `notrack` switches, and it does not model x86
   sub-registers or a few kinds of write ([#113]).
+- Inside a thread's tree, a site the thread's analysis resolved drops the fallback, so a
+  gap in that analysis drops a target there.
+- Zephyr's I2C and SPI emulators find their target in a list that init code builds in
+  RAM, so their sites stay unresolved, and two threads' trees rejoin below them ([#151],
+  [#159]).
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
 - The fallback holds every function address the image stores, or that one instruction
@@ -329,3 +344,5 @@ a machine builds it.
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
 [#131]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/131
 [#146]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/146
+[#151]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/151
+[#159]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/159

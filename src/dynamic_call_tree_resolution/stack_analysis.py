@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from enum import StrEnum
 from functools import partial
 from itertools import groupby
@@ -160,6 +161,91 @@ def thread_edges(
 	)
 
 
+class ThreadTargets(Struct):
+	"""What one thread's own analysis resolved, by caller key."""
+
+	reached: frozenset[str]
+	targets_by_caller: Mapping[str, frozenset[str]]
+	sites_by_caller: Mapping[str, int]
+
+
+def own_thread_edges(
+	edges: Iterable[CallEdge],
+	trampoline: str,
+	thread: str,
+	entry: str,
+	own: ThreadTargets,
+	targets_by_caller: Mapping[str, frozenset[str]],
+	fallback: frozenset[str],
+) -> tuple[CallEdge, ...]:
+	edges_tuple = tuple(edges)
+	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
+	node = partial(_thread_node, thread, own.reached)
+	complete = _complete_callers(edges_tuple, own)
+	return (
+		*(
+			CallEdge(caller=thread, callee=node(edge.callee), kind=edge.kind)
+			for edge in edges_tuple
+			if frame_key(edge.caller) == trampoline and edge.callee != INDIRECT_CALLEE
+		),
+		*(
+			CallEdge(caller=thread, callee=node(name), kind=EdgeKind.THREAD)
+			for name in sorted(graph_targets(entry))
+		),
+		*(
+			CallEdge(caller=_in_thread(thread, edge.caller), callee=callee, kind=kind)
+			for edge in edges_tuple
+			if frame_key(edge.caller) in own.reached
+			for callee, kind in (
+				(
+					sorted(
+						(node(graph_target), EdgeKind.CANDIDATE)
+						for target in own.targets_by_caller[frame_key(edge.caller)]
+						for graph_target in graph_targets(target)
+					)
+					if frame_key(edge.caller) in complete
+					else _expansion(
+						targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
+						fallback,
+						graph_targets,
+						exact=False,
+					)
+					or [(INDIRECT_CALLEE, edge.kind)]
+				)
+				if edge.callee == INDIRECT_CALLEE
+				else ((node(edge.callee), edge.kind),)
+			)
+		),
+	)
+
+
+def _complete_callers(edges: tuple[CallEdge, ...], own: ThreadTargets) -> frozenset[str]:
+	indirect_edges = Counter(
+		frame_key(edge.caller) for edge in edges if edge.callee == INDIRECT_CALLEE
+	)
+	return frozenset(
+		caller
+		for caller, targets in own.targets_by_caller.items()
+		if INDIRECT_CALLEE not in targets
+		and own.sites_by_caller.get(caller, 0) >= indirect_edges[caller]
+	)
+
+
+def _thread_node(thread: str, reached: frozenset[str], name: str) -> str:
+	return _in_thread(thread, name) if frame_key(name) in reached else name
+
+
+def _in_thread(thread: str, name: str) -> str:
+	"""Name a function's node in one thread's own tree; its frame stays the function's.
+
+	>>> frame_key(_in_thread("thermal_tid", "/zephyr/drivers/i2c/i2c_emul.c:i2c_emul_transfer"))
+	'i2c_emul_transfer'
+	>>> frame_key(_in_thread("thermal_tid", "i2c_write_read.constprop.0"))
+	'i2c_write_read'
+	"""
+	return f"{thread}/:{name}"
+
+
 def thread_frames(
 	frames: Iterable[StackUsage], trampoline: str, threads: Iterable[str]
 ) -> tuple[StackUsage, ...]:
@@ -236,6 +322,22 @@ def stack_graph(
 
 def stack_reports(graph: StackGraph) -> tuple[StackReport, ...]:
 	return tuple(sorted((_report(graph, root) for root in graph.roots), key=_report_order))
+
+
+def thread_reports(
+	reports: Iterable[StackReport], own_graphs: Mapping[str, StackGraph]
+) -> tuple[StackReport, ...]:
+	return tuple(
+		sorted(
+			(
+				_report(own_graphs[report.entry], report.entry)
+				if report.entry in own_graphs
+				else report
+				for report in reports
+			),
+			key=_report_order,
+		)
+	)
 
 
 def deepest_path(graph: StackGraph, entry: str) -> tuple[PathStep, ...]:

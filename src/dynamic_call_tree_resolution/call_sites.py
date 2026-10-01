@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from itertools import groupby
 from typing import TYPE_CHECKING, assert_never
 
@@ -24,7 +25,7 @@ from dynamic_call_tree_resolution.points_to import (
 	signatures_by_slot,
 	unresolved_slots,
 )
-from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, frame_key
+from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, ThreadTargets, frame_key
 from dynamic_call_tree_resolution.vsa import Analysis, address_taken, analyze, runtime_value
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 
@@ -173,4 +174,17 @@ def per_caller_candidates(
 	return (
 		targets_by_caller,
 		frozenset(program.functions[address].name for address in fallback_addresses),
+	)
+
+
+def own_targets(
+	program: Program, thread: ThreadSites, resolved: tuple[SlotAssignment, ...]
+) -> ThreadTargets:
+	targets_by_caller, _ = per_caller_candidates(program, thread.sites, resolved)
+	return ThreadTargets(
+		reached=frozenset(frame_key(program.functions[address].name) for address in thread.reached),
+		targets_by_caller=targets_by_caller,
+		sites_by_caller=Counter(
+			frame_key(program.functions[site.caller_address].name) for site in thread.sites
+		),
 	)

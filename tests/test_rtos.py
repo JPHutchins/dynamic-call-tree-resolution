@@ -187,6 +187,6 @@ def test_cli_stack_reports_each_sensor_thread_in_place_of_its_entry(
 		sorted(bare_metal & threads_and_entries),
 	) == (
 		["motion_tid", "thermal_tid"],
-		["thermal_tid +8 = 8 bytes", "thermal_thread +8 = 16 bytes via thread record (recursion)"],
+		["thermal_tid +8 = 8 bytes", "thermal_thread +8 = 16 bytes via thread record"],
 		["motion_thread", "thermal_thread"],
 	)

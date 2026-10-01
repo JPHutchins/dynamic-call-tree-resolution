@@ -33,7 +33,9 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
+	ThreadTargets,
 	frame_key,
+	own_thread_edges,
 	thread_edges,
 	thread_frames,
 )
@@ -79,6 +81,131 @@ def test_a_thread_is_the_trampolines_frame_and_calls_with_its_indirect_call_to_t
 		),
 		Bounded(bytes=118),
 		False,
+	)
+
+
+SHARED_ENTRY_EDGES = (
+	CallEdge(caller="trampoline", callee=INDIRECT_CALLEE),
+	CallEdge(caller="trampoline", callee="abort"),
+	CallEdge(caller="/src/app.c:entry", callee=INDIRECT_CALLEE),
+)
+
+SHARED_ENTRY_FRAMES = (
+	StackUsage(function="trampoline", bytes=8, bounded=True),
+	StackUsage(function="abort", bytes=50, bounded=True),
+	StackUsage(function="entry", bytes=100, bounded=True),
+	StackUsage(function="cheap", bytes=10, bounded=True),
+	StackUsage(function="costly", bytes=1000, bounded=True),
+)
+
+
+def _own_thread_depth(
+	own: ThreadTargets, edges: tuple[CallEdge, ...]
+) -> tuple[Bounded | Unbounded, tuple[tuple[str, frozenset[EdgeKind]], ...]]:
+	graph = stack_graph(
+		(
+			*expand_indirect_calls(
+				edges,
+				{"entry": frozenset({"cheap", "costly"})},
+				frozenset({"entry", "cheap", "costly"}),
+			),
+			*own_thread_edges(
+				edges,
+				"trampoline",
+				"worker_tid",
+				"entry",
+				own,
+				{"entry": frozenset({"cheap", "costly"})},
+				frozenset({"entry", "cheap", "costly"}),
+			),
+		),
+		(
+			*SHARED_ENTRY_FRAMES,
+			*thread_frames(SHARED_ENTRY_FRAMES, "trampoline", ("worker_tid",)),
+		),
+	)
+	return (
+		next(report for report in stack_reports(graph) if report.entry == "worker_tid").bound,
+		tuple((step.function, step.edge) for step in deepest_path(graph, "worker_tid")),
+	)
+
+
+@pytest.mark.parametrize(
+	("own", "edges"),
+	[
+		pytest.param(
+			ThreadTargets(
+				reached=frozenset({"trampoline", "entry", "cheap"}),
+				targets_by_caller={
+					"trampoline": frozenset({"entry"}),
+					"entry": frozenset({"cheap"}),
+				},
+				sites_by_caller={"trampoline": 1, "entry": 1},
+			),
+			SHARED_ENTRY_EDGES,
+			id="resolved",
+		),
+	],
+)
+def test_a_thread_follows_the_sites_its_own_analysis_resolved(
+	own: ThreadTargets, edges: tuple[CallEdge, ...]
+) -> None:
+	assert _own_thread_depth(own, edges) == (
+		Bounded(bytes=8 + 100 + 10),
+		(
+			("worker_tid", frozenset()),
+			("entry", frozenset({EdgeKind.THREAD})),
+			("cheap", frozenset({EdgeKind.CANDIDATE})),
+		),
+	)
+
+
+@pytest.mark.parametrize(
+	("own", "edges"),
+	[
+		pytest.param(
+			ThreadTargets(
+				reached=frozenset({"trampoline", "entry"}),
+				targets_by_caller={
+					"trampoline": frozenset({"entry"}),
+					"entry": frozenset({INDIRECT_CALLEE}),
+				},
+				sites_by_caller={"trampoline": 1, "entry": 1},
+			),
+			SHARED_ENTRY_EDGES,
+			id="unresolved-site",
+		),
+		pytest.param(
+			ThreadTargets(
+				reached=frozenset({"trampoline", "entry", "cheap"}),
+				targets_by_caller={
+					"trampoline": frozenset({"entry"}),
+					"entry": frozenset({"cheap"}),
+				},
+				sites_by_caller={"trampoline": 1, "entry": 1},
+			),
+			(*SHARED_ENTRY_EDGES, CallEdge(caller="/src/app.c:entry", callee=INDIRECT_CALLEE)),
+			id="fewer-sites-than-the-callgraph",
+		),
+	],
+)
+def test_a_thread_takes_the_global_expansion_of_a_site_its_own_analysis_did_not_resolve(
+	own: ThreadTargets, edges: tuple[CallEdge, ...]
+) -> None:
+	assert _own_thread_depth(own, edges) == (
+		Unbounded(
+			at_least=8 + 100 + 100 + 1000,
+			recursion=frozenset({"entry"}),
+			unmeasured=frozenset(),
+			dynamic=frozenset(),
+			unresolved=frozenset(),
+		),
+		(
+			("worker_tid", frozenset()),
+			("entry", frozenset({EdgeKind.THREAD})),
+			("entry", frozenset({EdgeKind.FALLBACK})),
+			("costly", frozenset({EdgeKind.CANDIDATE})),
+		),
 	)
 
 
