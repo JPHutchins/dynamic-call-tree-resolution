@@ -26,5 +26,12 @@
 		"SOURCE": "../tests/fixtures/sensor-two-impl-app",
 		"TOOLCHAIN": "zephyr",
 		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da"
+	},
+	{
+		"NAME": "sensor-threads",
+		"BOARD": "qemu_cortex_m3",
+		"SOURCE": "../tests/fixtures/sensor-threads-app",
+		"TOOLCHAIN": "zephyr",
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da"
 	}
 ]

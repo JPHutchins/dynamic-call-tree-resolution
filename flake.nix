@@ -73,6 +73,7 @@
               ./testbeds/manifest
               ./testbeds/.west
               ./tests/fixtures/sensor-two-impl-app
+              ./tests/fixtures/sensor-threads-app
             ];
           };
         };
