@@ -67,7 +67,7 @@ static int split_arguments(
 			*cursor++ = '\0';
 		}
 	}
-	arguments[count] = NULL;
+	arguments[count] = nullptr;
 	return count;
 }
 

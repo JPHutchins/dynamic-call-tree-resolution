@@ -1,5 +1,3 @@
 struct shared;
 
-void touch(struct shared * s) {
-	(void) s;
-}
+void touch([[maybe_unused]] struct shared * s) {}

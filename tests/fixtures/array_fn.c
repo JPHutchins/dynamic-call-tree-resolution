@@ -1,5 +1,3 @@
-#include <stddef.h>
-
 struct entry {
 	void * arg;
 	void (*isr)(void);
@@ -98,5 +96,5 @@ __asm__(
 int main(void) {
 	table[0].isr();
 	cbs[1]();
-	return dynamic_cbs[0] == NULL;
+	return dynamic_cbs[0] == nullptr;
 }
