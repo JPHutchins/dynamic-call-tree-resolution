@@ -244,7 +244,8 @@ def _stack_argument_offset(position: int, pushed_return_addresses: int, pointer_
 	"""How far above the stack pointer an EM_386 argument sits at a call or tail jump.
 
 	At a ``call`` the return address is not pushed yet, so the first argument is at the
-	stack pointer itself; at a tail ``jmp``, the caller's return address is below it.
+	stack pointer itself; at a tail ``jmp`` the caller's return address is still at the
+	stack pointer, so every argument sits one pointer higher.
 
 	>>> _stack_argument_offset(0, 0, 4), _stack_argument_offset(0, 1, 4)
 	(0, 4)

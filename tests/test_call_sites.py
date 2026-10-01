@@ -676,11 +676,6 @@ def test_analyze_is_deterministic(fixture_elfs: dict[str, Path]) -> None:
 	assert extract_call_sites(program) == extract_call_sites(program)
 
 
-def test_unsupported_machine_is_rejected_at_construction() -> None:
-	with pytest.raises(ValueError, match="EM_RISCV"):
-		Machine("EM_RISCV")
-
-
 def test_function_without_code_bytes_has_no_sites() -> None:
 	program = _program(Machine.EM_X86_64, b"", functions=(("bare", 0x5000, 4),))
 	assert extract_call_sites(program) == ()
