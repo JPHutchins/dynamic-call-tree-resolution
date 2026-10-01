@@ -1,7 +1,5 @@
 #include "harness.h"
 
-#include <stddef.h>
-
 void initialized_target(void) {
 	observe("initialized_target");
 }
@@ -17,5 +15,5 @@ int main(int argc, char * argv[argc + 1]) {
 	if (argc > 3) {
 		zeroed();
 	}
-	return zeroed == NULL ? argc : 0;
+	return zeroed == nullptr ? argc : 0;
 }

@@ -19,5 +19,5 @@ struct ops bss_ops;
 int (*written)(void) = target;
 
 int main(void) {
-	return rom_ops.run() + ram_ops.run() + written() + (bss_ops.run == 0) + (int) rom_arm.value;
+	return rom_ops.run() + ram_ops.run() + written() + (bss_ops.run == nullptr) + rom_arm.value;
 }

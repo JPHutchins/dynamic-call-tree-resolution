@@ -36,7 +36,7 @@ int main(void) {
 	return (
 		anon_ops_holder.ops->run() +
 		bare_anon.run() +
-		(dynamic_anon_ops.run == 0) +
-		(visitor.visit_ops == 0)
+		(dynamic_anon_ops.run == nullptr) +
+		(visitor.visit_ops == nullptr)
 	);
 }

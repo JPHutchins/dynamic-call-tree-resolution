@@ -78,14 +78,14 @@ void undef_ptr_target(void);
 
 struct ops const ops_a = {.open = driver_a_open, .close = driver_a_close};
 struct ops const ops_b = {.open = driver_b_open, .close = driver_b_close};
-struct device dev_a = {.api = &ops_a, .context = 0, .ops = {.init = dev_init}};
-struct device dev_b = {.api = &ops_b, .context = 0, .ops = {.init = dev_init}};
+struct device dev_a = {.api = &ops_a, .context = nullptr, .ops = {.init = dev_init}};
+struct device dev_b = {.api = &ops_b, .context = nullptr, .ops = {.init = dev_init}};
 struct device dev_c = {.api = &ops_b, .context = (void *) &ops_a, .ops = {.init = dev_init}};
 struct handler_holder holder = {.run = undef_ptr_target};
 struct handler_holder bss_holder;
 struct node node_a = {.next = &node_a, .fn = node_fn};
-struct container wrong_chain = {.looks_like_ops = (struct ops *) &dev_a, .ip = 0};
-struct container null_chain = {.looks_like_ops = 0, .ip = 0};
+struct container wrong_chain = {.looks_like_ops = (struct ops *) &dev_a, .ip = nullptr};
+struct container null_chain = {.looks_like_ops = nullptr, .ip = nullptr};
 anon_t anon_obj = {.x = 1};
 struct anon_wrapper wrap = {.anon = &anon_obj};
 union un un_obj = {.a = 1};
@@ -103,24 +103,26 @@ int use_folded(void) {
 }
 
 int main(void) {
-	int result = 0;
-
 	plain_cb(1);
-	if (bss_cb != 0) {
+	if (bss_cb != nullptr) {
 		bss_cb(2);
 	}
-	result += dev_a.api->open(dev_a.context, 2);
-	result += dev_b.api->close(dev_b.context);
+	int const opened = dev_a.api->open(dev_a.context, 2);
+	int const closed = dev_b.api->close(dev_b.context);
 	holder.run();
-	result += node_a.fn();
-	result += wrap.anon->x;
-	result += un_obj.a;
-	result += bits.a;
-	result += volatile_count;
-	result += enum_target(FLAG_ONE);
-	result += typedef_target();
 	puts("device model");
-	return result + use_folded();
+	return (
+		opened +
+		closed +
+		node_a.fn() +
+		wrap.anon->x +
+		un_obj.a +
+		bits.a +
+		volatile_count +
+		enum_target(FLAG_ONE) +
+		typedef_target() +
+		use_folded()
+	);
 }
 
 void plain_target(int value) {
@@ -134,19 +136,19 @@ ret_t typedef_target(void) {
 void undef_ptr_target(void) {}
 
 static int driver_a_open(void * self, int flags) {
-	return flags + (self != 0);
+	return flags + (self != nullptr);
 }
 
 static int driver_a_close(void * self) {
-	return self != 0;
+	return self != nullptr;
 }
 
 static int driver_b_open(void * self, int flags) {
-	return (self != 0) - flags;
+	return (self != nullptr) - flags;
 }
 
 static int driver_b_close(void * self) {
-	return -(self != 0);
+	return -(self != nullptr);
 }
 
 static int node_fn(void) {
