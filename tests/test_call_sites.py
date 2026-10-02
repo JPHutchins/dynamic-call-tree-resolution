@@ -41,7 +41,7 @@ from tests.programs import build_program
 from tests.sites import tracked_values
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable, Mapping
+	from collections.abc import Collection, Mapping
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.vsa.lattice import ValueSet
@@ -3157,7 +3157,7 @@ def test_a32_dispatch_past_the_case_limit_is_unbounded(compare: str, candidates:
 	assert site.target == _expected(candidates)
 
 
-def _expected(candidates: Iterable[int]) -> ValueSet:
+def _expected(candidates: Collection[int]) -> ValueSet:
 	return (
 		Known(values=frozenset(Address(address) for address in candidates))
 		if frozenset(candidates)
