@@ -376,30 +376,32 @@ def build_comparison(
 		]
 		for caller_address, group in groupby(sorted(sites, key=_site_address), key=_site_address)
 	}
-	rows = [
-		FunctionComparison(
-			address=caller_address,
-			caller=_caller_name(program, caller_address),
-			pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total
-			if caller_address in dynamic_by_caller
-			else 0,
-			dctr_call_sites=len(candidates),
-			dctr_resolved_sites=sum(bool(candidate_set) for candidate_set in candidates),
-			dctr_exact_sites=sum(len(candidate_set) == 1 for candidate_set in candidates),
-		)
-		for caller_address, candidates in sites_by_caller.items()
-	]
-	rows.extend(
-		FunctionComparison(
-			address=caller_address,
-			caller=", ".join(dynamic_by_caller[caller_address].names),
-			pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total,
-			dctr_call_sites=0,
-			dctr_resolved_sites=0,
-			dctr_exact_sites=0,
-		)
-		for caller_address in dynamic_by_caller
-		if caller_address not in sites_by_caller
+	rows = (
+		*(
+			FunctionComparison(
+				address=caller_address,
+				caller=_caller_name(program, caller_address),
+				pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total
+				if caller_address in dynamic_by_caller
+				else 0,
+				dctr_call_sites=len(candidates),
+				dctr_resolved_sites=sum(bool(candidate_set) for candidate_set in candidates),
+				dctr_exact_sites=sum(len(candidate_set) == 1 for candidate_set in candidates),
+			)
+			for caller_address, candidates in sites_by_caller.items()
+		),
+		*(
+			FunctionComparison(
+				address=caller_address,
+				caller=", ".join(dynamic_by_caller[caller_address].names),
+				pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total,
+				dctr_call_sites=0,
+				dctr_resolved_sites=0,
+				dctr_exact_sites=0,
+			)
+			for caller_address in dynamic_by_caller
+			if caller_address not in sites_by_caller
+		),
 	)
 	return ComparisonReport(
 		elf=name,

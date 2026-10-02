@@ -53,7 +53,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 from dynamic_call_tree_resolution.stack_usage import StackUsage, load_stack_usages
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterator, Mapping
 
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.model import Program, RtosModel, UnresolvedSlot
@@ -217,16 +217,7 @@ def compare(
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a resolution rollup per ELF for cross-tool comparison."""
-	paths: list[Path] = []
-	for elf in elfs:
-		if elf.is_dir():
-			found = sorted(elf.glob("*.elf"))
-			paths.extend(found)
-			if not found:
-				print(f"warning: {elf}: no .elf files", file=sys.stderr)
-		else:
-			paths.append(elf)
-	paths = [path for path in paths if _keep(path)]
+	paths = [path for path in tuple(_elf_paths(elfs)) if _keep(path)]
 	pexplorer_report = load_pexplorer(pexplorer) if pexplorer is not None else None
 	comparisons = [
 		_comparison(elf, pexplorer_report, narrow_by_signature=narrow_by_signature, rtos=rtos)
@@ -252,6 +243,17 @@ def compare(
 				f"{row.caller:<48} {row.pexplorer_dynamic_sites:>9} "
 				f"{row.dctr_call_sites:>5} {row.dctr_resolved_sites:>8} {row.dctr_exact_sites:>5}"
 			)
+
+
+def _elf_paths(elfs: list[Path]) -> Iterator[Path]:
+	for elf in elfs:
+		if elf.is_dir():
+			found = sorted(elf.glob("*.elf"))
+			if not found:
+				print(f"warning: {elf}: no .elf files", file=sys.stderr)
+			yield from found
+		else:
+			yield elf
 
 
 def _comparison(
