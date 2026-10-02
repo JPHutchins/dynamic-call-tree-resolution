@@ -32,7 +32,7 @@ from dynamic_call_tree_resolution.vsa.interpret import (
 	FunctionResult,
 	analyze_function,
 )
-from dynamic_call_tree_resolution.vsa.lattice import Known, Top
+from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet
 from dynamic_call_tree_resolution.vsa.memory import Context, accumulate_writes, context_for
 from dynamic_call_tree_resolution.vsa.state import NO_WRITES, State, Writes, join_states, top_seed
 
@@ -89,41 +89,25 @@ def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 		for entry in seeded_entries
 	}
 	roots = dict.fromkeys(_roots(program, functions) - entry_seeds.keys(), top)
-	seeds: Mapping[Address, State] = {**entry_seeds, **roots}
-	global_writes = NO_WRITES
-	round_number = 0
 	with ThreadPoolExecutor() as executor:
-		while True:
-			round_number += 1
-			context = context_for(program, global_writes)
-			observations: list[CallObservation] = []
-			written: list[Writes] = []
-			for result in executor.map(
-				partial(_round_analysis, program, context, seeds),
-				_reached(functions, seeds, program.machine),
-			):
-				written.append(result.writes)
-				observations.extend(result.observations)
-			observed = _observed_seeds(observations, roots, entry_seeds, program)
-			next_seeds = {
-				**_next_seeds(seeds, observed, top, round_number),
-				**roots,
-			}
-			accumulated = accumulate_writes(global_writes, written)
-			next_writes = (
-				accumulated
-				if round_number < _WIDENING_ROUND
-				else _widened_writes(global_writes, accumulated)
-			)
-			if next_seeds == seeds and next_writes == global_writes:
-				break
-			seeds, global_writes = next_seeds, next_writes
-		final_context = context_for(program, global_writes)
+		final = _global_fixpoint(
+			_Rounds(
+				program=program,
+				functions=functions,
+				executor=executor,
+				roots=roots,
+				entry_seeds=entry_seeds,
+				top=top,
+			),
+			_Round(seeds={**entry_seeds, **roots}, writes=NO_WRITES),
+			1,
+		)
+		final_context = context_for(program, final.writes)
 		return Analysis(
 			sites=tuple(
 				site
 				for sites in executor.map(
-					partial(_final_sites, program, final_context, seeds), functions
+					partial(_final_sites, program, final_context, final.seeds), functions
 				)
 				for site in sites
 			),
@@ -139,6 +123,66 @@ def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 				for thread in rtos.threads
 			},
 		)
+
+
+class _Round(Struct):
+	"""What one round of the whole-image fixpoint starts from."""
+
+	seeds: Mapping[Address, State]
+	writes: Writes
+
+
+class _Rounds(Struct):
+	"""What every round of the whole-image fixpoint shares."""
+
+	program: Program
+	functions: tuple[tuple[Function, tuple[Block, ...]], ...]
+	executor: Executor
+	roots: Mapping[Address, State]
+	entry_seeds: Mapping[Address, State]
+	top: State
+
+
+def _global_fixpoint(rounds: _Rounds, current: _Round, round_number: int) -> _Round:
+	results = tuple(
+		rounds.executor.map(
+			partial(
+				_round_analysis,
+				rounds.program,
+				context_for(rounds.program, current.writes),
+				current.seeds,
+			),
+			_reached(rounds.functions, current.seeds, rounds.program.machine),
+		)
+	)
+	following = _Round(
+		seeds={
+			**_next_seeds(
+				current.seeds,
+				_observed_seeds(
+					[observation for result in results for observation in result.observations],
+					rounds.roots,
+					rounds.entry_seeds,
+					rounds.program,
+				),
+				rounds.top,
+				round_number,
+			),
+			**rounds.roots,
+		},
+		writes=_next_writes(
+			current.writes,
+			accumulate_writes(current.writes, [result.writes for result in results]),
+			round_number,
+		),
+	)
+	return (
+		current if following == current else _global_fixpoint(rounds, following, round_number + 1)
+	)
+
+
+def _next_writes(previous: Writes, accumulated: Writes, round_number: int) -> Writes:
+	return accumulated if round_number < _WIDENING_ROUND else _widened_writes(previous, accumulated)
 
 
 def _roots(
@@ -432,24 +476,52 @@ def _seed_from_thread(thread: ThreadRoot, program: Program) -> State:
 
 
 def _seed_from_observation(observation: CallObservation, program: Program) -> State:
-	registers: dict[int, frozenset[Address]] = {}
-	stack: dict[int, frozenset[Address]] = {}
-	for position, value in observation.arguments.items():
-		match value:
-			case Top():
-				continue
-			case Known(values=values):
-				match program.machine:
-					case Machine.EM_386:
-						stack[program.pointer_size * (position + 1)] = values
-					case Machine.EM_X86_64:
-						registers[X86_64_ARGUMENT_REGISTERS[position]] = values
-					case Machine.EM_ARM:
-						registers[ARM_ARGUMENT_REGISTERS[position]] = values
-					case _ as unreachable:
-						assert_never(unreachable)
-			case _ as unreachable:
-				assert_never(unreachable)
+	known = {
+		position: values
+		for position, value in observation.arguments.items()
+		if (values := _known_values(value)) is not None
+	}
+	match program.machine:
+		case Machine.EM_386:
+			return _argument_state(
+				program,
+				{},
+				{
+					program.pointer_size * (position + 1): values
+					for position, values in known.items()
+				},
+			)
+		case Machine.EM_X86_64:
+			return _argument_state(
+				program,
+				{X86_64_ARGUMENT_REGISTERS[position]: values for position, values in known.items()},
+				{},
+			)
+		case Machine.EM_ARM:
+			return _argument_state(
+				program,
+				{ARM_ARGUMENT_REGISTERS[position]: values for position, values in known.items()},
+				{},
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _known_values(value: ValueSet) -> frozenset[Address] | None:
+	match value:
+		case Top():
+			return None
+		case Known(values=values):
+			return values
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _argument_state(
+	program: Program,
+	registers: Mapping[int, frozenset[Address]],
+	stack: Mapping[int, frozenset[Address]],
+) -> State:
 	return State(
 		registers=registers,
 		sp_offsets={SP_REGISTERS[program.machine][0]: frozenset({0})},

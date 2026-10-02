@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from functools import partial, reduce
-from itertools import takewhile
+from itertools import groupby, takewhile
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from capstone import arm_const, x86_const
@@ -36,11 +36,11 @@ from dynamic_call_tree_resolution.vsa.abi import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Mapping
+	from collections.abc import Callable, Iterable, Mapping
 
 	from capstone import ArmCsOperand, Cs, CsInsn, CsOperand
 
-	from dynamic_call_tree_resolution.model import Function, Program
+	from dynamic_call_tree_resolution.model import Function, InstructionSet, Program
 
 
 _WINDOW: Final = 16
@@ -63,33 +63,58 @@ def _function_address(function: Function) -> Address:
 
 def control_flow_graphs(program: Program) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
 	decoders = disassemblers()
-	blocks: dict[Address, tuple[Function, tuple[Block, ...]]] = {}
-	for function in sorted(program.functions.values(), key=_function_address):
-		start = normalized(function.address, program.machine)
-		if start in blocks:
-			continue
-		runs = instruction_runs(program, start, function.size)
-		if not any(code for _, code in runs):
-			continue
-		decoded = tuple(
-			_decoded(
-				decoders[instruction_set_at(program, address)],
-				program,
-				address,
-				code,
-				(start, start + function.size),
-			)
-			for address, code in runs
+	return {
+		start: graph
+		for start, functions in groupby(
+			sorted(program.functions.values(), key=_function_address),
+			key=partial(_code_start, program.machine),
 		)
-		blocks[start] = (
-			function,
-			_build_blocks(
-				tuple(instruction for run, _ in decoded for instruction in run),
-				program.machine,
-				{address: table for _, tables in decoded for address, table in tables.items()},
-			),
+		if (graph := _first_graph(program, decoders, start, functions)) is not None
+	}
+
+
+def _code_start(machine: Machine, function: Function) -> Address:
+	return normalized(function.address, machine)
+
+
+def _first_graph(
+	program: Program,
+	decoders: Mapping[InstructionSet, Cs],
+	start: Address,
+	functions: Iterable[Function],
+) -> tuple[Function, tuple[Block, ...]] | None:
+	return next(
+		filter(
+			None, (_function_graph(program, decoders, start, function) for function in functions)
+		),
+		None,
+	)
+
+
+def _function_graph(
+	program: Program, decoders: Mapping[InstructionSet, Cs], start: Address, function: Function
+) -> tuple[Function, tuple[Block, ...]] | None:
+	runs = instruction_runs(program, start, function.size)
+	if not any(code for _, code in runs):
+		return None
+	decoded = tuple(
+		_decoded(
+			decoders[instruction_set_at(program, address)],
+			program,
+			address,
+			code,
+			(start, start + function.size),
 		)
-	return blocks
+		for address, code in runs
+	)
+	return (
+		function,
+		_build_blocks(
+			tuple(instruction for run, _ in decoded for instruction in run),
+			program.machine,
+			{address: table for _, tables in decoded for address, table in tables.items()},
+		),
+	)
 
 
 class _JumpTable(Struct):
@@ -573,12 +598,10 @@ def _block_end_successors(
 ) -> tuple[Address, ...]:
 	branch = branch_target(instruction, machine)
 	if branch is not None:
-		successors: list[Address] = []
-		if branch.conditional and next_address is not None:
-			successors.append(Address(next_address))
-		if branch.target in by_address:
-			successors.append(Address(branch.target))
-		return tuple(successors)
+		return (
+			*((Address(next_address),) if branch.conditional and next_address is not None else ()),
+			*((Address(branch.target),) if branch.target in by_address else ()),
+		)
 	fallthrough = (Address(next_address),) if next_address is not None else ()
 	if instruction.mnemonic == ".byte":
 		return fallthrough

@@ -163,16 +163,6 @@ def analyze_function(
 			if joined != existing:
 				in_states[successor] = joined
 				worklist.append(successor)
-	observations: list[CallObservation] = []
-	for block in blocks:
-		state = in_states.get(block.start)
-		if state is None:
-			continue
-		observation = _call_observation(
-			context, normalized(function.address, context.program.machine), block, state
-		)
-		if observation is not None:
-			observations.append(observation)
 	sites = tuple(
 		(block, site)
 		for block in blocks
@@ -182,7 +172,17 @@ def analyze_function(
 	return FunctionResult(
 		sites=tuple(site for _, site in sites),
 		writes=writes,
-		observations=tuple(observations),
+		observations=tuple(
+			observation
+			for block in blocks
+			if (state := in_states.get(block.start)) is not None
+			and (
+				observation := _call_observation(
+					context, normalized(function.address, context.program.machine), block, state
+				)
+			)
+			is not None
+		),
 		indirect_observations=tuple(
 			observation
 			for block, site in sites
