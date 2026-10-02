@@ -153,6 +153,20 @@ def test_load_propagates_malformed_elf_errors(tmp_path: Path) -> None:
 		load(path)
 
 
+def test_load_reads_an_emit_relocs_link_as_the_same_link_without_them(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	plain = load(fixture_elfs["nopie"])
+	emitted = load(fixture_elfs["emit_relocs"])
+	assert (
+		emitted.functions,
+		emitted.objects,
+		emitted.layouts,
+		emitted.relocations,
+		emitted.sections,
+	) == (plain.functions, plain.objects, plain.layouts, plain.relocations, plain.sections)
+
+
 def test_load_rejects_unknown_machines(tmp_path: Path, fixture_elfs: dict[str, Path]) -> None:
 	path = tmp_path / "aarch64.elf"
 	data = bytearray(fixture_elfs["nopie"].read_bytes())
@@ -174,6 +188,7 @@ def test_load_rel_elf_reads_in_field_addends(tmp_path: Path) -> None:
 
 
 _GLOBAL_FUNCTION = 0x12
+_SHF_ALLOC = 0x2
 _GLOBAL_OBJECT = 0x11
 _SHN_ABS = 0xFFF1
 
@@ -233,13 +248,13 @@ def _rel_elf(symbols: tuple[_Symbol, ...] = (_Symbol(name="fn", value=0x1000, si
 	sections = (
 		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
 		(1, 1, 0x6, 0x1000, offsets[0], 4, 0, 0, 4, 0),
-		(7, 9, 0, 0, offsets[1], 16, 3, 1, 4, 8),
+		(7, 9, _SHF_ALLOC, 0, offsets[1], 16, 3, 1, 4, 8),
 		(17, 2, 0, 0, offsets[2], 16 * (1 + len(symbols)), 5, 1, 4, 16),
 		(25, 3, 0, 0, offsets[3], len(shstrtab), 0, 0, 1, 0),
 		(34, 3, 0, 0, offsets[4], len(strtab), 0, 0, 1, 0),
 		(41, 8, 0x3, 0x2000, 0, 4, 0, 0, 4, 0),
 		(46, 1, 0, 0x3000, offsets[5], 4, 0, 0, 1, 0),
-		(53, 9, 0, 0, offsets[6], 8, 3, 7, 4, 8),
+		(53, 9, _SHF_ALLOC, 0, offsets[6], 8, 3, 7, 4, 8),
 	)
 	shdrs = b"".join(struct.pack("<IIIIIIIIII", *section) for section in sections)
 	return header + b"".join(sections_data) + shdrs

@@ -103,7 +103,7 @@ def _load(stream: BinaryIO) -> Program:
 	elf = ELFFile(stream)
 	if elf.header["e_type"] == "ET_REL":
 		raise ValueError("relocatable (ET_REL) images are not supported; link the image first")
-	dwarf = elf.get_dwarf_info() if elf.has_dwarf_info() else None
+	dwarf = elf.get_dwarf_info(relocate_dwarf_sections=False) if elf.has_dwarf_info() else None
 	symtab = _symbol_table(elf)
 	pointer_size = elf.elfclass // 8
 	byte_order = _byte_order(elf)
@@ -758,7 +758,7 @@ def _relocations(
 ) -> tuple[Relocation, ...]:
 	relocations: list[Relocation] = []
 	for section in elf.iter_sections():
-		if not isinstance(section, RelocationSection):
+		if not isinstance(section, RelocationSection) or not section.header.sh_flags & _SHF_ALLOC:
 			continue
 		target_index = section["sh_info"]
 		target_section = elf.get_section(target_index)

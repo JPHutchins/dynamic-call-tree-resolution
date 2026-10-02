@@ -18,6 +18,7 @@ FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures"
 FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 	"pie": ("device_model.c", ("-g", "-O0")),
 	"nopie": ("device_model.c", ("-g", "-O0", "-no-pie")),
+	"emit_relocs": ("device_model.c", ("-g", "-O0", "-no-pie", "-Wl,--emit-relocs")),
 	"nodebug": ("device_model.c", ("-O0", "-no-pie")),
 	"o2": ("device_model.c", ("-g", "-O2", "-no-pie")),
 	"dwarf4": ("device_model.c", ("-g", "-gdwarf-4", "-O0", "-no-pie")),

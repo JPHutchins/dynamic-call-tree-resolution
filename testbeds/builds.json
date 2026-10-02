@@ -4,34 +4,39 @@
 		"BOARD": "qemu_cortex_m3",
 		"SOURCE": "zephyr/samples/hello_world",
 		"TOOLCHAIN": "zephyr",
-		"EXTRA_CFLAGS": ""
+		"EXTRA_CFLAGS": "",
+		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections"
 	},
 	{
 		"NAME": "counter",
 		"BOARD": "native_sim",
 		"SOURCE": "zephyr/samples/drivers/can/counter",
 		"TOOLCHAIN": "host",
-		"EXTRA_CFLAGS": ""
+		"EXTRA_CFLAGS": "",
+		"EXTRA_LDFLAGS": ""
 	},
 	{
 		"NAME": "counter-su",
 		"BOARD": "native_sim",
 		"SOURCE": "zephyr/samples/drivers/can/counter",
 		"TOOLCHAIN": "host",
-		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da"
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da",
+		"EXTRA_LDFLAGS": ""
 	},
 	{
 		"NAME": "sensor-two-impl",
 		"BOARD": "qemu_cortex_m3",
 		"SOURCE": "../tests/fixtures/sensor-two-impl-app",
 		"TOOLCHAIN": "zephyr",
-		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da"
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da",
+		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections"
 	},
 	{
 		"NAME": "sensor-threads",
 		"BOARD": "qemu_cortex_m3",
 		"SOURCE": "../tests/fixtures/sensor-threads-app",
 		"TOOLCHAIN": "zephyr",
-		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da"
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da",
+		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections"
 	}
 ]
