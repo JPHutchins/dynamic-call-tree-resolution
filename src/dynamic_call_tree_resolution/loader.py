@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import re
 from enum import IntEnum
-from itertools import groupby
+from itertools import accumulate, groupby
 from math import prod
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
+from elftools.dwarf.die import AttributeValue
+from elftools.dwarf.ranges import BaseAddressEntry, RangeEntry
 from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import Relocation as ElfRelocation
@@ -49,8 +51,10 @@ if TYPE_CHECKING:
 	from pathlib import Path
 	from typing import BinaryIO
 
-	from elftools.dwarf.die import DIE, AttributeValue
+	from elftools.dwarf.compileunit import CompileUnit
+	from elftools.dwarf.die import DIE
 	from elftools.dwarf.dwarfinfo import DWARFInfo
+	from elftools.dwarf.ranges import RangeLists
 	from elftools.elf.sections import Symbol
 
 	from dynamic_call_tree_resolution.model import ByteOrder, Member
@@ -144,6 +148,7 @@ def _load(stream: BinaryIO) -> Program:
 		data_in_code=_mapped_spans(elf, markers, "d"),
 		arm_code=tuple(sorted(_mapped_spans(elf, markers, "a"))),
 		link_references=_link_references(elf, _reference_types(machine)),
+		inlined=_inlined(dwarf),
 	)
 
 
@@ -331,6 +336,98 @@ def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
 		if (address := Address(_int_value(low_pc))) & ~1
 	}
+
+
+def _inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[tuple[Address, Address], ...]]:
+	if dwarf is None:
+		return {}  # pragma: no cover
+	dies = tuple(
+		(unit, die)
+		for unit in dwarf.iter_CUs()
+		for die in _iter_dies(unit.get_top_DIE())
+		if die.tag in ("DW_TAG_subprogram", "DW_TAG_inlined_subroutine")
+	)
+	abstract = {
+		die.offset: _die_name(die)
+		for _, die in dies
+		if die.tag == "DW_TAG_subprogram" and "DW_AT_inline" in die.attributes
+	}
+	return {
+		name: tuple(span for _, span in group)
+		for name, group in groupby(
+			sorted(
+				(abstract[origin], span)
+				for unit, die in dies
+				if die.tag == "DW_TAG_inlined_subroutine"
+				for origin in (_reference(unit, die.attributes.get("DW_AT_abstract_origin")),)
+				if origin in abstract
+				for span in _die_spans(dwarf, unit, die)
+			),
+			key=_span_name,
+		)
+	}
+
+
+def _span_name(named_span: tuple[str, tuple[Address, Address]]) -> str:
+	return named_span[0]
+
+
+def _reference(unit: CompileUnit, attribute: AttributeValue | None) -> int | None:
+	match attribute:
+		case None:
+			return None  # pragma: no cover
+		case AttributeValue(form="DW_FORM_ref_addr"):
+			return _int_value(attribute)  # pragma: no cover
+		case AttributeValue():
+			return unit.cu_offset + _int_value(attribute)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _die_spans(
+	dwarf: DWARFInfo, unit: CompileUnit, die: DIE
+) -> tuple[tuple[Address, Address], ...]:
+	match die.attributes.get("DW_AT_ranges"), die.attributes.get("DW_AT_low_pc"):
+		case AttributeValue() as ranges, _:
+			return _range_spans(dwarf.range_lists(), _int_value(ranges), unit)
+		case None, AttributeValue() as low_pc:
+			return (
+				(
+					Address(_int_value(low_pc)),
+					Address(_int_value(low_pc) + _subprogram_size(die)),
+				),
+			)
+		case _:
+			return ()  # pragma: no cover
+
+
+def _range_spans(
+	range_lists: RangeLists | None, offset: int, unit: CompileUnit
+) -> tuple[tuple[Address, Address], ...]:
+	if range_lists is None:
+		return ()  # pragma: no cover
+	entries = range_lists.get_range_list_at_offset(offset, cu=unit)
+	return tuple(
+		(Address(begin), Address(end))
+		for entry, base in zip(
+			entries, accumulate(entries, _range_base, initial=_unit_base(unit)), strict=False
+		)
+		if isinstance(entry, RangeEntry)
+		for begin, end in (
+			(entry.begin_offset, entry.end_offset)
+			if entry.is_absolute
+			else (base + entry.begin_offset, base + entry.end_offset),
+		)
+	)
+
+
+def _range_base(base: int, entry: RangeEntry | BaseAddressEntry) -> int:
+	return entry.base_address if isinstance(entry, BaseAddressEntry) else base
+
+
+def _unit_base(unit: CompileUnit) -> int:
+	low_pc = unit.get_top_DIE().attributes.get("DW_AT_low_pc")
+	return _int_value(low_pc) if low_pc is not None else 0
 
 
 def _subprogram_size(die: DIE) -> int:

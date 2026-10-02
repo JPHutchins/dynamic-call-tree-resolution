@@ -84,12 +84,11 @@ def referrers(
 
 
 def referenced_only_at(
-	program: Program, slots_by_function: Mapping[Address, frozenset[Address]]
+	references: Mapping[Address, frozenset[Address]],
+	slots_by_function: Mapping[Address, frozenset[Address]],
 ) -> frozenset[Address]:
 	return frozenset(
-		function
-		for function, slots in referrers(program, slots_by_function.keys()).items()
-		if slots <= slots_by_function[function]
+		function for function, slots in slots_by_function.items() if references[function] <= slots
 	)
 
 

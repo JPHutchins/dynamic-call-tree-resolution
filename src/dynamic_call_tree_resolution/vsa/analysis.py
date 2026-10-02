@@ -10,10 +10,11 @@ from functools import partial, reduce
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
+	FUNCTION_POINTER,
 	Address,
 	CallSite,
 	InstructionFamily,
@@ -26,7 +27,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.cfg import Block, control_flow_graphs, direct_transfer
-from dynamic_call_tree_resolution.vsa.fallback import address_taken, referenced_only_at
+from dynamic_call_tree_resolution.vsa.fallback import address_taken, referenced_only_at, referrers
 from dynamic_call_tree_resolution.vsa.interpret import (
 	CallObservation,
 	FunctionResult,
@@ -42,7 +43,13 @@ if TYPE_CHECKING:
 
 	from capstone import ArmCsOperand, CsOperand
 
-	from dynamic_call_tree_resolution.model import Function, Program, RtosModel, ThreadRoot
+	from dynamic_call_tree_resolution.model import (
+		Function,
+		Program,
+		RtosModel,
+		ThreadCreation,
+		ThreadRoot,
+	)
 
 _WIDENING_ROUND: Final = 8
 
@@ -75,8 +82,18 @@ def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 		entry: tuple(group)
 		for entry, group in groupby(sorted(rtos.threads, key=_entry), key=_entry)
 	}
-	seeded_entries = referenced_only_at(
+	taken = address_taken(program)
+	references = referrers(
 		program,
+		frozenset(threads_by_entry)
+		| (
+			frozenset(_named(program, rtos.trampoline)) & taken
+			if rtos.trampoline is not None
+			else frozenset[Address]()
+		),
+	)
+	seeded_entries = referenced_only_at(
+		references,
 		{
 			entry: frozenset(thread.entry_slot for thread in group)
 			for entry, group in threads_by_entry.items()
@@ -88,7 +105,13 @@ def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 		)
 		for entry in seeded_entries
 	}
-	roots = dict.fromkeys(_roots(program, functions) - entry_seeds.keys(), top)
+	creation = _creation(program, rtos, taken, references)
+	roots = dict.fromkeys(
+		_roots(program, functions, taken)
+		- entry_seeds.keys()
+		- (frozenset({creation.trampoline}) if creation is not None else frozenset()),
+		top,
+	)
 	with ThreadPoolExecutor() as executor:
 		final = _global_fixpoint(
 			_Rounds(
@@ -98,6 +121,7 @@ def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 				roots=roots,
 				entry_seeds=entry_seeds,
 				top=top,
+				creation=creation,
 			),
 			_Round(seeds={**entry_seeds, **roots}, writes=NO_WRITES),
 			1,
@@ -141,6 +165,156 @@ class _Rounds(Struct):
 	roots: Mapping[Address, State]
 	entry_seeds: Mapping[Address, State]
 	top: State
+	creation: _Creation | None
+
+
+class _Creation(Struct):
+	"""Thread creation, gated so that the trampoline is entered only from its builders' frames."""
+
+	trampoline: Address
+	entry_positions: Mapping[Address, int]
+	"""Each frame builder's function-pointer argument, by the builder's start."""
+	setup: Address
+	setup_entry: int
+	static_spans: tuple[tuple[Address, Address], ...]
+	static_entries: ValueSet
+
+
+def _creation(
+	program: Program,
+	rtos: RtosModel,
+	taken: frozenset[Address],
+	references: Mapping[Address, frozenset[Address]],
+) -> _Creation | None:
+	match rtos.creation, rtos.trampoline:
+		case None, _:
+			return None
+		case _, None:
+			return None  # pragma: no cover
+		case creation, str() as trampoline_name:
+			return _gated_creation(program, creation, trampoline_name, taken, references)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _gated_creation(
+	program: Program,
+	creation: ThreadCreation,
+	trampoline_name: str,
+	taken: frozenset[Address],
+	references: Mapping[Address, frozenset[Address]],
+) -> _Creation | None:
+	builders = {
+		builder: _entry_position(program.functions[builder])
+		for name in creation.frame_builders
+		for builder in _named(program, name)
+	}
+	match _named(program, trampoline_name), _named(program, creation.setup):
+		case (trampoline,), (setup,) if (
+			builders
+			and None not in builders.values()
+			and not builders.keys() & taken
+			and _entry_position(program.functions[trampoline]) == 0
+			and (setup_entry := _entry_position(program.functions[setup])) is not None
+			and _held_only_by(program, references.get(trampoline, frozenset()), builders.keys())
+		):
+			return _Creation(
+				trampoline=normalized(trampoline, program.machine),
+				entry_positions={
+					normalized(builder, program.machine): position
+					for builder, position in builders.items()
+					if position is not None
+				},
+				setup=normalized(setup, program.machine),
+				setup_entry=setup_entry,
+				static_spans=(
+					*program.inlined.get(creation.static_start, ()),
+					*(
+						_span(program.functions[function], program.machine)
+						for function in _named(program, creation.static_start)
+					),
+				),
+				static_entries=(
+					Known(values=creation.static_entries)
+					if creation.static_entries is not None
+					else Top()
+				),
+			)
+		case _:
+			return None
+
+
+def _named(program: Program, name: str) -> tuple[Address, ...]:
+	return tuple(
+		address for address, function in program.functions.items() if function.name == name
+	)
+
+
+def _entry_position(function: Function) -> int | None:
+	match tuple(
+		position
+		for position, parameter in enumerate(
+			function.signature.parameters if function.signature is not None else ()
+		)
+		if parameter == FUNCTION_POINTER
+	):
+		case (position,):
+			return position
+		case _:
+			return None
+
+
+def _span(function: Function, machine: Machine) -> tuple[Address, Address]:
+	start = normalized(function.address, machine)
+	return (start, Address(start + function.size))
+
+
+def _held_only_by(program: Program, slots: frozenset[Address], holders: Iterable[Address]) -> bool:
+	spans = tuple(_span(program.functions[holder], program.machine) for holder in holders)
+	return bool(slots) and all(
+		any(slot - low in range(high - low) for low, high in spans) for slot in slots
+	)
+
+
+def _modeled(
+	observations: list[CallObservation], creation: _Creation | None
+) -> list[CallObservation]:
+	match creation:
+		case None:
+			return observations
+		case _Creation():
+			substituted = [_static_entries(observation, creation) for observation in observations]
+			return [
+				*substituted,
+				*(
+					CallObservation(
+						callee=creation.trampoline,
+						site=observation.site,
+						arguments={
+							0: observation.arguments.get(
+								creation.entry_positions[observation.callee], Top()
+							)
+						},
+					)
+					for observation in substituted
+					if observation.callee in creation.entry_positions
+				),
+			]
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _static_entries(observation: CallObservation, creation: _Creation) -> CallObservation:
+	return (
+		replace(
+			observation,
+			arguments={**observation.arguments, creation.setup_entry: creation.static_entries},
+		)
+		if observation.callee == creation.setup
+		and isinstance(observation.arguments.get(creation.setup_entry, Top()), Top)
+		and any(observation.site - low in range(high - low) for low, high in creation.static_spans)
+		else observation
+	)
 
 
 def _global_fixpoint(rounds: _Rounds, current: _Round, round_number: int) -> _Round:
@@ -160,7 +334,10 @@ def _global_fixpoint(rounds: _Rounds, current: _Round, round_number: int) -> _Ro
 			**_next_seeds(
 				current.seeds,
 				_observed_seeds(
-					[observation for result in results for observation in result.observations],
+					_modeled(
+						[observation for result in results for observation in result.observations],
+						rounds.creation,
+					),
 					rounds.roots,
 					rounds.entry_seeds,
 					rounds.program,
@@ -186,7 +363,9 @@ def _next_writes(previous: Writes, accumulated: Writes, round_number: int) -> Wr
 
 
 def _roots(
-	program: Program, functions: tuple[tuple[Function, tuple[Block, ...]], ...]
+	program: Program,
+	functions: tuple[tuple[Function, tuple[Block, ...]], ...],
+	taken: frozenset[Address],
 ) -> frozenset[Address]:
 	machine = program.machine
 	starts = frozenset(normalized(function.address, machine) for function, _ in functions)
@@ -215,8 +394,11 @@ def _roots(
 			for function, blocks in functions
 		)
 	)
-	taken = frozenset(normalized(address, machine) for address in address_taken(program))
-	seeded = ((starts - transferred) | gap_targets | taken) & starts
+	seeded = (
+		(starts - transferred)
+		| gap_targets
+		| frozenset(normalized(address, machine) for address in taken)
+	) & starts
 	callees = {
 		normalized(function.address, machine): _callees(
 			(
@@ -302,7 +484,7 @@ def _observed_seeds(
 				entry_seeds.get(callee),
 				reduce(
 					join_states,
-					(_seed_from_observation(observation, program) for observation in group),
+					(_seed_from_arguments(observation.arguments, program) for observation in group),
 				),
 			)
 			for callee, group in groupby(sorted(observations, key=_callee), key=_callee)
@@ -407,14 +589,11 @@ def _thread_sites(
 	thread: ThreadRoot,
 ) -> ThreadSites:
 	start = {
-		trampoline: _seed_from_observation(
-			CallObservation(
-				callee=trampoline,
-				arguments={
-					position: Known(values=frozenset({value}))
-					for position, value in enumerate((thread.entry, *thread.arguments))
-				},
-			),
+		trampoline: _seed_from_arguments(
+			{
+				position: Known(values=frozenset({value}))
+				for position, value in enumerate((thread.entry, *thread.arguments))
+			},
 			program,
 		)
 	}
@@ -463,22 +642,19 @@ def _thread_fixpoint(
 
 
 def _seed_from_thread(thread: ThreadRoot, program: Program) -> State:
-	return _seed_from_observation(
-		CallObservation(
-			callee=thread.entry,
-			arguments={
-				position: Known(values=frozenset({value}))
-				for position, value in enumerate(thread.arguments)
-			},
-		),
+	return _seed_from_arguments(
+		{
+			position: Known(values=frozenset({value}))
+			for position, value in enumerate(thread.arguments)
+		},
 		program,
 	)
 
 
-def _seed_from_observation(observation: CallObservation, program: Program) -> State:
+def _seed_from_arguments(arguments: Mapping[int, ValueSet], program: Program) -> State:
 	known = {
 		position: values
-		for position, value in observation.arguments.items()
+		for position, value in arguments.items()
 		if (values := _known_values(value)) is not None
 	}
 	match program.machine:

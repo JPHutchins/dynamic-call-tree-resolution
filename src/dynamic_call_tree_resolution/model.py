@@ -222,6 +222,8 @@ class Program(Struct):
 	"""Sorted spans of A32 code, from ARM `$a` mapping symbols."""
 	link_references: tuple[LinkReference, ...] = ()
 	"""The references into allocated sections that the linker kept; none without ``--emit-relocs``."""
+	inlined: Mapping[str, tuple[tuple[Address, Address], ...]] = {}
+	"""The code spans of each function's inlined copies, from DWARF."""
 
 
 class ThreadRoot(Struct):
@@ -235,6 +237,20 @@ class ThreadRoot(Struct):
 	"""What the entry is started with, by ABI argument position."""
 
 
+class ThreadCreation(Struct):
+	"""How an RTOS's thread creations reach its trampoline."""
+
+	frame_builders: tuple[str, ...]
+	"""The functions that build a thread's first frame, which enters the trampoline with the
+	builder's function-pointer argument."""
+	setup: str
+	"""The function every thread creation passes the thread's entry to."""
+	static_start: str
+	"""The function that creates each static thread from its record."""
+	static_entries: frozenset[Address] | None
+	"""The entry of every static thread record; none when a record could not be read."""
+
+
 class RtosModel(Struct):
 	"""What an RTOS adds to the analysis of an image."""
 
@@ -244,6 +260,7 @@ class RtosModel(Struct):
 	threads: tuple[ThreadRoot, ...]
 	trampoline: str | None
 	"""The function that calls each thread's entry."""
+	creation: ThreadCreation | None = None
 
 
 BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)

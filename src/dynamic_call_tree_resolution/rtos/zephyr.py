@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from dynamic_call_tree_resolution.model import Address, RtosModel, ThreadRoot
+from dynamic_call_tree_resolution.model import Address, RtosModel, ThreadCreation, ThreadRoot
 from dynamic_call_tree_resolution.points_to import in_writable_memory, pointer_at
 
 if TYPE_CHECKING:
@@ -18,6 +18,9 @@ _TRAMPOLINE: Final = "z_thread_entry"
 _RECORD_PREFIX: Final = "_k_thread_data_"
 _ENTRY: Final = "init_entry"
 _ARGUMENTS: Final = ("init_p1", "init_p2", "init_p3")
+_FRAME_BUILDERS: Final = ("arch_new_thread", "arch_switch_to_main_thread")
+_SETUP: Final = "z_setup_new_thread"
+_STATIC_START: Final = "z_init_static_threads"
 
 
 def detect(program: Program) -> RtosModel | None:
@@ -26,16 +29,29 @@ def detect(program: Program) -> RtosModel | None:
 		function.name != _TRAMPOLINE for function in program.functions.values()
 	):
 		return None
+	records = tuple(
+		record
+		for record in sorted(program.objects.values(), key=_address)
+		if record.type_name == _RECORD
+	)
+	threads = tuple(
+		thread for record in records if (thread := _thread(program, layout, record)) is not None
+	)
 	return RtosModel(
 		name="zephyr",
 		evidence=(_TRAMPOLINE, _RECORD),
-		threads=tuple(
-			thread
-			for record in sorted(program.objects.values(), key=_address)
-			if record.type_name == _RECORD
-			if (thread := _thread(program, layout, record)) is not None
-		),
+		threads=threads,
 		trampoline=_TRAMPOLINE,
+		creation=ThreadCreation(
+			frame_builders=_FRAME_BUILDERS,
+			setup=_SETUP,
+			static_start=_STATIC_START,
+			static_entries=(
+				frozenset(thread.entry for thread in threads)
+				if len(threads) == len(records)
+				else None
+			),
+		),
 	)
 
 

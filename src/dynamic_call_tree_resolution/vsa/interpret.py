@@ -73,6 +73,8 @@ class CallObservation(Struct):
 	"""One call to a known function."""
 
 	callee: Address
+	site: Address
+	"""The call instruction."""
 	arguments: Mapping[int, ValueSet]
 	"""By ABI argument position."""
 
@@ -207,9 +209,17 @@ def _call_observation(
 		case None:
 			return None
 		case DirectCall(target=callee):
-			return CallObservation(callee=callee, arguments=_call_arguments(context, state, 0))
+			return CallObservation(
+				callee=callee,
+				site=Address(block.instructions[-1].address),
+				arguments=_call_arguments(context, state, 0),
+			)
 		case TailJump(target=callee):
-			return CallObservation(callee=callee, arguments=_call_arguments(context, state, 1))
+			return CallObservation(
+				callee=callee,
+				site=Address(block.instructions[-1].address),
+				arguments=_call_arguments(context, state, 1),
+			)
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -222,6 +232,7 @@ def _indirect_observations(
 			return tuple(
 				CallObservation(
 					callee=callee,
+					site=Address(block.instructions[-1].address),
 					arguments=_call_arguments(
 						context, state, 1 if block.instructions[-1].mnemonic == "jmp" else 0
 					),
