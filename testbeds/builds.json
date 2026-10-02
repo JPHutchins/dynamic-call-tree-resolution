@@ -38,5 +38,13 @@
 		"TOOLCHAIN": "zephyr",
 		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da",
 		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections"
+	},
+	{
+		"NAME": "synchronization",
+		"BOARD": "qemu_cortex_m3",
+		"SOURCE": "zephyr/samples/synchronization",
+		"TOOLCHAIN": "zephyr",
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da",
+		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections"
 	}
 ]

@@ -27,6 +27,7 @@ from dynamic_call_tree_resolution.points_to import pointer_at
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.programs import build_program
+from tests.toolchains import zephyr_console_cortex_m3
 
 if TYPE_CHECKING:
 	from collections.abc import Callable
@@ -193,6 +194,11 @@ def _trampoline_targets(program: Program, model: RtosModel) -> list[str]:
 			["bg_thread_main", "sensor_thread", "idle"],
 			id="sensor-threads",
 		),
+		pytest.param(
+			"synchronization/zephyr/zephyr.elf",
+			["thread_a_entry_point", "thread_b_entry_point", "bg_thread_main", "idle"],
+			id="synchronization, with a k_thread_create thread",
+		),
 		pytest.param("counter-su/zephyr/zephyr.exe", [], id="counter-su calls it directly"),
 	],
 )
@@ -201,6 +207,20 @@ def test_the_call_that_starts_every_thread_goes_to_each_entry_its_creations_pass
 ) -> None:
 	program = load(zephyr_fixtures / elf)
 	assert _trampoline_targets(program, rtos_model(program, RtosChoice.AUTO)) == targets
+
+
+@pytest.mark.image
+def test_each_thread_qemu_runs_is_a_target_of_the_call_that_starts_every_thread(
+	zephyr_fixtures: Path,
+) -> None:
+	elf = zephyr_fixtures / "synchronization" / "zephyr" / "zephyr.elf"
+	program = load(elf)
+	ran = frozenset(line.split(":")[0] for line in zephyr_console_cortex_m3(elf, 3)[1:])
+	assert (
+		ran,
+		frozenset(f"{thread}_entry_point" for thread in ran)
+		<= frozenset(_trampoline_targets(program, rtos_model(program, RtosChoice.AUTO))),
+	) == (frozenset({"thread_a", "thread_b"}), True)
 
 
 def _named(program: Program, name: str) -> Address:

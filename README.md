@@ -332,6 +332,19 @@ adt7420_init +8 = 156 bytes via indirect: fallback (recursion)
 - Checking each measured mark against a static bound needs bounded rows, and is
   deferred to [#169].
 
+Zephyr's own `samples/synchronization`, built at `$DCTR_FIXTURES/synchronization`,
+starts `thread_b` from a record and `thread_a` with `k_thread_create`. The call that
+starts every thread goes to both:
+
+```console
+$ dctr analyze $DCTR_FIXTURES/synchronization/zephyr/zephyr.elf
+rtos: zephyr (detected: z_thread_entry, struct _static_thread_data)
+thread thread_b: thread_b_entry_point (seeded from its record)
+...
+z_thread_entry@0x244: thread_a_entry_point, thread_b_entry_point, bg_thread_main, idle
+...
+```
+
 ## Related tools
 
 - [puncover](https://github.com/HBehrens/puncover) 0.8.0 reads `-fstack-usage` but not
