@@ -31,16 +31,20 @@ from dynamic_call_tree_resolution import (
 	resolve,
 	unresolved_slots,
 )
-from dynamic_call_tree_resolution.model import FUNCTION_POINTER, InstructionSet
+from dynamic_call_tree_resolution.model import FUNCTION_POINTER, InstructionSet, Unreached
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
 from dynamic_call_tree_resolution.report import slot_counts
 from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE
 from dynamic_call_tree_resolution.vsa import address_taken
+from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from tests.programs import build_program
+from tests.sites import tracked_values
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Mapping
 	from pathlib import Path
+
+	from dynamic_call_tree_resolution.vsa.lattice import ValueSet
 
 
 def _program(
@@ -83,6 +87,11 @@ def test_x86_memory_operand_site_resolves_through_the_slot() -> None:
 	assert call_site_candidates(program, site, {}) == frozenset({Address(0x3000)})
 
 
+def test_a_site_in_a_block_control_flow_never_reaches_is_unreached() -> None:
+	(site,) = extract_call_sites(_x86(bytes.fromhex("c3 ff d0")))
+	assert (site.site_address, site.target) == (0x1001, Unreached())
+
+
 def test_x86_register_load_chain_dereferences() -> None:
 	program = _x86(
 		bytes.fromhex("48 8b 05 f9 0f 00 00ff d0"), objects=(("slot", 0x2000, _pointer(0x3000, 8)),)
@@ -96,7 +105,7 @@ def test_x86_register_load_chain_dereferences() -> None:
 def test_x86_untracked_register_is_unresolved() -> None:
 	program = _x86(bytes.fromhex("ff d0"))
 	(site,) = extract_call_sites(program)
-	assert site.slot is None
+	assert (site.slot, site.target) == (None, Top())
 	assert call_site_candidates(program, site, {}) == frozenset()
 
 
@@ -200,7 +209,7 @@ def test_x86_conditional_paths_union_into_the_site_candidates() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1013
 	assert site.slot is None
-	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x3000), Address(0x4000)}))
 
 
 def test_conflicting_paths_fall_back_to_the_resolved_union() -> None:
@@ -328,7 +337,7 @@ def test_x86_definitions_beyond_the_former_window_resolve() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1016
 	assert site.slot == 0x3000
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_thumb_bit_twins_are_deduplicated() -> None:
@@ -524,7 +533,7 @@ def test_arm_cbz_to_the_site_joins_the_taken_state() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1006
-	assert site.candidates == frozenset({Address(0), Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0), Address(0x3000)}))
 
 
 def test_arm_conditional_branch_past_the_site_keeps_fallthrough_state() -> None:
@@ -567,7 +576,7 @@ def test_arm_movt_without_movw_is_unresolved() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1004
 	assert site.slot is None
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
@@ -754,7 +763,7 @@ def test_x86_loop_merges_conditional_paths_into_a_union() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1018
-	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x3000), Address(0x4000)}))
 	assert call_site_candidates(program, site, {}) == frozenset({Address(0x3000), Address(0x4000)})
 
 
@@ -771,7 +780,7 @@ def test_x86_loop_carried_union_overflows_k_to_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x101A
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_top_index_over_baked_object_enumerates_its_slots() -> None:
@@ -784,7 +793,7 @@ def test_x86_top_index_over_baked_object_enumerates_its_slots() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100B
-	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x3000), Address(0x4000)}))
 
 
 def test_x86_top_index_without_an_enclosing_object_is_unresolved() -> None:
@@ -796,7 +805,7 @@ def test_x86_top_index_without_an_enclosing_object_is_unresolved() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100B
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
@@ -825,7 +834,7 @@ def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
 		},
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def _two_entry_table(objects: Mapping[Address, DataObject]) -> Program:
@@ -864,12 +873,12 @@ def test_x86_top_index_ranges_over_the_enclosing_section() -> None:
 		}
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x3000), Address(0x4000)}))
 
 
 def test_x86_top_index_into_a_section_without_an_enclosing_object_is_unresolved() -> None:
 	(site,) = extract_call_sites(_two_entry_table({}))
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_bss_slot_read_is_unknown() -> None:
@@ -898,7 +907,7 @@ def test_x86_bss_slot_read_is_unknown() -> None:
 		},
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_read_of_unmapped_memory_drops_the_value() -> None:
@@ -909,7 +918,7 @@ def test_x86_read_of_unmapped_memory_drops_the_value() -> None:
 		functions=(("caller", 0x1000, len(code)),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Known(values=frozenset[Address]())
 
 
 def test_x86_join_with_one_path_missing_the_register_is_top() -> None:
@@ -921,7 +930,7 @@ def test_x86_join_with_one_path_missing_the_register_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1015
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_join_with_the_other_path_missing_the_register_is_top() -> None:
@@ -933,7 +942,7 @@ def test_x86_join_with_the_other_path_missing_the_register_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1015
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_loop_instruction_top_out_the_counter_and_keep_values() -> None:
@@ -945,7 +954,7 @@ def test_x86_loop_instruction_top_out_the_counter_and_keep_values() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100E
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_stack_copy_survives_an_intervening_call() -> None:
@@ -957,7 +966,7 @@ def test_x86_stack_copy_survives_an_intervening_call() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1018
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_frame_slot_aliases_between_rbp_and_rsp() -> None:
@@ -969,7 +978,7 @@ def test_x86_frame_slot_aliases_between_rbp_and_rsp() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1014
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_push_pop_round_trip_carries_the_value() -> None:
@@ -980,7 +989,7 @@ def test_x86_push_pop_round_trip_carries_the_value() -> None:
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_push_immediate_pop_round_trip_carries_the_value() -> None:
@@ -991,7 +1000,7 @@ def test_x86_push_immediate_pop_round_trip_carries_the_value() -> None:
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_sub_rsp_keeps_frame_offsets_consistent() -> None:
@@ -1002,7 +1011,7 @@ def test_x86_sub_rsp_keeps_frame_offsets_consistent() -> None:
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_indexed_stack_read_with_a_known_index() -> None:
@@ -1016,7 +1025,7 @@ def test_x86_indexed_stack_read_with_a_known_index() -> None:
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_indexed_stack_read_with_a_top_index_is_unresolved() -> None:
@@ -1030,7 +1039,7 @@ def test_x86_indexed_stack_read_with_a_top_index_is_unresolved() -> None:
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
@@ -1041,7 +1050,7 @@ def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 @pytest.mark.parametrize(
@@ -1078,7 +1087,7 @@ def test_x86_store_clobbers_the_frame_slots_it_may_cover(code: str) -> None:
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 @pytest.mark.parametrize(
@@ -1107,7 +1116,7 @@ def test_x86_store_to_writable_memory_clobbers_what_it_may_cover(
 		writable=frozenset({0x4000}),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 @pytest.mark.parametrize(
@@ -1152,7 +1161,7 @@ def test_x86_rbp_addresses_the_frame_only_as_an_sp_copy(code: str, candidates: s
 		writable=frozenset({0x4000}),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 def test_x86_inc_shifts_the_tracked_address() -> None:
@@ -1163,7 +1172,7 @@ def test_x86_inc_shifts_the_tracked_address() -> None:
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_xor_self_yields_zero_and_does_not_resolve() -> None:
@@ -1175,7 +1184,7 @@ def test_x86_xor_self_yields_zero_and_does_not_resolve() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot == 0
-	assert site.candidates == frozenset({Address(0)})
+	assert site.target == Known(values=frozenset({Address(0)}))
 	assert call_site_candidates(program, site, {}) == frozenset()
 
 
@@ -1188,7 +1197,7 @@ def test_x86_lea_frame_offset_then_memory_site_resolves() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1013
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_32_frame_relative_memory_site_has_no_slot_address() -> None:
@@ -1202,7 +1211,7 @@ def test_x86_32_frame_relative_memory_site_has_no_slot_address() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1000
 	assert site.slot is None
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_arm_post_indexed_load_advances_the_base() -> None:
@@ -1216,7 +1225,7 @@ def test_arm_post_indexed_load_advances_the_base() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_push_then_sp_post_indexed_load_resolves() -> None:
@@ -1229,7 +1238,7 @@ def test_arm_push_then_sp_post_indexed_load_resolves() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_mov_from_sp_then_load_through_it_resolves() -> None:
@@ -1242,7 +1251,7 @@ def test_arm_mov_from_sp_then_load_through_it_resolves() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_scaled_add_with_top_index_enumerates_the_object() -> None:
@@ -1265,7 +1274,7 @@ def test_arm_scaled_add_with_top_index_enumerates_the_object() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.candidates == frozenset({Address(0x4000), Address(0x6000)})
+	assert site.target == Known(values=frozenset({Address(0x4000), Address(0x6000)}))
 
 
 def test_arm_non_lsl_shifted_add_tops_the_destination() -> None:
@@ -1279,7 +1288,7 @@ def test_arm_non_lsl_shifted_add_tops_the_destination() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_arm_three_operand_immediate_add_shifts_the_value() -> None:
@@ -1292,7 +1301,7 @@ def test_arm_three_operand_immediate_add_shifts_the_value() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1006
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_indexed_load_with_a_known_index_resolves() -> None:
@@ -1305,7 +1314,7 @@ def test_x86_indexed_load_with_a_known_index_resolves() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1012
-	assert site.candidates == frozenset({Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x4000)}))
 
 
 def test_x86_store_of_an_unknown_value_tops_the_slot() -> None:
@@ -1317,7 +1326,7 @@ def test_x86_store_of_an_unknown_value_tops_the_slot() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100C
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_push_of_a_memory_operand_resolves() -> None:
@@ -1330,7 +1339,7 @@ def test_x86_push_of_a_memory_operand_resolves() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_add_to_a_memory_operand_writes_no_registers() -> None:
@@ -1342,7 +1351,7 @@ def test_x86_add_to_a_memory_operand_writes_no_registers() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_inc_of_a_memory_operand_writes_no_registers() -> None:
@@ -1354,7 +1363,7 @@ def test_x86_inc_of_a_memory_operand_writes_no_registers() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1003
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_arm_str_then_reload_from_the_frame_resolves() -> None:
@@ -1367,7 +1376,7 @@ def test_arm_str_then_reload_from_the_frame_resolves() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_add_from_sp_then_load_through_it_resolves() -> None:
@@ -1380,7 +1389,7 @@ def test_arm_add_from_sp_then_load_through_it_resolves() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_pop_round_trip_carries_the_value() -> None:
@@ -1393,7 +1402,7 @@ def test_arm_pop_round_trip_carries_the_value() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_unshifted_register_add_uses_scale_one() -> None:
@@ -1407,7 +1416,7 @@ def test_arm_unshifted_register_add_uses_scale_one() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100C
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_known_index_with_a_top_base_is_unresolved() -> None:
@@ -1419,7 +1428,7 @@ def test_x86_known_index_with_a_top_base_is_unresolved() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100B
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
@@ -1437,7 +1446,7 @@ def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1026
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_global_store_is_a_no_op_in_this_pass() -> None:
@@ -1449,7 +1458,7 @@ def test_x86_global_store_is_a_no_op_in_this_pass() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100E
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_xor_of_distinct_registers_tops_the_destination() -> None:
@@ -1461,7 +1470,7 @@ def test_x86_xor_of_distinct_registers_tops_the_destination() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_arm_pointer_store_is_a_no_op_in_this_pass() -> None:
@@ -1474,7 +1483,7 @@ def test_arm_pointer_store_is_a_no_op_in_this_pass() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_post_indexed_store_advances_the_base() -> None:
@@ -1488,7 +1497,7 @@ def test_arm_post_indexed_store_advances_the_base() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100E
-	assert site.candidates == frozenset({Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x4000)}))
 
 
 def _multi_program(
@@ -1518,7 +1527,7 @@ def test_x86_64_callee_is_seeded_from_the_caller_register_argument() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_32_callee_is_seeded_from_the_callers_first_stack_argument() -> None:
@@ -1534,7 +1543,7 @@ def test_x86_32_callee_is_seeded_from_the_callers_first_stack_argument() -> None
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
 	assert site.site_address == 0x2006
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_32_callee_is_seeded_from_the_callers_second_stack_argument() -> None:
@@ -1550,7 +1559,7 @@ def test_x86_32_callee_is_seeded_from_the_callers_second_stack_argument() -> Non
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
 	assert site.site_address == 0x2006
-	assert site.candidates == frozenset({Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x4000)}))
 
 
 def test_arm_callee_is_seeded_from_the_caller_register_argument() -> None:
@@ -1565,7 +1574,7 @@ def test_arm_callee_is_seeded_from_the_caller_register_argument() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_arm_callee_known_only_by_its_thumb_symbol_is_seeded() -> None:
@@ -1580,7 +1589,7 @@ def test_arm_callee_known_only_by_its_thumb_symbol_is_seeded() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2001
-	assert site.candidates == frozenset({Address(0x3001)})
+	assert site.target == Known(values=frozenset({Address(0x3001)}))
 
 
 def test_seeds_propagate_along_a_call_chain() -> None:
@@ -1600,7 +1609,7 @@ def test_seeds_propagate_along_a_call_chain() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x4000
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_callee_seed_joins_across_callers() -> None:
@@ -1621,7 +1630,7 @@ def test_callee_seed_joins_across_callers() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x3000), Address(0x4000)}))
 
 
 def test_cross_function_global_write_propagates_between_rounds() -> None:
@@ -1636,7 +1645,7 @@ def test_cross_function_global_write_propagates_between_rounds() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
 	assert site.site_address == 0x2007
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_global_write_chain_propagates_to_a_fixpoint() -> None:
@@ -1662,7 +1671,7 @@ def test_global_write_chain_propagates_to_a_fixpoint() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1500
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_global_write_union_overflow_is_top() -> None:
@@ -1684,7 +1693,7 @@ def test_global_write_union_overflow_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1200
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_recursive_seeding_converges() -> None:
@@ -1696,7 +1705,7 @@ def test_recursive_seeding_converges() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1000
 	assert site.site_address == 0x1005
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_call_arguments_with_a_top_stack_pointer_are_top() -> None:
@@ -1708,7 +1717,7 @@ def test_x86_call_arguments_with_a_top_stack_pointer_are_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_32_callee_seed_joins_across_callers() -> None:
@@ -1730,7 +1739,7 @@ def test_x86_32_callee_seed_joins_across_callers() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.candidates == frozenset({Address(0x3000), Address(0x4000)})
+	assert site.target == Known(values=frozenset({Address(0x3000), Address(0x4000)}))
 
 
 def test_x86_64_callee_seed_overflow_is_top() -> None:
@@ -1752,7 +1761,7 @@ def test_x86_64_callee_seed_overflow_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_x86_32_callee_seed_overflow_is_top() -> None:
@@ -1775,7 +1784,7 @@ def test_x86_32_callee_seed_overflow_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def test_a_global_write_feeding_a_call_argument_grows_the_seed_late() -> None:
@@ -1795,7 +1804,7 @@ def test_a_global_write_feeding_a_call_argument_grows_the_seed_late() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_the_round_budget_exhausts_on_a_deep_chain() -> None:
@@ -1827,7 +1836,7 @@ def test_the_round_budget_exhausts_on_a_deep_chain() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1800
-	assert site.candidates == frozenset()
+	assert site.target == Known(values=frozenset[Address]())
 
 
 def test_x86_32_tail_jump_seeds_the_callee_from_the_arguments_above_the_return_address() -> None:
@@ -1848,7 +1857,7 @@ def test_x86_32_tail_jump_seeds_the_callee_from_the_arguments_above_the_return_a
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1200
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def test_x86_32_seed_is_top_where_any_caller_passes_top() -> None:
@@ -1870,7 +1879,7 @@ def test_x86_32_seed_is_top_where_any_caller_passes_top() -> None:
 	)
 	first_site, second_site = extract_call_sites(program)
 	assert (first_site.site_address, second_site.site_address) == (0x2006, 0x200B)
-	assert (first_site.candidates, second_site.candidates) == (frozenset(), frozenset())
+	assert (first_site.target, second_site.target) == (Top(), Top())
 
 
 def test_x86_global_store_then_load_resolves_within_the_function() -> None:
@@ -1882,7 +1891,7 @@ def test_x86_global_store_then_load_resolves_within_the_function() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1015
-	assert site.candidates == frozenset({Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x3000)}))
 
 
 def _signature_program() -> Program:
@@ -1956,7 +1965,7 @@ def test_chase_of_an_unreadable_slot_narrows_to_the_slot_signature() -> None:
 	signatures_by_slot = {
 		Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))
 	}
-	assert site.candidates == frozenset({Address(0x2000)})
+	assert site.target == Known(values=frozenset({Address(0x2000)}))
 	assert call_site_candidates(program, site, {}, signatures_by_slot) == frozenset(
 		{Address(0x3000), Address(0x4000)}
 	)
@@ -1997,7 +2006,7 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot == 0x2000
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 	signatures_by_slot = {
 		Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))
 	}
@@ -2211,7 +2220,7 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 	assert [
 		program.functions[address].name
 		for site in extract_call_sites(program)
-		for address in site.candidates
+		for address in tracked_values(site)
 		if address in program.functions and address not in taken
 	] == []
 
@@ -2286,7 +2295,7 @@ def test_a_returning_trap_falls_through_and_clobbers_caller_saved_registers(
 		pointer_size=4 if machine == Machine.EM_ARM else 8,
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 @pytest.mark.parametrize(
@@ -2329,7 +2338,7 @@ def test_thumb_store_writes_the_words_it_covers(code: str, candidates: set[int])
 		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 def _thumb_slot_program(sections: Mapping[int, bytes]) -> Program:
@@ -2355,7 +2364,7 @@ def test_thumb_predicated_store_reaches_other_readers() -> None:
 		}
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x2000), Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x2000), Address(0x3000)}))
 
 
 def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
@@ -2363,7 +2372,7 @@ def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
 		{0x1000: bytes.fromhex("2c60 44f20001 43f20002 0128 c8bf 0a60 0b68 9847")}
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 @pytest.mark.parametrize(
@@ -2439,7 +2448,7 @@ def test_thumb_frame_survives_calls_and_wild_stores_until_its_address_escapes(
 		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 def test_thumb_call_forgets_the_writes_on_its_path() -> None:
@@ -2459,7 +2468,9 @@ def test_thumb_call_forgets_the_writes_on_its_path() -> None:
 		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x2000), Address(0x3000), Address(0x5000)})
+	assert site.target == Known(
+		values=frozenset({Address(0x2000), Address(0x3000), Address(0x5000)})
+	)
 
 
 def test_thumb_trap_leaves_the_writes_before_it_in_the_summary() -> None:
@@ -2470,7 +2481,7 @@ def test_thumb_trap_leaves_the_writes_before_it_in_the_summary() -> None:
 		}
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset({Address(0x2000), Address(0x3000)})
+	assert site.target == Known(values=frozenset({Address(0x2000), Address(0x3000)}))
 
 
 @pytest.mark.parametrize(
@@ -2506,7 +2517,7 @@ def test_x86_call_clears_the_frame_after_its_address_escapes(code: str, callee: 
 		),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 def _hook_program(machine: Machine, code: bytes, *, writable: bool, pointer_size: int) -> Program:
@@ -2607,7 +2618,7 @@ def test_chasing_a_slot_reads_its_image_value_only_when_read_only(
 		caller_address=Address(0x1000),
 		site_address=Address(0x1000),
 		slot=None,
-		candidates=frozenset({Address(0x4000)}),
+		target=Known(values=frozenset({Address(0x4000)})),
 	)
 	assert call_site_candidates(program, site, {}) == frozenset(
 		Address(address) for address in candidates
@@ -2662,9 +2673,9 @@ def test_thumb_predicated_transfer_also_falls_through(
 	assert [
 		candidates
 		for _, candidates in sorted(
-			(site.site_address, site.candidates) for site in extract_call_sites(program)
+			(site.site_address, site.target) for site in extract_call_sites(program)
 		)
-	] == [frozenset(Address(address) for address in expected) for expected in sites]
+	] == [_expected(expected) for expected in sites]
 
 
 @pytest.mark.parametrize(
@@ -2686,7 +2697,7 @@ def test_thumb_pre_indexed_writeback_advances_the_base(code: str, candidates: se
 		pointer_size=4,
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 @pytest.mark.parametrize(
@@ -2710,9 +2721,9 @@ def test_thumb_data_in_code_is_not_decoded(
 	assert [
 		candidates
 		for _, candidates in sorted(
-			(site.site_address, site.candidates) for site in extract_call_sites(program)
+			(site.site_address, site.target) for site in extract_call_sites(program)
 		)
-	] == [frozenset(Address(address) for address in expected) for expected in sites]
+	] == [_expected(expected) for expected in sites]
 
 
 def _thumb_dispatch_program(code: str, data_in_code: tuple[tuple[int, int], ...] = ()) -> Program:
@@ -2767,8 +2778,8 @@ def test_thumb_bounded_dispatch_reaches_every_case(
 	code: str, data_in_code: tuple[tuple[int, int], ...]
 ) -> None:
 	(site,) = extract_call_sites(_thumb_dispatch_program(code, data_in_code))
-	assert site.candidates == frozenset(
-		Address(address) for address in (0x2000, 0x3000, 0x5000, 0x6000)
+	assert site.target == Known(
+		values=frozenset(Address(address) for address in (0x2000, 0x3000, 0x5000, 0x6000))
 	)
 
 
@@ -2812,7 +2823,11 @@ def test_thumb_bounded_dispatch_reaches_every_case(
 	],
 )
 def test_thumb_unbounded_dispatch_reaches_every_block(code: str) -> None:
-	sites = [site for site in extract_call_sites(_thumb_dispatch_program(code)) if site.candidates]
+	sites = [
+		site
+		for site in extract_call_sites(_thumb_dispatch_program(code))
+		if isinstance(site.target, Known)
+	]
 	assert sites == []
 
 
@@ -2827,7 +2842,7 @@ def test_thumb_unbounded_dispatch_reaches_every_block(code: str) -> None:
 )
 def test_thumb_pc_write_is_a_return_or_a_site(code: str, candidates: set[int]) -> None:
 	(site,) = extract_call_sites(_thumb_dispatch_program(code))
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 def _a32(words: str) -> bytes:
@@ -2853,7 +2868,9 @@ def test_a32_code_decodes_only_inside_its_mapping_span(
 		data_in_code=((0x1008, 0x100C),),
 		arm_code=arm_code,
 	)
-	assert [set(site.candidates) for site in extract_call_sites(program)] == sites
+	assert [site.target for site in extract_call_sites(program)] == [
+		_expected(expected) for expected in sites
+	]
 
 
 def test_a32_and_thumb_functions_each_decode_in_their_own_set() -> None:
@@ -2876,9 +2893,9 @@ def test_a32_and_thumb_functions_each_decode_in_their_own_set() -> None:
 		data_in_code=((0x1008, 0x100C), (0x1010, 0x1014)),
 		arm_code=((0x1000, 0x1008),),
 	)
-	assert sorted((site.site_address, site.candidates) for site in extract_call_sites(program)) == [
-		(Address(0x1004), frozenset({Address(0x3001)})),
-		(Address(0x100E), frozenset({Address(0x2000)})),
+	assert sorted((site.site_address, site.target) for site in extract_call_sites(program)) == [
+		(Address(0x1004), Known(values=frozenset({Address(0x3001)}))),
+		(Address(0x100E), Known(values=frozenset({Address(0x2000)}))),
 	]
 
 
@@ -2893,7 +2910,7 @@ def test_a32_pc_relative_load_with_an_index_is_unknown() -> None:
 		arm_code=((0x1000, 0x1008),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset()
+	assert site.target == Top()
 
 
 @pytest.mark.parametrize(
@@ -2916,7 +2933,7 @@ def test_a32_sp_rebuilt_from_a_register_keeps_the_frame_only_when_it_is_an_sp_co
 		arm_code=((0x1000, 0x1000 + len(body)),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 @pytest.mark.parametrize(
@@ -3029,8 +3046,8 @@ def test_a32_bounded_dispatch_reaches_every_case(
 	code: str, data_in_code: tuple[tuple[int, int], ...]
 ) -> None:
 	(site,) = extract_call_sites(_a32_dispatch_program(code, data_in_code))
-	assert site.candidates == frozenset(
-		Address(address) for address in (0x2000, 0x3000, 0x5000, 0x6000)
+	assert site.target == Known(
+		values=frozenset(Address(address) for address in (0x2000, 0x3000, 0x5000, 0x6000))
 	)
 
 
@@ -3097,7 +3114,7 @@ def test_a32_unbounded_dispatch_reaches_every_block(
 	code: str, data_in_code: tuple[tuple[int, int], ...]
 ) -> None:
 	sites = extract_call_sites(_a32_dispatch_program(code, data_in_code))
-	assert [site for site in sites if site.candidates] == []
+	assert [site for site in sites if isinstance(site.target, Known)] == []
 
 
 @pytest.mark.parametrize(
@@ -3117,7 +3134,7 @@ def test_a32_dispatch_reads_its_table_only_from_read_only_memory(
 		writable=writable,
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
 
 
 @pytest.mark.parametrize(
@@ -3137,4 +3154,12 @@ def test_a32_dispatch_past_the_case_limit_is_unbounded(compare: str, candidates:
 		((0x1034, 0x1038 + 4 * 1025),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.candidates == frozenset(Address(address) for address in candidates)
+	assert site.target == _expected(candidates)
+
+
+def _expected(candidates: Iterable[int]) -> ValueSet:
+	return (
+		Known(values=frozenset(Address(address) for address in candidates))
+		if frozenset(candidates)
+		else Top()
+	)
