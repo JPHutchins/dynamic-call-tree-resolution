@@ -330,6 +330,8 @@ contradicts does not hold.
 
 - A linked ELF executable with DWARF; relocatable objects are rejected. Stack depths
   also need GCC's `-fstack-usage` (`.su`) and `-fcallgraph-info` (`.ci`) artifacts.
+- A link with `--emit-relocs` loads as the same link without it: the linker already
+  applied the relocations it keeps, so they are not applied again.
 - `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
   decoded as A32 inside the spans of `$a` mapping symbols and as Thumb elsewhere.
 - Zephyr is the only RTOS modeled, and only its static threads are. A thread created
@@ -407,7 +409,9 @@ uv run camas testbeds_lock            # after editing testbeds/manifest/west.yml
 `nix build .#fixtures` builds the same testbeds in the Nix sandbox, from the projects
 `testbeds/west2nix.toml` locks. `nix develop` exports that build as `$DCTR_FIXTURES`,
 which the tests marked image and the examples above read, so the first `nix develop` on
-a machine builds it.
+a machine builds it. The `qemu_cortex_m3` testbeds link with `--emit-relocs` and
+`--print-gc-sections`, and each ships its `zephyr_final.map` and the final link's
+`gc-sections.txt` next to the ELF ([#150]).
 
 ## References
 
@@ -426,6 +430,7 @@ a machine builds it.
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
 [#131]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/131
 [#146]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/146
+[#150]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/150
 [#151]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/151
 [#159]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/159
 [#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
