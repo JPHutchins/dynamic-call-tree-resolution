@@ -133,6 +133,9 @@ from dynamic_call_tree_resolution.points_to import (
 	unresolved_slots as unresolved_slots,
 )
 from dynamic_call_tree_resolution.report import (
+	AddressTakenReport as AddressTakenReport,
+)
+from dynamic_call_tree_resolution.report import (
 	AnalysisReport as AnalysisReport,
 )
 from dynamic_call_tree_resolution.report import (
@@ -158,6 +161,9 @@ from dynamic_call_tree_resolution.report import (
 )
 from dynamic_call_tree_resolution.report import (
 	PathStepReport as PathStepReport,
+)
+from dynamic_call_tree_resolution.report import (
+	ReferrerReport as ReferrerReport,
 )
 from dynamic_call_tree_resolution.report import (
 	SignatureReport as SignatureReport,

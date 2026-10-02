@@ -3,7 +3,7 @@
 
 """JSON-serializable analysis reports."""
 
-from itertools import groupby
+from itertools import chain, groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
 from msgspec import Struct
@@ -35,6 +35,8 @@ from dynamic_call_tree_resolution.points_to import (
 	unresolved_slots,
 )
 from dynamic_call_tree_resolution.stack_analysis import Bounded, Reason, Unbounded
+from dynamic_call_tree_resolution.vsa import address_taken, referrers
+from dynamic_call_tree_resolution.vsa.abi import normalized
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -226,6 +228,63 @@ class AnalysisSummary(Struct):
 	worst_case_entry: str
 	worst_case: BoundedStack | UnboundedStack
 	rtos: str
+
+
+class ReferrerReport(Struct):
+	"""One place that holds or computes an address-taken function's address."""
+
+	slot: int
+	holder: str | None
+	"""The function or data object spanning the slot; none outside every symbol."""
+
+
+class AddressTakenReport(Struct):
+	"""One row of ``referrers --json``."""
+
+	name: str
+	address: int
+	referrers: tuple[ReferrerReport, ...]
+
+
+def referrers_report(program: Program) -> tuple[AddressTakenReport, ...]:
+	return tuple(
+		sorted(
+			(
+				AddressTakenReport(
+					name=program.functions[function].name,
+					address=function,
+					referrers=tuple(
+						ReferrerReport(slot=slot, holder=_holder(program, slot))
+						for slot in sorted(slots)
+					),
+				)
+				for function, slots in referrers(program, address_taken(program)).items()
+			),
+			key=_name_and_address,
+		)
+	)
+
+
+def _name_and_address(report: AddressTakenReport) -> tuple[str, int]:
+	return (report.name, report.address)
+
+
+def _holder(program: Program, slot: Address) -> str | None:
+	return next(
+		chain(
+			(
+				function.name
+				for function in program.functions.values()
+				if slot - normalized(function.address, program.machine) in range(function.size)
+			),
+			(
+				data_object.name
+				for data_object in program.objects.values()
+				if slot - data_object.address in range(max(data_object.size, 1))
+			),
+		),
+		None,
+	)
 
 
 class SlotCounts(SalixStruct):

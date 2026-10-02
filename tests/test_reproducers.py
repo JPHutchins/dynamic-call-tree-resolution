@@ -13,7 +13,7 @@ from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
 import pytest
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution import (
 	Unbounded,
@@ -33,6 +33,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 from dynamic_call_tree_resolution.vsa import address_taken
+from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at
 from tests.sites import tracked_values
 from tests.toolchains import (
 	FIXTURES,
@@ -193,7 +194,7 @@ STACK_IMAGES = tuple(
 THREAD_RECORD_IMAGES = tuple(
 	Image(source="thread_record.c", platform=platform, flags=flags)
 	for platform, flags in (
-		*((Platform.CORTEX_M3, (level,)) for level in ARM_LEVELS),
+		*((Platform.CORTEX_M3, (level, "-Wl,--emit-relocs")) for level in ARM_LEVELS),
 		(Platform.CORTEX_A15, ("-O2",)),
 		(Platform.HOST, ("-O2", "-no-pie")),
 	)
@@ -509,6 +510,26 @@ def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
 		seeded.seeded,
 		_worker_targets(program, seeded, seeded.sites),
 	) == (frozenset(), frozenset({"record"}), outcomes[image].observations["worker"])
+
+
+@pytest.mark.parametrize(
+	"image",
+	[
+		pytest.param(image, id=_image_id(image))
+		for image in (*THREAD_RECORD_IMAGES, *ESCAPED_RECORD_IMAGES)
+		if image.platform is Platform.CORTEX_M3
+	],
+)
+def test_kept_references_make_each_thread_record_cells_seed_decision_the_byte_scan_makes(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	program = load(outcomes[image].elf)
+	thread = _record_thread(program, "record", 0)
+	slots = {thread.entry: frozenset({thread.entry_slot})}
+	assert (
+		bool(program.link_references),
+		referenced_only_at(program, slots),
+	) == (True, referenced_only_at(replace(program, link_references=()), slots))
 
 
 @pytest.mark.parametrize(

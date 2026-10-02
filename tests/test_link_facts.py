@@ -16,10 +16,15 @@ from salix import replace
 
 from dynamic_call_tree_resolution import ReferenceKind, load
 from dynamic_call_tree_resolution.points_to import read_pointer
+from dynamic_call_tree_resolution.report import referrers_report
+from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
+from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at
 
 if TYPE_CHECKING:
 	from pathlib import Path
+
+	from dynamic_call_tree_resolution.model import Program
 
 pytestmark = pytest.mark.image
 
@@ -119,3 +124,59 @@ def test_the_vector_tables_reference_to_address_zero_is_not_the_absolute_vfscanf
 def test_a_link_without_emit_relocs_has_no_link_references(zephyr_fixtures: Path) -> None:
 	program = load(zephyr_fixtures / "counter-su" / "zephyr" / "zephyr.exe")
 	assert (program.link_references, len(address_taken(program))) == ((), 236)
+
+
+def _seeded_entries(program: Program) -> list[str]:
+	threads = rtos_model(program, RtosChoice.AUTO).threads
+	return sorted(
+		program.functions[entry].name
+		for entry in referenced_only_at(
+			program,
+			{
+				thread.entry: frozenset(
+					other.entry_slot for other in threads if other.entry == thread.entry
+				)
+				for thread in threads
+			},
+		)
+	)
+
+
+@pytest.mark.parametrize(
+	("name", "seeded"),
+	[
+		("sensor-two-impl", ["motion_thread", "thermal_thread"]),
+		("sensor-threads", ["sensor_thread"]),
+	],
+)
+def test_the_references_the_linker_kept_make_each_fixtures_seed_decisions_the_byte_scan_makes(
+	zephyr_fixtures: Path, name: str, seeded: list[str]
+) -> None:
+	program = load(zephyr_fixtures / name / "zephyr" / "zephyr.elf")
+	assert (
+		_seeded_entries(program),
+		_seeded_entries(replace(program, link_references=())),
+	) == (seeded, seeded)
+
+
+def test_sensor_threads_names_who_holds_each_thread_entry(zephyr_fixtures: Path) -> None:
+	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
+	report = referrers_report(program)
+	assert (
+		len(report),
+		all(row.referrers for row in report),
+		{
+			row.name: tuple(referrer.holder for referrer in row.referrers)
+			for row in report
+			if row.name in {"bg_thread_main", "idle", "sensor_thread", "z_thread_entry"}
+		},
+	) == (
+		len(address_taken(program)),
+		True,
+		{
+			"bg_thread_main": ("z_cstart",),
+			"idle": ("z_init_cpu",),
+			"sensor_thread": ("_k_thread_data_motion_tid", "_k_thread_data_thermal_tid"),
+			"z_thread_entry": ("arch_new_thread", "arch_switch_to_main_thread"),
+		},
+	)

@@ -3,6 +3,7 @@
 
 """Tests for :mod:`dynamic_call_tree_resolution.cli`."""
 
+import re
 import sys
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ import pytest
 from elftools.elf.enums import ENUM_E_MACHINE
 
 from dynamic_call_tree_resolution import (
+	AddressTakenReport,
 	AnalysisReport,
 	AnalysisSummary,
 	ComparisonReport,
@@ -21,7 +23,7 @@ from dynamic_call_tree_resolution import (
 	StackPathReport,
 	UnboundedStack,
 )
-from dynamic_call_tree_resolution.cli import analyze, compare, main, stack, summary
+from dynamic_call_tree_resolution.cli import analyze, compare, main, referrers, stack, summary
 from tests.dctr import dctr
 from tests.expected import EXPECTED_PATHS
 
@@ -46,6 +48,42 @@ def test_cli_analyze_plain_text(
 	assert "dev_a.api.open: driver_a_open" in output
 	assert "bss_cb: <unresolved>" in output
 	assert "main@0x" in output
+
+
+def test_cli_referrers_json_names_the_holder_of_each_address_taken_functions_slots(
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	referrers(fixture_elfs["nopie"], json=True)
+	report = msgspec.json.decode(capsys.readouterr().out, type=tuple[AddressTakenReport, ...])
+	assert {row.name: tuple(referrer.holder for referrer in row.referrers) for row in report} == {
+		"__do_global_dtors_aux": ("__do_global_dtors_aux_fini_array_entry",),
+		"_fini": (None,),
+		"_init": (None,),
+		"anon_fn": ("holder2",),
+		"dev_init": ("dev_a", "dev_b", "dev_c"),
+		"driver_a_close": ("ops_a",),
+		"driver_a_open": ("ops_a",),
+		"driver_b_close": ("ops_b",),
+		"driver_b_open": ("ops_b",),
+		"frame_dummy": ("__frame_dummy_init_array_entry",),
+		"main": ("_start",),
+		"node_fn": ("node_a",),
+		"plain_target": ("plain_cb",),
+		"undef_ptr_target": ("holder",),
+	}
+
+
+def test_cli_referrers_prints_each_slot_after_its_holder_or_alone(
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	referrers(fixture_elfs["nopie"])
+	assert [
+		re.sub(r"0x[0-9a-f]+", "0x…", line)
+		for line in capsys.readouterr().out.splitlines()
+		if line.startswith(("dev_init: ", "_fini: "))
+	] == ["_fini: 0x…", "dev_init: dev_a@0x…, dev_b@0x…, dev_c@0x…"]
 
 
 def test_cli_compare_json(fixture_elfs: dict[str, Path]) -> None:
