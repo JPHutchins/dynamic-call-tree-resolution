@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
@@ -29,6 +30,9 @@ class CallEdge(Struct):
 	caller: str
 	callee: str
 	kind: EdgeKind = EdgeKind.STATIC
+
+
+_TOKEN: Final = re.compile(r'"(?P<quoted>[^"]*)"|(?P<unterminated>")|[{}:]|[^\s{}:"][^\s{}:]*')
 
 
 class _VcgEdge(Struct):
@@ -67,26 +71,21 @@ def _edge(entry: dict[str, str]) -> _VcgEdge:
 
 
 def _tokenize(text: str) -> tuple[str, ...]:
-	tokens: list[str] = []
-	index = 0
-	while index < len(text):
-		if text[index].isspace():
-			index += 1
-			continue
-		if text[index] in "{}:":
-			tokens.append(text[index])
-			index += 1
-			continue
-		if text[index] == '"':
-			end = text.index('"', index + 1)
-			tokens.append(text[index + 1 : end])
-			index = end + 1
-			continue
-		start = index
-		while index < len(text) and not text[index].isspace() and text[index] not in "{}:":
-			index += 1
-		tokens.append(text[start:index])
-	return tuple(tokens)
+	"""Split a VCG text into its quoted strings, punctuation and bare words.
+
+	>>> _tokenize('graph: { title: "a b" }')
+	('graph', ':', '{', 'title', ':', 'a b', '}')
+	>>> _tokenize('edge: "open')
+	Traceback (most recent call last):
+	ValueError: unterminated string at offset 6
+	"""
+	return tuple(_token(match) for match in _TOKEN.finditer(text))
+
+
+def _token(match: re.Match[str]) -> str:
+	if match["unterminated"] is not None:
+		raise ValueError(f"unterminated string at offset {match.start()}")
+	return match["quoted"] if match["quoted"] is not None else match[0]
 
 
 def _parse_body(
