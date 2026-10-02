@@ -41,7 +41,7 @@ from dynamic_call_tree_resolution.loader import (
 from dynamic_call_tree_resolution.model import InstructionSet, aligned
 from dynamic_call_tree_resolution.points_to import instruction_set_at, read_pointer
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
-from tests.toolchains import FIXTURES, build_cortex_a15, build_cortex_m3
+from tests.toolchains import FIXTURES, build_cortex_a15, build_cortex_m3, host_cc
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -202,6 +202,42 @@ def test_load_keeps_an_emit_relocs_links_references_and_the_functions_they_take(
 		frozenset(ReferenceKind),
 		["main", "plain_target", "undef_ptr_target"],
 	)
+
+
+def test_load_reads_the_spans_of_each_inlined_copy_of_a_function(tmp_path: Path) -> None:
+	source = tmp_path / "inline.c"
+	source.write_text(
+		"[[gnu::always_inline]] static inline int twice(int const x) {\n"
+		"\treturn x * 2;\n"
+		"}\n\n"
+		"int main(int argc, [[maybe_unused]] char * argv[argc + 1]) {\n"
+		"\treturn twice(argc);\n"
+		"}\n"
+	)
+	subprocess.run(
+		[*host_cc("-g", "-O2", "-no-pie"), str(source), "-o", str(tmp_path / "inline.elf")],
+		check=True,
+		capture_output=True,
+	)
+	program = load(tmp_path / "inline.elf")
+	(main,) = (function for function in program.functions.values() if function.name == "main")
+	assert (
+		"twice" in {function.name for function in program.functions.values()},
+		bool(program.inlined["twice"]),
+		all(
+			main.address <= low < high <= main.address + main.size
+			for low, high in program.inlined["twice"]
+		),
+	) == (False, True, True)
+
+
+@pytest.mark.image
+def test_load_reads_the_ranges_of_zephyrs_inlined_static_thread_start(
+	zephyr_fixtures: Path,
+) -> None:
+	assert load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf").inlined[
+		"z_init_static_threads"
+	] == ((0x1F32, 0x1F4E), (0x1F68, 0x1FDC))
 
 
 @pytest.mark.parametrize("literals", ["-mslow-flash-data", "-mpure-code"])

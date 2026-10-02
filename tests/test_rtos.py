@@ -17,17 +17,20 @@ from dynamic_call_tree_resolution import (
 	LinkReference,
 	Machine,
 	ReferenceKind,
+	build_report,
 	load,
 	resolve,
 )
 from dynamic_call_tree_resolution.cli import analyze, stack
-from dynamic_call_tree_resolution.model import BARE_METAL, RtosModel
+from dynamic_call_tree_resolution.model import BARE_METAL, RtosModel, ThreadCreation
 from dynamic_call_tree_resolution.points_to import pointer_at
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
-from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at
+from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.programs import build_program
 
 if TYPE_CHECKING:
+	from collections.abc import Callable
+
 	from dynamic_call_tree_resolution.model import Program
 
 PACKAGE: Final = Path(__file__).parent.parent / "src" / "dynamic_call_tree_resolution"
@@ -129,7 +132,13 @@ def test_an_entry_the_linker_also_references_outside_its_record_is_not_seeded(
 			for slot in slots
 		),
 	)
-	assert referenced_only_at(program, {Address(0x1001): frozenset({Address(0x2000)})}) == seeded
+	assert (
+		referenced_only_at(
+			referrers(program, frozenset({Address(0x1001)})),
+			{Address(0x1001): frozenset({Address(0x2000)})},
+		)
+		== seeded
+	)
 
 
 def test_choosing_zephyr_for_an_image_without_it_is_an_error(
@@ -150,7 +159,121 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 		evidence=("z_thread_entry", "struct _static_thread_data"),
 		threads=(),
 		trampoline="z_thread_entry",
+		creation=ThreadCreation(
+			frame_builders=("arch_new_thread", "arch_switch_to_main_thread"),
+			setup="z_setup_new_thread",
+			static_start="z_init_static_threads",
+			static_entries=frozenset(),
+		),
 	)
+
+
+def _trampoline_targets(program: Program, model: RtosModel) -> list[str]:
+	resolution = resolve(program, model)
+	(site,) = (
+		site
+		for site in build_report(program, resolution.assignments, resolution.sites).call_sites
+		if site.caller == "z_thread_entry"
+	)
+	return [candidate.name for candidate in site.candidates]
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("elf", "targets"),
+	[
+		pytest.param("hello/zephyr/zephyr.elf", ["bg_thread_main", "idle"], id="hello"),
+		pytest.param(
+			"sensor-two-impl/zephyr/zephyr.elf",
+			["motion_thread", "thermal_thread", "bg_thread_main", "idle"],
+			id="sensor-two-impl",
+		),
+		pytest.param(
+			"sensor-threads/zephyr/zephyr.elf",
+			["bg_thread_main", "sensor_thread", "idle"],
+			id="sensor-threads",
+		),
+		pytest.param("counter-su/zephyr/zephyr.exe", [], id="counter-su calls it directly"),
+	],
+)
+def test_the_call_that_starts_every_thread_goes_to_each_entry_its_creations_pass(
+	zephyr_fixtures: Path, elf: str, targets: list[str]
+) -> None:
+	program = load(zephyr_fixtures / elf)
+	assert _trampoline_targets(program, rtos_model(program, RtosChoice.AUTO)) == targets
+
+
+def _named(program: Program, name: str) -> Address:
+	(address,) = (
+		address for address, function in program.functions.items() if function.name == name
+	)
+	return address
+
+
+def _builder_with_two_entries(program: Program, model: RtosModel) -> tuple[Program, RtosModel]:
+	builder = program.functions[_named(program, "arch_new_thread")]
+	assert builder.signature is not None
+	return (
+		replace(
+			program,
+			functions={
+				**program.functions,
+				builder.address: replace(
+					builder,
+					signature=replace(
+						builder.signature,
+						parameters=(*builder.signature.parameters, "function pointer"),
+					),
+				),
+			},
+		),
+		model,
+	)
+
+
+def _trampoline_held_elsewhere(program: Program, model: RtosModel) -> tuple[Program, RtosModel]:
+	(record, *_) = (
+		data_object.address
+		for data_object in program.objects.values()
+		if data_object.name.startswith("_k_thread_data_")
+	)
+	return (
+		replace(
+			program,
+			link_references=(
+				*program.link_references,
+				LinkReference(
+					slot=record,
+					symbol="z_thread_entry",
+					value=_named(program, "z_thread_entry"),
+					kind=ReferenceKind.ADDRESS,
+				),
+			),
+		),
+		model,
+	)
+
+
+def _records_incomplete(program: Program, model: RtosModel) -> tuple[Program, RtosModel]:
+	assert model.creation is not None
+	return program, replace(model, creation=replace(model.creation, static_entries=None))
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	"perturbed",
+	[
+		pytest.param(_builder_with_two_entries, id="a frame builder with two entry parameters"),
+		pytest.param(_trampoline_held_elsewhere, id="the trampoline held outside its builders"),
+		pytest.param(_records_incomplete, id="the static thread records incomplete"),
+	],
+)
+def test_the_call_that_starts_every_thread_stays_unresolved_when_a_creation_gate_fails(
+	zephyr_fixtures: Path,
+	perturbed: Callable[[Program, RtosModel], tuple[Program, RtosModel]],
+) -> None:
+	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
+	assert _trampoline_targets(*perturbed(program, rtos_model(program, RtosChoice.AUTO))) == []
 
 
 @pytest.fixture(scope="module")

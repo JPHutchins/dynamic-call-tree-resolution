@@ -64,6 +64,7 @@ _thread_dummy.base.timeout.fn: <unresolved>
 _stdout_hook: <unresolved>
 ...
 char_out@0x118: <unresolved>
+z_thread_entry@0x180: bg_thread_main, idle
 ...
 _isr_wrapper@0x884: z_irq_spurious
 z_impl_zephyr_fputc@0x8a6: <unresolved>
@@ -106,6 +107,9 @@ do_device_init@0x1dca: <unresolved>
   pointer in RAM. The image has stores whose address the analysis cannot compute, so any
   writable slot may hold anything: `analyze` reports these sites unresolved, and
   `stack --elf` expands them to every address-taken function.
+- `z_thread_entry@0x180` is the call that starts every thread. It goes to the entries
+  the image's thread creations pass: `bg_thread_main`, the main thread, and `idle`.
+  `hello_world` defines no static thread.
 - `console_out@0x956` and `console_out@0x960` are indirect call sites (`blx r3`) whose
   value-set analysis through the `device->api` chain yields one candidate.
 - `_isr_wrapper@0x884` resolves to `z_irq_spurious` through the indexed load over
@@ -244,6 +248,8 @@ rtos: zephyr (detected: z_thread_entry, struct _static_thread_data)
 thread motion_tid: sensor_thread (seeded from its record)
 thread thermal_tid: sensor_thread (seeded from its record)
 ...
+z_thread_entry@0xc44: bg_thread_main, sensor_thread, idle
+...
 sensor_thread@0x2fe2: adt7420_sample_fetch, bmi160_sample_fetch
 sensor_thread@0x2fee: adt7420_channel_get, bmi160_channel_get
 ...
@@ -351,10 +357,13 @@ contradicts does not hold.
   it keeps: the linker already applied them, so they are not applied again.
 - `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
   decoded as A32 inside the spans of `$a` mapping symbols and as Thumb elsewhere.
-- Zephyr is the only RTOS modeled, and only its static threads are. A thread created
-  with `k_thread_create` starts its entry with unknown arguments, and the indirect call
-  in `z_thread_entry` that starts every thread falls back to every address-taken
-  function ([#146]).
+- Zephyr is the only RTOS modeled, and only its static threads get trees of their own:
+  a thread created with `k_thread_create` starts its entry with unknown arguments.
+- The call in `z_thread_entry` that starts every thread goes to the entries the image's
+  thread creations pass. This assumes that the kernel's static-thread start passes
+  exactly its records' entries ([#185]), and holds only while `arch_new_thread` and
+  `arch_switch_to_main_thread` alone hold `z_thread_entry`'s address. Otherwise, or
+  when a creation's entry is unknown, the call is unresolved.
 
 ### Call targets
 
@@ -446,8 +455,8 @@ a machine builds it. The `qemu_cortex_m3` testbeds link with `--emit-relocs` and
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
 [#131]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/131
-[#146]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/146
 [#150]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/150
 [#151]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/151
 [#159]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/159
 [#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
+[#185]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/185

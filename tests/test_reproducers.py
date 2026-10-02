@@ -33,7 +33,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 from dynamic_call_tree_resolution.vsa import address_taken
-from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at
+from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.sites import tracked_values
 from tests.toolchains import (
 	FIXTURES,
@@ -528,8 +528,11 @@ def test_kept_references_make_each_thread_record_cells_seed_decision_the_byte_sc
 	slots = {thread.entry: frozenset({thread.entry_slot})}
 	assert (
 		bool(program.link_references),
-		referenced_only_at(program, slots),
-	) == (True, referenced_only_at(replace(program, link_references=()), slots))
+		referenced_only_at(referrers(program, slots.keys()), slots),
+	) == (
+		True,
+		referenced_only_at(referrers(replace(program, link_references=()), slots.keys()), slots),
+	)
 
 
 @pytest.mark.parametrize(

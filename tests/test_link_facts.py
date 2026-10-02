@@ -19,7 +19,7 @@ from dynamic_call_tree_resolution.points_to import read_pointer
 from dynamic_call_tree_resolution.report import referrers_report
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
-from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at
+from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -128,17 +128,15 @@ def test_a_link_without_emit_relocs_has_no_link_references(zephyr_fixtures: Path
 
 def _seeded_entries(program: Program) -> list[str]:
 	threads = rtos_model(program, RtosChoice.AUTO).threads
+	slots = {
+		thread.entry: frozenset(
+			other.entry_slot for other in threads if other.entry == thread.entry
+		)
+		for thread in threads
+	}
 	return sorted(
 		program.functions[entry].name
-		for entry in referenced_only_at(
-			program,
-			{
-				thread.entry: frozenset(
-					other.entry_slot for other in threads if other.entry == thread.entry
-				)
-				for thread in threads
-			},
-		)
+		for entry in referenced_only_at(referrers(program, slots.keys()), slots)
 	)
 
 
