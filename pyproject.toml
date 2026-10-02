@@ -10,7 +10,7 @@ dependencies = [
     "capstone>=5.0.9",
     "cyclopts>=5.0.0",
     "msgspec>=0.21.1",
-    "pyelftools>=0.33",
+    "pyelftools==0.33",
     "salix",
 ]
 classifiers = [

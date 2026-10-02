@@ -568,7 +568,7 @@ requires-dist = [
     { name = "capstone", specifier = ">=5.0.9" },
     { name = "cyclopts", specifier = ">=5.0.0" },
     { name = "msgspec", specifier = ">=0.21.1" },
-    { name = "pyelftools", specifier = ">=0.33" },
+    { name = "pyelftools", specifier = "==0.33" },
     { name = "salix", git = "https://github.com/JPHutchins/salix?rev=21ded22dca2feb2af1ebefad69ea99c29b42507e" },
 ]
 
