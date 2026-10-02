@@ -26,7 +26,12 @@ from dynamic_call_tree_resolution.model import (
 	thumb_twin,
 )
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
-from dynamic_call_tree_resolution.vsa.abi import disassemblers, normalized, program_counter
+from dynamic_call_tree_resolution.vsa.abi import (
+	arm_mnemonic,
+	disassemblers,
+	normalized,
+	program_counter,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Iterator, Mapping
@@ -184,7 +189,7 @@ def _arm_addresses(
 ) -> Iterator[int]:
 	operands = instruction.operands
 	yield from (operand.imm for operand in operands if operand.type == arm_const.ARM_OP_IMM)
-	match instruction.mnemonic.split(".")[0], operands:
+	match arm_mnemonic(instruction), operands:
 		case "adr", [_, offset]:
 			yield _pc_relative(program, instruction, offset.imm)
 		case (("add" | "addw"), [_, base, offset]) if base.reg == arm_const.ARM_REG_PC:
@@ -212,7 +217,7 @@ def _movt_addresses(high: int, register: int, preceding: tuple[CsInsn, ...]) -> 
 		(
 			earlier.operands[1].imm
 			for earlier in reversed(preceding)
-			if earlier.mnemonic.split(".")[0] == "movw" and earlier.operands[0].reg == register
+			if arm_mnemonic(earlier) == "movw" and earlier.operands[0].reg == register
 		),
 		None,
 	)
