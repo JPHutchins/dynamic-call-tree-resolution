@@ -39,6 +39,7 @@ from dynamic_call_tree_resolution.vsa import address_taken
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from tests.programs import build_program
 from tests.sites import tracked_values
+from tests.toolchains import FIXTURES, build_cortex_m3
 
 if TYPE_CHECKING:
 	from collections.abc import Collection, Mapping
@@ -2154,6 +2155,30 @@ def test_comparison_counts_a_narrowed_site_as_resolved_only_when_asked() -> None
 		),
 		pytest.param(
 			Machine.EM_ARM,
+			"c4 bf 40 f2 01 00 c0 f2 01 00",
+			(("caller", 0x1001, 10), ("target", 0x10001, 2)),
+			(),
+			{"target"},
+			id="thumb predicated movw movt",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			"c8 bf 0f f2 04 00",
+			(("caller", 0x1001, 6), ("target", 0x1009, 2)),
+			(),
+			{"target"},
+			id="thumb predicated addw pc",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			"c8 bf 01 a0",
+			(("caller", 0x1001, 4), ("target", 0x1009, 2)),
+			(),
+			{"target"},
+			id="thumb predicated adr",
+		),
+		pytest.param(
+			Machine.EM_ARM,
 			"01 a0",
 			(("caller", 0x1001, 2), ("target", 0x1009, 2)),
 			(),
@@ -2201,6 +2226,34 @@ def test_address_taken_finds_stored_and_computed_function_addresses(
 		pointer_size=8 if machine == Machine.EM_X86_64 else 4,
 	)
 	assert {program.functions[address].name for address in address_taken(program)} == taken
+
+
+def test_address_taken_finds_a_function_above_64_kib_only_a_predicated_movw_movt_pair_builds(
+	tmp_path: Path,
+) -> None:
+	source = tmp_path / "far.c"
+	source.write_text(
+		"[[gnu::used, gnu::noinline]] void pad(void) {\n"
+		'\t__asm__ volatile(".space 70000");\n'
+		"}\n\n" + (FIXTURES / "reproducers" / "code_address_callback.c").read_text()
+	)
+	program = load(
+		build_cortex_m3(
+			(source,),
+			tmp_path / "far.elf",
+			"-O2",
+			"-mslow-flash-data",
+			"-fno-toplevel-reorder",
+		)
+	)
+	(deep,) = (
+		address for address, function in program.functions.items() if function.name == "deep"
+	)
+	assert (deep > 0xFFFF, program.link_references, deep in address_taken(program)) == (
+		True,
+		(),
+		True,
+	)
 
 
 @pytest.mark.image
