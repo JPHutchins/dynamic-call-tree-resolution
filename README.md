@@ -37,9 +37,9 @@ with no target.
 
 Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts. Each indirect call also expands to
-the fallback: every function whose address the image stores, or a non-branch
-instruction computes. The exception is a site inside a thread's tree that the thread's
-own analysis resolved.
+the fallback: every function whose address the image stores, a non-branch instruction
+computes, or an address relocation kept by `--emit-relocs` names. The exception is a
+site inside a thread's tree that the thread's own analysis resolved.
 
 ## Usage
 
@@ -330,8 +330,8 @@ contradicts does not hold.
 
 - A linked ELF executable with DWARF; relocatable objects are rejected. Stack depths
   also need GCC's `-fstack-usage` (`.su`) and `-fcallgraph-info` (`.ci`) artifacts.
-- A link with `--emit-relocs` loads as the same link without it: the linker already
-  applied the relocations it keeps, so they are not applied again.
+- A link with `--emit-relocs` loads as the same link without it, plus the references
+  it keeps: the linker already applied them, so they are not applied again.
 - `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
   decoded as A32 inside the spans of `$a` mapping symbols and as Thumb elsewhere.
 - Zephyr is the only RTOS modeled, and only its static threads are. A thread created

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from enum import IntEnum
 from itertools import groupby
 from math import prod
 from typing import TYPE_CHECKING, Final, assert_never, cast
@@ -29,8 +30,10 @@ from dynamic_call_tree_resolution.model import (
 	FunctionPointerMember,
 	FunctionSignature,
 	InstructionFamily,
+	LinkReference,
 	Machine,
 	Program,
+	ReferenceKind,
 	Relocation,
 	Section,
 	SkippedMember,
@@ -140,6 +143,7 @@ def _load(stream: BinaryIO) -> Program:
 		},
 		data_in_code=_mapped_spans(elf, markers, "d"),
 		arm_code=tuple(sorted(_mapped_spans(elf, markers, "a"))),
+		link_references=_link_references(elf, _reference_types(machine)),
 	)
 
 
@@ -789,6 +793,119 @@ def _relocations(
 				)
 			)
 	return tuple(relocations)
+
+
+class ArmRelocation(IntEnum):
+	"""The ARM relocation types that dctr classifies, by their ELF ABI numbers."""
+
+	R_ARM_ABS32 = 2
+	R_ARM_THM_CALL = 10
+	R_ARM_CALL = 28
+	R_ARM_JUMP24 = 29
+	R_ARM_THM_JUMP24 = 30
+	R_ARM_MOVW_ABS_NC = 43
+	R_ARM_MOVT_ABS = 44
+	R_ARM_THM_MOVW_ABS_NC = 47
+	R_ARM_THM_MOVT_ABS = 48
+	R_ARM_THM_JUMP19 = 51
+
+
+class X64Relocation(IntEnum):
+	"""The x86-64 relocation types that dctr classifies, by their ELF ABI numbers."""
+
+	R_X86_64_64 = 1
+	R_X86_64_PC32 = 2
+	R_X86_64_PLT32 = 4
+	R_X86_64_32 = 10
+	R_X86_64_32S = 11
+
+
+class I386Relocation(IntEnum):
+	"""The i386 relocation types that dctr classifies, by their ELF ABI numbers."""
+
+	R_386_32 = 1
+	R_386_PC32 = 2
+	R_386_PLT32 = 4
+
+
+class _ReferenceTypes(Struct):
+	"""One machine's relocation types, by what they do with their symbol."""
+
+	addresses: frozenset[int]
+	calls: frozenset[int]
+
+
+def _link_references(elf: ELFFile, types: _ReferenceTypes) -> tuple[LinkReference, ...]:
+	return tuple(
+		LinkReference(
+			slot=Address(relocation["r_offset"]),
+			symbol="" if symbol["st_info"]["type"] == "STT_SECTION" else symbol.name,
+			value=Address(symbol["st_value"]),
+			kind=_reference_kind(types, relocation["r_info_type"]),
+		)
+		for section in elf.iter_sections()
+		if isinstance(section, RelocationSection)
+		and not section.header.sh_flags & _SHF_ALLOC
+		and (target := elf.get_section(section["sh_info"])) is not None
+		and target.header.sh_flags & _SHF_ALLOC
+		and isinstance(symbols := elf.get_section(section["sh_link"]), SymbolTableSection)
+		for relocation in section.iter_relocations()
+		for symbol in (symbols.get_symbol(relocation["r_info_sym"]),)
+	)
+
+
+def _reference_types(machine: Machine) -> _ReferenceTypes:
+	match machine:
+		case Machine.EM_ARM:
+			return _ReferenceTypes(
+				addresses=frozenset(
+					{
+						ArmRelocation.R_ARM_ABS32,
+						ArmRelocation.R_ARM_MOVW_ABS_NC,
+						ArmRelocation.R_ARM_MOVT_ABS,
+						ArmRelocation.R_ARM_THM_MOVW_ABS_NC,
+						ArmRelocation.R_ARM_THM_MOVT_ABS,
+					}
+				),
+				calls=frozenset(
+					{
+						ArmRelocation.R_ARM_THM_CALL,
+						ArmRelocation.R_ARM_THM_JUMP24,
+						ArmRelocation.R_ARM_THM_JUMP19,
+						ArmRelocation.R_ARM_CALL,
+						ArmRelocation.R_ARM_JUMP24,
+					}
+				),
+			)
+		case Machine.EM_X86_64:
+			return _ReferenceTypes(
+				addresses=frozenset(
+					{
+						X64Relocation.R_X86_64_64,
+						X64Relocation.R_X86_64_32,
+						X64Relocation.R_X86_64_32S,
+						X64Relocation.R_X86_64_PC32,
+					}
+				),
+				calls=frozenset({X64Relocation.R_X86_64_PLT32}),
+			)
+		case Machine.EM_386:
+			return _ReferenceTypes(
+				addresses=frozenset({I386Relocation.R_386_32}),
+				calls=frozenset({I386Relocation.R_386_PC32, I386Relocation.R_386_PLT32}),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _reference_kind(types: _ReferenceTypes, relocation_type: int) -> ReferenceKind:
+	return (
+		ReferenceKind.ADDRESS
+		if relocation_type in types.addresses
+		else ReferenceKind.CALL
+		if relocation_type in types.calls
+		else ReferenceKind.OTHER
+	)
 
 
 def _relocation_addend(
