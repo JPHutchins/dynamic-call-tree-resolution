@@ -36,7 +36,7 @@ from dynamic_call_tree_resolution.points_to import (
 )
 from dynamic_call_tree_resolution.stack_analysis import Bounded, Reason, Unbounded
 from dynamic_call_tree_resolution.vsa import address_taken, referrers
-from dynamic_call_tree_resolution.vsa.abi import normalized
+from dynamic_call_tree_resolution.vsa.links import function_covering
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -274,8 +274,8 @@ def _holder(program: Program, slot: Address) -> str | None:
 		chain(
 			(
 				function.name
-				for function in program.functions.values()
-				if slot - normalized(function.address, program.machine) in range(function.size)
+				for function in (function_covering(program, slot),)
+				if function is not None
 			),
 			(
 				data_object.name

@@ -14,11 +14,14 @@ from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import SymbolTableSection
 from salix import replace
 
-from dynamic_call_tree_resolution import ReferenceKind, load
+from dynamic_call_tree_resolution import Address, ReferenceKind, load
+from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.points_to import read_pointer
 from dynamic_call_tree_resolution.report import referrers_report
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
-from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
+from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, frame_key
+from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken, linked_calls
+from dynamic_call_tree_resolution.vsa.abi import normalized
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 
 if TYPE_CHECKING:
@@ -180,3 +183,139 @@ def test_sensor_threads_names_who_holds_each_thread_entry(zephyr_fixtures: Path)
 			"z_thread_entry": ("arch_new_thread", "arch_switch_to_main_thread"),
 		},
 	)
+
+
+def _addresses_by_name(program: Program, elf: Path) -> dict[str, frozenset[int]]:
+	with elf.open("rb") as stream:
+		symbols = ELFFile(stream).get_section_by_name(".symtab")
+		assert isinstance(symbols, SymbolTableSection)
+		named = [
+			(frame_key(symbol.name), normalized(Address(symbol["st_value"]), program.machine))
+			for symbol in symbols.iter_symbols()
+			if symbol["st_info"]["type"] == "STT_FUNC" and symbol["st_shndx"] != "SHN_UNDEF"
+		]
+	return {
+		name: frozenset(address for other, address in named if other == name) for name, _ in named
+	}
+
+
+@pytest.mark.parametrize(
+	("name", "both", "binary_only", "not_in_image"),
+	[
+		pytest.param(
+			"sensor-two-impl",
+			212,
+			[
+				("__l_vfprintf", "__ultoa_invert"),
+				("__l_vfprintf", "strnlen"),
+				("z_thread_entry", "__aeabi_read_tp"),
+			],
+			286,
+			id="sensor-two-impl",
+		),
+		pytest.param(
+			"sensor-threads",
+			221,
+			[
+				("__l_vfprintf", "__ultoa_invert"),
+				("__l_vfprintf", "strnlen"),
+				("z_thread_entry", "__aeabi_read_tp"),
+			],
+			286,
+			id="sensor-threads",
+		),
+		pytest.param(
+			"synchronization",
+			170,
+			[
+				("__l_vfprintf", "__ultoa_invert"),
+				("__l_vfprintf", "strnlen"),
+				("hello_loop", "__aeabi_read_tp"),
+				("z_thread_entry", "__aeabi_read_tp"),
+			],
+			279,
+			id="synchronization",
+		),
+	],
+)
+def test_the_calls_the_linker_kept_cover_every_ci_edge_but_those_of_an_ambiguous_name(
+	zephyr_fixtures: Path,
+	name: str,
+	both: int,
+	binary_only: list[tuple[str, str]],
+	not_in_image: int,
+) -> None:
+	elf = zephyr_fixtures / name / "zephyr" / "zephyr.elf"
+	program = load(elf)
+	addresses = _addresses_by_name(program, elf)
+	binary = frozenset(
+		(normalized(call.caller, program.machine), normalized(call.callee, program.machine))
+		for call in linked_calls(program)
+		if call.caller is not None
+	)
+	edges = [
+		(frame_key(edge.caller), frame_key(edge.callee))
+		for edge in load_callgraph(zephyr_fixtures / name)
+		if edge.callee != INDIRECT_CALLEE
+	]
+	ci = frozenset(
+		(caller, callee)
+		for caller_name, callee_name in edges
+		for caller in addresses.get(caller_name, frozenset())
+		for callee in addresses.get(callee_name, frozenset())
+	)
+	ambiguous = frozenset(
+		address for named in addresses.values() if len(named) > 1 for address in named
+	)
+	assert (
+		len(binary & ci),
+		sorted(
+			(_name_at(program, caller), _name_at(program, callee)) for caller, callee in binary - ci
+		),
+		len(ci - binary),
+		all(caller in ambiguous or callee in ambiguous for caller, callee in ci - binary),
+		len({name for edge in edges for name in edge if name not in addresses}),
+	) == (both, binary_only, 7, True, not_in_image)
+
+
+def _name_at(program: Program, start: int) -> str:
+	(name,) = (
+		function.name
+		for function in program.functions.values()
+		if normalized(function.address, program.machine) == start
+	)
+	return name
+
+
+def test_hello_has_no_ci_and_the_calls_the_linker_kept_are_its_only_call_graph(
+	zephyr_fixtures: Path,
+) -> None:
+	assert (
+		load_callgraph(zephyr_fixtures / "hello"),
+		len(
+			{
+				(call.caller, call.callee)
+				for call in linked_calls(load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf"))
+				if call.caller is not None
+			}
+		),
+	) == ((), 138)
+
+
+def test_a_call_the_linker_kept_has_no_caller_inside_size_zero_assembly(
+	zephyr_fixtures: Path,
+) -> None:
+	program = load(zephyr_fixtures / "sensor-two-impl" / "zephyr" / "zephyr.elf")
+	assert sorted(
+		program.functions[call.callee].name for call in linked_calls(program) if call.caller is None
+	) == [
+		"__aeabi_idiv0",
+		"__udivmoddi4",
+		"__udivmoddi4",
+		"__udivmoddi4",
+		"__udivmoddi4",
+		"z_SysNmiOnReset",
+		"z_arm_fault",
+		"z_do_kernel_oops",
+		"z_prep_c",
+	]

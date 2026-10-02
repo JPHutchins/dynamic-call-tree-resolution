@@ -10,4 +10,6 @@ from dynamic_call_tree_resolution.vsa.fallback import (
 	linked_address_taken as linked_address_taken,
 )
 from dynamic_call_tree_resolution.vsa.fallback import referrers as referrers
+from dynamic_call_tree_resolution.vsa.links import LinkedCall as LinkedCall
+from dynamic_call_tree_resolution.vsa.links import linked_calls as linked_calls
 from dynamic_call_tree_resolution.vsa.memory import runtime_value as runtime_value
