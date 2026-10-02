@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.model import (
 	FunctionSignature,
 	Provenance,
 	SlotAssignment,
+	Unreached,
 )
 from dynamic_call_tree_resolution.points_to import (
 	assignments,
@@ -109,15 +110,32 @@ def call_site_candidates(
 	signatures = (
 		signatures_by_slot if signatures_by_slot is not None else dict[Address, FunctionSignature]()
 	)
-	chased = frozenset(
-		address
-		for candidate in site.candidates
-		for address in _chase_target(program, candidate, resolved_by_slot, signatures, frozenset())
-	)
+	chased = _chased(program, site, resolved_by_slot, signatures)
 	if chased:
 		return chased
 	signature = signatures.get(site.slot) if site.slot is not None else None
 	return matching_targets(program, signature) if signature is not None else frozenset()
+
+
+def _chased(
+	program: Program,
+	site: CallSite,
+	resolved_by_slot: Mapping[Address, SlotAssignment],
+	signatures_by_slot: Mapping[Address, FunctionSignature],
+) -> frozenset[Address]:
+	match site.target:
+		case Known(values=values):
+			return frozenset(
+				address
+				for candidate in values
+				for address in _chase_target(
+					program, candidate, resolved_by_slot, signatures_by_slot, frozenset()
+				)
+			)
+		case Top() | Unreached():
+			return frozenset()
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _chase_target(

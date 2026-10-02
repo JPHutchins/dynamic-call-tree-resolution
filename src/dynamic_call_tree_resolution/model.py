@@ -13,6 +13,8 @@ from salix import Struct, replace
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
+	from dynamic_call_tree_resolution.vsa.lattice import ValueSet
+
 Address = NewType("Address", int)
 
 type ByteOrder = Literal["little", "big"]
@@ -267,6 +269,10 @@ class SlotAssignment(Struct):
 	"""A dynamic relocation supplies the value at load time."""
 
 
+class Unreached(Struct):
+	"""A site in a block that the function's control flow never reaches."""
+
+
 class CallSite(Struct):
 	"""An indirect call or tail-branch instruction in one function's code."""
 
@@ -278,8 +284,8 @@ class CallSite(Struct):
 	For a register operand this is the target itself; for an x86 memory operand
 	it is the address the target is loaded from.
 	"""
-	candidates: frozenset[Address]
-	"""What the value-set analysis tracked into the operand, before chasing; empty when unresolved."""
+	target: Unreached | ValueSet
+	"""What the value-set analysis tracked into the operand, before chasing."""
 
 
 class Residue(StrEnum):

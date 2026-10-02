@@ -10,7 +10,13 @@ from typing import TYPE_CHECKING, assert_never
 from capstone import x86_const
 from salix import Struct
 
-from dynamic_call_tree_resolution.model import Address, CallSite, InstructionFamily, Machine
+from dynamic_call_tree_resolution.model import (
+	Address,
+	CallSite,
+	InstructionFamily,
+	Machine,
+	Unreached,
+)
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	ARM_CALLER_SAVED,
@@ -211,20 +217,26 @@ def _call_observation(
 def _indirect_observations(
 	context: Context, block: Block, site: CallSite, state: State
 ) -> tuple[CallObservation, ...]:
-	return tuple(
-		CallObservation(
-			callee=callee,
-			arguments=_call_arguments(
-				context, state, 1 if block.instructions[-1].mnemonic == "jmp" else 0
-			),
-		)
-		for callee in sorted(
-			frozenset(
-				normalized(candidate, context.program.machine) for candidate in site.candidates
+	match site.target:
+		case Known(values=values):
+			return tuple(
+				CallObservation(
+					callee=callee,
+					arguments=_call_arguments(
+						context, state, 1 if block.instructions[-1].mnemonic == "jmp" else 0
+					),
+				)
+				for callee in sorted(
+					frozenset(
+						normalized(candidate, context.program.machine) for candidate in values
+					)
+					& context.function_starts
+				)
 			)
-			& context.function_starts
-		)
-	)
+		case Top() | Unreached():
+			return ()
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _call_arguments(
@@ -298,7 +310,7 @@ def _site_resolution(
 			caller_address=caller_address,
 			site_address=Address(instruction.address),
 			slot=None,
-			candidates=frozenset(),
+			target=Unreached(),
 		)
 	match site_operand:
 		case RegisterSite(operand=operand):
@@ -307,14 +319,14 @@ def _site_resolution(
 				caller_address=caller_address,
 				site_address=Address(instruction.address),
 				slot=_single(value),
-				candidates=_candidates(value),
+				target=value,
 			)
 		case MemorySite(operand=operand):
 			return CallSite(
 				caller_address=caller_address,
 				site_address=Address(instruction.address),
 				slot=_single(_site_operand_addresses(context, state, instruction, operand)),
-				candidates=_candidates(load_value(context, state, instruction, operand)),
+				target=load_value(context, state, instruction, operand),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -326,15 +338,5 @@ def _single(value: ValueSet) -> Address | None:
 			return None
 		case Known(values=values):
 			return next(iter(values)) if len(values) == 1 else None
-		case _ as unreachable:
-			assert_never(unreachable)
-
-
-def _candidates(value: ValueSet) -> frozenset[Address]:
-	match value:
-		case Top():
-			return frozenset()
-		case Known(values=values):
-			return values
 		case _ as unreachable:
 			assert_never(unreachable)

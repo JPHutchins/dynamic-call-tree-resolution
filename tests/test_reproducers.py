@@ -33,6 +33,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 from dynamic_call_tree_resolution.vsa import address_taken
+from tests.sites import tracked_values
 from tests.toolchains import (
 	FIXTURES,
 	build_cortex_a15,
@@ -418,7 +419,7 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 	assert [
 		program.functions[address].name
 		for site in extract_call_sites(program)
-		for address in site.candidates
+		for address in tracked_values(site)
 		if address in program.functions and address not in taken
 	] == []
 
