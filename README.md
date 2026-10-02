@@ -79,10 +79,10 @@ do_device_init@0x1dca: <unresolved>
   default, detects Zephyr; `--rtos none` models no RTOS. Each Zephyr static thread
   (`K_THREAD_DEFINE`) prints as `thread NAME: ENTRY`, and `hello_world` defines none.
   An entry is *seeded* when its thread's read-only record is the only place the image
-  holds its address: the analysis then starts it with the record's `p1`..`p3` instead
-  of unknown arguments. This assumes the kernel's static-thread start is the only code
-  that reads the records. `analyze` prints this whole-image analysis; `stack --elf`
-  also analyzes each static thread on its own (below).
+  holds or computes its address: the analysis then starts it with the record's
+  `p1`..`p3` instead of unknown arguments. This assumes the kernel's static-thread
+  start is the only code that reads the records. `analyze` prints this whole-image
+  analysis; `stack --elf` also analyzes each static thread on its own (below).
 - `__init_*.init_fn` lines are Zephyr `SYS_INIT` entries, read from their linker
   sections; `__device_dts_ord_22.ops.init` is the device struct's init function.
 - `<unresolved>` means the analysis has no function address for a writable slot. That
@@ -248,6 +248,23 @@ sensor_thread@0x2fe2: adt7420_sample_fetch, bmi160_sample_fetch
 sensor_thread@0x2fee: adt7420_channel_get, bmi160_channel_get
 ...
 i2c_write_read.constprop.0@0x3308: <unresolved>
+...
+```
+
+`referrers` lists each place that holds or computes an address-taken function's
+address. A thread starts from its record's arguments only when its records are its
+entry's only referrers, as they are for `sensor_thread`:
+
+```console
+$ dctr referrers $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
+...
+bg_thread_main: z_cstart@0x2118
+...
+idle: z_init_cpu@0x203c
+...
+sensor_thread: _k_thread_data_motion_tid@0x413c, _k_thread_data_thermal_tid@0x416c
+...
+z_thread_entry: arch_new_thread@0x124c, arch_switch_to_main_thread@0x127c
 ...
 ```
 

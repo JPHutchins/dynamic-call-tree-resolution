@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from itertools import groupby, repeat
 from typing import TYPE_CHECKING, Final, assert_never
 
 from capstone import (
@@ -28,7 +29,8 @@ from dynamic_call_tree_resolution.points_to import instruction_runs, instruction
 from dynamic_call_tree_resolution.vsa.abi import disassemblers, normalized, program_counter
 
 if TYPE_CHECKING:
-	from collections.abc import Iterator, Mapping
+	from collections.abc import Iterable, Iterator, Mapping
+	from collections.abc import Set as AbstractSet
 
 	from capstone import CsInsn
 
@@ -52,9 +54,44 @@ def address_taken(program: Program) -> frozenset[Address]:
 
 
 def linked_address_taken(program: Program) -> frozenset[Address]:
-	starts = {normalized(address, program.machine): address for address in program.functions}
+	return frozenset(function for _, function in _linked_slots(program))
+
+
+def referrers(
+	program: Program, functions: AbstractSet[Address]
+) -> Mapping[Address, frozenset[Address]]:
+	computed = (
+		_slots_by_target(_computed_slots(program), functions)
+		if functions
+		else dict[int, frozenset[Address]]()
+	)
+	linked = _slots_by_target(_linked_slots(program), functions)
+	relocated = _slots_by_target(
+		((relocation.slot, relocation.target) for relocation in program.relocations), functions
+	)
+	return {
+		function: frozenset(_occurrences(program, function))
+		| computed.get(function, frozenset())
+		| linked.get(function, frozenset())
+		| relocated.get(function, frozenset())
+		for function in functions
+	}
+
+
+def referenced_only_at(
+	program: Program, slots_by_function: Mapping[Address, frozenset[Address]]
+) -> frozenset[Address]:
 	return frozenset(
 		function
+		for function, slots in referrers(program, slots_by_function.keys()).items()
+		if slots <= slots_by_function[function]
+	)
+
+
+def _linked_slots(program: Program) -> Iterator[tuple[Address, Address]]:
+	starts = {normalized(address, program.machine): address for address in program.functions}
+	return (
+		(reference.slot, function)
 		for reference in program.link_references
 		if reference.kind is ReferenceKind.ADDRESS
 		and reference.symbol
@@ -67,21 +104,23 @@ def linked_address_taken(program: Program) -> frozenset[Address]:
 	)
 
 
-def referenced_only_at(
-	program: Program, slots_by_function: Mapping[Address, frozenset[Address]]
-) -> frozenset[Address]:
-	computed = frozenset(_computed_addresses(program)) if slots_by_function else frozenset[int]()
-	return frozenset(
-		function
-		for function, slots in slots_by_function.items()
-		if function not in computed
-		and all(occurrence in slots for occurrence in _occurrences(program, function))
-		and all(
-			relocation.slot in slots
-			for relocation in program.relocations
-			if relocation.target == function
+def _slots_by_target(
+	references: Iterable[tuple[Address, int]], targets: AbstractSet[Address]
+) -> Mapping[int, frozenset[Address]]:
+	return {
+		target: frozenset(slot for slot, _ in group)
+		for target, group in groupby(
+			sorted(
+				((slot, target) for slot, target in references if target in targets),
+				key=_target,
+			),
+			key=_target,
 		)
-	)
+	}
+
+
+def _target(reference: tuple[Address, int]) -> int:
+	return reference[1]
 
 
 def _occurrences(program: Program, function: Address) -> Iterator[Address]:
@@ -96,17 +135,33 @@ def _occurrences(program: Program, function: Address) -> Iterator[Address]:
 
 
 def _computed_addresses(program: Program) -> Iterator[int]:
+	for instructions in _non_branch_instructions(program):
+		for index in range(len(instructions)):
+			yield from _instruction_addresses(program, instructions, index)
+
+
+def _computed_slots(program: Program) -> Iterator[tuple[Address, int]]:
+	for instructions in _non_branch_instructions(program):
+		for index in range(len(instructions)):
+			yield from zip(
+				repeat(Address(instructions[index].address)),
+				_instruction_addresses(program, instructions, index),
+			)
+
+
+def _non_branch_instructions(program: Program) -> Iterator[tuple[CsInsn, ...]]:
 	decoders = disassemblers()
-	for function in program.functions.values():
-		start = normalized(function.address, program.machine)
-		instructions = tuple(
+	return (
+		tuple(
 			instruction
-			for address, code in instruction_runs(program, start, function.size)
+			for address, code in instruction_runs(
+				program, normalized(function.address, program.machine), function.size
+			)
 			for instruction in decoders[instruction_set_at(program, address)].disasm(code, address)
 			if instruction.id != 0 and not any(instruction.group(group) for group in _BRANCH_GROUPS)
 		)
-		for index in range(len(instructions)):
-			yield from _instruction_addresses(program, instructions, index)
+		for function in program.functions.values()
+	)
 
 
 def _instruction_addresses(

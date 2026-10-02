@@ -22,12 +22,14 @@ from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
 	ComparisonReport,
 	PathStepReport,
+	ReferrerReport,
 	RtosReport,
 	SlotCounts,
 	StackEntryReport,
 	StackPathReport,
 	build_comparison,
 	build_report,
+	referrers_report,
 	rtos_report,
 	slot_counts,
 	stack_bound_report,
@@ -513,6 +515,31 @@ def summary(
 		rtos=expansion.rtos.name,
 	)
 	print(msgspec.json.format(msgspec.json.encode(report).decode()))
+
+
+@app.command  # type: ignore[misc]
+def referrers(
+	elf: Annotated[Path, Parameter(help="ELF image to analyze")],
+	*,
+	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
+) -> None:
+	"""Print every address-taken function and each place that holds or computes its address."""
+	report = referrers_report(load(elf))
+	if json:
+		print(msgspec.json.format(msgspec.json.encode(report).decode()))
+		return
+	for function in report:
+		print(f"{function.name}: {', '.join(map(_render_referrer, function.referrers))}")
+
+
+def _render_referrer(referrer: ReferrerReport) -> str:
+	match referrer.holder:
+		case None:
+			return f"{referrer.slot:#x}"
+		case str() as holder:
+			return f"{holder}@{referrer.slot:#x}"
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def main() -> None:

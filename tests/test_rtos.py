@@ -10,12 +10,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import pytest
+from salix import replace
 
-from dynamic_call_tree_resolution import load, resolve
+from dynamic_call_tree_resolution import (
+	Address,
+	LinkReference,
+	Machine,
+	ReferenceKind,
+	load,
+	resolve,
+)
 from dynamic_call_tree_resolution.cli import analyze, stack
 from dynamic_call_tree_resolution.model import BARE_METAL, RtosModel
 from dynamic_call_tree_resolution.points_to import pointer_at
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
+from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at
+from tests.programs import build_program
 
 if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import Program
@@ -89,6 +99,37 @@ def test_cli_analyze_says_which_thread_entries_are_seeded(
 		"thread escaped_tid: escaped_thread (not seeded: its address is taken elsewhere)",
 		"thread rom_tid: rom_thread (seeded from its record)",
 	}
+
+
+@pytest.mark.parametrize(
+	("slots", "seeded"),
+	[
+		pytest.param((0x2000,), frozenset({Address(0x1001)}), id="only in its record"),
+		pytest.param((0x2000, 0x2100), frozenset[Address](), id="also outside its record"),
+	],
+)
+def test_an_entry_the_linker_also_references_outside_its_record_is_not_seeded(
+	slots: tuple[int, ...], seeded: frozenset[Address]
+) -> None:
+	program = replace(
+		build_program(
+			Machine.EM_ARM,
+			(("entry", 0x1001, 2),),
+			objects=(("record", 0x2000, (0x1001).to_bytes(4, "little")),),
+			sections={0x1000: bytes.fromhex("00bf")},
+			pointer_size=4,
+		),
+		link_references=tuple(
+			LinkReference(
+				slot=Address(slot),
+				symbol="entry",
+				value=Address(0x1001),
+				kind=ReferenceKind.ADDRESS,
+			)
+			for slot in slots
+		),
+	)
+	assert referenced_only_at(program, {Address(0x1001): frozenset({Address(0x2000)})}) == seeded
 
 
 def test_choosing_zephyr_for_an_image_without_it_is_an_error(
