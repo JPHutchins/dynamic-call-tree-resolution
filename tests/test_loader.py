@@ -10,10 +10,12 @@ import subprocess
 from collections import Counter
 from itertools import accumulate
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from elftools.common.exceptions import ELFError
 from elftools.elf.elffile import ELFFile
+from elftools.elf.enums import ENUM_RELOC_TYPE_ARM, ENUM_RELOC_TYPE_i386, ENUM_RELOC_TYPE_x64
 from salix import Struct
 
 from dynamic_call_tree_resolution import (
@@ -23,16 +25,27 @@ from dynamic_call_tree_resolution import (
 	Function,
 	FunctionPointerMember,
 	FunctionSignature,
+	ReferenceKind,
 	Relocation,
 	SkippedMember,
 	SkipReason,
 	StructPointerMember,
 	load,
 )
-from dynamic_call_tree_resolution.loader import defined_function_names
+from dynamic_call_tree_resolution.loader import (
+	ArmRelocation,
+	I386Relocation,
+	X64Relocation,
+	defined_function_names,
+)
 from dynamic_call_tree_resolution.model import InstructionSet, aligned
-from dynamic_call_tree_resolution.points_to import instruction_set_at
-from tests.toolchains import build_cortex_a15
+from dynamic_call_tree_resolution.points_to import instruction_set_at, read_pointer
+from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
+from tests.toolchains import FIXTURES, build_cortex_a15, build_cortex_m3
+
+if TYPE_CHECKING:
+	from collections.abc import Mapping
+	from enum import IntEnum
 
 
 def test_load_functions_from_dwarf_and_symtab(fixture_elfs: dict[str, Path]) -> None:
@@ -164,7 +177,105 @@ def test_load_reads_an_emit_relocs_link_as_the_same_link_without_them(
 		emitted.layouts,
 		emitted.relocations,
 		emitted.sections,
-	) == (plain.functions, plain.objects, plain.layouts, plain.relocations, plain.sections)
+		address_taken(emitted),
+	) == (
+		plain.functions,
+		plain.objects,
+		plain.layouts,
+		plain.relocations,
+		plain.sections,
+		address_taken(plain),
+	)
+
+
+def test_load_keeps_an_emit_relocs_links_references_and_the_functions_they_take(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	plain = load(fixture_elfs["nopie"])
+	emitted = load(fixture_elfs["emit_relocs"])
+	assert (
+		plain.link_references,
+		frozenset(reference.kind for reference in emitted.link_references),
+		sorted(emitted.functions[address].name for address in linked_address_taken(emitted)),
+	) == (
+		(),
+		frozenset(ReferenceKind),
+		["main", "plain_target", "undef_ptr_target"],
+	)
+
+
+@pytest.mark.parametrize("literals", ["-mslow-flash-data", "-mpure-code"])
+def test_a_cortex_m3_link_takes_the_functions_its_movw_movt_pairs_address(
+	tmp_path: Path, literals: str
+) -> None:
+	program = load(
+		build_cortex_m3(
+			(FIXTURES / "reproducers" / "code_address_callback.c",),
+			tmp_path / "image.elf",
+			"-O2",
+			literals,
+			"-Wl,--emit-relocs",
+		)
+	)
+	assert sorted(program.functions[address].name for address in linked_address_taken(program)) == [
+		"deep",
+		"fault",
+		"reset",
+		"small",
+	]
+
+
+def test_an_x86_64_link_leaves_the_functions_it_references_through_a_section_to_the_byte_scan(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	emitted = load(fixture_elfs["emit_relocs"])
+	through_a_section = Counter(
+		emitted.functions[function].name
+		for reference in emitted.link_references
+		if reference.kind is ReferenceKind.ADDRESS
+		and not reference.symbol
+		and (function := read_pointer(emitted, reference.slot, None)) is not None
+		and function in emitted.functions
+	)
+	assert (
+		through_a_section,
+		{
+			emitted.functions[address].name
+			for address in address_taken(emitted) - linked_address_taken(emitted)
+		}
+		>= through_a_section.keys(),
+	) == (
+		Counter(
+			{
+				"dev_init": 3,
+				"frame_dummy": 1,
+				"__do_global_dtors_aux": 1,
+				"driver_a_open": 1,
+				"driver_a_close": 1,
+				"driver_b_open": 1,
+				"driver_b_close": 1,
+				"node_fn": 1,
+				"anon_fn": 1,
+			}
+		),
+		True,
+	)
+
+
+@pytest.mark.parametrize(
+	("relocations", "table"),
+	[
+		pytest.param(ArmRelocation, ENUM_RELOC_TYPE_ARM, id="arm"),
+		pytest.param(X64Relocation, ENUM_RELOC_TYPE_x64, id="x86-64"),
+		pytest.param(I386Relocation, ENUM_RELOC_TYPE_i386, id="i386"),
+	],
+)
+def test_each_relocation_type_dctr_classifies_has_the_elf_abi_number(
+	relocations: type[IntEnum], table: Mapping[str, int]
+) -> None:
+	assert [(member.name, member.value) for member in relocations] == [
+		(member.name, table[member.name]) for member in relocations
+	]
 
 
 def test_load_rejects_unknown_machines(tmp_path: Path, fixture_elfs: dict[str, Path]) -> None:

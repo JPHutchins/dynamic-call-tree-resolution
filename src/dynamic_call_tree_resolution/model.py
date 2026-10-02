@@ -180,6 +180,24 @@ class Relocation(Struct):
 	type_name: str
 
 
+class ReferenceKind(StrEnum):
+	"""What a reference the linker resolved does with its symbol."""
+
+	ADDRESS = "address"
+	CALL = "call"
+	OTHER = "other"
+
+
+class LinkReference(Struct):
+	"""A reference the linker resolved and kept in the image (``--emit-relocs``)."""
+
+	slot: Address
+	symbol: str
+	"""Empty for a reference to a whole section."""
+	value: Address
+	kind: ReferenceKind
+
+
 class Section(Struct):
 	"""One allocated section of the image, as linked."""
 
@@ -202,6 +220,8 @@ class Program(Struct):
 	"""Spans of data inside code, such as literal pools, from ARM `$d` mapping symbols."""
 	arm_code: tuple[tuple[Address, Address], ...]
 	"""Sorted spans of A32 code, from ARM `$a` mapping symbols."""
+	link_references: tuple[LinkReference, ...] = ()
+	"""The references into allocated sections that the linker kept; none without ``--emit-relocs``."""
 
 
 class ThreadRoot(Struct):

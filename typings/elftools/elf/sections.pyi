@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from typing import Literal, overload
+from typing import Literal, TypedDict, overload
 
 class SectionHeader:
 	sh_addr: int
@@ -18,6 +18,34 @@ class Section:
 	def __getitem__(self, name: Literal["sh_type"]) -> str: ...
 	def data(self) -> bytes: ...
 
+class SymbolInfo(TypedDict):
+	type: Literal[
+		"STT_NOTYPE",
+		"STT_OBJECT",
+		"STT_FUNC",
+		"STT_SECTION",
+		"STT_FILE",
+		"STT_COMMON",
+		"STT_TLS",
+		"STT_NUM",
+		"STT_RELC",
+		"STT_SRELC",
+		"STT_LOOS",
+		"STT_HIOS",
+		"STT_LOPROC",
+		"STT_HIPROC",
+	]
+	bind: Literal[
+		"STB_LOCAL",
+		"STB_GLOBAL",
+		"STB_WEAK",
+		"STB_NUM",
+		"STB_LOOS",
+		"STB_HIOS",
+		"STB_LOPROC",
+		"STB_HIPROC",
+	]
+
 class Symbol:
 	name: str
 	@overload
@@ -25,7 +53,7 @@ class Symbol:
 	@overload
 	def __getitem__(self, name: Literal["st_shndx"]) -> int | str: ...
 	@overload
-	def __getitem__(self, name: Literal["st_info"]) -> dict[str, str]: ...
+	def __getitem__(self, name: Literal["st_info"]) -> SymbolInfo: ...
 
 class SymbolTableSection(Section):
 	def get_symbol(self, n: int) -> Symbol: ...

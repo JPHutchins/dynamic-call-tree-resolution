@@ -61,6 +61,9 @@ from dynamic_call_tree_resolution.model import (
 	FunctionSignature as FunctionSignature,
 )
 from dynamic_call_tree_resolution.model import (
+	LinkReference as LinkReference,
+)
+from dynamic_call_tree_resolution.model import (
 	Machine as Machine,
 )
 from dynamic_call_tree_resolution.model import (
@@ -74,6 +77,9 @@ from dynamic_call_tree_resolution.model import (
 )
 from dynamic_call_tree_resolution.model import (
 	Provenance as Provenance,
+)
+from dynamic_call_tree_resolution.model import (
+	ReferenceKind as ReferenceKind,
 )
 from dynamic_call_tree_resolution.model import (
 	Relocation as Relocation,

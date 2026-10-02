@@ -21,6 +21,7 @@ from dynamic_call_tree_resolution.model import (
 	Address,
 	InstructionFamily,
 	InstructionSet,
+	ReferenceKind,
 	thumb_twin,
 )
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
@@ -36,14 +37,34 @@ if TYPE_CHECKING:
 
 def address_taken(program: Program) -> frozenset[Address]:
 	functions = frozenset(program.functions)
-	return frozenset(
-		address
-		for address in functions
-		if any(
-			address.to_bytes(program.pointer_size, program.byte_order) in section.data
-			for section in program.sections.values()
+	return (
+		frozenset(
+			address
+			for address in functions
+			if any(
+				address.to_bytes(program.pointer_size, program.byte_order) in section.data
+				for section in program.sections.values()
+			)
 		)
-	) | frozenset(Address(value) for value in _computed_addresses(program) if value in functions)
+		| frozenset(Address(value) for value in _computed_addresses(program) if value in functions)
+		| linked_address_taken(program)
+	)
+
+
+def linked_address_taken(program: Program) -> frozenset[Address]:
+	starts = {normalized(address, program.machine): address for address in program.functions}
+	return frozenset(
+		function
+		for reference in program.link_references
+		if reference.kind is ReferenceKind.ADDRESS
+		and reference.symbol
+		and (
+			function := reference.value
+			if reference.value in program.functions
+			else starts.get(normalized(reference.value, program.machine))
+		)
+		is not None
+	)
 
 
 def referenced_only_at(
