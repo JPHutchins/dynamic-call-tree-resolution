@@ -75,8 +75,9 @@ def test_load_reads_each_functions_declaration_and_every_symbol_at_its_address(
 	program = load(zephyr_fixtures / "sensor-two-impl" / "zephyr" / "zephyr.elf")
 	assert (
 		[
-			program.declarations[address]
+			(PurePosixPath(declaration.unit).parts[-7:], declaration.location)
 			for address in sorted(program.symbol_addresses["bus_fault.isra.0"])
+			for declaration in (program.declarations[address],)
 		],
 		sorted(
 			PurePosixPath(program.declarations[address].unit).name
@@ -86,9 +87,9 @@ def test_load_reads_each_functions_declaration_and_every_symbol_at_its_address(
 		program.symbol_addresses["__l_vfprintf"].isdisjoint(program.declarations),
 	) == (
 		[
-			Declaration(
-				unit="/build/source/testbeds/zephyr/arch/arm/core/cortex_m/fault.c",
-				location=SourceLocation(file="fault.c", line=345, column=12),
+			(
+				("testbeds", "zephyr", "arch", "arm", "core", "cortex_m", "fault.c"),
+				SourceLocation(file="fault.c", line=345, column=12),
 			)
 		],
 		["soc_config.c", "uart_stellaris.c"],
