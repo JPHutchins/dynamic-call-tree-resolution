@@ -42,10 +42,15 @@ def parse_records(text: str) -> tuple[StackUsage, ...]:
 
 
 def load_stack_usages(build_directory: Path) -> tuple[StackUsage, ...]:
+	return tuple(record for _, records in stack_usage_files(build_directory) for record in records)
+
+
+def stack_usage_files(
+	build_directory: Path,
+) -> tuple[tuple[Path, tuple[StackUsage, ...]], ...]:
 	return tuple(
-		record
+		(stack_file, parse_stack_usage(stack_file))
 		for stack_file in sorted(build_directory.glob("**/*.su"))
-		for record in parse_stack_usage(stack_file)
 	)
 
 

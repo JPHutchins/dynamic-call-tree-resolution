@@ -11,6 +11,7 @@ from salix import Struct as SalixStruct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import EdgeKind
+from dynamic_call_tree_resolution.linker import Membership
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
 	Address,
@@ -228,6 +229,9 @@ class AnalysisSummary(Struct):
 	worst_case_entry: str
 	worst_case: BoundedStack | UnboundedStack
 	rtos: str
+	membership: Membership = Membership.NAMES
+	never_linked_entry_points: int | None = None
+	"""Counted apart from ``discarded_entry_points`` only when the linker decides membership."""
 
 
 class ReferrerReport(Struct):

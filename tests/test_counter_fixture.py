@@ -38,7 +38,7 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		total_slots=250,
 		unresolved_slots=144,
 		resolved_targets=200,
-		indirect_call_sites=101,
+		indirect_call_sites=83,
 		total_functions=729,
 		entry_points=148,
 		discarded_entry_points=286,

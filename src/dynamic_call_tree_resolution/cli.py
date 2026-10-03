@@ -13,7 +13,13 @@ from elftools.common.exceptions import ELFError
 from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import own_targets, per_caller_candidates, resolve
-from dynamic_call_tree_resolution.callgraph import CallEdge, load_callgraph
+from dynamic_call_tree_resolution.callgraph import CallEdge, callgraph_files, load_callgraph
+from dynamic_call_tree_resolution.linker import (
+	Linkage,
+	Membership,
+	held_artifacts,
+	linker_records,
+)
 from dynamic_call_tree_resolution.loader import defined_function_names, elf_machine, load
 from dynamic_call_tree_resolution.model import Machine, Residue
 from dynamic_call_tree_resolution.pexplorer import PexplorerReport, load_pexplorer
@@ -52,7 +58,11 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	thread_frames,
 	thread_reports,
 )
-from dynamic_call_tree_resolution.stack_usage import StackUsage, load_stack_usages
+from dynamic_call_tree_resolution.stack_usage import (
+	StackUsage,
+	load_stack_usages,
+	stack_usage_files,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
@@ -284,32 +294,73 @@ class _Expansion(Struct):
 	counts: SlotCounts
 	unresolved: tuple[UnresolvedSlot, ...]
 	image_functions: frozenset[str]
+	membership: Membership
+	dropped: Mapping[Linkage, frozenset[str]]
+	"""The entries the linker left out of the image, by why; empty under name membership."""
+
+
+class _Artifacts(Struct):
+	"""The ``.ci`` edges and ``.su`` frames a stack graph is built from."""
+
+	edges: tuple[CallEdge, ...]
+	frames: tuple[StackUsage, ...]
+	membership: Membership
+	held: frozenset[str]
+	"""The functions the linker kept, by frame key; empty when the ELF's names decide."""
+	dropped: Mapping[Linkage, frozenset[str]]
+
+
+def _artifacts(build_directory: Path, elf: Path | None) -> _Artifacts:
+	match linker_records(elf) if elf is not None else None:
+		case None:
+			return _Artifacts(
+				edges=load_callgraph(build_directory),
+				frames=load_stack_usages(build_directory),
+				membership=Membership.NAMES,
+				held=frozenset(),
+				dropped={},
+			)
+		case records:
+			held = held_artifacts(
+				records,
+				build_directory,
+				callgraph_files(build_directory),
+				stack_usage_files(build_directory),
+			)
+			return _Artifacts(
+				edges=held.edges,
+				frames=held.frames,
+				membership=Membership.LINKER,
+				held=held.held,
+				dropped=held.dropped,
+			)
 
 
 def _expand_from_elf(
-	edges: tuple[CallEdge, ...],
-	frames: tuple[StackUsage, ...],
+	artifacts: _Artifacts,
 	elf: Path,
 	*,
 	narrow_by_signature: bool,
 	rtos: RtosChoice,
 ) -> _Expansion:
-	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in edges)
 	program = load(elf)
-	image_functions = frozenset(frame_key(name) for name in defined_function_names(elf))
-	in_image_edges = tuple(edge for edge in edges if frame_key(edge.caller) in image_functions)
+	image_functions = _image_functions(artifacts, elf)
+	in_image_edges = tuple(
+		edge for edge in artifacts.edges if frame_key(edge.caller) in image_functions
+	)
+	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
 	model = rtos_model(program, rtos)
 	resolution = resolve(program, model)
 	targets_by_caller, fallback = per_caller_candidates(
 		program, resolution.sites, resolution.assignments, narrow_by_signature=narrow_by_signature
 	)
 	unresolved = unresolved_slots(program, resolution.assignments)
-	threads_edges, threads_frames = _thread_graph(program, model, in_image_edges, frames)
-	expanded = expand_indirect_calls(edges, targets_by_caller, fallback)
+	threads_edges, threads_frames = _thread_graph(program, model, in_image_edges, artifacts.frames)
+	expanded = expand_indirect_calls(artifacts.edges, targets_by_caller, fallback)
 	return _Expansion(
 		expanded=(*expanded, *threads_edges),
 		in_image_edges=(*in_image_edges, *threads_edges),
-		frames=(*frames, *threads_frames),
+		frames=(*artifacts.frames, *threads_frames),
 		threads=frozenset(thread.name for thread in model.threads),
 		own_edges={
 			thread: (*expanded, *own)
@@ -323,7 +374,19 @@ def _expand_from_elf(
 		counts=slot_counts(resolution.assignments, unresolved),
 		unresolved=unresolved,
 		image_functions=image_functions,
+		membership=artifacts.membership,
+		dropped=artifacts.dropped,
 	)
+
+
+def _image_functions(artifacts: _Artifacts, elf: Path) -> frozenset[str]:
+	match artifacts.membership:
+		case Membership.LINKER:
+			return artifacts.held
+		case Membership.NAMES:
+			return frozenset(frame_key(name) for name in defined_function_names(elf))
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _thread_graph(
@@ -407,16 +470,15 @@ def stack(
 	] = None,
 ) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
-	edges = load_callgraph(build_directory)
-	frames = load_stack_usages(build_directory)
+	artifacts = _artifacts(build_directory, elf)
 	expansion = (
-		_expand_from_elf(edges, frames, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
+		_expand_from_elf(artifacts, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
 		if elf is not None
 		else None
 	)
 	graph = stack_graph(
-		expansion.expanded if expansion is not None else edges,
-		expansion.frames if expansion is not None else frames,
+		expansion.expanded if expansion is not None else artifacts.edges,
+		expansion.frames if expansion is not None else artifacts.frames,
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
 	)
 	reports = stack_reports(graph)
@@ -435,7 +497,8 @@ def stack(
 		print(
 			f"resolved slots: {expansion.counts.resolved_slots} "
 			f"| indirect call sites: {expansion.indirect_sites} "
-			f"| not in the image: {len(reports) - len(kept)}"
+			f"| not in the image: {_not_in_image(len(reports) - len(kept), expansion)} "
+			f"| membership: {expansion.membership}"
 			f"{' | narrowed by signature' if narrow_by_signature else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
@@ -443,6 +506,20 @@ def stack(
 		print(_render(report))
 	for step in steps or ():
 		print(_render_step(step))
+
+
+def _not_in_image(names_dropped: int, expansion: _Expansion) -> str:
+	match expansion.membership:
+		case Membership.NAMES:
+			return str(names_dropped)
+		case Membership.LINKER:
+			return (
+				f"{sum(map(len, expansion.dropped.values()))} "
+				f"(discarded: {len(expansion.dropped[Linkage.DISCARDED])}, "
+				f"never linked: {len(expansion.dropped[Linkage.NEVER_LINKED])})"
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _own_graphs(expansion: _Expansion | None) -> Mapping[str, StackGraph]:
@@ -490,8 +567,7 @@ def summary(
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
 	expansion = _expand_from_elf(
-		load_callgraph(build_directory),
-		load_stack_usages(build_directory),
+		_artifacts(build_directory, elf),
 		elf,
 		narrow_by_signature=narrow_by_signature,
 		rtos=rtos,
@@ -509,10 +585,18 @@ def summary(
 		indirect_call_sites=expansion.indirect_sites,
 		total_functions=len(expansion.program.functions),
 		entry_points=len(kept),
-		discarded_entry_points=len(reports) - len(kept),
+		discarded_entry_points=len(reports)
+		- len(kept)
+		+ len(expansion.dropped.get(Linkage.DISCARDED, frozenset())),
 		worst_case_entry=worst.entry,
 		worst_case=stack_bound_report(worst.bound),
 		rtos=expansion.rtos.name,
+		membership=expansion.membership,
+		never_linked_entry_points=(
+			len(expansion.dropped[Linkage.NEVER_LINKED])
+			if expansion.membership is Membership.LINKER
+			else None
+		),
 	)
 	print(msgspec.json.format(msgspec.json.encode(report).decode()))
 
