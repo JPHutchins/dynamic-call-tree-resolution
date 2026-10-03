@@ -210,7 +210,7 @@ class Declaration(Struct):
 	"""A function's declaration, within the compilation unit that defines it."""
 
 	unit: str
-	"""The file name of the unit's source."""
+	"""The unit's source, as DWARF names it."""
 	location: SourceLocation
 
 

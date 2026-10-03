@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 from collections import Counter
+from functools import partial
 from itertools import groupby
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.identity import stack_name
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
 	Address,
@@ -165,6 +167,7 @@ def per_caller_candidates(
 	resolved: tuple[SlotAssignment, ...],
 	*,
 	narrow_by_signature: bool = False,
+	names: Mapping[Address, str] | None = None,
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
 	signatures = (
@@ -172,37 +175,38 @@ def per_caller_candidates(
 	)
 	fallback_addresses = address_taken(program)
 
+	name = partial(stack_name, program, names)
+
 	def caller_name(site: CallSite) -> str:
-		return frame_key(program.functions[site.caller_address].name)
+		return frame_key(name(site.caller_address))
 
 	targets_by_caller = {
 		caller: frozenset(
-			name
+			target
 			for site in group
-			for name in (
-				frozenset(
-					program.functions[address].name
-					for address in call_site_candidates(program, site, resolved_map, signatures)
-				)
+			for target in (
+				frozenset(map(name, call_site_candidates(program, site, resolved_map, signatures)))
 				or {INDIRECT_CALLEE}
 			)
 		)
 		for caller, group in groupby(sorted(sites, key=caller_name), key=caller_name)
 	}
-	return (
-		targets_by_caller,
-		frozenset(program.functions[address].name for address in fallback_addresses),
-	)
+	return (targets_by_caller, frozenset(map(name, fallback_addresses)))
 
 
 def own_targets(
-	program: Program, thread: ThreadSites, resolved: tuple[SlotAssignment, ...]
+	program: Program,
+	thread: ThreadSites,
+	resolved: tuple[SlotAssignment, ...],
+	names: Mapping[Address, str] | None = None,
 ) -> ThreadTargets:
-	targets_by_caller, _ = per_caller_candidates(program, thread.sites, resolved)
+	targets_by_caller, _ = per_caller_candidates(program, thread.sites, resolved, names=names)
 	return ThreadTargets(
-		reached=frozenset(frame_key(program.functions[address].name) for address in thread.reached),
+		reached=frozenset(
+			frame_key(stack_name(program, names, address)) for address in thread.reached
+		),
 		targets_by_caller=targets_by_caller,
 		sites_by_caller=Counter(
-			frame_key(program.functions[site.caller_address].name) for site in thread.sites
+			frame_key(stack_name(program, names, site.caller_address)) for site in thread.sites
 		),
 	)

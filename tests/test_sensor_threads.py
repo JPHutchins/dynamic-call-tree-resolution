@@ -60,7 +60,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="motion_tid")
 	assert (thermal, capsys.readouterr().out.splitlines()[1:10]) == (
 		[
-			"thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 12)",
+			"thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 11)",
 			"thermal_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"adt7420_sample_fetch +32 = 72 bytes via indirect: candidate",
@@ -69,7 +69,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 			"adt7420_init +8 = 144 bytes via indirect: fallback (recursion)",
 		],
 		[
-			"motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 12)",
+			"motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 11)",
 			"motion_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"bmi160_sample_fetch +24 = 64 bytes via indirect: candidate",

@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import posixpath
 from itertools import groupby
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from salix import Struct
@@ -26,36 +28,61 @@ class Identities(Struct):
 	"""The image's functions, found by declaration or by symbol name."""
 
 	by_declaration: Mapping[Declaration, Address]
-	"""Each declaration exactly one function has."""
-	by_symbol: Mapping[str, Address]
-	"""Each symbol name exactly one function has."""
+	"""Each declaration exactly one function has, by its unit's file name."""
+	by_symbol: Mapping[str, frozenset[Address]]
 	names: Mapping[Address, str]
-	"""Each function's name, unless another function's name has the same frame key."""
+	"""Each function's name in the stack graph, qualified by its unit where names collide."""
+	copies: Mapping[str, tuple[str, ...]]
+	"""The names of the functions that share each colliding frame key."""
 
 
-def identities(program: Program) -> Identities:
-	starts = {
-		normalized(address, program.machine): function.name
-		for address, function in program.functions.items()
-	}
-	collided = frozenset(
-		key
-		for key, group in groupby(sorted(map(frame_key, starts.values())))
-		if len(tuple(group)) > 1
-	)
+def identities(program: Program, names: Mapping[Address, str]) -> Identities:
 	return Identities(
 		by_declaration={
 			declaration: next(iter(addresses))
 			for declaration, addresses in _addresses_by_declaration(program).items()
 			if len(addresses) == 1
 		},
-		by_symbol={
-			name: next(iter(addresses))
-			for name, addresses in program.symbol_addresses.items()
-			if len(addresses) == 1
+		by_symbol=program.symbol_addresses,
+		names=names,
+		copies={
+			key: tuple(sorted(name for _, name in copies))
+			for key, group in groupby(
+				sorted(
+					(frame_key(function.name), names[normalized(address, program.machine)])
+					for address, function in program.functions.items()
+					if normalized(address, program.machine) in names
+				),
+				key=_copy_key,
+			)
+			for copies in (tuple(group),)
+			if len(copies) > 1
 		},
-		names={start: name for start, name in starts.items() if frame_key(name) not in collided},
 	)
+
+
+def stack_name(program: Program, names: Mapping[Address, str] | None, address: Address) -> str:
+	return (
+		names.get(normalized(address, program.machine), program.functions[address].name)
+		if names is not None
+		else program.functions[address].name
+	)
+
+
+def stack_names(program: Program) -> Mapping[Address, str]:
+	return {
+		start: name
+		for _, group in groupby(
+			sorted(
+				(
+					(frame_key(function.name), normalized(address, program.machine), function.name)
+					for address, function in program.functions.items()
+				),
+			),
+			key=_key,
+		)
+		for start, name in _distinct_names(tuple(group), program.declarations).items()
+	}
 
 
 def canonical_edges(
@@ -65,12 +92,10 @@ def canonical_edges(
 	edges: tuple[CallEdge, ...],
 ) -> tuple[CallEdge, ...]:
 	return tuple(
-		CallEdge(
-			caller=_canonical(known, unit, locations, edge.caller),
-			callee=_canonical(known, unit, locations, edge.callee),
-			kind=edge.kind,
-		)
+		CallEdge(caller=caller, callee=callee, kind=edge.kind)
 		for edge in edges
+		for caller in _named(known, unit, locations, edge.caller)
+		for callee in _named(known, unit, locations, edge.callee)
 	)
 
 
@@ -81,27 +106,74 @@ def canonical_frames(
 	usages: tuple[StackUsage, ...],
 ) -> tuple[StackUsage, ...]:
 	return tuple(
-		StackUsage(
-			function=_canonical(known, unit, locations, usage.function),
-			bytes=usage.bytes,
-			bounded=usage.bounded,
-		)
+		StackUsage(function=function, bytes=usage.bytes, bounded=usage.bounded)
 		for usage in usages
+		for function in _named(known, unit, locations, usage.function)
 	)
 
 
-def _canonical(
+def _named(
 	known: Identities, unit: str, locations: Mapping[str, SourceLocation], name: str
-) -> str:
+) -> tuple[str, ...]:
 	match (
 		known.by_declaration.get(Declaration(unit=unit, location=location))
 		if (location := locations.get(name)) is not None
-		else known.by_symbol.get(name)
+		else None
 	):
 		case None:
-			return name
+			return tuple(
+				sorted(
+					known.names[address]
+					for address in known.by_symbol.get(name, frozenset())
+					if address in known.names
+				)
+			) or known.copies.get(frame_key(name), (name,))
 		case address:
-			return known.names.get(address, name)
+			return (known.names.get(address, name),)
+
+
+def _distinct_names(
+	group: tuple[tuple[str, Address, str], ...], declarations: Mapping[Address, Declaration]
+) -> Mapping[Address, str]:
+	match group:
+		case ((_, start, name),):
+			return {start: name}
+		case _:
+			return _qualified(group, declarations)
+
+
+def _qualified(
+	group: tuple[tuple[str, Address, str], ...], declarations: Mapping[Address, Declaration]
+) -> Mapping[Address, str]:
+	paths = {
+		start: PurePosixPath(posixpath.normpath(declarations[start].unit)).parts
+		if start in declarations
+		else ()
+		for _, start, _ in group
+	}
+	depth = next(
+		(
+			depth
+			for depth in range(1, max(map(len, paths.values()), default=0) + 1)
+			if all(paths.values())
+			and len({parts[-depth:] for parts in paths.values()}) == len(group)
+		),
+		None,
+	)
+	return {
+		start: f"{key}@{'/'.join(paths[start][-depth:])}"
+		if depth is not None
+		else f"{key}@{start:#x}"
+		for key, start, _ in group
+	}
+
+
+def _copy_key(entry: tuple[str, str]) -> str:
+	return entry[0]
+
+
+def _key(entry: tuple[str, Address, str]) -> str:
+	return entry[0]
 
 
 def _addresses_by_declaration(program: Program) -> Mapping[Declaration, frozenset[Address]]:
@@ -109,7 +181,15 @@ def _addresses_by_declaration(program: Program) -> Mapping[Declaration, frozense
 		declaration: frozenset(address for _, address in group)
 		for declaration, group in groupby(
 			sorted(
-				((declaration, address) for address, declaration in program.declarations.items()),
+				(
+					(
+						Declaration(
+							unit=PurePosixPath(declaration.unit).name, location=declaration.location
+						),
+						address,
+					)
+					for address, declaration in program.declarations.items()
+				),
 				key=_declaration_order,
 			),
 			key=_declared,
