@@ -50,10 +50,13 @@ def parse_callgraph(path: Path) -> tuple[CallEdge, ...]:
 
 
 def load_callgraph(build_directory: Path) -> tuple[CallEdge, ...]:
+	return tuple(edge for _, edges in callgraph_files(build_directory) for edge in edges)
+
+
+def callgraph_files(build_directory: Path) -> tuple[tuple[Path, tuple[CallEdge, ...]], ...]:
 	return tuple(
-		edge
+		(callgraph_file, parse_callgraph(callgraph_file))
 		for callgraph_file in sorted(build_directory.glob("**/*.ci"))
-		for edge in parse_callgraph(callgraph_file)
 	)
 
 

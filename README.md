@@ -145,7 +145,7 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
-resolved slots: 106 | indirect call sites: 101 | not in the image: 286 | rtos: zephyr
+resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
 gpio_emul_port_set_masked_raw: unbounded, at least 6288 bytes (recursion: 222, unmeasured: 153)
 ...
 poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
@@ -170,7 +170,7 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
-resolved slots: 106 | indirect call sites: 101 | not in the image: 286 | rtos: zephyr
+resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
 poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
 poll_state_thread +80 = 80 bytes (recursion)
 can_msgq_put +32 = 112 bytes via indirect: fallback (recursion)
@@ -196,8 +196,8 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - A *resolved* site or slot has at least one candidate, and an *exact* site has
   exactly one, in the image as linked.
 - `compare` counts the indirect instructions it extracts; `stack --elf` counts the
-  `__indirect_call` edges in the `.ci` files. The `stack --elf` header ends with the
-  RTOS model when one is detected.
+  `__indirect_call` edges of the functions in the image. The `stack --elf` header ends
+  with the RTOS model when one is detected.
 - `stack --elf` expands every indirect edge to its site candidates plus the fallback,
   every address-taken function, except inside a thread's tree (below). `z_shell_write`
   has no candidates, so its edge is the fallback alone, and every function it reaches
@@ -211,10 +211,16 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - A plain `N bytes` bounds every path of the call graph as given. That graph is still
   incomplete ([#96], [#113]).
 - Entry points come from the `.ci` graph, which also records functions the linker
-  discarded, such as `shell_readline`. With an ELF, calls from discarded functions are
-  ignored, so a function only they call, such as `work_queue_main`, is an entry, and
-  discarded entries are dropped and counted as `not in the image`. Without one, every
+  discarded, such as `shell_readline`. With an ELF, calls from functions not in the
+  image are ignored, so a function only they call, such as `work_queue_main`, is an
+  entry, and entries not in the image are dropped and counted. Without an ELF, every
   `.ci` entry is listed.
+- `membership` names what decides "in the image". `linker` reads the final link's map
+  (`zephyr_final.map`) and its `--print-gc-sections` listing (`gc-sections.txt`) beside
+  the ELF, per object: a function is in the image if its object was linked and its
+  section kept. Weak copies and same-named statics are told apart, and the count splits
+  into `discarded` (by `--gc-sections`) and `never linked` (an archive member the link
+  never pulled in). Without them, `names` matches the names the ELF defines.
 - With an ELF and an RTOS model, each static thread is an entry named for its thread,
   such as `thermal_tid`. It is `z_thread_entry`'s frame and calls, with the indirect call
   that starts the thread going to that thread's entry alone. The entry function is then
@@ -278,7 +284,7 @@ z_thread_entry: arch_new_thread@0x124c, arch_switch_to_main_thread@0x127c
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
-resolved slots: 127 | indirect call sites: 60 | not in the image: 337 | rtos: zephyr
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 motion_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 15)
 thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)
 ...
@@ -286,7 +292,7 @@ thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
-resolved slots: 127 | indirect call sites: 60 | not in the image: 337 | rtos: zephyr
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
@@ -299,7 +305,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
-resolved slots: 127 | indirect call sites: 60 | not in the image: 337 | rtos: zephyr
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 motion_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 15)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record

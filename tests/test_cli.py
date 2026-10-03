@@ -181,7 +181,7 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	stack(build_directory, elf=fixture_elfs["nopie"])
 	output = capsys.readouterr().out
 	assert output.splitlines() == [
-		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0",
+		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0 | membership: names",
 		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)",
 		"plain_target: 64 bytes",
 	]
@@ -200,7 +200,8 @@ def test_cli_stack_header_says_when_sites_are_narrowed_by_signature(
 	(build_directory / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	stack(build_directory, elf=fixture_elfs["nopie"], narrow_by_signature=True)
 	assert capsys.readouterr().out.splitlines()[0] == (
-		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0 | narrowed by signature"
+		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0 | membership: names"
+		" | narrowed by signature"
 	)
 
 
@@ -221,7 +222,7 @@ def test_cli_stack_with_elf_drops_entries_the_linker_discarded(
 	)
 	stack(build_directory, fixture_elfs["nopie"])
 	assert capsys.readouterr().out.splitlines() == [
-		"resolved slots: 11 | indirect call sites: 0 | not in the image: 1",
+		"resolved slots: 11 | indirect call sites: 0 | not in the image: 1 | membership: names",
 		"main: 80 bytes",
 	]
 
@@ -241,7 +242,7 @@ def test_cli_stack_with_elf_makes_an_entry_of_what_only_discarded_functions_call
 	)
 	stack(build_directory, fixture_elfs["nopie"])
 	assert capsys.readouterr().out.splitlines() == [
-		"resolved slots: 11 | indirect call sites: 0 | not in the image: 1",
+		"resolved slots: 11 | indirect call sites: 0 | not in the image: 1 | membership: names",
 		"plain_target: 64 bytes",
 	]
 
@@ -403,7 +404,7 @@ def test_cli_stack_path_with_elf_names_the_indirect_edge(
 	(build_directory / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
 	stack(build_directory, elf=fixture_elfs["nopie"], path="main")
 	assert capsys.readouterr().out.splitlines() == [
-		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0",
+		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0 | membership: names",
 		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)",
 		"main +16 = 16 bytes (recursion)",
 		"plain_target +64 = 80 bytes via indirect: candidate",
