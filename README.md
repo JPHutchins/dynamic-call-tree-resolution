@@ -464,6 +464,18 @@ a machine builds it. The `qemu_cortex_m3` testbeds link with `--emit-relocs` and
 `--print-gc-sections`, and each ships its `zephyr_final.map` and the final link's
 `gc-sections.txt` next to the ELF ([#150]).
 
+Each Arm testbed also ships `descriptors.txt`: for every indirect call, what GCC saw it
+load its callee from (a struct field, a parameter, a variable or an array element), and
+every store of a function pointer into a field or a variable. A read-only GCC plugin in
+`testbeds/plugin` records them. The Zephyr SDK compiler cannot load plugins, so
+`replay.py` compiles each C file again with Arm GNU, twice, and fails unless the code
+with the plugin disassembles the same as without it ([#158]). For a local build:
+
+```sh
+nix develop
+uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/build/hello
+```
+
 ## References
 
 - [pexplorer](https://paulwuertz.github.io/pexplorer/) — Paul Würtz's browser-based
@@ -482,6 +494,7 @@ a machine builds it. The `qemu_cortex_m3` testbeds link with `--emit-relocs` and
 [#131]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/131
 [#150]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/150
 [#151]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/151
+[#158]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/158
 [#159]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/159
 [#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
 [#185]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/185

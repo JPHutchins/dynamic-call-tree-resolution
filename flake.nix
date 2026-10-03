@@ -54,6 +54,26 @@
           };
           buildVersion = builtins.substring 0 12 zephyrProject.revision;
         };
+      descriptorPlugin =
+        pkgs:
+        pkgs.stdenv.mkDerivation {
+          name = "dctr-descriptor-plugin";
+          src = ./testbeds/plugin/descriptors.cc;
+          dontUnpack = true;
+          nativeBuildInputs = [ pkgs.gcc-arm-embedded-14 ];
+          buildInputs = [ pkgs.gmp ];
+          buildPhase = ''
+            runHook preBuild
+            $CXX -std=c++17 -shared -fPIC -fno-rtti -O1 -Wall -Wextra \
+              -I$(arm-none-eabi-gcc -print-file-name=plugin)/include $src -o descriptors.so
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            install -D descriptors.so -t $out/lib
+            runHook postInstall
+          '';
+        };
       fixtures =
         pkgs:
         let
@@ -61,6 +81,7 @@
         in
         pkgs.callPackage ./testbeds/fixtures.nix {
           inherit (toolchain) sdk buildVersion;
+          descriptorPlugin = descriptorPlugin pkgs;
           pythonEnv = toolchain.zephyr.pythonEnv.override {
             packageOverrides = _: _: { tree-sitter-cmake = null; };
           };
@@ -72,6 +93,7 @@
             fileset = pkgs.lib.fileset.unions [
               ./testbeds/manifest
               ./testbeds/.west
+              ./testbeds/plugin/replay.py
               ./tests/fixtures/sensor-two-impl-app
               ./tests/fixtures/sensor-threads-app
             ];
@@ -124,6 +146,15 @@
         }
       );
 
-      packages.x86_64-linux.fixtures = fixtures nixpkgs.legacyPackages.x86_64-linux;
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          descriptor-plugin = descriptorPlugin pkgs;
+        }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 { fixtures = fixtures pkgs; }
+      );
     };
 }

@@ -48,7 +48,7 @@ nix_format_check = Task(
 fix = Sequential(lint_fix, format, c_format, nix_format)
 actionlint = Task("uv run actionlint", when=".github")
 mypy = Task("uv run mypy .")
-pyright = Task("uv run pyright src tests tasks.py")
+pyright = Task("uv run pyright src tests tasks.py testbeds/plugin")
 
 typecheck = Parallel(mypy, pyright)
 test = Task("uv run pytest -v -m 'not slow'", agent_format=("--junitxml {report}", "junit"))
@@ -105,6 +105,12 @@ testbeds_lock = Sequential(
 	help="regenerate testbeds/west2nix.toml, the Nix-hashed lock `nix build .#fixtures` fetches "
 	"from; run in `nix develop .#testbeds` after editing testbeds/manifest/west.yml",
 )
+builds = tuple(
+	cast(
+		"list[dict[str, str]]",
+		json.loads((Path(__file__).parent / "testbeds/builds.json").read_text()),
+	)
+)
 testbeds = Parallel(
 	Task(
 		"uv run --group build west build -b {BOARD} -d ../.camas/build/{NAME} -s {SOURCE} "
@@ -112,15 +118,28 @@ testbeds = Parallel(
 		cwd=Path("testbeds"),
 		env={"ZEPHYR_TOOLCHAIN_VARIANT": "{TOOLCHAIN}"},
 	),
-	variants=tuple(
-		cast(
-			"list[dict[str, str]]",
-			json.loads((Path(__file__).parent / "testbeds/builds.json").read_text()),
-		)
-	),
+	variants=builds,
 	help="build the zephyr testbeds of testbeds/builds.json into .camas/build/{NAME}; run in "
 	"`nix develop .#testbeds`, which provides the Zephyr SDK, dtc and the multilib host gcc "
 	"native_sim links with",
+)
+
+descriptor_plugin = Task(
+	"nix build .#descriptor-plugin -o .camas/descriptor-plugin",
+	help="build testbeds/plugin's read-only GCC plugin, which records what each indirect call "
+	"loads its callee from and every store of a function pointer",
+)
+descriptors = Sequential(
+	descriptor_plugin,
+	Parallel(
+		Task(
+			"uv run python testbeds/plugin/replay.py .camas/build/{NAME} "
+			".camas/descriptor-plugin/lib/descriptors.so ."
+		),
+		variants=tuple(build for build in builds if build["TOOLCHAIN"] == "zephyr"),
+	),
+	help="replay each Arm testbed's C compiles through the plugin into "
+	".camas/build/{NAME}/zephyr/descriptors.txt; run in `nix develop` after `testbeds`",
 )
 
 pexplorer_testdata = Sequential(

@@ -40,6 +40,13 @@ _TOKEN: Final = re.compile(r'"(?P<quoted>[^"]*)"|(?P<unterminated>")|[{}:]|[^\s{
 _LOCATED: Final = re.compile(r"(?P<path>.+):(?P<line>\d+):(?P<column>\d+)")
 
 
+class IndirectCall(Struct):
+	"""A ``.ci`` edge to ``__indirect_call``."""
+
+	caller: str
+	location: SourceLocation
+
+
 class _VcgEdge(Struct):
 	"""One raw ``.ci`` edge entry."""
 
@@ -74,6 +81,15 @@ def callgraph_locations(path: Path) -> Mapping[str, SourceLocation]:
 	}
 
 
+def indirect_calls(path: Path) -> tuple[IndirectCall, ...]:
+	return tuple(
+		IndirectCall(caller=entry["sourcename"], location=location)
+		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph")[0].get("edge", [])
+		if entry.get("targetname") == "__indirect_call"
+		if (location := _location(entry.get("label", ""))) is not None
+	)
+
+
 def _label_location(label: str) -> SourceLocation | None:
 	"""Where a ``.ci`` node's label says its function is declared.
 
@@ -85,14 +101,29 @@ def _label_location(label: str) -> SourceLocation | None:
 	True
 	"""
 	match label.split(r"\n")[1:2]:
-		case [place] if (located := _LOCATED.fullmatch(place)) is not None:
+		case [place]:
+			return _location(place)
+		case _:
+			return None
+
+
+def _location(place: str) -> SourceLocation | None:
+	"""A ``path:line:column`` place.
+
+	>>> _location("/src/kernel/timeout.c:397:4")
+	SourceLocation(file='timeout.c', line=397, column=4)
+	>>> _location("timeout.c") is None
+	True
+	"""
+	match _LOCATED.fullmatch(place):
+		case None:
+			return None
+		case located:
 			return SourceLocation(
 				file=PurePosixPath(located["path"]).name,
 				line=int(located["line"]),
 				column=int(located["column"]),
 			)
-		case _:
-			return None
 
 
 def _parse_vcg(text: str) -> tuple[_VcgEdge, ...]:
