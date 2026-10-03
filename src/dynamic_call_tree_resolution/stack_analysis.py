@@ -103,6 +103,7 @@ def expand_indirect_calls(
 	fallback: frozenset[str],
 	*,
 	exact: bool = False,
+	field_targets_by_caller: Mapping[str, frozenset[str]] | None = None,
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
@@ -112,6 +113,7 @@ def expand_indirect_calls(
 		for callee, kind in (
 			_expansion(
 				targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
+				(field_targets_by_caller or {}).get(frame_key(edge.caller), frozenset[str]()),
 				fallback,
 				graph_targets,
 				exact=exact,
@@ -125,6 +127,7 @@ def expand_indirect_calls(
 
 def _expansion(
 	targets: frozenset[str],
+	field_targets: frozenset[str],
 	fallback: frozenset[str],
 	graph_targets: Callable[[str], frozenset[str]],
 	*,
@@ -132,10 +135,22 @@ def _expansion(
 ) -> list[tuple[str, EdgeKind]]:
 	candidates = targets - {INDIRECT_CALLEE}
 	return sorted(
-		(graph_target, EdgeKind.CANDIDATE if target in candidates else EdgeKind.FALLBACK)
+		(graph_target, _indirect_kind(target, candidates, field_targets))
 		for target in candidates
 		| (fallback if INDIRECT_CALLEE in targets or not exact else frozenset[str]())
 		for graph_target in graph_targets(target)
+	)
+
+
+def _indirect_kind(
+	target: str, candidates: frozenset[str], field_targets: frozenset[str]
+) -> EdgeKind:
+	return (
+		EdgeKind.FIELD
+		if target in field_targets
+		else EdgeKind.CANDIDATE
+		if target in candidates
+		else EdgeKind.FALLBACK
 	)
 
 
@@ -167,6 +182,8 @@ class ThreadTargets(Struct):
 	reached: frozenset[str]
 	targets_by_caller: Mapping[str, frozenset[str]]
 	sites_by_caller: Mapping[str, int]
+	field_targets_by_caller: Mapping[str, frozenset[str]] = {}
+	"""The targets each caller reaches only through ``--narrow-by-field``."""
 
 
 def own_thread_edges(
@@ -177,6 +194,7 @@ def own_thread_edges(
 	own: ThreadTargets,
 	targets_by_caller: Mapping[str, frozenset[str]],
 	fallback: frozenset[str],
+	field_targets_by_caller: Mapping[str, frozenset[str]] | None = None,
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
@@ -199,13 +217,25 @@ def own_thread_edges(
 			for callee, kind in (
 				(
 					sorted(
-						(node(graph_target), EdgeKind.CANDIDATE)
+						(
+							node(graph_target),
+							_indirect_kind(
+								target,
+								own.targets_by_caller[frame_key(edge.caller)],
+								own.field_targets_by_caller.get(
+									frame_key(edge.caller), frozenset[str]()
+								),
+							),
+						)
 						for target in own.targets_by_caller[frame_key(edge.caller)]
 						for graph_target in graph_targets(target)
 					)
 					if frame_key(edge.caller) in complete
 					else _expansion(
 						targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
+						(field_targets_by_caller or {}).get(
+							frame_key(edge.caller), frozenset[str]()
+						),
 						fallback,
 						graph_targets,
 						exact=False,
