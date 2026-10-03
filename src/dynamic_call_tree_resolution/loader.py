@@ -350,7 +350,7 @@ def _declarations(dwarf: DWARFInfo | None) -> dict[Address, Declaration]:
 	files = {unit.cu_offset: _file_names(dwarf, unit) for unit in units}
 	return {
 		Address(_int_value(low_pc)): Declaration(
-			unit=PurePosixPath(_string_value(unit.get_top_DIE().attributes["DW_AT_name"])).name,
+			unit=_string_value(unit.get_top_DIE().attributes["DW_AT_name"]),
 			location=SourceLocation(
 				file=file_name,
 				line=_int_value(declared.attributes["DW_AT_decl_line"]),

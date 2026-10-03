@@ -146,9 +146,9 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-cmd_prompt_off: unbounded, at least 6280 bytes (recursion: 227, unmeasured: 149)
+cmd_prompt_off: unbounded, at least 6264 bytes (recursion: 233, unmeasured: 149)
 ...
-poll_state_thread: unbounded, at least 6072 bytes (recursion: 227, unmeasured: 149)
+poll_state_thread: unbounded, at least 6056 bytes (recursion: 233, unmeasured: 149)
 ...
 ```
 
@@ -171,13 +171,13 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-poll_state_thread: unbounded, at least 6072 bytes (recursion: 227, unmeasured: 149)
+poll_state_thread: unbounded, at least 6056 bytes (recursion: 233, unmeasured: 149)
 poll_state_thread +80 = 80 bytes (recursion)
 bg_thread_main +80 = 160 bytes via indirect: fallback (recursion)
 boot_banner +32 = 192 bytes via indirect: fallback (recursion)
 ...
-timer_core_arm +48 = 6072 bytes via static
-hwtimer_set_tick_one_shot +0 = 6072 bytes via static (unmeasured)
+timer_core_arm +48 = 6056 bytes via static
+hwtimer_set_tick_one_shot +0 = 6056 bytes via static (unmeasured)
 ```
 
 ```console
@@ -219,6 +219,12 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   section kept. Weak copies and same-named statics are told apart, and the count splits
   into `discarded` (by `--gc-sections`) and `never linked` (an archive member the link
   never pulled in). Without them, `names` matches the names the ELF defines.
+- With an ELF, each `.ci` node and `.su` record is joined to its function by its
+  declaration (file, line, column, within its compilation unit) or by its symbol, so an
+  alias such as `z_reschedule_locked` shares its body's frame and calls. Functions that
+  share a name are told apart by the shortest end of their unit's path that differs, as
+  `uart_stellaris_init@soc_config.c` and `uart_stellaris_init@uart_stellaris.c`;
+  `analyze` and `referrers` keep the image's own names.
 - With an ELF and an RTOS model, each static thread is an entry named for its thread,
   such as `thermal_tid`. It is `z_thread_entry`'s frame and calls, with the indirect call
   that starts the thread going to that thread's entry alone. The entry function is then
@@ -283,15 +289,15 @@ z_thread_entry: arch_new_thread@0x124c, arch_switch_to_main_thread@0x127c
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 12)
-thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 12)
+motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 11)
+thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 11)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 12)
+thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 11)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -304,7 +310,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 12)
+motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 11)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate

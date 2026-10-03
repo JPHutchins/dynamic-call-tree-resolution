@@ -102,10 +102,12 @@ def test_a_never_linked_objects_edges_and_frames_are_left_out_of_the_graph(
 	)
 	assert (
 		"z_impl_k_msgq_get" in {frame_key(edge.caller) for edge in load_callgraph(build_directory)},
-		"z_impl_k_msgq_get" in {frame_key(edge.caller) for edge in held.edges},
+		"z_impl_k_msgq_get"
+		in {frame_key(edge.caller) for _, edges in held.callgraphs for edge in edges},
 		"z_impl_k_msgq_get"
 		in {frame_key(usage.function) for usage in load_stack_usages(build_directory)},
-		"z_impl_k_msgq_get" in {frame_key(usage.function) for usage in held.frames},
+		"z_impl_k_msgq_get"
+		in {frame_key(usage.function) for _, usages in held.usages for usage in usages},
 		"z_impl_k_msgq_get" in held.dropped[Linkage.NEVER_LINKED],
 	) == (True, False, True, False, True)
 

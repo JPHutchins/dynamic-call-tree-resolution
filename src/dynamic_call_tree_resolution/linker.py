@@ -57,12 +57,10 @@ class Membership(StrEnum):
 
 
 class HeldArtifacts(Struct):
-	"""The call edges and frames of the function copies the final link kept."""
+	"""Each artifact's call edges and frames of the function copies the final link kept."""
 
-	edges: tuple[CallEdge, ...]
-	frames: tuple[StackUsage, ...]
-	held: frozenset[str]
-	"""The frame keys of every function with a kept copy."""
+	callgraphs: tuple[tuple[Path, tuple[CallEdge, ...]], ...]
+	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...]
 	dropped: Mapping[Linkage, frozenset[str]]
 	"""The frame keys of the functions with no kept copy, by why the link has none."""
 
@@ -197,36 +195,65 @@ def held_artifacts(
 	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...],
 ) -> HeldArtifacts:
 	edges = tuple(
-		(edge, linkage(records, build_directory, path, edge.caller.rsplit(":", 1)[-1]))
+		(
+			path,
+			tuple(
+				(edge, linkage(records, build_directory, path, edge.caller.rsplit(":", 1)[-1]))
+				for edge in file_edges
+			),
+		)
 		for path, file_edges in callgraphs
-		for edge in file_edges
 	)
 	frames = tuple(
-		(usage, linkage(records, build_directory, path, usage.function))
+		(
+			path,
+			tuple(
+				(usage, linkage(records, build_directory, path, usage.function))
+				for usage in file_usages
+			),
+		)
 		for path, file_usages in usages
-		for usage in file_usages
 	)
 	held = frozenset(
 		(
-			*(frame_key(edge.caller) for edge, linked in edges if linked is Linkage.IN_IMAGE),
-			*(frame_key(usage.function) for usage, linked in frames if linked is Linkage.IN_IMAGE),
+			*(
+				frame_key(edge.caller)
+				for _, linked_edges in edges
+				for edge, linked in linked_edges
+				if linked is Linkage.IN_IMAGE
+			),
+			*(
+				frame_key(usage.function)
+				for _, linked_frames in frames
+				for usage, linked in linked_frames
+				if linked is Linkage.IN_IMAGE
+			),
 		)
 	)
 	discarded = (
 		frozenset(
-			frame_key(usage.function) for usage, linked in frames if linked is Linkage.DISCARDED
+			frame_key(usage.function)
+			for _, linked_frames in frames
+			for usage, linked in linked_frames
+			if linked is Linkage.DISCARDED
 		)
 		- held
 	)
 	return HeldArtifacts(
-		edges=tuple(edge for edge, linked in edges if linked is Linkage.IN_IMAGE),
-		frames=tuple(usage for usage, linked in frames if linked is Linkage.IN_IMAGE),
-		held=held,
+		callgraphs=tuple(
+			(path, tuple(edge for edge, linked in linked_edges if linked is Linkage.IN_IMAGE))
+			for path, linked_edges in edges
+		),
+		usages=tuple(
+			(path, tuple(usage for usage, linked in linked_frames if linked is Linkage.IN_IMAGE))
+			for path, linked_frames in frames
+		),
 		dropped={
 			Linkage.DISCARDED: discarded,
 			Linkage.NEVER_LINKED: frozenset(
 				frame_key(usage.function)
-				for usage, linked in frames
+				for _, linked_frames in frames
+				for usage, linked in linked_frames
 				if linked is Linkage.NEVER_LINKED
 			)
 			- held

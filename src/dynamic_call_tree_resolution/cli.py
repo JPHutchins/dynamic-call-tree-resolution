@@ -19,6 +19,8 @@ from dynamic_call_tree_resolution.identity import (
 	canonical_edges,
 	canonical_frames,
 	identities,
+	stack_name,
+	stack_names,
 )
 from dynamic_call_tree_resolution.linker import (
 	Linkage,
@@ -27,7 +29,7 @@ from dynamic_call_tree_resolution.linker import (
 	linker_records,
 )
 from dynamic_call_tree_resolution.loader import defined_function_names, elf_machine, load
-from dynamic_call_tree_resolution.model import Machine, Residue
+from dynamic_call_tree_resolution.model import Address, Machine, Residue
 from dynamic_call_tree_resolution.pexplorer import PexplorerReport, load_pexplorer
 from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
@@ -312,48 +314,76 @@ class _Artifacts(Struct):
 	frames: tuple[StackUsage, ...]
 	membership: Membership
 	held: frozenset[str]
-	"""The functions the linker kept, by frame key; empty when the ELF's names decide."""
+	"""The frame keys of the functions the artifacts hold; the linker's choice under its
+	membership."""
 	dropped: Mapping[Linkage, frozenset[str]]
 
 
 class _Image(Struct):
-	"""An ELF image and its analysis model."""
+	"""An ELF image, its analysis model and its functions' names in the stack graph."""
 
 	elf: Path
 	program: Program
+	names: Mapping[Address, str]
 
 
 def _image(elf: Path | None) -> _Image | None:
-	return _Image(elf=elf, program=load(elf)) if elf is not None else None
+	return _loaded(elf) if elf is not None else None
+
+
+def _loaded(elf: Path) -> _Image:
+	program = load(elf)
+	return _Image(elf=elf, program=program, names=stack_names(program))
 
 
 def _artifacts(build_directory: Path, image: _Image | None) -> _Artifacts:
-	known = identities(image.program) if image is not None else None
-	callgraphs = tuple(
-		(path, _named_edges(known, path, edges)) for path, edges in callgraph_files(build_directory)
-	)
-	usages = tuple(
-		(path, _named_frames(known, path, frames))
-		for path, frames in stack_usage_files(build_directory)
-	)
+	known = identities(image.program, image.names) if image is not None else None
 	match linker_records(image.elf) if image is not None else None:
 		case None:
-			return _Artifacts(
-				edges=tuple(edge for _, edges in callgraphs for edge in edges),
-				frames=tuple(frame for _, frames in usages for frame in frames),
-				membership=Membership.NAMES,
-				held=frozenset(),
-				dropped={},
+			return _named_artifacts(
+				known,
+				callgraph_files(build_directory),
+				stack_usage_files(build_directory),
+				Membership.NAMES,
+				{},
 			)
 		case records:
-			held = held_artifacts(records, build_directory, callgraphs, usages)
-			return _Artifacts(
-				edges=held.edges,
-				frames=held.frames,
-				membership=Membership.LINKER,
-				held=held.held,
-				dropped=held.dropped,
+			held = held_artifacts(
+				records,
+				build_directory,
+				callgraph_files(build_directory),
+				stack_usage_files(build_directory),
 			)
+			return _named_artifacts(
+				known, held.callgraphs, held.usages, Membership.LINKER, held.dropped
+			)
+
+
+def _named_artifacts(
+	known: Identities | None,
+	callgraphs: tuple[tuple[Path, tuple[CallEdge, ...]], ...],
+	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...],
+	membership: Membership,
+	dropped: Mapping[Linkage, frozenset[str]],
+) -> _Artifacts:
+	edges = tuple(
+		edge for path, file_edges in callgraphs for edge in _named_edges(known, path, file_edges)
+	)
+	frames = tuple(
+		frame for path, file_frames in usages for frame in _named_frames(known, path, file_frames)
+	)
+	return _Artifacts(
+		edges=edges,
+		frames=frames,
+		membership=membership,
+		held=frozenset(
+			(
+				*(frame_key(edge.caller) for edge in edges),
+				*(frame_key(frame.function) for frame in frames),
+			)
+		),
+		dropped=dropped,
+	)
 
 
 def _named_edges(
@@ -383,7 +413,7 @@ def _expand_from_elf(
 	narrow_by_signature: bool,
 	rtos: RtosChoice,
 ) -> _Expansion:
-	image_functions = _image_functions(artifacts, image.elf)
+	image_functions = _image_functions(artifacts, image)
 	in_image_edges = tuple(
 		edge for edge in artifacts.edges if frame_key(edge.caller) in image_functions
 	)
@@ -395,11 +425,10 @@ def _expand_from_elf(
 		resolution.sites,
 		resolution.assignments,
 		narrow_by_signature=narrow_by_signature,
+		names=image.names,
 	)
 	unresolved = unresolved_slots(image.program, resolution.assignments)
-	threads_edges, threads_frames = _thread_graph(
-		image.program, model, in_image_edges, artifacts.frames
-	)
+	threads_edges, threads_frames = _thread_graph(image, model, in_image_edges, artifacts.frames)
 	expanded = expand_indirect_calls(artifacts.edges, targets_by_caller, fallback)
 	return _Expansion(
 		expanded=(*expanded, *threads_edges),
@@ -409,7 +438,7 @@ def _expand_from_elf(
 		own_edges={
 			thread: (*expanded, *own)
 			for thread, own in _own_thread_graphs(
-				image.program, model, resolution, in_image_edges, targets_by_caller, fallback
+				image, model, resolution, in_image_edges, targets_by_caller, fallback
 			).items()
 		},
 		indirect_sites=indirect_sites,
@@ -423,24 +452,27 @@ def _expand_from_elf(
 	)
 
 
-def _image_functions(artifacts: _Artifacts, elf: Path) -> frozenset[str]:
+def _image_functions(artifacts: _Artifacts, image: _Image) -> frozenset[str]:
 	match artifacts.membership:
 		case Membership.LINKER:
 			return artifacts.held
 		case Membership.NAMES:
-			return frozenset(frame_key(name) for name in defined_function_names(elf))
+			return frozenset(
+				map(frame_key, (*defined_function_names(image.elf), *image.names.values()))
+			)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
 def _thread_graph(
-	program: Program,
+	image: _Image,
 	model: RtosModel,
 	edges: tuple[CallEdge, ...],
 	frames: tuple[StackUsage, ...],
 ) -> tuple[tuple[CallEdge, ...], tuple[StackUsage, ...]]:
 	entries_by_thread = {
-		thread.name: frame_key(program.functions[thread.entry].name) for thread in model.threads
+		thread.name: frame_key(stack_name(image.program, image.names, thread.entry))
+		for thread in model.threads
 	}
 	match model.trampoline:
 		case None:
@@ -455,7 +487,7 @@ def _thread_graph(
 
 
 def _own_thread_graphs(
-	program: Program,
+	image: _Image,
 	model: RtosModel,
 	resolution: ProgramResolution,
 	edges: tuple[CallEdge, ...],
@@ -472,8 +504,8 @@ def _own_thread_graphs(
 					edges,
 					trampoline,
 					thread,
-					frame_key(program.functions[entries[thread]].name),
-					own_targets(program, sites, resolution.assignments),
+					frame_key(stack_name(image.program, image.names, entries[thread])),
+					own_targets(image.program, sites, resolution.assignments, image.names),
 					targets_by_caller,
 					fallback,
 				)
@@ -611,7 +643,7 @@ def summary(
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
-	image = _Image(elf=elf, program=load(elf))
+	image = _loaded(elf)
 	expansion = _expand_from_elf(
 		_artifacts(build_directory, image),
 		image,
