@@ -185,6 +185,22 @@ def test_sensor_threads_names_who_holds_each_thread_entry(zephyr_fixtures: Path)
 	)
 
 
+def test_sensor_two_impl_names_the_record_that_holds_each_thread_entry(
+	zephyr_fixtures: Path,
+) -> None:
+	assert {
+		row.name: tuple(referrer.holder for referrer in row.referrers)
+		for row in referrers_report(
+			load(zephyr_fixtures / "sensor-two-impl" / "zephyr" / "zephyr.elf")
+		)
+		if row.name in {"motion_thread", "thermal_thread", "z_thread_entry"}
+	} == {
+		"motion_thread": ("_k_thread_data_motion_tid",),
+		"thermal_thread": ("_k_thread_data_thermal_tid",),
+		"z_thread_entry": ("arch_new_thread", "arch_switch_to_main_thread"),
+	}
+
+
 def _addresses_by_name(program: Program, elf: Path) -> dict[str, frozenset[int]]:
 	with elf.open("rb") as stream:
 		symbols = ELFFile(stream).get_section_by_name(".symtab")

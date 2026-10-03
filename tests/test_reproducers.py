@@ -56,6 +56,8 @@ if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
 	from pathlib import Path
 
+	from _pytest.mark.structures import ParameterSet
+
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.callgraph import CallEdge
 	from dynamic_call_tree_resolution.model import CallSite, Program
@@ -190,11 +192,16 @@ CANDIDATES = (
 
 STACK_IMAGES = tuple(
 	Image(
-		source="code_address_callback.c",
+		source=source,
 		platform=Platform.CORTEX_M3,
 		flags=(level, "-fstack-usage", "-fcallgraph-info=su,da", *variant),
 	)
-	for variant in ((), ("-DPARTIAL",))
+	for source, variant in (
+		("code_address_callback.c", ()),
+		("code_address_callback.c", ("-DPARTIAL",)),
+		("relative_table.c", ()),
+		("relative_table.c", ("-Wl,--emit-relocs",)),
+	)
 	for level in ARM_LEVELS
 )
 
@@ -384,9 +391,19 @@ def _reachable(edges: tuple[CallEdge, ...], entry: str) -> frozenset[str]:
 	)
 
 
-@pytest.mark.parametrize(
-	"image", [pytest.param(image, id=_image_id(image)) for image in STACK_IMAGES]
-)
+def _stack_image(image: Image) -> ParameterSet:
+	return pytest.param(
+		image,
+		id=_image_id(image),
+		marks=_unsound(
+			(96,)
+			if image.source == "relative_table.c" and "-Wl,--emit-relocs" not in image.flags
+			else ()
+		),
+	)
+
+
+@pytest.mark.parametrize("image", [_stack_image(image) for image in STACK_IMAGES])
 def test_the_expanded_graph_reaches_every_target_the_run_called(
 	image: Image, outcomes: Mapping[Image, Outcome]
 ) -> None:
