@@ -70,7 +70,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-exclude = ["testbeds", "references"]
+exclude = ["testbeds/zephyr", "testbeds/modules", "references"]
 
 [tool.ruff.lint]
 # preview is on solely to reach the DOC rules; explicit-preview-rules keeps
@@ -159,6 +159,7 @@ runtime-evaluated-base-classes = ["msgspec.Struct"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
 "typings/**" = ["D", "N802"] # stub files mirror the external library's API names
+"testbeds/plugin/replay.py" = ["INP001"] # a script the fixture build runs, not a package
 
 [tool.ruff.format]
 indent-style = "tab"
@@ -170,12 +171,12 @@ disallow_any_explicit = true
 disallow_any_expr = true
 enable_error_code = ["exhaustive-match"]
 mypy_path = "typings"
-exclude = ["testbeds", "references", "typings", "build", "dist", ".camas"]
+exclude = ["^testbeds/(?!plugin/|$)", "references", "typings", "build", "dist", ".camas"]
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["src", "tests", "tasks.py"]
-exclude = ["**/__pycache__", ".venv*", "testbeds/**", "references/**", "typings/**"]
+include = ["src", "tests", "tasks.py", "testbeds/plugin"]
+exclude = ["**/__pycache__", ".venv*", "references/**", "typings/**"]
 stubPath = "typings"
 
 [tool.coverage.run]

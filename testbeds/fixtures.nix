@@ -10,6 +10,8 @@
   gitMinimal,
   glibc,
   removeReferencesTo,
+  gcc-arm-embedded-14,
+  descriptorPlugin,
   src,
   builds,
   buildVersion,
@@ -41,13 +43,20 @@ stdenv.mkDerivation {
     export HOME=$TMPDIR
     mkdir -p build
   ''
-  + lib.concatMapStrings (build: ''
-    ZEPHYR_TOOLCHAIN_VARIANT=${build.TOOLCHAIN} west build -b ${build.BOARD} -d build/${build.NAME} \
-      -s ${build.SOURCE} -- ${lib.escapeShellArg "-DEXTRA_CFLAGS=${build.EXTRA_CFLAGS}"} \
-      ${lib.escapeShellArg "-DEXTRA_LDFLAGS=${build.EXTRA_LDFLAGS}"} \
-      -DBUILD_VERSION=${buildVersion} > build/${build.NAME}.log 2>&1 \
-      || { cat build/${build.NAME}.log; exit 1; }
-  '') builds
+  + lib.concatMapStrings (
+    build:
+    ''
+      ZEPHYR_TOOLCHAIN_VARIANT=${build.TOOLCHAIN} west build -b ${build.BOARD} -d build/${build.NAME} \
+        -s ${build.SOURCE} -- ${lib.escapeShellArg "-DEXTRA_CFLAGS=${build.EXTRA_CFLAGS}"} \
+        ${lib.escapeShellArg "-DEXTRA_LDFLAGS=${build.EXTRA_LDFLAGS}"} \
+        -DBUILD_VERSION=${buildVersion} > build/${build.NAME}.log 2>&1 \
+        || { cat build/${build.NAME}.log; exit 1; }
+    ''
+    + lib.optionalString (build.TOOLCHAIN == "zephyr") ''
+      PATH=${gcc-arm-embedded-14}/bin:$PATH python3 plugin/replay.py build/${build.NAME} \
+        ${descriptorPlugin}/lib/descriptors.so "$(realpath ..)"
+    ''
+  ) builds
   + ''
     runHook postBuild
   '';
@@ -63,6 +72,9 @@ stdenv.mkDerivation {
       install -D build/${build.NAME}/zephyr/zephyr.exe -t $out/${build.NAME}/zephyr \
         || install -D build/${build.NAME}/zephyr/zephyr.elf -t $out/${build.NAME}/zephyr
     ''
+    + lib.optionalString (build.TOOLCHAIN == "zephyr") ''
+      install -D -m 644 build/${build.NAME}/zephyr/descriptors.txt -t $out/${build.NAME}/zephyr
+    ''
     + lib.optionalString (lib.hasInfix "--print-gc-sections" build.EXTRA_LDFLAGS) ''
       install -D -m 644 build/${build.NAME}/zephyr/zephyr_final.map -t $out/${build.NAME}/zephyr
       sed -n '/Linking C executable zephyr\/zephyr.elf$/,$p' build/${build.NAME}.log \
@@ -72,7 +84,8 @@ stdenv.mkDerivation {
   ) builds
   + ''
     find $out -type f -exec remove-references-to -t $out -t ${sdk} -t ${stdenv.cc.cc} \
-      -t ${stdenv.cc.cc.lib} -t ${stdenv.cc.libc} -t ${glibc.dev} {} +
+      -t ${stdenv.cc.cc.lib} -t ${stdenv.cc.libc} -t ${glibc.dev} -t ${gcc-arm-embedded-14} \
+      -t ${descriptorPlugin} {} +
     runHook postInstall
   '';
 }
