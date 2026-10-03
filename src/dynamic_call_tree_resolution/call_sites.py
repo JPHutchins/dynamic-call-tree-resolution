@@ -172,38 +172,77 @@ def per_caller_candidates(
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	names: Mapping[Address, str] | None = None,
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
+	return (
+		{
+			caller: frozenset(target for _, target, _ in group)
+			for caller, group in groupby(
+				_caller_targets(
+					program, sites, resolved, narrow_by_signature, narrowed_by_field, names
+				),
+				key=_caller,
+			)
+		},
+		frozenset(map(partial(stack_name, program, names), address_taken(program))),
+	)
+
+
+def field_only_targets(
+	program: Program,
+	sites: tuple[CallSite, ...],
+	resolved: tuple[SlotAssignment, ...],
+	*,
+	narrow_by_signature: bool = False,
+	narrowed_by_field: tuple[NarrowedSpan, ...],
+	names: Mapping[Address, str] | None = None,
+) -> Mapping[str, frozenset[str]]:
+	"""The targets each caller reaches only through ``--narrow-by-field``, by caller key."""
+	return {
+		caller: only
+		for caller, group in groupby(
+			_caller_targets(
+				program, sites, resolved, narrow_by_signature, narrowed_by_field, names
+			),
+			key=_caller,
+		)
+		for entries in (tuple(group),)
+		for only in (
+			frozenset(target for _, target, by_field in entries if by_field)
+			- frozenset(target for _, target, by_field in entries if not by_field),
+		)
+		if only
+	}
+
+
+def _caller_targets(
+	program: Program,
+	sites: tuple[CallSite, ...],
+	resolved: tuple[SlotAssignment, ...],
+	narrow_by_signature: bool,
+	narrowed_by_field: tuple[NarrowedSpan, ...],
+	names: Mapping[Address, str] | None,
+) -> tuple[tuple[str, str, bool], ...]:
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
 	signatures = (
 		signatures_by_slot(unresolved_slots(program, resolved)) if narrow_by_signature else None
 	)
-	fallback_addresses = address_taken(program)
-
 	name = partial(stack_name, program, names)
-
-	def caller_name(site: CallSite) -> str:
-		return frame_key(name(site.caller_address))
-
-	targets_by_caller = {
-		caller: frozenset(
-			target
-			for site in group
-			for target in (
-				frozenset(
-					map(
-						name,
-						narrowed(
-							call_site_candidates(program, site, resolved_map, signatures),
-							narrowed_by_field,
-							site.site_address,
-						),
-					)
-				)
-				or {INDIRECT_CALLEE}
+	return tuple(
+		sorted(
+			(frame_key(name(site.caller_address)), target, bool(field_targets))
+			for site in sites
+			for chased in (call_site_candidates(program, site, resolved_map, signatures),)
+			for field_targets in (
+				frozenset[Address]()
+				if chased
+				else narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
 			)
+			for target in frozenset(map(name, chased or field_targets)) or {INDIRECT_CALLEE}
 		)
-		for caller, group in groupby(sorted(sites, key=caller_name), key=caller_name)
-	}
-	return (targets_by_caller, frozenset(map(name, fallback_addresses)))
+	)
+
+
+def _caller(entry: tuple[str, str, bool]) -> str:
+	return entry[0]
 
 
 def own_targets(
@@ -211,8 +250,11 @@ def own_targets(
 	thread: ThreadSites,
 	resolved: tuple[SlotAssignment, ...],
 	names: Mapping[Address, str] | None = None,
+	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 ) -> ThreadTargets:
-	targets_by_caller, _ = per_caller_candidates(program, thread.sites, resolved, names=names)
+	targets_by_caller, _ = per_caller_candidates(
+		program, thread.sites, resolved, narrowed_by_field=narrowed_by_field, names=names
+	)
 	return ThreadTargets(
 		reached=frozenset(
 			frame_key(stack_name(program, names, address)) for address in thread.reached
@@ -220,5 +262,8 @@ def own_targets(
 		targets_by_caller=targets_by_caller,
 		sites_by_caller=Counter(
 			frame_key(stack_name(program, names, site.caller_address)) for site in thread.sites
+		),
+		field_targets_by_caller=field_only_targets(
+			program, thread.sites, resolved, narrowed_by_field=narrowed_by_field, names=names
 		),
 	)

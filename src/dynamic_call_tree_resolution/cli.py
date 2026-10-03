@@ -12,7 +12,12 @@ from cyclopts import App, Parameter
 from elftools.common.exceptions import ELFError
 from salix import Struct
 
-from dynamic_call_tree_resolution.call_sites import own_targets, per_caller_candidates, resolve
+from dynamic_call_tree_resolution.call_sites import (
+	field_only_targets,
+	own_targets,
+	per_caller_candidates,
+	resolve,
+)
 from dynamic_call_tree_resolution.callgraph import CallEdge, callgraph_files, callgraph_locations
 from dynamic_call_tree_resolution.descriptors import load_descriptors
 from dynamic_call_tree_resolution.field_narrowing import field_narrowings
@@ -464,17 +469,31 @@ def _expand_from_elf(
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
 	model = rtos_model(image.program, rtos)
 	resolution = resolve(image.program, model)
+	narrowed_by_field = _narrowed_by_field(image.elf, image.program) if narrow_by_field else ()
 	targets_by_caller, fallback = per_caller_candidates(
 		image.program,
 		resolution.sites,
 		resolution.assignments,
 		narrow_by_signature=narrow_by_signature,
-		narrowed_by_field=_narrowed_by_field(image.elf, image.program) if narrow_by_field else (),
+		narrowed_by_field=narrowed_by_field,
+		names=image.names,
+	)
+	field_targets_by_caller = field_only_targets(
+		image.program,
+		resolution.sites,
+		resolution.assignments,
+		narrow_by_signature=narrow_by_signature,
+		narrowed_by_field=narrowed_by_field,
 		names=image.names,
 	)
 	unresolved = unresolved_slots(image.program, resolution.assignments)
 	threads_edges, threads_frames = _thread_graph(image, model, in_image_edges, artifacts.frames)
-	expanded = expand_indirect_calls(artifacts.edges, targets_by_caller, fallback)
+	expanded = expand_indirect_calls(
+		artifacts.edges,
+		targets_by_caller,
+		fallback,
+		field_targets_by_caller=field_targets_by_caller,
+	)
 	return _Expansion(
 		expanded=(*expanded, *threads_edges),
 		in_image_edges=(*in_image_edges, *threads_edges),
@@ -483,7 +502,16 @@ def _expand_from_elf(
 		own_edges={
 			thread: (*expanded, *own)
 			for thread, own in _own_thread_graphs(
-				image, model, resolution, in_image_edges, targets_by_caller, fallback
+				image,
+				model,
+				resolution,
+				in_image_edges,
+				_Targets(
+					by_caller=targets_by_caller,
+					field_by_caller=field_targets_by_caller,
+					fallback=fallback,
+					narrowed_by_field=narrowed_by_field,
+				),
 			).items()
 		},
 		indirect_sites=indirect_sites,
@@ -531,13 +559,22 @@ def _thread_graph(
 			assert_never(unreachable)
 
 
+class _Targets(Struct):
+	"""The whole image's targets for the indirect calls, by caller key."""
+
+	by_caller: Mapping[str, frozenset[str]]
+	field_by_caller: Mapping[str, frozenset[str]]
+	"""Reached only through ``--narrow-by-field``."""
+	fallback: frozenset[str]
+	narrowed_by_field: tuple[NarrowedSpan, ...]
+
+
 def _own_thread_graphs(
 	image: _Image,
 	model: RtosModel,
 	resolution: ProgramResolution,
 	edges: tuple[CallEdge, ...],
-	targets_by_caller: Mapping[str, frozenset[str]],
-	fallback: frozenset[str],
+	targets: _Targets,
 ) -> Mapping[str, tuple[CallEdge, ...]]:
 	entries = {thread.name: thread.entry for thread in model.threads}
 	match model.trampoline:
@@ -550,9 +587,16 @@ def _own_thread_graphs(
 					trampoline,
 					thread,
 					frame_key(stack_name(image.program, image.names, entries[thread])),
-					own_targets(image.program, sites, resolution.assignments, image.names),
-					targets_by_caller,
-					fallback,
+					own_targets(
+						image.program,
+						sites,
+						resolution.assignments,
+						image.names,
+						targets.narrowed_by_field,
+					),
+					targets.by_caller,
+					targets.fallback,
+					targets.field_by_caller,
 				)
 				for thread, sites in resolution.threads.items()
 			}

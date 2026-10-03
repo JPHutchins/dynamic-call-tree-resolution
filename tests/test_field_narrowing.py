@@ -8,12 +8,13 @@ from __future__ import annotations
 import shutil
 from typing import TYPE_CHECKING
 
+import msgspec
 import pytest
 from salix import replace
 
 from dynamic_call_tree_resolution import Machine, load, resolve
 from dynamic_call_tree_resolution.call_sites import call_site_candidates
-from dynamic_call_tree_resolution.cli import analyze
+from dynamic_call_tree_resolution.cli import analyze, stack
 from dynamic_call_tree_resolution.descriptors import (
 	Descriptors,
 	Field,
@@ -41,12 +42,13 @@ from dynamic_call_tree_resolution.model import (
 	SourceLocation,
 	StructureLayout,
 )
-from dynamic_call_tree_resolution.report import resolved_by_slot
+from dynamic_call_tree_resolution.report import StackEntryReport, UnboundedStack, resolved_by_slot
 from dynamic_call_tree_resolution.vsa import address_taken
 from tests.programs import build_program
 from tests.toolchains import FIXTURES, build_cortex_m3, run_cortex_m3
 
 if TYPE_CHECKING:
+	from collections.abc import Mapping
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.model import Program
@@ -261,6 +263,51 @@ def test_analyze_narrows_the_device_api_calls_to_what_their_fields_hold(
 			"(narrowed by field struct device_ops.init, unsound under casts)"
 		),
 	]
+
+
+def _unbounded(recursion: tuple[str, ...], unmeasured: tuple[str, ...]) -> UnboundedStack:
+	return UnboundedStack(
+		at_least_bytes=184, recursion=recursion, unmeasured=unmeasured, dynamic=(), unresolved=()
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("fixture", "bounds"),
+	[
+		(
+			"sensor-threads",
+			{
+				"motion_tid": _unbounded((), ("__aeabi_ldivmod", "memset")),
+				"thermal_tid": _unbounded(("i2c_emul_transfer",), ("__aeabi_ldivmod", "memset")),
+			},
+		),
+		(
+			"sensor-two-impl",
+			{
+				"motion_tid": _unbounded(("i2c_emul_transfer",), ("__aeabi_ldivmod",)),
+				"thermal_tid": _unbounded(("i2c_emul_transfer",), ("__aeabi_ldivmod",)),
+			},
+		),
+	],
+)
+def test_each_threads_tree_stays_below_its_own_bus_and_recurses_only_through_i2c_forwarding(
+	zephyr_fixtures: Path,
+	capsys: pytest.CaptureFixture[str],
+	fixture: str,
+	bounds: Mapping[str, UnboundedStack],
+) -> None:
+	stack(
+		zephyr_fixtures / fixture,
+		elf=zephyr_fixtures / fixture / "zephyr" / "zephyr.elf",
+		narrow_by_field=True,
+		json=True,
+	)
+	assert {
+		row.entry: row.bound
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+		if row.entry in bounds
+	} == bounds
 
 
 @pytest.mark.parametrize("level", ["-O2", "-Os"])

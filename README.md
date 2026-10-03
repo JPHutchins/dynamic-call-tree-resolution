@@ -356,6 +356,22 @@ adt7420_init +8 = 156 bytes via indirect: fallback (recursion)
 - Checking each measured mark against a static bound needs bounded rows, and is
   deferred to [#169].
 
+With `--narrow-by-field`, each thread's tree stays below its own bus emulator:
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
+...
+motion_tid: unbounded, at least 184 bytes (unmeasured: 2)
+thermal_tid: unbounded, at least 184 bytes (recursion: 1, unmeasured: 2)
+...
+```
+
+- `motion_tid` is unbounded only by two library functions without `.su` records,
+  `memset` and `__aeabi_ldivmod`.
+- `thermal_tid` also recurses through `i2c_emul_transfer`, which can forward a transfer
+  to another bus. That recursion is in the code, and no narrowing removes it.
+
 Zephyr's own `samples/synchronization`, built at `$DCTR_FIXTURES/synchronization`,
 starts `thread_b` from a record and `thread_a` with `k_thread_create`. The call that
 starts every thread goes to both:
@@ -416,10 +432,11 @@ contradicts does not hold.
   control-flow graph misses x86 `notrack` switches, and it does not model x86
   sub-registers or a few kinds of write ([#113]).
 - Inside a thread's tree, a site the thread's analysis resolved drops the fallback, so a
-  gap in that analysis drops a target there.
+  gap in that analysis drops a target there. With `--narrow-by-field`, so does a site
+  its field narrowed, and the edge reads `indirect: field`.
 - Zephyr's I2C and SPI emulators find their target in a list that init code builds in
   RAM, so their sites stay unresolved, and two threads' trees rejoin below them ([#151],
-  [#159]). `--narrow-by-field` narrows them in `analyze`, but not yet in the trees.
+  [#159]). With `--narrow-by-field`, each narrows to the emulator on its own bus.
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
 - `--narrow-by-field` assumes that every function stored into a field is stored as that

@@ -717,6 +717,53 @@ def test_depth_through_cyclic_nodes_matches_all_paths() -> None:
 	)
 
 
+def test_a_target_only_a_field_narrowing_reaches_reads_indirect_field_in_both_expansions() -> None:
+	targets = {"entry": frozenset({"cheap", "costly"})}
+	field_targets = {"entry": frozenset({"costly"})}
+	fallback = frozenset({"entry", "cheap", "costly"})
+	assert (
+		[
+			(edge.callee, edge.kind)
+			for edge in expand_indirect_calls(
+				SHARED_ENTRY_EDGES, targets, fallback, field_targets_by_caller=field_targets
+			)
+			if edge.caller == "/src/app.c:entry"
+		],
+		[
+			(edge.callee, edge.kind)
+			for edge in own_thread_edges(
+				SHARED_ENTRY_EDGES,
+				"trampoline",
+				"worker_tid",
+				"entry",
+				ThreadTargets(
+					reached=frozenset({"trampoline", "entry", "cheap", "costly"}),
+					targets_by_caller={
+						"trampoline": frozenset({"entry"}),
+						"entry": frozenset({"cheap", "costly"}),
+					},
+					sites_by_caller={"trampoline": 1, "entry": 1},
+					field_targets_by_caller=field_targets,
+				),
+				targets,
+				fallback,
+				field_targets,
+			)
+			if edge.caller.endswith(":/src/app.c:entry")
+		],
+	) == (
+		[
+			("/src/app.c:entry", EdgeKind.FALLBACK),
+			("cheap", EdgeKind.CANDIDATE),
+			("costly", EdgeKind.FIELD),
+		],
+		[
+			("worker_tid/:cheap", EdgeKind.CANDIDATE),
+			("worker_tid/:costly", EdgeKind.FIELD),
+		],
+	)
+
+
 def test_expand_indirect_calls_replaces_placeholders_with_candidates() -> None:
 	edges = (
 		CallEdge(caller="main", callee="direct_fn"),
