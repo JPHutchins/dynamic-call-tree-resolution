@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.field_narrowing import narrowed
 from dynamic_call_tree_resolution.identity import stack_name
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
@@ -35,6 +36,7 @@ from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
+	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
 	from dynamic_call_tree_resolution.vsa.analysis import ThreadSites
 
@@ -167,6 +169,7 @@ def per_caller_candidates(
 	resolved: tuple[SlotAssignment, ...],
 	*,
 	narrow_by_signature: bool = False,
+	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	names: Mapping[Address, str] | None = None,
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
@@ -185,7 +188,16 @@ def per_caller_candidates(
 			target
 			for site in group
 			for target in (
-				frozenset(map(name, call_site_candidates(program, site, resolved_map, signatures)))
+				frozenset(
+					map(
+						name,
+						narrowed(
+							call_site_candidates(program, site, resolved_map, signatures),
+							narrowed_by_field,
+							site.site_address,
+						),
+					)
+				)
 				or {INDIRECT_CALLEE}
 			)
 		)

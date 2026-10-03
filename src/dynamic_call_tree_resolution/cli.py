@@ -14,6 +14,8 @@ from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import own_targets, per_caller_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import CallEdge, callgraph_files, callgraph_locations
+from dynamic_call_tree_resolution.descriptors import load_descriptors
+from dynamic_call_tree_resolution.field_narrowing import field_narrowings
 from dynamic_call_tree_resolution.identity import (
 	Identities,
 	canonical_edges,
@@ -28,7 +30,12 @@ from dynamic_call_tree_resolution.linker import (
 	held_artifacts,
 	linker_records,
 )
-from dynamic_call_tree_resolution.loader import defined_function_names, elf_machine, load
+from dynamic_call_tree_resolution.loader import (
+	defined_function_names,
+	elf_machine,
+	line_spans,
+	load,
+)
 from dynamic_call_tree_resolution.model import Address, Machine, Residue
 from dynamic_call_tree_resolution.pexplorer import PexplorerReport, load_pexplorer
 from dynamic_call_tree_resolution.points_to import unresolved_slots
@@ -76,6 +83,7 @@ if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
 
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
+	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import Program, RtosModel, UnresolvedSlot
 
 app = App(name="dctr")
@@ -85,6 +93,12 @@ _MAX_ELF_SIZE: Final = 50 * 1024 * 1024
 _NARROW_BY_SIGNATURE: Final = Parameter(
 	help="narrow a site whose slot the image leaves unset to the functions of the "
 	"slot's DWARF signature; unsound, since a cast defeats it"
+)
+
+_NARROW_BY_FIELD: Final = Parameter(
+	help="narrow a site that loads its callee from a struct field to what that field holds: "
+	"its initializers in the image and the functions stored into it, from the descriptors.txt "
+	"beside the ELF; unsound, since a cast or a memcpy can store a function unseen"
 )
 
 _RTOS: Final = Parameter(
@@ -187,6 +201,7 @@ def analyze(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print resolved function-pointer assignments and call sites of an ELF image."""
@@ -198,6 +213,7 @@ def analyze(
 		resolution.assignments,
 		resolution.sites,
 		narrow_by_signature=narrow_by_signature,
+		narrowed_by_field=_narrowed_by_field(elf, program) if narrow_by_field else (),
 		rtos=rtos_report(program, model, resolution.seeded),
 	)
 	if json:
@@ -215,7 +231,12 @@ def analyze(
 	for site in report.call_sites:
 		label = f"{site.caller}@{site.site_address:#x}"
 		targets = ", ".join(candidate.name for candidate in site.candidates)
-		print(f"{label}: {targets or '<unresolved>'}")
+		narrowing = (
+			f" (narrowed by field {site.field}, unsound under casts)"
+			if site.field is not None
+			else ""
+		)
+		print(f"{label}: {targets or '<unresolved>'}{narrowing}")
 
 
 @app.command  # type: ignore[misc]
@@ -234,13 +255,20 @@ def compare(
 		),
 	] = None,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a resolution rollup per ELF for cross-tool comparison."""
 	paths = [path for path in tuple(_elf_paths(elfs)) if _keep(path)]
 	pexplorer_report = load_pexplorer(pexplorer) if pexplorer is not None else None
 	comparisons = [
-		_comparison(elf, pexplorer_report, narrow_by_signature=narrow_by_signature, rtos=rtos)
+		_comparison(
+			elf,
+			pexplorer_report,
+			narrow_by_signature=narrow_by_signature,
+			narrow_by_field=narrow_by_field,
+			rtos=rtos,
+		)
 		for elf in paths
 	]
 	if json:
@@ -277,7 +305,12 @@ def _elf_paths(elfs: list[Path]) -> Iterator[Path]:
 
 
 def _comparison(
-	elf: Path, pexplorer: PexplorerReport | None, *, narrow_by_signature: bool, rtos: RtosChoice
+	elf: Path,
+	pexplorer: PexplorerReport | None,
+	*,
+	narrow_by_signature: bool,
+	narrow_by_field: bool,
+	rtos: RtosChoice,
 ) -> ComparisonReport:
 	program = load(elf)
 	return build_comparison(
@@ -285,7 +318,17 @@ def _comparison(
 		program,
 		pexplorer,
 		narrow_by_signature=narrow_by_signature,
+		narrowed_by_field=_narrowed_by_field(elf, program) if narrow_by_field else (),
 		rtos=rtos_model(program, rtos),
+	)
+
+
+def _narrowed_by_field(elf: Path, program: Program) -> tuple[NarrowedSpan, ...]:
+	descriptors = load_descriptors(elf.parent / "descriptors.txt")
+	return field_narrowings(
+		program,
+		descriptors,
+		line_spans(elf, frozenset(site.location for site in descriptors.sites)),
 	)
 
 
@@ -411,6 +454,7 @@ def _expand_from_elf(
 	image: _Image,
 	*,
 	narrow_by_signature: bool,
+	narrow_by_field: bool,
 	rtos: RtosChoice,
 ) -> _Expansion:
 	image_functions = _image_functions(artifacts, image)
@@ -425,6 +469,7 @@ def _expand_from_elf(
 		resolution.sites,
 		resolution.assignments,
 		narrow_by_signature=narrow_by_signature,
+		narrowed_by_field=_narrowed_by_field(image.elf, image.program) if narrow_by_field else (),
 		names=image.names,
 	)
 	unresolved = unresolved_slots(image.program, resolution.assignments)
@@ -536,6 +581,7 @@ def stack(
 	*,
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 	path: Annotated[
 		str | None,
@@ -549,7 +595,13 @@ def stack(
 	image = _image(elf)
 	artifacts = _artifacts(build_directory, image)
 	expansion = (
-		_expand_from_elf(artifacts, image, narrow_by_signature=narrow_by_signature, rtos=rtos)
+		_expand_from_elf(
+			artifacts,
+			image,
+			narrow_by_signature=narrow_by_signature,
+			narrow_by_field=narrow_by_field,
+			rtos=rtos,
+		)
 		if image is not None
 		else None
 	)
@@ -577,6 +629,7 @@ def stack(
 			f"| not in the image: {_not_in_image(len(reports) - len(kept), expansion)} "
 			f"| membership: {expansion.membership}"
 			f"{' | narrowed by signature' if narrow_by_signature else ''}"
+			f"{' | narrowed by field' if narrow_by_field else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
 	for report in shown:
@@ -640,6 +693,7 @@ def summary(
 	elf: Path,
 	*,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
+	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
@@ -648,6 +702,7 @@ def summary(
 		_artifacts(build_directory, image),
 		image,
 		narrow_by_signature=narrow_by_signature,
+		narrow_by_field=narrow_by_field,
 		rtos=rtos,
 	)
 	reports = stack_reports(

@@ -11,6 +11,7 @@ from salix import Struct as SalixStruct
 
 from dynamic_call_tree_resolution.call_sites import call_site_candidates, resolve
 from dynamic_call_tree_resolution.callgraph import EdgeKind
+from dynamic_call_tree_resolution.field_narrowing import narrowed, narrowing_at
 from dynamic_call_tree_resolution.linker import Membership
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
@@ -42,6 +43,7 @@ from dynamic_call_tree_resolution.vsa.links import function_covering
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
+	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel, SlotAssignment
 
 
@@ -70,6 +72,8 @@ class CallSiteReport(Struct):
 	slot_address: int | None
 	member_path: str | None
 	candidates: tuple[Candidate, ...]
+	field: str | None
+	"""The struct field ``--narrow-by-field`` narrowed the candidates to; unsound under casts."""
 
 
 class SignatureReport(Struct):
@@ -347,6 +351,7 @@ def build_report(
 	call_sites: tuple[CallSite, ...],
 	*,
 	narrow_by_signature: bool = False,
+	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	rtos: RtosReport = BARE_METAL_REPORT,
 ) -> AnalysisReport:
 	unresolved = unresolved_slots(program, resolved)
@@ -379,10 +384,19 @@ def build_report(
 					else None
 				),
 				candidates=_candidates(
-					program, call_site_candidates(program, site, resolved_map, signatures)
+					program, narrowed(chased, narrowed_by_field, site.site_address)
+				),
+				field=(
+					f"{narrowing.field.record}.{narrowing.field.member}"
+					if narrowing is not None
+					else None
 				),
 			)
 			for site in call_sites
+			for chased in (call_site_candidates(program, site, resolved_map, signatures),)
+			for narrowing in (
+				None if chased else narrowing_at(narrowed_by_field, site.site_address),
+			)
 		),
 		unresolved_slots=tuple(
 			UnresolvedSlotReport(
@@ -418,6 +432,7 @@ def build_comparison(
 	pexplorer: PexplorerReport | None = None,
 	*,
 	narrow_by_signature: bool = False,
+	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	rtos: RtosModel = BARE_METAL,
 ) -> ComparisonReport:
 	resolution = resolve(program, rtos)
@@ -428,14 +443,26 @@ def build_comparison(
 	counts = slot_counts(resolved, unresolved)
 	sites = resolution.sites
 	candidate_sizes = sorted(
-		len(call_site_candidates(program, site, resolved_map, signatures)) for site in sites
+		len(
+			narrowed(
+				call_site_candidates(program, site, resolved_map, signatures),
+				narrowed_by_field,
+				site.site_address,
+			)
+		)
+		for site in sites
 	)
 	dynamic_by_caller: Mapping[Address, DynamicSites] = (
 		dynamic_sites_by_caller(pexplorer) if pexplorer is not None else {}
 	)
 	sites_by_caller = {
 		caller_address: [
-			call_site_candidates(program, site, resolved_map, signatures) for site in group
+			narrowed(
+				call_site_candidates(program, site, resolved_map, signatures),
+				narrowed_by_field,
+				site.site_address,
+			)
+			for site in group
 		]
 		for caller_address, group in groupby(sorted(sites, key=_site_address), key=_site_address)
 	}

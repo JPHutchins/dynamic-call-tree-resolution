@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from itertools import pairwise
+from itertools import groupby, pairwise
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
@@ -240,6 +240,8 @@ def _member_assignments(
 class _SlotUniverseEntry(Struct):
 	path: tuple[str | None, ...]
 	signature: FunctionSignature | None
+	record: str | None = None
+	"""The layout whose member the slot is."""
 
 
 def _assignment_slot(assignment: SlotAssignment) -> Address:
@@ -271,6 +273,27 @@ def unresolved_slots(
 	)
 
 
+def field_slots(program: Program) -> Mapping[tuple[str, str], frozenset[Address]]:
+	"""Every function-pointer slot that is a named member of a layout, by layout and member."""
+	return {
+		field: frozenset(slot for _, slot in group)
+		for field, group in groupby(
+			sorted(
+				((entry.record, member), slot)
+				for slot, entry in _slot_universe(program)
+				if entry.record is not None
+				for member in (entry.path[-1],)
+				if member is not None
+			),
+			key=_field_of,
+		)
+	}
+
+
+def _field_of(entry: tuple[tuple[str, str], Address]) -> tuple[str, str]:
+	return entry[0]
+
+
 def _slot_universe(program: Program) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
 	for data_object in program.objects.values():
 		layout = _layout_of(program, data_object)
@@ -283,7 +306,9 @@ def _slot_universe(program: Program) -> Iterable[tuple[Address, _SlotUniverseEnt
 			elif data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
 				yield from _array_element_slots(program, data_object, (data_object.name,))
 			continue
-		yield from _member_slots(data_object, 0, layout.members, (data_object.name,))
+		yield from _member_slots(
+			data_object, 0, layout.members, (data_object.name,), data_object.type_name
+		)
 	for relocation in program.relocations:
 		if relocation.target not in program.functions:
 			continue
@@ -321,7 +346,7 @@ def _array_element_slots(
 		return
 	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
 		yield from _member_slots(
-			data_object, base_offset, element_layout.members, (*path, f"[{index}]")
+			data_object, base_offset, element_layout.members, (*path, f"[{index}]"), element_name
 		)
 
 
@@ -330,6 +355,7 @@ def _member_slots(
 	base_offset: int,
 	members: tuple[Member, ...],
 	path: tuple[str | None, ...],
+	record: str | None,
 ) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
 	for member in members:
 		member_path = (*path, member.name)
@@ -337,15 +363,15 @@ def _member_slots(
 			case FunctionPointerMember(offset=offset, signature=signature):
 				yield (
 					Address(data_object.address + base_offset + offset),
-					_SlotUniverseEntry(path=member_path, signature=signature),
+					_SlotUniverseEntry(path=member_path, signature=signature, record=record),
 				)
-			case EmbeddedStructMember(offset=offset, members=inner_members):
+			case EmbeddedStructMember(offset=offset, type_name=type_name, members=inner_members):
 				yield from _member_slots(
-					data_object, base_offset + offset, inner_members, member_path
+					data_object, base_offset + offset, inner_members, member_path, type_name
 				)
 			case ArrayMember(offset=offset):
 				yield from _member_slots(
-					data_object, base_offset + offset, array_elements(member), member_path
+					data_object, base_offset + offset, array_elements(member), member_path, None
 				)
 			case StructPointerMember() | SkippedMember():
 				pass
