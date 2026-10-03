@@ -13,7 +13,13 @@ from elftools.common.exceptions import ELFError
 from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import own_targets, per_caller_candidates, resolve
-from dynamic_call_tree_resolution.callgraph import CallEdge, callgraph_files, load_callgraph
+from dynamic_call_tree_resolution.callgraph import CallEdge, callgraph_files, callgraph_locations
+from dynamic_call_tree_resolution.identity import (
+	Identities,
+	canonical_edges,
+	canonical_frames,
+	identities,
+)
 from dynamic_call_tree_resolution.linker import (
 	Linkage,
 	Membership,
@@ -60,8 +66,8 @@ from dynamic_call_tree_resolution.stack_analysis import (
 )
 from dynamic_call_tree_resolution.stack_usage import (
 	StackUsage,
-	load_stack_usages,
 	stack_usage_files,
+	stack_usage_locations,
 )
 
 if TYPE_CHECKING:
@@ -310,23 +316,37 @@ class _Artifacts(Struct):
 	dropped: Mapping[Linkage, frozenset[str]]
 
 
-def _artifacts(build_directory: Path, elf: Path | None) -> _Artifacts:
-	match linker_records(elf) if elf is not None else None:
+class _Image(Struct):
+	"""An ELF image and its analysis model."""
+
+	elf: Path
+	program: Program
+
+
+def _image(elf: Path | None) -> _Image | None:
+	return _Image(elf=elf, program=load(elf)) if elf is not None else None
+
+
+def _artifacts(build_directory: Path, image: _Image | None) -> _Artifacts:
+	known = identities(image.program) if image is not None else None
+	callgraphs = tuple(
+		(path, _named_edges(known, path, edges)) for path, edges in callgraph_files(build_directory)
+	)
+	usages = tuple(
+		(path, _named_frames(known, path, frames))
+		for path, frames in stack_usage_files(build_directory)
+	)
+	match linker_records(image.elf) if image is not None else None:
 		case None:
 			return _Artifacts(
-				edges=load_callgraph(build_directory),
-				frames=load_stack_usages(build_directory),
+				edges=tuple(edge for _, edges in callgraphs for edge in edges),
+				frames=tuple(frame for _, frames in usages for frame in frames),
 				membership=Membership.NAMES,
 				held=frozenset(),
 				dropped={},
 			)
 		case records:
-			held = held_artifacts(
-				records,
-				build_directory,
-				callgraph_files(build_directory),
-				stack_usage_files(build_directory),
-			)
+			held = held_artifacts(records, build_directory, callgraphs, usages)
 			return _Artifacts(
 				edges=held.edges,
 				frames=held.frames,
@@ -336,26 +356,50 @@ def _artifacts(build_directory: Path, elf: Path | None) -> _Artifacts:
 			)
 
 
+def _named_edges(
+	known: Identities | None, path: Path, edges: tuple[CallEdge, ...]
+) -> tuple[CallEdge, ...]:
+	return (
+		canonical_edges(known, path.name.removesuffix(".ci"), callgraph_locations(path), edges)
+		if known is not None
+		else edges
+	)
+
+
+def _named_frames(
+	known: Identities | None, path: Path, frames: tuple[StackUsage, ...]
+) -> tuple[StackUsage, ...]:
+	return (
+		canonical_frames(known, path.name.removesuffix(".su"), stack_usage_locations(path), frames)
+		if known is not None
+		else frames
+	)
+
+
 def _expand_from_elf(
 	artifacts: _Artifacts,
-	elf: Path,
+	image: _Image,
 	*,
 	narrow_by_signature: bool,
 	rtos: RtosChoice,
 ) -> _Expansion:
-	program = load(elf)
-	image_functions = _image_functions(artifacts, elf)
+	image_functions = _image_functions(artifacts, image.elf)
 	in_image_edges = tuple(
 		edge for edge in artifacts.edges if frame_key(edge.caller) in image_functions
 	)
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
-	model = rtos_model(program, rtos)
-	resolution = resolve(program, model)
+	model = rtos_model(image.program, rtos)
+	resolution = resolve(image.program, model)
 	targets_by_caller, fallback = per_caller_candidates(
-		program, resolution.sites, resolution.assignments, narrow_by_signature=narrow_by_signature
+		image.program,
+		resolution.sites,
+		resolution.assignments,
+		narrow_by_signature=narrow_by_signature,
 	)
-	unresolved = unresolved_slots(program, resolution.assignments)
-	threads_edges, threads_frames = _thread_graph(program, model, in_image_edges, artifacts.frames)
+	unresolved = unresolved_slots(image.program, resolution.assignments)
+	threads_edges, threads_frames = _thread_graph(
+		image.program, model, in_image_edges, artifacts.frames
+	)
 	expanded = expand_indirect_calls(artifacts.edges, targets_by_caller, fallback)
 	return _Expansion(
 		expanded=(*expanded, *threads_edges),
@@ -365,11 +409,11 @@ def _expand_from_elf(
 		own_edges={
 			thread: (*expanded, *own)
 			for thread, own in _own_thread_graphs(
-				program, model, resolution, in_image_edges, targets_by_caller, fallback
+				image.program, model, resolution, in_image_edges, targets_by_caller, fallback
 			).items()
 		},
 		indirect_sites=indirect_sites,
-		program=program,
+		program=image.program,
 		rtos=model,
 		counts=slot_counts(resolution.assignments, unresolved),
 		unresolved=unresolved,
@@ -470,10 +514,11 @@ def stack(
 	] = None,
 ) -> None:
 	"""Print worst-case stack depths of a build directory (.su and .ci artifacts)."""
-	artifacts = _artifacts(build_directory, elf)
+	image = _image(elf)
+	artifacts = _artifacts(build_directory, image)
 	expansion = (
-		_expand_from_elf(artifacts, elf, narrow_by_signature=narrow_by_signature, rtos=rtos)
-		if elf is not None
+		_expand_from_elf(artifacts, image, narrow_by_signature=narrow_by_signature, rtos=rtos)
+		if image is not None
 		else None
 	)
 	graph = stack_graph(
@@ -566,9 +611,10 @@ def summary(
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
+	image = _Image(elf=elf, program=load(elf))
 	expansion = _expand_from_elf(
-		_artifacts(build_directory, elf),
-		elf,
+		_artifacts(build_directory, image),
+		image,
 		narrow_by_signature=narrow_by_signature,
 		rtos=rtos,
 	)

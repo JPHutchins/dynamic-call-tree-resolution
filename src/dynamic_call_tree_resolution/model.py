@@ -198,6 +198,22 @@ class LinkReference(Struct):
 	kind: ReferenceKind
 
 
+class SourceLocation(Struct):
+	"""Where a function is declared, by file name, line and column."""
+
+	file: str
+	line: int
+	column: int
+
+
+class Declaration(Struct):
+	"""A function's declaration, within the compilation unit that defines it."""
+
+	unit: str
+	"""The file name of the unit's source."""
+	location: SourceLocation
+
+
 class Section(Struct):
 	"""One allocated section of the image, as linked."""
 
@@ -224,6 +240,10 @@ class Program(Struct):
 	"""The references into allocated sections that the linker kept; none without ``--emit-relocs``."""
 	inlined: Mapping[str, tuple[tuple[Address, Address], ...]] = {}
 	"""The code spans of each function's inlined copies, from DWARF."""
+	declarations: Mapping[Address, Declaration] = {}
+	"""Each function's declaration, by where its code starts; a clone has its origin's."""
+	symbol_addresses: Mapping[str, frozenset[Address]] = {}
+	"""Where each function symbol's code starts, aliases included."""
 
 
 class ThreadRoot(Struct):

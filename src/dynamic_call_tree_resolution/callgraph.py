@@ -7,11 +7,15 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.model import SourceLocation
+
 if TYPE_CHECKING:
+	from collections.abc import Mapping
 	from pathlib import Path
 
 
@@ -33,6 +37,7 @@ class CallEdge(Struct):
 
 
 _TOKEN: Final = re.compile(r'"(?P<quoted>[^"]*)"|(?P<unterminated>")|[{}:]|[^\s{}:"][^\s{}:]*')
+_LOCATED: Final = re.compile(r"(?P<path>.+):(?P<line>\d+):(?P<column>\d+)")
 
 
 class _VcgEdge(Struct):
@@ -58,6 +63,36 @@ def callgraph_files(build_directory: Path) -> tuple[tuple[Path, tuple[CallEdge, 
 		(callgraph_file, parse_callgraph(callgraph_file))
 		for callgraph_file in sorted(build_directory.glob("**/*.ci"))
 	)
+
+
+def callgraph_locations(path: Path) -> Mapping[str, SourceLocation]:
+	return {
+		entry["title"]: location
+		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph")[0].get("node", [])
+		if "title" in entry
+		if (location := _label_location(entry.get("label", ""))) is not None
+	}
+
+
+def _label_location(label: str) -> SourceLocation | None:
+	"""Where a ``.ci`` node's label says its function is declared.
+
+	>>> _label_location(
+	...     chr(92).join(("z_swap_irqlock", "n/src/kswap.h:199:19", "n0 bytes (static)"))
+	... )
+	SourceLocation(file='kswap.h', line=199, column=19)
+	>>> _label_location("printk") is None
+	True
+	"""
+	match label.split(r"\n")[1:2]:
+		case [place] if (located := _LOCATED.fullmatch(place)) is not None:
+			return SourceLocation(
+				file=PurePosixPath(located["path"]).name,
+				line=int(located["line"]),
+				column=int(located["column"]),
+			)
+		case _:
+			return None
 
 
 def _parse_vcg(text: str) -> tuple[_VcgEdge, ...]:

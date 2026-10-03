@@ -9,9 +9,10 @@ import re
 from enum import IntEnum
 from itertools import accumulate, groupby
 from math import prod
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
-from elftools.dwarf.die import AttributeValue
+from elftools.dwarf.die import DIE, AttributeValue
 from elftools.dwarf.ranges import BaseAddressEntry, RangeEntry
 from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
@@ -27,6 +28,7 @@ from dynamic_call_tree_resolution.model import (
 	Address,
 	ArrayMember,
 	DataObject,
+	Declaration,
 	EmbeddedStructMember,
 	Function,
 	FunctionPointerMember,
@@ -40,8 +42,10 @@ from dynamic_call_tree_resolution.model import (
 	Section,
 	SkippedMember,
 	SkipReason,
+	SourceLocation,
 	StructPointerMember,
 	StructureLayout,
+	aligned,
 	layout_key,
 	thumb_twin,
 )
@@ -52,7 +56,6 @@ if TYPE_CHECKING:
 	from typing import BinaryIO
 
 	from elftools.dwarf.compileunit import CompileUnit
-	from elftools.dwarf.die import DIE
 	from elftools.dwarf.dwarfinfo import DWARFInfo
 	from elftools.dwarf.ranges import RangeLists
 	from elftools.elf.sections import Symbol
@@ -149,6 +152,8 @@ def _load(stream: BinaryIO) -> Program:
 		arm_code=tuple(sorted(_mapped_spans(elf, markers, "a"))),
 		link_references=_link_references(elf, _reference_types(machine)),
 		inlined=_inlined(dwarf),
+		declarations=_declarations(dwarf),
+		symbol_addresses=_symbol_addresses(symtab, machine),
 	)
 
 
@@ -336,6 +341,91 @@ def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
 		if (address := Address(_int_value(low_pc))) & ~1
 	}
+
+
+def _declarations(dwarf: DWARFInfo | None) -> dict[Address, Declaration]:
+	if dwarf is None:
+		return {}  # pragma: no cover
+	units = tuple(dwarf.iter_CUs())
+	files = {unit.cu_offset: _file_names(dwarf, unit) for unit in units}
+	return {
+		Address(_int_value(low_pc)): Declaration(
+			unit=PurePosixPath(_string_value(unit.get_top_DIE().attributes["DW_AT_name"])).name,
+			location=SourceLocation(
+				file=file_name,
+				line=_int_value(declared.attributes["DW_AT_decl_line"]),
+				column=_int_value(column)
+				if (column := declared.attributes.get("DW_AT_decl_column")) is not None
+				else 0,
+			),
+		)
+		for unit in units
+		for die in _iter_dies(unit.get_top_DIE())
+		if die.tag == "DW_TAG_subprogram"
+		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
+		if _int_value(low_pc) & ~1
+		for declared in (_declared(die),)
+		if declared is not None
+		for file_name in (
+			files[declared.cu.cu_offset].get(_int_value(declared.attributes["DW_AT_decl_file"])),
+		)
+		if file_name is not None
+	}
+
+
+def _file_names(dwarf: DWARFInfo, unit: CompileUnit) -> dict[int, str]:
+	program = dwarf.line_program_for_CU(unit)
+	return (
+		{
+			index + (0 if program["version"] >= 5 else 1): PurePosixPath(
+				_attr_string(entry.name)
+			).name
+			for index, entry in enumerate(program["file_entry"])
+		}
+		if program is not None
+		else {}
+	)
+
+
+def _declared(die: DIE) -> DIE | None:
+	match die.attributes.get("DW_AT_decl_line"), _origin(die):
+		case None, None:
+			return None  # pragma: no cover
+		case None, DIE() as origin:
+			return _declared(origin)
+		case _:
+			return die
+
+
+def _symbol_addresses(
+	symtab: SymbolTableSection | None, machine: Machine
+) -> dict[str, frozenset[Address]]:
+	if symtab is None:
+		return {}  # pragma: no cover
+	named = sorted(
+		(symbol.name, _code_start(Address(symbol["st_value"]), machine))
+		for symbol in symtab.iter_symbols()
+		if symbol["st_info"]["type"] == "STT_FUNC"
+		if symbol["st_shndx"] != "SHN_UNDEF"
+	)
+	return {
+		name: frozenset(address for _, address in group)
+		for name, group in groupby(named, key=_symbol_name)
+	}
+
+
+def _symbol_name(named: tuple[str, Address]) -> str:
+	return named[0]
+
+
+def _code_start(address: Address, machine: Machine) -> Address:
+	match machine.family:
+		case InstructionFamily.ARM:
+			return aligned(address)
+		case InstructionFamily.X86:
+			return address
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[tuple[Address, Address], ...]]:

@@ -40,9 +40,9 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		resolved_targets=200,
 		indirect_call_sites=83,
 		total_functions=729,
-		entry_points=148,
+		entry_points=147,
 		discarded_entry_points=286,
-		worst_case_entry="gpio_emul_port_set_masked_raw",
+		worst_case_entry="cmd_prompt_off",
 		worst_case=summary.worst_case,
 		rtos="zephyr",
 	)
@@ -53,7 +53,7 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		len(summary.worst_case.unmeasured),
 		summary.worst_case.dynamic,
 		summary.worst_case.unresolved,
-	) == (6288, 222, 153, (), ())
+	) == (6280, 227, 149, (), ())
 
 
 def test_shell_readline_is_not_in_the_linked_executable(executable: Path) -> None:
