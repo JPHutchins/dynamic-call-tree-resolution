@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from itertools import groupby
@@ -24,7 +25,13 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.call_sites import per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
-from dynamic_call_tree_resolution.model import Address, RtosModel, ThreadRoot, render_path
+from dynamic_call_tree_resolution.model import (
+	Address,
+	ReferenceKind,
+	RtosModel,
+	ThreadRoot,
+	render_path,
+)
 from dynamic_call_tree_resolution.points_to import assignments, pointer_at
 from dynamic_call_tree_resolution.stack_analysis import (
 	expand_indirect_calls,
@@ -32,7 +39,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	worst_case_depths,
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
-from dynamic_call_tree_resolution.vsa import address_taken
+from dynamic_call_tree_resolution.vsa import address_taken, linked_calls
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.sites import tracked_values
 from tests.toolchains import (
@@ -195,7 +202,7 @@ THREAD_RECORD_IMAGES = tuple(
 	Image(source="thread_record.c", platform=platform, flags=flags)
 	for platform, flags in (
 		*((Platform.CORTEX_M3, (level, "-Wl,--emit-relocs")) for level in ARM_LEVELS),
-		(Platform.CORTEX_A15, ("-O2",)),
+		(Platform.CORTEX_A15, ("-O2", "-Wl,--emit-relocs")),
 		(Platform.HOST, ("-O2", "-no-pie")),
 	)
 )
@@ -517,7 +524,7 @@ def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
 	[
 		pytest.param(image, id=_image_id(image))
 		for image in (*THREAD_RECORD_IMAGES, *ESCAPED_RECORD_IMAGES)
-		if image.platform is Platform.CORTEX_M3
+		if image.platform is not Platform.HOST
 	],
 )
 def test_kept_references_make_each_thread_record_cells_seed_decision_the_byte_scan_makes(
@@ -532,6 +539,31 @@ def test_kept_references_make_each_thread_record_cells_seed_decision_the_byte_sc
 	) == (
 		True,
 		referenced_only_at(referrers(replace(program, link_references=()), slots.keys()), slots),
+	)
+
+
+def test_an_a32_link_keeps_its_bl_and_b_calls_and_its_movw_movt_addresses(
+	outcomes: Mapping[Image, Outcome],
+) -> None:
+	(image,) = (image for image in THREAD_RECORD_IMAGES if image.platform is Platform.CORTEX_A15)
+	program = load(outcomes[image].elf)
+	assert (
+		Counter(reference.kind for reference in program.link_references),
+		sorted(
+			(program.functions[call.caller].name, program.functions[call.callee].name)
+			for call in linked_calls(program)
+			if call.caller is not None
+		),
+	) == (
+		Counter({ReferenceKind.ADDRESS: 21, ReferenceKind.CALL: 6}),
+		[
+			("main", "observe"),
+			("main", "trampoline"),
+			("reset", "main"),
+			("run_a", "observe"),
+			("run_b", "observe"),
+			("start", "reset"),
+		],
 	)
 
 

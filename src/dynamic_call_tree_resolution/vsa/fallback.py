@@ -32,6 +32,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 	program_counter,
 )
+from dynamic_call_tree_resolution.vsa.links import linked_targets
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Iterator, Mapping
@@ -59,7 +60,7 @@ def address_taken(program: Program) -> frozenset[Address]:
 
 
 def linked_address_taken(program: Program) -> frozenset[Address]:
-	return frozenset(function for _, function in _linked_slots(program))
+	return frozenset(function for _, function in linked_targets(program, ReferenceKind.ADDRESS))
 
 
 def referrers(
@@ -70,7 +71,7 @@ def referrers(
 		if functions
 		else dict[int, frozenset[Address]]()
 	)
-	linked = _slots_by_target(_linked_slots(program), functions)
+	linked = _slots_by_target(linked_targets(program, ReferenceKind.ADDRESS), functions)
 	relocated = _slots_by_target(
 		((relocation.slot, relocation.target) for relocation in program.relocations), functions
 	)
@@ -89,22 +90,6 @@ def referenced_only_at(
 ) -> frozenset[Address]:
 	return frozenset(
 		function for function, slots in slots_by_function.items() if references[function] <= slots
-	)
-
-
-def _linked_slots(program: Program) -> Iterator[tuple[Address, Address]]:
-	starts = {normalized(address, program.machine): address for address in program.functions}
-	return (
-		(reference.slot, function)
-		for reference in program.link_references
-		if reference.kind is ReferenceKind.ADDRESS
-		and reference.symbol
-		and (
-			function := reference.value
-			if reference.value in program.functions
-			else starts.get(normalized(reference.value, program.machine))
-		)
-		is not None
 	)
 
 

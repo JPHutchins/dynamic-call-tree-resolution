@@ -34,11 +34,12 @@ from dynamic_call_tree_resolution.vsa.interpret import (
 	analyze_function,
 )
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet
+from dynamic_call_tree_resolution.vsa.links import function_covering
 from dynamic_call_tree_resolution.vsa.memory import Context, accumulate_writes, context_for
 from dynamic_call_tree_resolution.vsa.state import NO_WRITES, State, Writes, join_states, top_seed
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable, Mapping
+	from collections.abc import Collection, Iterable, Mapping
 	from concurrent.futures import Executor
 
 	from capstone import ArmCsOperand, CsOperand
@@ -269,10 +270,12 @@ def _span(function: Function, machine: Machine) -> tuple[Address, Address]:
 	return (start, Address(start + function.size))
 
 
-def _held_only_by(program: Program, slots: frozenset[Address], holders: Iterable[Address]) -> bool:
-	spans = tuple(_span(program.functions[holder], program.machine) for holder in holders)
+def _held_only_by(
+	program: Program, slots: frozenset[Address], holders: Collection[Address]
+) -> bool:
 	return bool(slots) and all(
-		any(slot - low in range(high - low) for low, high in spans) for slot in slots
+		(function := function_covering(program, slot)) is not None and function.address in holders
+		for slot in slots
 	)
 
 

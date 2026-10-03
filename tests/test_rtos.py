@@ -296,6 +296,19 @@ def test_the_call_that_starts_every_thread_stays_unresolved_when_a_creation_gate
 	assert _trampoline_targets(*perturbed(program, rtos_model(program, RtosChoice.AUTO))) == []
 
 
+@pytest.mark.image
+def test_a_static_thread_start_compiled_out_of_line_scopes_the_records_by_its_own_span(
+	zephyr_fixtures: Path,
+) -> None:
+	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
+	model = rtos_model(program, RtosChoice.AUTO)
+	assert model.creation is not None
+	assert _trampoline_targets(
+		replace(program, inlined={}),
+		replace(model, creation=replace(model.creation, static_start="bg_thread_main")),
+	) == ["bg_thread_main", "sensor_thread", "idle"]
+
+
 @pytest.fixture(scope="module")
 def sensor_program(zephyr_fixtures: Path) -> Program:
 	return load(zephyr_fixtures / "sensor-two-impl" / "zephyr" / "zephyr.elf")
