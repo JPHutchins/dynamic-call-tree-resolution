@@ -106,6 +106,8 @@ class EmbeddedStructMember(Struct):
 	kind: Literal["embedded_struct"]
 	name: str | None
 	offset: int
+	type_name: str
+	"""Its layout's key in ``Program.layouts``."""
 	members: tuple[Member, ...]
 	"""Resolved in place."""
 
@@ -199,11 +201,19 @@ class LinkReference(Struct):
 
 
 class SourceLocation(Struct):
-	"""Where a function is declared, by file name, line and column."""
+	"""A place in the source, by file name, line and column."""
 
 	file: str
 	line: int
 	column: int
+
+
+class LineSpan(Struct):
+	"""Code that the line table places at one location."""
+
+	start: Address
+	end: Address
+	location: SourceLocation
 
 
 class Declaration(Struct):

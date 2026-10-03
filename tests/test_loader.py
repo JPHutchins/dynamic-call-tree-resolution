@@ -102,6 +102,7 @@ def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
 			kind="embedded_struct",
 			name="ops",
 			offset=16,
+			type_name="struct device_ops",
 			members=(
 				FunctionPointerMember(
 					kind="function_pointer",
@@ -112,11 +113,19 @@ def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
 			),
 		),
 	)
+	(inner_type,) = (
+		member.type_name
+		for member in program.layouts["struct embedded_holder"].members
+		if isinstance(member, EmbeddedStructMember)
+	)
+	assert inner_type.startswith("struct <anonymous>@")
+	assert inner_type in program.layouts
 	assert program.layouts["struct embedded_holder"].members == (
 		EmbeddedStructMember(
 			kind="embedded_struct",
 			name="inner",
 			offset=0,
+			type_name=inner_type,
 			members=(
 				FunctionPointerMember(
 					kind="function_pointer",
@@ -609,6 +618,7 @@ def test_load_records_pointer_valued_array_members(fixture_elfs: dict[str, Path]
 				kind="embedded_struct",
 				name=None,
 				offset=0,
+				type_name="struct filter",
 				members=(
 					FunctionPointerMember(
 						kind="function_pointer",

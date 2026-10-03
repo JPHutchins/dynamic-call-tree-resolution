@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from enum import IntEnum
-from itertools import accumulate, groupby
+from itertools import accumulate, groupby, pairwise
 from math import prod
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final, assert_never, cast
@@ -34,6 +34,7 @@ from dynamic_call_tree_resolution.model import (
 	FunctionPointerMember,
 	FunctionSignature,
 	InstructionFamily,
+	LineSpan,
 	LinkReference,
 	Machine,
 	Program,
@@ -57,6 +58,7 @@ if TYPE_CHECKING:
 
 	from elftools.dwarf.compileunit import CompileUnit
 	from elftools.dwarf.dwarfinfo import DWARFInfo
+	from elftools.dwarf.lineprogram import LineState
 	from elftools.dwarf.ranges import RangeLists
 	from elftools.elf.sections import Symbol
 
@@ -107,6 +109,52 @@ def defined_function_names(path: Path) -> frozenset[str]:
 			if symbol["st_info"]["type"] == "STT_FUNC"
 			if symbol["st_shndx"] != "SHN_UNDEF"
 		)
+
+
+def line_spans(path: Path, locations: frozenset[SourceLocation]) -> tuple[LineSpan, ...]:
+	"""The code the line table places at any of the locations."""
+	with path.open("rb") as stream:
+		elf = ELFFile(stream)
+		dwarf = elf.get_dwarf_info(relocate_dwarf_sections=False) if elf.has_dwarf_info() else None
+		return (
+			tuple(
+				span
+				for unit in dwarf.iter_CUs()
+				for line_program in (dwarf.line_program_for_CU(unit),)
+				if line_program is not None
+				for names in (_file_names(dwarf, unit),)
+				for sequence in _sequences(
+					tuple(
+						entry.state
+						for entry in line_program.get_entries()
+						if entry.state is not None
+					)
+				)
+				for row, following in pairwise(sequence)
+				if row.file in names and following.address > row.address
+				for span in (
+					LineSpan(
+						start=Address(row.address),
+						end=Address(following.address),
+						location=SourceLocation(
+							file=names[row.file], line=row.line, column=row.column
+						),
+					),
+				)
+				if span.location in locations
+			)
+			if dwarf is not None
+			else ()
+		)
+
+
+def _sequences(rows: tuple[LineState, ...]) -> tuple[tuple[LineState, ...], ...]:
+	return tuple(
+		rows[previous + 1 : end + 1]
+		for previous, end in pairwise(
+			(-1, *(index for index, row in enumerate(rows) if row.end_sequence))
+		)
+	)
 
 
 def _load(stream: BinaryIO) -> Program:
@@ -631,6 +679,7 @@ class _StructPointer(Struct):
 
 
 class _EmbeddedStruct(Struct):
+	type_name: str
 	members: tuple[Member, ...]
 
 
@@ -675,7 +724,9 @@ def _member_kind(type_die: DIE | None) -> _MemberKind:
 	if underlying.tag == "DW_TAG_pointer_type":
 		return _pointee_kind(underlying)
 	if underlying.tag in ("DW_TAG_structure_type", "DW_TAG_union_type"):
-		return _EmbeddedStruct(members=tuple(_layout_members(underlying)))
+		return _EmbeddedStruct(
+			type_name=_layout_name(type_die), members=tuple(_layout_members(underlying))
+		)
 	if underlying.tag == "DW_TAG_array_type":
 		return _array_kind(underlying)
 	return None
@@ -740,9 +791,13 @@ def _member(kind: _MemberKind, name: str | None, offset: int) -> Member | None:
 			return StructPointerMember(
 				kind="struct_pointer", name=name, offset=offset, pointee=pointee
 			)
-		case _EmbeddedStruct(members):
+		case _EmbeddedStruct(type_name, members):
 			return EmbeddedStructMember(
-				kind="embedded_struct", name=name, offset=offset, members=members
+				kind="embedded_struct",
+				name=name,
+				offset=offset,
+				type_name=type_name,
+				members=members,
 			)
 		case _Array() as array:
 			return _array_member(array, name, offset)

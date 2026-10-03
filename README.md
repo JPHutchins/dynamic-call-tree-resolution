@@ -32,8 +32,10 @@ with no target.
    over every function's machine code, seeded from observed direct calls. The narrowed
    sets are refinements, not over-approximations. With `--narrow-by-signature`, a site
    whose slot the image leaves unset also narrows to the functions of the slot's DWARF
-   signature. Each RTOS static thread is also analyzed on its own, started from its
-   record.
+   signature. With `--narrow-by-field`, a site that loads its callee from a struct field
+   narrows to what that field holds: its initializers in the image and the functions the
+   build stores into it. Each RTOS static thread is also analyzed on its own, started
+   from its record.
 
 Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts. Each indirect call also expands to
@@ -284,6 +286,18 @@ z_thread_entry: arch_new_thread@0x124c, arch_switch_to_main_thread@0x127c
 ...
 ```
 
+With `--narrow-by-field`, each bus emulator's call narrows to the one emulator on its
+bus ([#159]):
+
+```console
+$ dctr analyze $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
+...
+i2c_emul_transfer@0x325a: adt7420_emul_transfer_i2c (narrowed by field struct i2c_emul_api.transfer, unsound under casts)
+...
+spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io, unsound under casts)
+...
+```
+
 `stack` analyzes each thread on its own, from its record:
 
 ```console
@@ -405,9 +419,15 @@ contradicts does not hold.
   gap in that analysis drops a target there.
 - Zephyr's I2C and SPI emulators find their target in a list that init code builds in
   RAM, so their sites stay unresolved, and two threads' trees rejoin below them ([#151],
-  [#159]).
+  [#159]). `--narrow-by-field` narrows them in `analyze`, but not yet in the trees.
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
+- `--narrow-by-field` assumes that every function stored into a field is stored as that
+  field. A cast, a `memcpy` or a union member can store one it never sees
+  (`tests/fixtures/reproducers/field_cast.c`), so it is off by default. It reads the
+  `descriptors.txt` beside the ELF; the plugin's pass runs only with the optimizer, so an
+  `-O0` build records nothing to narrow by. A field that something other than a function
+  is stored into, such as a parameter, does not narrow.
 - The fallback holds every function address the image stores, that one instruction or
   a `movw`/`movt` pair in a function symbol computes, or that an address relocation kept
   by `--emit-relocs` names, including a relative offset such as `.word f - table`.
