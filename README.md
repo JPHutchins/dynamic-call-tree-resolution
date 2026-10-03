@@ -398,9 +398,11 @@ contradicts does not hold.
   [#159]).
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
-- The fallback holds every function address the image stores, or that one instruction
-  or a `movw`/`movt` pair in a function symbol computes. A function pointer built by
-  other arithmetic, or in code outside every function symbol, is missed ([#96]).
+- The fallback holds every function address the image stores, that one instruction or
+  a `movw`/`movt` pair in a function symbol computes, or that an address relocation kept
+  by `--emit-relocs` names, including a relative offset such as `.word f - table`.
+  Without `--emit-relocs`, a function pointer built by other arithmetic, or in code
+  outside every function symbol, is missed ([#96]).
 - Code without `.ci` records (assembly, `native_sim` host code) is absent from the
   stack call graph ([#78]).
 

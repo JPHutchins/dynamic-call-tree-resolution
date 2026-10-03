@@ -896,6 +896,7 @@ class ArmRelocation(IntEnum):
 	"""The ARM relocation types that dctr classifies, by their ELF ABI numbers."""
 
 	R_ARM_ABS32 = 2
+	R_ARM_REL32 = 3
 	R_ARM_THM_CALL = 10
 	R_ARM_CALL = 28
 	R_ARM_JUMP24 = 29
@@ -958,6 +959,7 @@ def _reference_types(machine: Machine) -> _ReferenceTypes:
 				addresses=frozenset(
 					{
 						ArmRelocation.R_ARM_ABS32,
+						ArmRelocation.R_ARM_REL32,
 						ArmRelocation.R_ARM_MOVW_ABS_NC,
 						ArmRelocation.R_ARM_MOVT_ABS,
 						ArmRelocation.R_ARM_THM_MOVW_ABS_NC,
