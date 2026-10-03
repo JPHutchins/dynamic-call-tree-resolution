@@ -146,9 +146,9 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-gpio_emul_port_set_masked_raw: unbounded, at least 6288 bytes (recursion: 222, unmeasured: 153)
+cmd_prompt_off: unbounded, at least 6280 bytes (recursion: 227, unmeasured: 149)
 ...
-poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
+poll_state_thread: unbounded, at least 6072 bytes (recursion: 227, unmeasured: 149)
 ...
 ```
 
@@ -171,15 +171,13 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-poll_state_thread: unbounded, at least 6192 bytes (recursion: 222, unmeasured: 153)
+poll_state_thread: unbounded, at least 6072 bytes (recursion: 227, unmeasured: 149)
 poll_state_thread +80 = 80 bytes (recursion)
-can_msgq_put +32 = 112 bytes via indirect: fallback (recursion)
-z_impl_k_msgq_put +8 = 120 bytes via static (recursion)
+bg_thread_main +80 = 160 bytes via indirect: fallback (recursion)
+boot_banner +32 = 192 bytes via indirect: fallback (recursion)
 ...
-tx_thread +112 = 624 bytes via indirect: fallback (recursion)
-...
-timer_core_arm +48 = 6192 bytes via static
-hwtimer_set_tick_one_shot +0 = 6192 bytes via static (unmeasured)
+timer_core_arm +48 = 6072 bytes via static
+hwtimer_set_tick_one_shot +0 = 6072 bytes via static (unmeasured)
 ```
 
 ```console
@@ -285,15 +283,15 @@ z_thread_entry: arch_new_thread@0x124c, arch_switch_to_main_thread@0x127c
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 15)
-thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)
+motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 12)
+thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 12)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1080 bytes (recursion: 43, unmeasured: 15)
+thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 12)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -306,7 +304,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 15)
+motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 12)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate

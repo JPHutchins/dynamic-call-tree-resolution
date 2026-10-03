@@ -5,11 +5,15 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.model import SourceLocation
+
 if TYPE_CHECKING:
+	from collections.abc import Mapping
 	from pathlib import Path
 
 
@@ -51,6 +55,22 @@ def stack_usage_files(
 	return tuple(
 		(stack_file, parse_stack_usage(stack_file))
 		for stack_file in sorted(build_directory.glob("**/*.su"))
+	)
+
+
+def stack_usage_locations(path: Path) -> Mapping[str, SourceLocation]:
+	return dict(map(_record_location, filter(None, path.read_text().splitlines())))
+
+
+def _record_location(line: str) -> tuple[str, SourceLocation]:
+	"""Where a ``.su`` record says its function is declared, by the function's name.
+
+	>>> _record_location("/src/kernel/sched.c:403:13:reschedule" + chr(9) + "0" + chr(9) + "static")
+	('reschedule', SourceLocation(file='sched.c', line=403, column=13))
+	"""
+	path, line_number, column, function = line.split("\t", maxsplit=1)[0].split(":", 3)
+	return function, SourceLocation(
+		file=PurePosixPath(path).name, line=int(line_number), column=int(column)
 	)
 
 

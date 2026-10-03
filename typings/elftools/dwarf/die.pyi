@@ -1,5 +1,7 @@
 from collections.abc import Iterator
 
+from elftools.dwarf.compileunit import CompileUnit
+
 class AttributeValue:
 	name: str
 	form: str
@@ -10,6 +12,7 @@ class AttributeValue:
 
 class DIE:
 	tag: str
+	cu: CompileUnit
 	offset: int
 	attributes: dict[str, AttributeValue]
 	has_children: bool
