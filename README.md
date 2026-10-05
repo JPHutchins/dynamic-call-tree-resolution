@@ -225,6 +225,11 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   section kept. Weak copies and same-named statics are told apart, and the count splits
   into `discarded` (by `--gc-sections`) and `never linked` (an archive member the link
   never pulled in). Without them, `names` matches the names the ELF defines.
+- Under `linker`, a kept function's `.ci` call to a libcall GCC records as `<built-in>`
+  is dropped when the link did not keep that libcall's code, since a static link
+  resolves every call it keeps. GCC records some libcalls that later optimization
+  removes, such as `__aeabi_uldivmod` in the BMI160 driver. `summary` lists them as
+  `phantom_libcalls` ([#198]).
 - With an ELF, each `.ci` node and `.su` record is joined to its function by its
   declaration (file, line, column, within its compilation unit) or by its symbol, so an
   alias such as `z_reschedule_locked` shares its body's frame and calls. Functions that
@@ -307,15 +312,15 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 5, measured: 6)
-thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 5, measured: 6)
+motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 4, measured: 6)
+thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 4, measured: 6)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 5, measured: 6)
+thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 4, measured: 6)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -328,7 +333,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 5, measured: 6)
+motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 4, measured: 6)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -548,3 +553,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
 [#185]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/185
 [#195]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/195
+[#198]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/198

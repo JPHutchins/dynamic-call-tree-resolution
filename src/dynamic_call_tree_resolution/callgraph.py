@@ -91,6 +91,15 @@ def indirect_calls(path: Path) -> tuple[IndirectCall, ...]:
 	)
 
 
+def libcall_nodes(path: Path) -> frozenset[str]:
+	"""The calls GCC records as ``<built-in>``: libgcc and libc routines it emits itself."""
+	return frozenset(
+		entry["title"]
+		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph")[0].get("node", [])
+		if "title" in entry and entry.get("label", "").split(r"\n")[1:2] == ["<built-in>"]
+	)
+
+
 def _label_location(label: str) -> SourceLocation | None:
 	"""Where a ``.ci`` node's label says its function is declared.
 

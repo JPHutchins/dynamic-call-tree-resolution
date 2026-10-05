@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.callgraph import libcall_nodes
+from dynamic_call_tree_resolution.loader import defined_function_names
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 
 if TYPE_CHECKING:
@@ -28,11 +30,15 @@ GC_LISTING: Final = "gc-sections.txt"
 _ARCHIVE_MEMBER: Final = re.compile(r"(?:.*/)?(?P<archive>lib[^/]+\.a)\((?P<member>.+)\)")
 _INCLUDED_MEMBER: Final = re.compile(r"^(?P<object>\S+\.a\(\S+\.obj\))", re.MULTILINE)
 _LOADED_OBJECT: Final = re.compile(r"^LOAD (?P<object>\S+\.obj)$", re.MULTILINE)
+_PROVIDED: Final = re.compile(
+	r"^(?P<member>\S+\.a\([^)]+\))\s+\S+ \((?P<symbol>[^)]+)\)$", re.MULTILINE
+)
 _REMOVED_SECTION: Final = re.compile(
-	r"removing unused section '(?P<section>\.text\.[^']+)' in file '(?P<object>[^']+)'"
+	r"removing unused section '(?P<section>\.text(?:\.[^']+)?)' in file '(?P<object>[^']+)'"
 )
 _KEPT_SECTION: Final = re.compile(
-	r"^ (?P<section>\.text\.\S+)\s+0x[0-9a-f]+\s+0x[0-9a-f]+ (?P<object>\S+)$", re.MULTILINE
+	r"^ (?P<section>\.text(?:\.\S+)?)\s+0x[0-9a-f]+\s+0x[0-9a-f]+ (?P<object>\S+)$",
+	re.MULTILINE,
 )
 _DISCARDED_INPUT: Final = "\nDiscarded input sections"
 _MEMORY_MAP: Final = "\nLinker script and memory map"
@@ -63,6 +69,8 @@ class HeldArtifacts(Struct):
 	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...]
 	dropped: Mapping[Linkage, frozenset[str]]
 	"""The frame keys of the functions with no kept copy, by why the link has none."""
+	phantom_libcalls: frozenset[str] = frozenset()
+	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
 
 
 class LinkerRecords(Struct):
@@ -70,7 +78,11 @@ class LinkerRecords(Struct):
 
 	linked: frozenset[LinkedObject]
 	sections: Mapping[LinkedObject, Mapping[str, bool]]
-	"""Each linked object's function sections, and whether the link kept each one."""
+	"""Each linked object's code sections, and whether the link kept each one."""
+	providers: Mapping[str, LinkedObject] = {}
+	"""The archive member the link included for each symbol that pulled one in."""
+	defined: frozenset[str] = frozenset()
+	"""The function symbols the image defines."""
 
 
 def linker_records(elf: Path) -> LinkerRecords | None:
@@ -80,6 +92,8 @@ def linker_records(elf: Path) -> LinkerRecords | None:
 		return None
 	text = link_map.read_text()
 	return LinkerRecords(
+		providers=_providers(text.split(_DISCARDED_INPUT, 1)[0]),
+		defined=defined_function_names(elf),
 		linked=frozenset(
 			map(
 				_matched_object,
@@ -108,6 +122,36 @@ def linker_records(elf: Path) -> LinkerRecords | None:
 			)
 		},
 	)
+
+
+def _providers(included: str) -> Mapping[str, LinkedObject]:
+	"""The member each symbol pulled in, whether the map wraps its reference line or not.
+
+	>>> _providers(
+	...     chr(10).join(
+	...         (
+	...             "/sdk/libgcc.a(_aeabi_uldivmod.o)",
+	...             "                              zephyr/libzephyr.a(clock.c.obj) (__aeabi_uldivmod)",
+	...             "zephyr/libk.a(a.c.obj)        app/libapp.a(main.c.obj) (k_a)",
+	...         )
+	...     )
+	... )
+	{'__aeabi_uldivmod': ('libgcc.a', '_aeabi_uldivmod.o'), 'k_a': ('libk.a', 'a.c.obj')}
+	"""
+	return {
+		match["symbol"]: _linked_object(match["member"]) for match in _PROVIDED.finditer(included)
+	}
+
+
+def libcall_linkage(records: LinkerRecords, name: str) -> Linkage:
+	"""Whether the final link kept the code of a libcall a ``.ci`` records as ``<built-in>``."""
+	match records.providers.get(name):
+		case _ if name in records.defined:
+			return Linkage.IN_IMAGE
+		case None:
+			return Linkage.NEVER_LINKED
+		case member:
+			return _section_linkage(tuple(records.sections.get(member, {}).values()))
 
 
 def _matched_object(match: re.Match[str]) -> LinkedObject:
@@ -198,11 +242,22 @@ def held_artifacts(
 		(
 			path,
 			tuple(
-				(edge, linkage(records, build_directory, path, edge.caller.rsplit(":", 1)[-1]))
+				(
+					edge,
+					linkage(records, build_directory, path, edge.caller.rsplit(":", 1)[-1]),
+					edge.callee in not_kept,
+				)
 				for edge in file_edges
 			),
 		)
 		for path, file_edges in callgraphs
+		for not_kept in (
+			frozenset(
+				name
+				for name in libcall_nodes(path)
+				if libcall_linkage(records, name) is not Linkage.IN_IMAGE
+			),
+		)
 	)
 	frames = tuple(
 		(
@@ -219,7 +274,7 @@ def held_artifacts(
 			*(
 				frame_key(edge.caller)
 				for _, linked_edges in edges
-				for edge, linked in linked_edges
+				for edge, linked, _ in linked_edges
 				if linked is Linkage.IN_IMAGE
 			),
 			*(
@@ -241,7 +296,14 @@ def held_artifacts(
 	)
 	return HeldArtifacts(
 		callgraphs=tuple(
-			(path, tuple(edge for edge, linked in linked_edges if linked is Linkage.IN_IMAGE))
+			(
+				path,
+				tuple(
+					edge
+					for edge, linked, phantom in linked_edges
+					if linked is Linkage.IN_IMAGE and not phantom
+				),
+			)
 			for path, linked_edges in edges
 		),
 		usages=tuple(
@@ -259,4 +321,10 @@ def held_artifacts(
 			- held
 			- discarded,
 		},
+		phantom_libcalls=frozenset(
+			edge.callee
+			for _, linked_edges in edges
+			for edge, linked, phantom in linked_edges
+			if linked is Linkage.IN_IMAGE and phantom
+		),
 	)
