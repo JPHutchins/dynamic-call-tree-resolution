@@ -105,7 +105,7 @@ def _called(state: State, machine: Machine) -> State:
 	)
 
 
-def _transfer(context: Context, instruction: CsInsn, state: State) -> State:
+def transfer(context: Context, instruction: CsInsn, state: State) -> State:
 	if instruction.mnemonic == ".byte":
 		return state
 	if _calls(instruction, context.program.machine) or is_returning_trap(
@@ -150,9 +150,10 @@ class FunctionResult(Struct):
 	"""Of calls through a site the analysis tracked to known functions."""
 
 
-def analyze_function(
-	context: Context, function: Function, blocks: tuple[Block, ...], seed: State
-) -> FunctionResult:
+def block_states(
+	context: Context, blocks: tuple[Block, ...], seed: State
+) -> tuple[Mapping[Address, State], Writes]:
+	"""The state on entry to each block the seed reaches, and every write on the way."""
 	entry = blocks[0].start
 	in_states: dict[Address, State] = {entry: seed}
 	worklist = [entry]
@@ -163,7 +164,7 @@ def analyze_function(
 		incoming = in_states[block.start]
 		outgoing = incoming
 		for instruction in block.instructions:
-			outgoing = _transfer(context, instruction, outgoing)
+			outgoing = transfer(context, instruction, outgoing)
 		writes = accumulate_writes(writes, [outgoing.globals])
 		for successor in block.successors:
 			existing = in_states.get(successor)
@@ -171,6 +172,13 @@ def analyze_function(
 			if joined != existing:
 				in_states[successor] = joined
 				worklist.append(successor)
+	return in_states, writes
+
+
+def analyze_function(
+	context: Context, function: Function, blocks: tuple[Block, ...], seed: State
+) -> FunctionResult:
+	in_states, writes = block_states(context, blocks, seed)
 	sites = tuple(
 		(block, site)
 		for block in blocks

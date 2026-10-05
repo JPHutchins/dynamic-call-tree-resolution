@@ -12,7 +12,7 @@ from functools import partial
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
 from dynamic_call_tree_resolution.stack_usage import StackUsage
@@ -25,6 +25,8 @@ class Bounded(Struct):
 	"""A depth that bounds every path of the call graph as given."""
 
 	bytes: int
+	measured: frozenset[str] = frozenset()
+	"""Reachable functions whose frames come from their code."""
 
 
 class Unbounded(Struct):
@@ -34,11 +36,13 @@ class Unbounded(Struct):
 	recursion: frozenset[str]
 	"""Reachable functions on a cycle."""
 	unmeasured: frozenset[str]
-	"""Reachable functions without a ``.su`` record."""
+	"""Reachable functions with neither a ``.su`` record nor code that can be measured."""
 	dynamic: frozenset[str]
 	"""Reachable frames GCC could not bound."""
 	unresolved: frozenset[str]
 	"""Reachable callers of an indirect call without candidates."""
+	measured: frozenset[str] = frozenset()
+	"""Reachable functions whose frames come from their code."""
 
 
 class StackReport(Struct):
@@ -49,22 +53,33 @@ class StackReport(Struct):
 
 
 class Reason(StrEnum):
-	"""What keeps a depth from bounding every path."""
+	"""What keeps a depth from bounding every path, or, measured, what the depth rests on."""
 
 	RECURSION = "recursion"
 	UNMEASURED = "unmeasured"
 	DYNAMIC = "dynamic"
 	UNRESOLVED = "unresolved"
+	MEASURED = "measured"
 
 
 type _Reasons = frozenset[tuple[Reason, str]]
+
+
+class MeasuredFrame(Struct):
+	"""A frame measured from the code of a function GCC left no ``.su`` record for."""
+
+	function: str
+	bytes: int
+
+
+type Frame = StackUsage | MeasuredFrame
 
 
 class StackGraph(Struct):
 	"""A call graph with the frames and depths its stack bounds come from."""
 
 	adjacency: Mapping[str, frozenset[str]]
-	frame_by_name: Mapping[str, StackUsage]
+	frame_by_name: Mapping[str, Frame]
 	components: Mapping[str, frozenset[str]]
 	"""Each node's strongly connected component."""
 	depths: Mapping[str, int]
@@ -82,7 +97,7 @@ class PathStep(Struct):
 	edge: frozenset[EdgeKind]
 	"""How the previous step calls this one."""
 	flags: frozenset[Reason]
-	"""What this function's own frame, calls and cycle add to an unbounded depth."""
+	"""What this function's own frame, calls and cycle add to the depth's reasons."""
 
 
 class _Forward(Struct):
@@ -276,15 +291,15 @@ def _in_thread(thread: str, name: str) -> str:
 	return f"{thread}/:{name}"
 
 
-def thread_frames(
-	frames: Iterable[StackUsage], trampoline: str, threads: Iterable[str]
-) -> tuple[StackUsage, ...]:
+def thread_frames[F: (StackUsage, MeasuredFrame)](
+	frames: Iterable[F], trampoline: str, threads: Iterable[str]
+) -> tuple[F, ...]:
 	frames_tuple = tuple(frames)
 	return tuple(
-		StackUsage(function=thread, bytes=usage.bytes, bounded=usage.bounded)
+		replace(frame, function=thread)
 		for thread in threads
-		for usage in frames_tuple
-		if frame_key(usage.function) == trampoline
+		for frame in frames_tuple
+		if frame_key(frame.function) == trampoline
 	)
 
 
@@ -310,7 +325,7 @@ def _graph_names(names_by_key: Mapping[str, frozenset[str]], target: str) -> fro
 
 def worst_case_depths(
 	edges: Iterable[CallEdge],
-	frames: Iterable[StackUsage],
+	frames: Iterable[Frame],
 	*,
 	entry_edges: Iterable[CallEdge] | None = None,
 ) -> tuple[StackReport, ...]:
@@ -319,7 +334,7 @@ def worst_case_depths(
 
 def stack_graph(
 	edges: Iterable[CallEdge],
-	frames: Iterable[StackUsage],
+	frames: Iterable[Frame],
 	*,
 	entry_edges: Iterable[CallEdge] | None = None,
 ) -> StackGraph:
@@ -344,7 +359,15 @@ def stack_graph(
 		roots=tuple(
 			sorted(
 				(root_adjacency.keys() - root_callees)
-				| ({frame_key(usage.function) for usage in frames_tuple} - root_graph_nodes)
+				| (
+					{
+						frame_key(record.function)
+						for frame in frames_tuple
+						for record in (_record(frame),)
+						if record is not None
+					}
+					- root_graph_nodes
+				)
 			)
 		),
 	)
@@ -528,9 +551,10 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 			unmeasured=_names(reasons, Reason.UNMEASURED),
 			dynamic=_names(reasons, Reason.DYNAMIC),
 			unresolved=_names(reasons, Reason.UNRESOLVED),
+			measured=_names(reasons, Reason.MEASURED),
 		)
-		if reasons
-		else Bounded(bytes=depth)
+		if any(reason is not Reason.MEASURED for reason, _ in reasons)
+		else Bounded(bytes=depth, measured=_names(reasons, Reason.MEASURED))
 	)
 
 
@@ -551,23 +575,36 @@ def _report_order(report: StackReport) -> tuple[bool, int]:
 def _own_reasons(
 	node: str,
 	adjacency: Mapping[str, frozenset[str]],
-	frame_by_name: Mapping[str, StackUsage],
+	frame_by_name: Mapping[str, Frame],
 ) -> _Reasons:
-	frame = frame_by_name.get(frame_key(node))
 	return frozenset(
 		(reason, frame_key(node))
-		for reason, applies in (
-			(Reason.UNMEASURED, frame is None and node != INDIRECT_CALLEE),
-			(Reason.DYNAMIC, frame is not None and not frame.bounded),
-			(Reason.UNRESOLVED, INDIRECT_CALLEE in adjacency.get(node, frozenset())),
+		for reason in (
+			*_frame_reasons(frame_by_name.get(frame_key(node)), node),
+			*(
+				(Reason.UNRESOLVED,)
+				if INDIRECT_CALLEE in adjacency.get(node, frozenset())
+				else tuple[Reason, ...]()
+			),
 		)
-		if applies
 	)
+
+
+def _frame_reasons(frame: Frame | None, node: str) -> tuple[Reason, ...]:
+	match frame:
+		case None:
+			return tuple[Reason, ...]() if node == INDIRECT_CALLEE else (Reason.UNMEASURED,)
+		case StackUsage(bounded=bounded):
+			return tuple[Reason, ...]() if bounded else (Reason.DYNAMIC,)
+		case MeasuredFrame():
+			return (Reason.MEASURED,)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _reasons_by_component(
 	adjacency: Mapping[str, frozenset[str]],
-	frame_by_name: Mapping[str, StackUsage],
+	frame_by_name: Mapping[str, Frame],
 	components: tuple[tuple[str, ...], ...],
 ) -> Mapping[str, _Reasons]:
 	closure: dict[str, _Reasons] = {}
@@ -594,7 +631,7 @@ def _reasons_by_component(
 
 def _depths_by_component(
 	adjacency: Mapping[str, frozenset[str]],
-	frame_by_name: Mapping[str, StackUsage],
+	frame_by_name: Mapping[str, Frame],
 	components: tuple[tuple[str, ...], ...],
 ) -> Mapping[str, int]:
 	memo: dict[str, int] = {}
@@ -619,7 +656,7 @@ def _depths_by_component(
 def _rooted_depths(
 	component: tuple[str, ...],
 	adjacency: Mapping[str, frozenset[str]],
-	frame_by_name: Mapping[str, StackUsage],
+	frame_by_name: Mapping[str, Frame],
 	memo: Mapping[str, int],
 ) -> dict[str, int]:
 	members = frozenset(component)
@@ -651,7 +688,7 @@ def _forward_depths(
 	order: tuple[str, ...],
 	members: frozenset[str],
 	adjacency: Mapping[str, frozenset[str]],
-	frame_by_name: Mapping[str, StackUsage],
+	frame_by_name: Mapping[str, Frame],
 	memo: Mapping[str, int],
 ) -> dict[str, int]:
 	position = {node: index for index, node in enumerate(order)}
@@ -672,7 +709,7 @@ def _forward_depths(
 def _depth(
 	function: str,
 	adjacency: Mapping[str, frozenset[str]],
-	frame_by_name: Mapping[str, StackUsage],
+	frame_by_name: Mapping[str, Frame],
 	path: frozenset[str],
 	memo: Mapping[str, int],
 	in_component: frozenset[str],
@@ -698,12 +735,22 @@ def _depth(
 	return depth
 
 
-def _frame_bytes(usage: StackUsage) -> int:
-	return usage.bytes
+def _frame_bytes(frame: Frame) -> int:
+	return frame.bytes
 
 
-def _frame_name(usage: StackUsage) -> str:
-	return frame_key(usage.function)
+def _frame_name(frame: Frame) -> str:
+	return frame_key(frame.function)
+
+
+def _record(frame: Frame) -> StackUsage | None:
+	match frame:
+		case StackUsage():
+			return frame
+		case MeasuredFrame():
+			return None
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
@@ -768,20 +815,24 @@ def frame_key(name: str) -> str:
 	)
 
 
-def _frames_by_bare_name(frames: Iterable[StackUsage]) -> Mapping[str, StackUsage]:
+def _frames_by_bare_name(frames: Iterable[Frame]) -> Mapping[str, Frame]:
 	return {key: _merge_frame_records(records) for key, records in _grouped_frames(frames).items()}
 
 
-def _grouped_frames(frames: Iterable[StackUsage]) -> dict[str, list[StackUsage]]:
+def _grouped_frames(frames: Iterable[Frame]) -> dict[str, list[Frame]]:
 	return {
 		key: list(group) for key, group in groupby(sorted(frames, key=_frame_name), key=_frame_name)
 	}
 
 
-def _merge_frame_records(records: list[StackUsage]) -> StackUsage:
-	largest = max(records, key=_frame_bytes)
-	return StackUsage(
-		function=largest.function,
-		bytes=largest.bytes,
-		bounded=all(usage.bounded for usage in records),
-	)
+def _merge_frame_records(records: list[Frame]) -> Frame:
+	match tuple(record for frame in records if (record := _record(frame)) is not None):
+		case ():
+			return max(records, key=_frame_bytes)
+		case usages:
+			largest = max(usages, key=_frame_bytes)
+			return StackUsage(
+				function=largest.function,
+				bytes=largest.bytes,
+				bounded=all(usage.bounded for usage in usages),
+			)
