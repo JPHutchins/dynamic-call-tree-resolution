@@ -241,6 +241,9 @@ class AnalysisSummary(Struct):
 	membership: Membership = Membership.NAMES
 	never_linked_entry_points: int | None = None
 	"""Counted apart from ``discarded_entry_points`` only when the linker decides membership."""
+	phantom_libcalls: tuple[str, ...] | None = None
+	"""Libcalls a kept function's ``.ci`` records but the final link did not keep; only when
+	the linker decides membership."""
 
 
 class ReferrerReport(Struct):

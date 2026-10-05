@@ -359,6 +359,8 @@ class _Expansion(Struct):
 	membership: Membership
 	dropped: Mapping[Linkage, frozenset[str]]
 	"""The entries the linker left out of the image, by why; empty under name membership."""
+	phantom_libcalls: frozenset[str]
+	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
 
 
 class _Artifacts(Struct):
@@ -371,6 +373,8 @@ class _Artifacts(Struct):
 	"""The frame keys of the functions the artifacts hold; the linker's choice under its
 	membership."""
 	dropped: Mapping[Linkage, frozenset[str]]
+	phantom_libcalls: frozenset[str]
+	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
 
 
 class _Image(Struct):
@@ -400,6 +404,7 @@ def _artifacts(build_directory: Path, image: _Image | None) -> _Artifacts:
 				stack_usage_files(build_directory),
 				Membership.NAMES,
 				{},
+				frozenset(),
 			)
 		case records:
 			held = held_artifacts(
@@ -409,7 +414,12 @@ def _artifacts(build_directory: Path, image: _Image | None) -> _Artifacts:
 				stack_usage_files(build_directory),
 			)
 			return _named_artifacts(
-				known, held.callgraphs, held.usages, Membership.LINKER, held.dropped
+				known,
+				held.callgraphs,
+				held.usages,
+				Membership.LINKER,
+				held.dropped,
+				held.phantom_libcalls,
 			)
 
 
@@ -419,6 +429,7 @@ def _named_artifacts(
 	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...],
 	membership: Membership,
 	dropped: Mapping[Linkage, frozenset[str]],
+	phantom_libcalls: frozenset[str],
 ) -> _Artifacts:
 	edges = tuple(
 		edge for path, file_edges in callgraphs for edge in _named_edges(known, path, file_edges)
@@ -437,6 +448,7 @@ def _named_artifacts(
 			)
 		),
 		dropped=dropped,
+		phantom_libcalls=phantom_libcalls,
 	)
 
 
@@ -532,6 +544,7 @@ def _expand_from_elf(
 		image_functions=image_functions,
 		membership=artifacts.membership,
 		dropped=artifacts.dropped,
+		phantom_libcalls=artifacts.phantom_libcalls,
 	)
 
 
@@ -802,6 +815,11 @@ def summary(
 		membership=expansion.membership,
 		never_linked_entry_points=(
 			len(expansion.dropped[Linkage.NEVER_LINKED])
+			if expansion.membership is Membership.LINKER
+			else None
+		),
+		phantom_libcalls=(
+			tuple(sorted(expansion.phantom_libcalls))
 			if expansion.membership is Membership.LINKER
 			else None
 		),
