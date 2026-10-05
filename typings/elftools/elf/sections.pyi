@@ -58,3 +58,16 @@ class Symbol:
 class SymbolTableSection(Section):
 	def get_symbol(self, n: int) -> Symbol: ...
 	def iter_symbols(self) -> Iterator[Symbol]: ...
+
+class ARMAttribute:
+	tag: str
+	value: int | str
+
+class ARMAttributesSubsubsection:
+	def iter_attributes(self) -> Iterator[ARMAttribute]: ...
+
+class ARMAttributesSubsection:
+	def iter_subsubsections(self) -> Iterator[ARMAttributesSubsubsection]: ...
+
+class ARMAttributesSection(Section):
+	def iter_subsections(self) -> Iterator[ARMAttributesSubsection]: ...

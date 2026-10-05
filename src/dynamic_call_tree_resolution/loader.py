@@ -18,7 +18,7 @@ from elftools.elf.descriptions import describe_reloc_type
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import Relocation as ElfRelocation
 from elftools.elf.relocation import RelocationSection
-from elftools.elf.sections import SymbolTableSection
+from elftools.elf.sections import ARMAttributesSection, SymbolTableSection
 from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import (
@@ -26,6 +26,8 @@ from dynamic_call_tree_resolution.model import (
 	ARRAY_SUFFIX,
 	FUNCTION_POINTER,
 	Address,
+	ArmCore,
+	ArmProfile,
 	ArrayMember,
 	DataObject,
 	Declaration,
@@ -202,7 +204,30 @@ def _load(stream: BinaryIO) -> Program:
 		inlined=_inlined(dwarf),
 		declarations=_declarations(dwarf),
 		symbol_addresses=_symbol_addresses(symtab, machine),
+		arm_core=_arm_core(elf),
 	)
+
+
+def _arm_core(elf: ELFFile) -> ArmCore | None:
+	match elf.get_section_by_name(".ARM.attributes"):
+		case ARMAttributesSection() as section:
+			attributes = {
+				attribute.tag: attribute.value
+				for subsection in section.iter_subsections()
+				for subsubsection in subsection.iter_subsubsections()
+				for attribute in subsubsection.iter_attributes()
+			}
+			profile = attributes.get("TAG_CPU_ARCH_PROFILE")
+			return (
+				ArmCore(
+					profile=ArmProfile(chr(profile)),
+					floating_point=bool(attributes.get("TAG_FP_ARCH")),
+				)
+				if isinstance(profile, int) and chr(profile) in ArmProfile
+				else None
+			)
+		case _:
+			return None
 
 
 def _mapped_spans(

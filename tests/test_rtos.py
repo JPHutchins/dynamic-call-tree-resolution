@@ -166,6 +166,7 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 			static_start="z_init_static_threads",
 			static_entries=frozenset(),
 		),
+		exception_frame=36,
 	)
 
 

@@ -5,9 +5,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, assert_never
 
-from dynamic_call_tree_resolution.model import Address, RtosModel, ThreadCreation, ThreadRoot
+from dynamic_call_tree_resolution.model import (
+	Address,
+	ArmCore,
+	ArmProfile,
+	RtosModel,
+	ThreadCreation,
+	ThreadRoot,
+)
 from dynamic_call_tree_resolution.points_to import in_writable_memory, pointer_at
 
 if TYPE_CHECKING:
@@ -21,6 +28,9 @@ _ARGUMENTS: Final = ("init_p1", "init_p2", "init_p3")
 _FRAME_BUILDERS: Final = ("arch_new_thread", "arch_switch_to_main_thread")
 _SETUP: Final = "z_setup_new_thread"
 _STATIC_START: Final = "z_init_static_threads"
+_BASIC_FRAME: Final = 8 * 4
+_EXTENDED_FRAME: Final = 26 * 4
+_ALIGNMENT_PAD: Final = 4
 
 
 def detect(program: Program) -> RtosModel | None:
@@ -42,6 +52,7 @@ def detect(program: Program) -> RtosModel | None:
 		evidence=(_TRAMPOLINE, _RECORD),
 		threads=threads,
 		trampoline=_TRAMPOLINE,
+		exception_frame=_exception_frame(program.arm_core),
 		creation=ThreadCreation(
 			frame_builders=_FRAME_BUILDERS,
 			setup=_SETUP,
@@ -53,6 +64,29 @@ def detect(program: Program) -> RtosModel | None:
 			),
 		),
 	)
+
+
+def _exception_frame(core: ArmCore | None) -> int:
+	"""What an M-profile core stacks on the thread's stack when an interrupt takes it.
+
+	ARMv7-M stacks a basic frame of 8 words, or 26 with a floating-point context, and may
+	pad a word to align the stack to 8 bytes. Handlers then run on the main stack, so a
+	nested interrupt adds nothing more. Other profiles are not modeled.
+
+	>>> _exception_frame(ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=False))
+	36
+	>>> _exception_frame(ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=True))
+	108
+	>>> _exception_frame(ArmCore(profile=ArmProfile.APPLICATION, floating_point=True))
+	0
+	"""
+	match core:
+		case ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=floating_point):
+			return (_EXTENDED_FRAME if floating_point else _BASIC_FRAME) + _ALIGNMENT_PAD
+		case ArmCore() | None:
+			return 0
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _address(data_object: DataObject) -> Address:

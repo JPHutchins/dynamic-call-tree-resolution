@@ -27,6 +27,8 @@ class Bounded(Struct):
 	bytes: int
 	measured: frozenset[str] = frozenset()
 	"""Reachable functions whose frames come from their code."""
+	exception_frame: int = 0
+	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
 
 
 class Unbounded(Struct):
@@ -43,6 +45,8 @@ class Unbounded(Struct):
 	"""Reachable callers of an indirect call without candidates."""
 	measured: frozenset[str] = frozenset()
 	"""Reachable functions whose frames come from their code."""
+	exception_frame: int = 0
+	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``at_least``."""
 
 
 class StackReport(Struct):
@@ -378,12 +382,14 @@ def stack_reports(graph: StackGraph) -> tuple[StackReport, ...]:
 
 
 def thread_reports(
-	reports: Iterable[StackReport], own_graphs: Mapping[str, StackGraph]
+	reports: Iterable[StackReport],
+	own_graphs: Mapping[str, StackGraph],
+	exception_frame: int = 0,
 ) -> tuple[StackReport, ...]:
 	return tuple(
 		sorted(
 			(
-				_report(own_graphs[report.entry], report.entry)
+				_interrupted(_report(own_graphs[report.entry], report.entry), exception_frame)
 				if report.entry in own_graphs
 				else report
 				for report in reports
@@ -391,6 +397,28 @@ def thread_reports(
 			key=_report_order,
 		)
 	)
+
+
+def _interrupted(report: StackReport, exception_frame: int) -> StackReport:
+	match report.bound:
+		case Bounded(bytes=depth):
+			return replace(
+				report,
+				bound=replace(
+					report.bound, bytes=depth + exception_frame, exception_frame=exception_frame
+				),
+			)
+		case Unbounded(at_least=at_least):
+			return replace(
+				report,
+				bound=replace(
+					report.bound,
+					at_least=at_least + exception_frame,
+					exception_frame=exception_frame,
+				),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def deepest_path(graph: StackGraph, entry: str) -> tuple[PathStep, ...]:
