@@ -109,6 +109,12 @@ _NARROW_BY_FIELD: Final = Parameter(
 	"beside the ELF; unsound, since a cast or a memcpy can store a function unseen"
 )
 
+_ASSUME_NO_RECURSION: Final = Parameter(
+	help="assume this function never calls itself, and drop its call to itself; repeat it "
+	"for each function. Only a direct self-call is dropped, and the rows that rest on it "
+	"say so"
+)
+
 _RTOS: Final = Parameter(
 	help="the RTOS whose threads start their entries with known arguments: auto detects "
 	"it, and none models no RTOS"
@@ -130,7 +136,13 @@ def _skip_reason(path: Path) -> str | None:
 def _render(report: StackReport) -> str:
 	match report.bound:
 		case Bounded(bytes=depth) as bound:
-			notes = _notes((("measured", bound.measured),), bound.exception_frame)
+			notes = _notes(
+				(
+					("measured", bound.measured),
+					("assumed no recursion", bound.assumed_no_recursion),
+				),
+				bound.exception_frame,
+			)
 			return f"{report.entry}: {depth} bytes" + (f" ({notes})" if notes else "")
 		case Unbounded() as bound:
 			notes = _notes(
@@ -138,6 +150,7 @@ def _render(report: StackReport) -> str:
 					("recursion", bound.recursion),
 					("unmeasured", bound.unmeasured),
 					("measured", bound.measured),
+					("assumed no recursion", bound.assumed_no_recursion),
 					("dynamic", bound.dynamic),
 					("unresolved", bound.unresolved),
 				),
@@ -689,6 +702,7 @@ def stack(
 	json: Annotated[bool, Parameter(name=("--json", "-j"), help="emit JSON")] = False,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
+	assume_no_recursion: Annotated[tuple[str, ...], _ASSUME_NO_RECURSION] = (),
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 	path: Annotated[
 		str | None,
@@ -716,9 +730,10 @@ def stack(
 		expansion.expanded if expansion is not None else artifacts.edges,
 		expansion.frames if expansion is not None else artifacts.frames,
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
+		assumed_no_recursion=frozenset(assume_no_recursion),
 	)
 	reports = stack_reports(graph)
-	own_graphs = _own_graphs(expansion)
+	own_graphs = _own_graphs(expansion, frozenset(assume_no_recursion))
 	kept = (
 		_in_image(thread_reports(reports, own_graphs, expansion.rtos.exception_frame), expansion)
 		if expansion is not None
@@ -737,6 +752,7 @@ def stack(
 			f"| membership: {expansion.membership}"
 			f"{' | narrowed by signature' if narrow_by_signature else ''}"
 			f"{' | narrowed by field' if narrow_by_field else ''}"
+			f"{f' | assumed no recursion: {", ".join(sorted(assume_no_recursion))}' if assume_no_recursion else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
 	for report in shown:
@@ -761,10 +777,12 @@ def _not_in_image(names_dropped: int, expansion: _Expansion) -> str:
 			assert_never(unreachable)
 
 
-def _own_graphs(expansion: _Expansion | None) -> Mapping[str, StackGraph]:
+def _own_graphs(
+	expansion: _Expansion | None, assumed_no_recursion: frozenset[str]
+) -> Mapping[str, StackGraph]:
 	return (
 		{
-			thread: stack_graph(edges, expansion.frames)
+			thread: stack_graph(edges, expansion.frames, assumed_no_recursion=assumed_no_recursion)
 			for thread, edges in expansion.own_edges.items()
 		}
 		if expansion is not None
@@ -803,6 +821,7 @@ def summary(
 	*,
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
+	assume_no_recursion: Annotated[tuple[str, ...], _ASSUME_NO_RECURSION] = (),
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
@@ -815,10 +834,19 @@ def summary(
 		rtos=rtos,
 	)
 	reports = stack_reports(
-		stack_graph(expansion.expanded, expansion.frames, entry_edges=expansion.in_image_edges)
+		stack_graph(
+			expansion.expanded,
+			expansion.frames,
+			entry_edges=expansion.in_image_edges,
+			assumed_no_recursion=frozenset(assume_no_recursion),
+		)
 	)
 	kept = _in_image(
-		thread_reports(reports, _own_graphs(expansion), expansion.rtos.exception_frame),
+		thread_reports(
+			reports,
+			_own_graphs(expansion, frozenset(assume_no_recursion)),
+			expansion.rtos.exception_frame,
+		),
 		expansion,
 	)
 	worst = next(iter(kept), StackReport(entry="", bound=Bounded(bytes=0)))

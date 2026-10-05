@@ -170,6 +170,8 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	"""Reachable functions whose frames come from their code."""
 	exception_frame_bytes: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
+	assumed_no_recursion: tuple[str, ...] = ()
+	"""Reachable functions assumed never to call themselves."""
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
@@ -185,6 +187,8 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	exception_frame_bytes: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in
 	``at_least_bytes``."""
+	assumed_no_recursion: tuple[str, ...] = ()
+	"""Reachable functions assumed never to call themselves."""
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
@@ -194,6 +198,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				bytes=depth,
 				measured=tuple(sorted(measured)),
 				exception_frame_bytes=exception_frame,
+				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 			)
 		case Unbounded():
 			return UnboundedStack(
@@ -204,6 +209,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				unresolved=tuple(sorted(bound.unresolved)),
 				measured=tuple(sorted(bound.measured)),
 				exception_frame_bytes=bound.exception_frame,
+				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)

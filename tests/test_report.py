@@ -86,7 +86,7 @@ def test_a_bounded_stack_serializes_its_bytes_and_its_measured_frames_sorted() -
 		msgspec.json.encode(
 			stack_bound_report(Bounded(bytes=16, measured=frozenset({"memset", "__aeabi_ldivmod"})))
 		)
-		== b'{"kind":"bounded","bytes":16,"measured":["__aeabi_ldivmod","memset"],"exception_frame_bytes":0}'
+		== b'{"kind":"bounded","bytes":16,"measured":["__aeabi_ldivmod","memset"],"exception_frame_bytes":0,"assumed_no_recursion":[]}'
 	)
 
 

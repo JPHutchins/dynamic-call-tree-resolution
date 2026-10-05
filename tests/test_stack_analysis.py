@@ -245,6 +245,64 @@ def test_a_thread_takes_the_global_expansion_of_a_site_its_own_analysis_did_not_
 	)
 
 
+def _cycle(at_least: int, recursion: frozenset[str]) -> Unbounded:
+	return Unbounded(
+		at_least=at_least,
+		recursion=recursion,
+		unmeasured=frozenset(),
+		dynamic=frozenset(),
+		unresolved=frozenset(),
+	)
+
+
+@pytest.mark.parametrize(
+	("assumed", "bounds"),
+	[
+		pytest.param(
+			frozenset[str](),
+			{
+				"main": _cycle(8 + 16 + 4, frozenset({"a"})),
+				"b": _cycle(24 + 32 + 8, frozenset({"x", "y"})),
+			},
+			id="none",
+		),
+		pytest.param(
+			frozenset({"a", "x"}),
+			{
+				"main": Bounded(bytes=8 + 16 + 4, assumed_no_recursion=frozenset({"a"})),
+				"b": _cycle(24 + 32 + 8, frozenset({"x", "y"})),
+			},
+			id="self-call-cut-and-two-function-cycle-kept",
+		),
+	],
+)
+def test_assuming_a_function_never_calls_itself_drops_only_its_self_call(
+	assumed: frozenset[str], bounds: Mapping[str, Bounded | Unbounded]
+) -> None:
+	graph = stack_graph(
+		(
+			CallEdge(caller="main", callee="a"),
+			CallEdge(caller="a", callee="a"),
+			CallEdge(caller="a", callee="leaf"),
+			CallEdge(caller="b", callee="x"),
+			CallEdge(caller="x", callee="y"),
+			CallEdge(caller="y", callee="x"),
+		),
+		(
+			StackUsage(function="main", bytes=8, bounded=True),
+			StackUsage(function="a", bytes=16, bounded=True),
+			StackUsage(function="leaf", bytes=4, bounded=True),
+			StackUsage(function="b", bytes=24, bounded=True),
+			StackUsage(function="x", bytes=32, bounded=True),
+			StackUsage(function="y", bytes=8, bounded=True),
+		),
+		assumed_no_recursion=assumed,
+	)
+	assert {
+		report.entry: report.bound for report in stack_reports(graph) if report.entry in bounds
+	} == bounds
+
+
 def test_worst_case_depth_takes_the_deepest_branch() -> None:
 	edges = (
 		CallEdge(caller="main", callee="a"),
