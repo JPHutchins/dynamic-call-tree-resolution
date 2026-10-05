@@ -42,7 +42,12 @@ from dynamic_call_tree_resolution.model import (
 	SourceLocation,
 	StructureLayout,
 )
-from dynamic_call_tree_resolution.report import StackEntryReport, UnboundedStack, resolved_by_slot
+from dynamic_call_tree_resolution.report import (
+	BoundedStack,
+	StackEntryReport,
+	UnboundedStack,
+	resolved_by_slot,
+)
 from dynamic_call_tree_resolution.vsa import address_taken
 from tests.programs import build_program
 from tests.toolchains import FIXTURES, build_cortex_m3, run_cortex_m3
@@ -265,9 +270,14 @@ def test_analyze_narrows_the_device_api_calls_to_what_their_fields_hold(
 	]
 
 
-def _unbounded(recursion: tuple[str, ...], unmeasured: tuple[str, ...]) -> UnboundedStack:
+def _recursing(measured: tuple[str, ...]) -> UnboundedStack:
 	return UnboundedStack(
-		at_least_bytes=184, recursion=recursion, unmeasured=unmeasured, dynamic=(), unresolved=()
+		at_least_bytes=184,
+		recursion=("i2c_emul_transfer",),
+		unmeasured=(),
+		dynamic=(),
+		unresolved=(),
+		measured=measured,
 	)
 
 
@@ -278,15 +288,15 @@ def _unbounded(recursion: tuple[str, ...], unmeasured: tuple[str, ...]) -> Unbou
 		(
 			"sensor-threads",
 			{
-				"motion_tid": _unbounded((), ("__aeabi_ldivmod", "memset")),
-				"thermal_tid": _unbounded(("i2c_emul_transfer",), ("__aeabi_ldivmod", "memset")),
+				"motion_tid": BoundedStack(bytes=184, measured=("__aeabi_ldivmod", "memset")),
+				"thermal_tid": _recursing(("__aeabi_ldivmod", "memset")),
 			},
 		),
 		(
 			"sensor-two-impl",
 			{
-				"motion_tid": _unbounded(("i2c_emul_transfer",), ("__aeabi_ldivmod",)),
-				"thermal_tid": _unbounded(("i2c_emul_transfer",), ("__aeabi_ldivmod",)),
+				"motion_tid": _recursing(("__aeabi_ldivmod",)),
+				"thermal_tid": _recursing(("__aeabi_ldivmod",)),
 			},
 		),
 	],
@@ -295,7 +305,7 @@ def test_each_threads_tree_stays_below_its_own_bus_and_recurses_only_through_i2c
 	zephyr_fixtures: Path,
 	capsys: pytest.CaptureFixture[str],
 	fixture: str,
-	bounds: Mapping[str, UnboundedStack],
+	bounds: Mapping[str, BoundedStack | UnboundedStack],
 ) -> None:
 	stack(
 		zephyr_fixtures / fixture,

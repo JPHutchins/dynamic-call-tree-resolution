@@ -85,13 +85,13 @@ def _first_graph(
 ) -> tuple[Function, tuple[Block, ...]] | None:
 	return next(
 		filter(
-			None, (_function_graph(program, decoders, start, function) for function in functions)
+			None, (function_graph(program, decoders, start, function) for function in functions)
 		),
 		None,
 	)
 
 
-def _function_graph(
+def function_graph(
 	program: Program, decoders: Mapping[InstructionSet, Cs], start: Address, function: Function
 ) -> tuple[Function, tuple[Block, ...]] | None:
 	runs = instruction_runs(program, start, function.size)

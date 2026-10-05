@@ -64,6 +64,8 @@ from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	Bounded,
+	Frame,
+	MeasuredFrame,
 	PathStep,
 	StackGraph,
 	StackReport,
@@ -83,6 +85,7 @@ from dynamic_call_tree_resolution.stack_usage import (
 	stack_usage_files,
 	stack_usage_locations,
 )
+from dynamic_call_tree_resolution.vsa.frames import code_depths
 
 if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
@@ -126,14 +129,17 @@ def _skip_reason(path: Path) -> str | None:
 
 def _render(report: StackReport) -> str:
 	match report.bound:
-		case Bounded(bytes=depth):
-			return f"{report.entry}: {depth} bytes"
+		case Bounded(bytes=depth, measured=measured):
+			return f"{report.entry}: {depth} bytes" + (
+				f" (measured: {len(measured)})" if measured else ""
+			)
 		case Unbounded() as bound:
 			reasons = ", ".join(
 				f"{reason}: {len(functions)}"
 				for reason, functions in (
 					("recursion", bound.recursion),
 					("unmeasured", bound.unmeasured),
+					("measured", bound.measured),
 					("dynamic", bound.dynamic),
 					("unresolved", bound.unresolved),
 				)
@@ -340,7 +346,7 @@ def _narrowed_by_field(elf: Path, program: Program) -> tuple[NarrowedSpan, ...]:
 class _Expansion(Struct):
 	expanded: tuple[CallEdge, ...]
 	in_image_edges: tuple[CallEdge, ...]
-	frames: tuple[StackUsage, ...]
+	frames: tuple[Frame, ...]
 	threads: frozenset[str]
 	own_edges: Mapping[str, tuple[CallEdge, ...]]
 	"""Each thread's tree from its own analysis, by thread."""
@@ -497,7 +503,11 @@ def _expand_from_elf(
 	return _Expansion(
 		expanded=(*expanded, *threads_edges),
 		in_image_edges=(*in_image_edges, *threads_edges),
-		frames=(*artifacts.frames, *threads_frames),
+		frames=(
+			*artifacts.frames,
+			*threads_frames,
+			*_code_frames(image, (*expanded, *threads_edges), (*artifacts.frames, *threads_frames)),
+		),
 		threads=frozenset(thread.name for thread in model.threads),
 		own_edges={
 			thread: (*expanded, *own)
@@ -522,6 +532,27 @@ def _expand_from_elf(
 		image_functions=image_functions,
 		membership=artifacts.membership,
 		dropped=artifacts.dropped,
+	)
+
+
+def _code_frames(
+	image: _Image, edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...]
+) -> tuple[MeasuredFrame, ...]:
+	unframed = (
+		frozenset(frame_key(node) for edge in edges for node in (edge.caller, edge.callee))
+		- {frame_key(frame.function) for frame in frames}
+		- {INDIRECT_CALLEE}
+	)
+	starts = {address: name for address, name in image.names.items() if frame_key(name) in unframed}
+	depths = code_depths(image.program, frozenset(starts))
+	return tuple(
+		MeasuredFrame(function=starts[address], bytes=depths[address])
+		for key in unframed
+		for addresses in (
+			frozenset(address for address in starts if frame_key(starts[address]) == key),
+		)
+		if addresses and addresses <= depths.keys()
+		for address in addresses
 	)
 
 

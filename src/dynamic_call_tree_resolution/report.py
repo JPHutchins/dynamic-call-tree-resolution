@@ -166,6 +166,8 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	"""A stack depth that bounds every path of the call graph."""
 
 	bytes: int
+	measured: tuple[str, ...] = ()
+	"""Reachable functions whose frames come from their code."""
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
@@ -176,12 +178,14 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	unmeasured: tuple[str, ...]
 	dynamic: tuple[str, ...]
 	unresolved: tuple[str, ...]
+	measured: tuple[str, ...] = ()
+	"""Reachable functions whose frames come from their code."""
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
 	match bound:
-		case Bounded(bytes=depth):
-			return BoundedStack(bytes=depth)
+		case Bounded(bytes=depth, measured=measured):
+			return BoundedStack(bytes=depth, measured=tuple(sorted(measured)))
 		case Unbounded():
 			return UnboundedStack(
 				at_least_bytes=bound.at_least,
@@ -189,6 +193,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				unmeasured=tuple(sorted(bound.unmeasured)),
 				dynamic=tuple(sorted(bound.dynamic)),
 				unresolved=tuple(sorted(bound.unresolved)),
+				measured=tuple(sorted(bound.measured)),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)

@@ -81,9 +81,12 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 	assert msgspec.json.decode(msgspec.json.encode(comparison), type=ComparisonReport) == comparison
 
 
-def test_a_bounded_stack_serializes_its_bytes() -> None:
-	assert msgspec.json.encode(stack_bound_report(Bounded(bytes=16))) == (
-		b'{"kind":"bounded","bytes":16}'
+def test_a_bounded_stack_serializes_its_bytes_and_its_measured_frames_sorted() -> None:
+	assert (
+		msgspec.json.encode(
+			stack_bound_report(Bounded(bytes=16, measured=frozenset({"memset", "__aeabi_ldivmod"})))
+		)
+		== b'{"kind":"bounded","bytes":16,"measured":["__aeabi_ldivmod","memset"]}'
 	)
 
 

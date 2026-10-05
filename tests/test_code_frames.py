@@ -1,0 +1,122 @@
+# Copyright (c) 2026 JP Hutchins
+# SPDX-License-Identifier: MIT
+
+"""Frames measured from the code of functions without a ``.su`` record (#195)."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import pytest
+
+from dynamic_call_tree_resolution import Address, load
+from dynamic_call_tree_resolution.cli import stack
+from dynamic_call_tree_resolution.vsa.frames import code_depths
+from tests.toolchains import FIXTURES, build_cortex_m3
+
+if TYPE_CHECKING:
+	from pathlib import Path
+
+
+def _depths(elf: Path, names: tuple[str, ...]) -> dict[str, int | None]:
+	program = load(elf)
+	depths = code_depths(
+		program, frozenset(start for name in names for start in program.symbol_addresses[name])
+	)
+	return {name: depths.get(start) for name in names for start in program.symbol_addresses[name]}
+
+
+def test_a_functions_depth_is_what_its_code_moves_the_stack_by_and_its_callees_add(
+	tmp_path: Path,
+) -> None:
+	assert _depths(
+		build_cortex_m3((FIXTURES / "code_frames.c",), tmp_path / "image.elf", "-g", "-O2"),
+		(
+			"leaf_push",
+			"calls_leaf",
+			"tail_to_leaf",
+			"unsized",
+			"variable_sub",
+			"indirect",
+			"self_call",
+		),
+	) == {
+		"leaf_push": 20,
+		"calls_leaf": 8 + 20,
+		"tail_to_leaf": 20,
+		"unsized": 12,
+		"variable_sub": None,
+		"indirect": None,
+		"self_call": None,
+	}
+
+
+def test_an_address_that_starts_no_function_has_no_depth(tmp_path: Path) -> None:
+	program = load(
+		build_cortex_m3((FIXTURES / "code_frames.c",), tmp_path / "image.elf", "-g", "-O2")
+	)
+	assert (
+		code_depths(
+			program,
+			frozenset(Address(start + 2) for start in program.symbol_addresses["leaf_push"]),
+		)
+		== {}
+	)
+
+
+@pytest.mark.image
+def test_the_library_code_the_sensor_threads_reach_measures_as_its_disassembly_counts(
+	zephyr_fixtures: Path,
+) -> None:
+	assert _depths(
+		zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf",
+		(
+			"memset",
+			"strcmp",
+			"__aeabi_memcpy8",
+			"__udivmoddi4",
+			"__aeabi_idiv0",
+			"__aeabi_ldivmod",
+			"z_arm_pendsv",
+			"z_SysNmiOnReset",
+			"__l_vfprintf",
+			"__start",
+			"z_arm_svc",
+			"z_arm_hard_fault",
+		),
+	) == {
+		"memset": 0,
+		"strcmp": 0,
+		"__aeabi_memcpy8": 8,
+		"__udivmoddi4": 32,
+		"__aeabi_idiv0": 0,
+		"__aeabi_ldivmod": 16 + 32,
+		"z_arm_pendsv": 0,
+		"z_SysNmiOnReset": 0,
+		"__l_vfprintf": None,
+		"__start": None,
+		"z_arm_svc": None,
+		"z_arm_hard_fault": None,
+	}
+
+
+def test_a_su_record_wins_over_the_code_and_only_callees_without_one_are_measured(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	elf = build_cortex_m3((FIXTURES / "code_frames.c",), tmp_path / "image.elf", "-g", "-O2")
+	(tmp_path / "main.c.ci").write_text(
+		'graph: { title: "main.c"\n'
+		'node: { title: "main" label: "main\\nmain.c:1:5\\n16 bytes (static)" }\n'
+		'edge: { sourcename: "main" targetname: "leaf_push" }\n'
+		'edge: { sourcename: "main" targetname: "calls_leaf" }\n'
+		"}\n"
+	)
+	(tmp_path / "main.c.su").write_text(
+		"main.c:1:5:main\t16\tstatic\nmain.c:2:6:leaf_push\t4\tstatic\n"
+	)
+	stack(tmp_path, elf=elf, path="main")
+	assert capsys.readouterr().out.splitlines()[1:] == [
+		"main: 44 bytes (measured: 1)",
+		"main +16 = 16 bytes",
+		"calls_leaf +28 = 44 bytes via static (measured)",
+	]
