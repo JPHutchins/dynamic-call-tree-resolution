@@ -387,6 +387,23 @@ motion_tid: 220 bytes (measured: 2, exception frame: 36 bytes)
 - `thermal_tid` recurses through `i2c_emul_transfer`, which can forward a transfer to
   another bus. That recursion is in the code, and no narrowing removes it.
 
+In this build the forward list is empty, so `i2c_emul_transfer` never calls itself.
+Stating that bounds `thermal_tid` too:
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-no-recursion i2c_emul_transfer
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
+...
+motion_tid: 220 bytes (measured: 2, exception frame: 36 bytes)
+thermal_tid: 220 bytes (measured: 2, assumed no recursion: 1, exception frame: 36 bytes)
+...
+```
+
+- Both QEMU marks above are within these bounds, and `test_sensor_threads` asserts it
+  with each margin ([#169]).
+- QEMU's mark also counts the thread-local storage Zephyr reserves at the top of each
+  thread's stack, which a row leaves out ([#151]).
+
 Zephyr's own `samples/synchronization`, built at `$DCTR_FIXTURES/synchronization`,
 starts `thread_b` from a record and `thread_a` with `k_thread_create`. The call that
 starts every thread goes to both:
@@ -454,6 +471,10 @@ contradicts does not hold.
   [#159]). With `--narrow-by-field`, each narrows to the emulator on its own bus.
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
   it. It is off by default.
+- `--assume-no-recursion FUNCTION`, repeated for each function, states that the function
+  never calls itself and drops its call to itself. Only a direct self-call is dropped: a
+  function on a longer cycle stays recursive. Nothing checks the assumption; the header
+  and every row that rests on it name it ([#169], [#202]).
 - `--narrow-by-field` assumes that every function stored into a field is stored as that
   field. A cast, a `memcpy` or a union member can store one it never sees
   (`tests/fixtures/reproducers/field_cast.c`), so it is off by default. It reads the
@@ -563,3 +584,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#185]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/185
 [#195]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/195
 [#198]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/198
+[#202]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/202

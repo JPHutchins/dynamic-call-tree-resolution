@@ -40,32 +40,50 @@ def test_each_thread_reports_its_own_stack_high_water_on_qemu(zephyr_fixtures: P
 	)
 
 
-def test_motion_tids_measured_high_water_is_within_its_bound_with_the_exception_frame(
+def test_each_threads_measured_high_water_is_within_its_bound_with_the_exception_frame(
 	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
 	artifacts = zephyr_fixtures / "sensor-threads"
-	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", narrow_by_field=True, json=True)
+	stack(
+		artifacts,
+		artifacts / "zephyr" / "zephyr.elf",
+		narrow_by_field=True,
+		assume_no_recursion=("i2c_emul_transfer",),
+		json=True,
+	)
 	used = {
 		thread: int(size) - int(unused)
 		for line in QEMU_CONSOLE
 		if " unused " in line
 		for thread, _, unused, _, size in (line.split(),)
 	}
-	assert next(
-		(
-			used["motion_tid"],
+	assert {
+		row.entry: (
+			used[row.entry],
 			row.bound,
-			row.bound.bytes - used["motion_tid"] if isinstance(row.bound, BoundedStack) else None,
+			row.bound.bytes - used[row.entry] if isinstance(row.bound, BoundedStack) else None,
 		)
 		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
-		if row.entry == "motion_tid"
-	) == (
-		160,
-		BoundedStack(
-			bytes=184 + 36, measured=("__aeabi_ldivmod", "memset"), exception_frame_bytes=36
+		if row.entry in used
+	} == {
+		"motion_tid": (
+			160,
+			BoundedStack(
+				bytes=184 + 36, measured=("__aeabi_ldivmod", "memset"), exception_frame_bytes=36
+			),
+			60,
 		),
-		60,
-	)
+		"thermal_tid": (
+			184,
+			BoundedStack(
+				bytes=184 + 36,
+				measured=("__aeabi_ldivmod", "memset"),
+				exception_frame_bytes=36,
+				assumed_no_recursion=("i2c_emul_transfer",),
+			),
+			36,
+		),
+	}
 
 
 def test_the_readme_quotes_each_threads_high_water_as_qemu_prints_it() -> None:

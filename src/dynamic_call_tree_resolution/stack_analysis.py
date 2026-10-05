@@ -29,6 +29,8 @@ class Bounded(Struct):
 	"""Reachable functions whose frames come from their code."""
 	exception_frame: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
+	assumed_no_recursion: frozenset[str] = frozenset()
+	"""Reachable functions assumed never to call themselves."""
 
 
 class Unbounded(Struct):
@@ -47,6 +49,8 @@ class Unbounded(Struct):
 	"""Reachable functions whose frames come from their code."""
 	exception_frame: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``at_least``."""
+	assumed_no_recursion: frozenset[str] = frozenset()
+	"""Reachable functions assumed never to call themselves."""
 
 
 class StackReport(Struct):
@@ -64,6 +68,7 @@ class Reason(StrEnum):
 	DYNAMIC = "dynamic"
 	UNRESOLVED = "unresolved"
 	MEASURED = "measured"
+	ASSUMED_NO_RECURSION = "assumed no recursion"
 
 
 type _Reasons = frozenset[tuple[Reason, str]]
@@ -90,6 +95,8 @@ class StackGraph(Struct):
 	reasons: Mapping[str, _Reasons]
 	kinds: Mapping[tuple[str, str], frozenset[EdgeKind]]
 	roots: tuple[str, ...]
+	assumed_no_recursion: frozenset[str] = frozenset()
+	"""The functions whose call to themselves an assumption removed."""
 
 
 class PathStep(Struct):
@@ -114,6 +121,8 @@ class _Forward(Struct):
 _MAX_CYCLE_SIZE: Final = 16
 
 INDIRECT_CALLEE: Final = "__indirect_call"
+
+_NOTED: Final = frozenset({Reason.MEASURED, Reason.ASSUMED_NO_RECURSION})
 
 
 def expand_indirect_calls(
@@ -341,12 +350,21 @@ def stack_graph(
 	frames: Iterable[Frame],
 	*,
 	entry_edges: Iterable[CallEdge] | None = None,
+	assumed_no_recursion: frozenset[str] = frozenset(),
 ) -> StackGraph:
-	edges_tuple = tuple(edges)
+	given = tuple(edges)
+	edges_tuple = tuple(edge for edge in given if not _assumed_away(edge, assumed_no_recursion))
+	assumed = frozenset(
+		frame_key(edge.caller) for edge in given if _assumed_away(edge, assumed_no_recursion)
+	)
 	frames_tuple = tuple(frames)
 	frame_by_name = _frames_by_bare_name(frames_tuple)
 	adjacency = _adjacency(edges_tuple)
-	root_adjacency = _adjacency(entry_edges) if entry_edges is not None else adjacency
+	root_adjacency = (
+		_adjacency(edge for edge in entry_edges if not _assumed_away(edge, assumed_no_recursion))
+		if entry_edges is not None
+		else adjacency
+	)
 	components = _strongly_connected_components(adjacency)
 	root_callees = _callees(root_adjacency)
 	root_graph_nodes = {frame_key(node) for node in set(root_adjacency) | root_callees}
@@ -355,7 +373,8 @@ def stack_graph(
 		frame_by_name=frame_by_name,
 		components={node: frozenset(component) for component in components for node in component},
 		depths=_depths_by_component(adjacency, frame_by_name, components),
-		reasons=_reasons_by_component(adjacency, frame_by_name, components),
+		reasons=_reasons_by_component(adjacency, frame_by_name, components, assumed),
+		assumed_no_recursion=assumed,
 		kinds={
 			pair: frozenset(edge.kind for edge in group)
 			for pair, group in groupby(sorted(edges_tuple, key=_pair), key=_pair)
@@ -440,7 +459,7 @@ def _root_reasons(graph: StackGraph, root: str) -> _Reasons:
 	return (
 		graph.reasons[root]
 		if root in graph.reasons
-		else _own_reasons(root, graph.adjacency, graph.frame_by_name)
+		else _own_reasons(root, graph.adjacency, graph.frame_by_name, graph.assumed_no_recursion)
 	)
 
 
@@ -556,7 +575,10 @@ def _frame_size(graph: StackGraph, node: str) -> int:
 
 def _flags(graph: StackGraph, node: str) -> frozenset[Reason]:
 	return frozenset(
-		reason for reason, _ in _own_reasons(node, graph.adjacency, graph.frame_by_name)
+		reason
+		for reason, _ in _own_reasons(
+			node, graph.adjacency, graph.frame_by_name, graph.assumed_no_recursion
+		)
 	) | (
 		frozenset({Reason.RECURSION})
 		if len(_members(graph, node)) > 1 or node in graph.adjacency.get(node, frozenset())
@@ -580,9 +602,14 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 			dynamic=_names(reasons, Reason.DYNAMIC),
 			unresolved=_names(reasons, Reason.UNRESOLVED),
 			measured=_names(reasons, Reason.MEASURED),
+			assumed_no_recursion=_names(reasons, Reason.ASSUMED_NO_RECURSION),
 		)
-		if any(reason is not Reason.MEASURED for reason, _ in reasons)
-		else Bounded(bytes=depth, measured=_names(reasons, Reason.MEASURED))
+		if any(reason not in _NOTED for reason, _ in reasons)
+		else Bounded(
+			bytes=depth,
+			measured=_names(reasons, Reason.MEASURED),
+			assumed_no_recursion=_names(reasons, Reason.ASSUMED_NO_RECURSION),
+		)
 	)
 
 
@@ -604,11 +631,17 @@ def _own_reasons(
 	node: str,
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, Frame],
+	assumed_no_recursion: frozenset[str],
 ) -> _Reasons:
 	return frozenset(
 		(reason, frame_key(node))
 		for reason in (
 			*_frame_reasons(frame_by_name.get(frame_key(node)), node),
+			*(
+				(Reason.ASSUMED_NO_RECURSION,)
+				if frame_key(node) in assumed_no_recursion
+				else tuple[Reason, ...]()
+			),
 			*(
 				(Reason.UNRESOLVED,)
 				if INDIRECT_CALLEE in adjacency.get(node, frozenset())
@@ -634,12 +667,16 @@ def _reasons_by_component(
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, Frame],
 	components: tuple[tuple[str, ...], ...],
+	assumed_no_recursion: frozenset[str],
 ) -> Mapping[str, _Reasons]:
 	closure: dict[str, _Reasons] = {}
 	for component in components:
 		members = frozenset(component)
 		reasons = frozenset[tuple[Reason, str]]().union(
-			*(_own_reasons(member, adjacency, frame_by_name) for member in component),
+			*(
+				_own_reasons(member, adjacency, frame_by_name, assumed_no_recursion)
+				for member in component
+			),
 			*(
 				closure[callee]
 				for member in component
@@ -761,6 +798,13 @@ def _depth(
 	depth = (frame.bytes if frame is not None else 0) + max(children, default=0)
 	within[key] = depth
 	return depth
+
+
+def _assumed_away(edge: CallEdge, assumed_no_recursion: frozenset[str]) -> bool:
+	return (
+		frame_key(edge.caller) == frame_key(edge.callee)
+		and frame_key(edge.callee) in assumed_no_recursion
+	)
 
 
 def _frame_bytes(frame: Frame) -> int:
