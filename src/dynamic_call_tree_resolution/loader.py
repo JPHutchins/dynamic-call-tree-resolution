@@ -205,6 +205,7 @@ def _load(stream: BinaryIO) -> Program:
 		declarations=_declarations(dwarf),
 		symbol_addresses=_symbol_addresses(symtab, machine),
 		arm_core=_arm_core(elf),
+		tls_size=sum(segment["p_memsz"] for segment in elf.iter_segments(type="PT_TLS")),
 	)
 
 

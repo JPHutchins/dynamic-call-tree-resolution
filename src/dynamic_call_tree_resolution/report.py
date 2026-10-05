@@ -168,6 +168,9 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	bytes: int
 	measured: tuple[str, ...] = ()
 	"""Reachable functions whose frames come from their code."""
+	stack_reservation_bytes: int = 0
+	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
+	``bytes``."""
 	exception_frame_bytes: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
 	assumed_no_recursion: tuple[str, ...] = ()
@@ -184,6 +187,9 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	unresolved: tuple[str, ...]
 	measured: tuple[str, ...] = ()
 	"""Reachable functions whose frames come from their code."""
+	stack_reservation_bytes: int = 0
+	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
+	``at_least_bytes``."""
 	exception_frame_bytes: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in
 	``at_least_bytes``."""
@@ -197,6 +203,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 			return BoundedStack(
 				bytes=depth,
 				measured=tuple(sorted(measured)),
+				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=exception_frame,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 			)
@@ -208,6 +215,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				dynamic=tuple(sorted(bound.dynamic)),
 				unresolved=tuple(sorted(bound.unresolved)),
 				measured=tuple(sorted(bound.measured)),
+				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=bound.exception_frame,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 			)

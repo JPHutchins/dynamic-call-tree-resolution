@@ -15,10 +15,13 @@ from typing import TYPE_CHECKING, Final, assert_never
 from salix import Struct, replace
 
 from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
+from dynamic_call_tree_resolution.model import BARE_METAL
 from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 if TYPE_CHECKING:
 	from collections.abc import Callable, Iterable, Mapping
+
+	from dynamic_call_tree_resolution.model import RtosModel
 
 
 class Bounded(Struct):
@@ -27,6 +30,9 @@ class Bounded(Struct):
 	bytes: int
 	measured: frozenset[str] = frozenset()
 	"""Reachable functions whose frames come from their code."""
+	stack_reservation: int = 0
+	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
+	``bytes``."""
 	exception_frame: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
 	assumed_no_recursion: frozenset[str] = frozenset()
@@ -47,6 +53,9 @@ class Unbounded(Struct):
 	"""Reachable callers of an indirect call without candidates."""
 	measured: frozenset[str] = frozenset()
 	"""Reachable functions whose frames come from their code."""
+	stack_reservation: int = 0
+	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
+	``at_least``."""
 	exception_frame: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``at_least``."""
 	assumed_no_recursion: frozenset[str] = frozenset()
@@ -403,12 +412,12 @@ def stack_reports(graph: StackGraph) -> tuple[StackReport, ...]:
 def thread_reports(
 	reports: Iterable[StackReport],
 	own_graphs: Mapping[str, StackGraph],
-	exception_frame: int = 0,
+	rtos: RtosModel = BARE_METAL,
 ) -> tuple[StackReport, ...]:
 	return tuple(
 		sorted(
 			(
-				_interrupted(_report(own_graphs[report.entry], report.entry), exception_frame)
+				_on_thread_stack(_report(own_graphs[report.entry], report.entry), rtos)
 				if report.entry in own_graphs
 				else report
 				for report in reports
@@ -418,13 +427,16 @@ def thread_reports(
 	)
 
 
-def _interrupted(report: StackReport, exception_frame: int) -> StackReport:
+def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
 	match report.bound:
 		case Bounded(bytes=depth):
 			return replace(
 				report,
 				bound=replace(
-					report.bound, bytes=depth + exception_frame, exception_frame=exception_frame
+					report.bound,
+					bytes=depth + rtos.stack_reservation + rtos.exception_frame,
+					stack_reservation=rtos.stack_reservation,
+					exception_frame=rtos.exception_frame,
 				),
 			)
 		case Unbounded(at_least=at_least):
@@ -432,8 +444,9 @@ def _interrupted(report: StackReport, exception_frame: int) -> StackReport:
 				report,
 				bound=replace(
 					report.bound,
-					at_least=at_least + exception_frame,
-					exception_frame=exception_frame,
+					at_least=at_least + rtos.stack_reservation + rtos.exception_frame,
+					stack_reservation=rtos.stack_reservation,
+					exception_frame=rtos.exception_frame,
 				),
 			)
 		case _ as unreachable:

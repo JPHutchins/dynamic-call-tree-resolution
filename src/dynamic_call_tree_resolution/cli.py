@@ -4,6 +4,7 @@
 """Command line interface for analyzing ELF images."""
 
 import sys
+from itertools import accumulate
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
 from typing import TYPE_CHECKING, Annotated, Final, assert_never
 
@@ -141,7 +142,7 @@ def _render(report: StackReport) -> str:
 					("measured", bound.measured),
 					("assumed no recursion", bound.assumed_no_recursion),
 				),
-				bound.exception_frame,
+				_thread_stack_additions(bound),
 			)
 			return f"{report.entry}: {depth} bytes" + (f" ({notes})" if notes else "")
 		case Unbounded() as bound:
@@ -154,31 +155,43 @@ def _render(report: StackReport) -> str:
 					("dynamic", bound.dynamic),
 					("unresolved", bound.unresolved),
 				),
-				bound.exception_frame,
+				_thread_stack_additions(bound),
 			)
 			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({notes})"
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _notes(counts: tuple[tuple[str, frozenset[str]], ...], exception_frame: int) -> str:
+def _notes(
+	counts: tuple[tuple[str, frozenset[str]], ...], additions: tuple[tuple[str, int], ...]
+) -> str:
 	return ", ".join(
 		(
 			*(f"{name}: {len(functions)}" for name, functions in counts if functions),
-			*((f"exception frame: {exception_frame} bytes",) if exception_frame else ()),
+			*(f"{name}: {added} bytes" for name, added in additions if added),
 		)
 	)
 
 
-def _exception_frame_steps(
+def _thread_stack_additions(bound: Bounded | Unbounded) -> tuple[tuple[str, int], ...]:
+	return (
+		("stack reservation", bound.stack_reservation),
+		("exception frame", bound.exception_frame),
+	)
+
+
+def _thread_stack_steps(
 	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
 ) -> tuple[str, ...]:
 	return tuple(
-		f"(exception frame) +{frame} = {steps[-1].cumulative + frame} bytes"
+		f"({name}) +{added} = {steps[-1].cumulative + total} bytes"
 		for report in shown[:1]
 		if steps
-		for frame in (report.bound.exception_frame,)
-		if frame
+		for additions in (_thread_stack_additions(report.bound),)
+		for (name, added), total in zip(
+			additions, accumulate(added for _, added in additions), strict=True
+		)
+		if added
 	)
 
 
@@ -735,7 +748,7 @@ def stack(
 	reports = stack_reports(graph)
 	own_graphs = _own_graphs(expansion, frozenset(assume_no_recursion))
 	kept = (
-		_in_image(thread_reports(reports, own_graphs, expansion.rtos.exception_frame), expansion)
+		_in_image(thread_reports(reports, own_graphs, expansion.rtos), expansion)
 		if expansion is not None
 		else reports
 	)
@@ -759,7 +772,7 @@ def stack(
 		print(_render(report))
 	for step in steps or ():
 		print(_render_step(step))
-	for line in _exception_frame_steps(shown, steps):
+	for line in _thread_stack_steps(shown, steps):
 		print(line)
 
 
@@ -845,7 +858,7 @@ def summary(
 		thread_reports(
 			reports,
 			_own_graphs(expansion, frozenset(assume_no_recursion)),
-			expansion.rtos.exception_frame,
+			expansion.rtos,
 		),
 		expansion,
 	)
