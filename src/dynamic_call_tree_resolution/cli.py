@@ -129,25 +129,44 @@ def _skip_reason(path: Path) -> str | None:
 
 def _render(report: StackReport) -> str:
 	match report.bound:
-		case Bounded(bytes=depth, measured=measured):
-			return f"{report.entry}: {depth} bytes" + (
-				f" (measured: {len(measured)})" if measured else ""
-			)
+		case Bounded(bytes=depth) as bound:
+			notes = _notes((("measured", bound.measured),), bound.exception_frame)
+			return f"{report.entry}: {depth} bytes" + (f" ({notes})" if notes else "")
 		case Unbounded() as bound:
-			reasons = ", ".join(
-				f"{reason}: {len(functions)}"
-				for reason, functions in (
+			notes = _notes(
+				(
 					("recursion", bound.recursion),
 					("unmeasured", bound.unmeasured),
 					("measured", bound.measured),
 					("dynamic", bound.dynamic),
 					("unresolved", bound.unresolved),
-				)
-				if functions
+				),
+				bound.exception_frame,
 			)
-			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({reasons})"
+			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({notes})"
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _notes(counts: tuple[tuple[str, frozenset[str]], ...], exception_frame: int) -> str:
+	return ", ".join(
+		(
+			*(f"{name}: {len(functions)}" for name, functions in counts if functions),
+			*((f"exception frame: {exception_frame} bytes",) if exception_frame else ()),
+		)
+	)
+
+
+def _exception_frame_steps(
+	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
+) -> tuple[str, ...]:
+	return tuple(
+		f"(exception frame) +{frame} = {steps[-1].cumulative + frame} bytes"
+		for report in shown[:1]
+		if steps
+		for frame in (report.bound.exception_frame,)
+		if frame
+	)
 
 
 def _residue_label(residue: Residue) -> str:
@@ -701,7 +720,7 @@ def stack(
 	reports = stack_reports(graph)
 	own_graphs = _own_graphs(expansion)
 	kept = (
-		_in_image(thread_reports(reports, own_graphs), expansion)
+		_in_image(thread_reports(reports, own_graphs, expansion.rtos.exception_frame), expansion)
 		if expansion is not None
 		else reports
 	)
@@ -724,6 +743,8 @@ def stack(
 		print(_render(report))
 	for step in steps or ():
 		print(_render_step(step))
+	for line in _exception_frame_steps(shown, steps):
+		print(line)
 
 
 def _not_in_image(names_dropped: int, expansion: _Expansion) -> str:
@@ -796,7 +817,10 @@ def summary(
 	reports = stack_reports(
 		stack_graph(expansion.expanded, expansion.frames, entry_edges=expansion.in_image_edges)
 	)
-	kept = _in_image(thread_reports(reports, _own_graphs(expansion)), expansion)
+	kept = _in_image(
+		thread_reports(reports, _own_graphs(expansion), expansion.rtos.exception_frame),
+		expansion,
+	)
 	worst = next(iter(kept), StackReport(entry="", bound=Bounded(bytes=0)))
 	report = AnalysisSummary(
 		resolved_slots=expansion.counts.resolved_slots,

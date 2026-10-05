@@ -254,6 +254,24 @@ class Program(Struct):
 	"""Each function's declaration, by where its code starts; a clone has its origin's."""
 	symbol_addresses: Mapping[str, frozenset[Address]] = {}
 	"""Where each function symbol's code starts, aliases included."""
+	arm_core: ArmCore | None = None
+	"""The ARM core the build attributes target; ``None`` for other machines."""
+
+
+class ArmProfile(StrEnum):
+	"""An ARM architecture profile, as ``Tag_CPU_arch_profile`` names it."""
+
+	APPLICATION = "A"
+	REAL_TIME = "R"
+	MICROCONTROLLER = "M"
+
+
+class ArmCore(Struct):
+	"""What the ARM build attributes say about the core."""
+
+	profile: ArmProfile
+	floating_point: bool
+	"""Whether the build targets an FP extension (``Tag_FP_arch``)."""
 
 
 class ThreadRoot(Struct):
@@ -291,6 +309,8 @@ class RtosModel(Struct):
 	trampoline: str | None
 	"""The function that calls each thread's entry."""
 	creation: ThreadCreation | None = None
+	exception_frame: int = 0
+	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
 
 
 BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)

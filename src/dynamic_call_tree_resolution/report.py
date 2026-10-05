@@ -168,6 +168,8 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	bytes: int
 	measured: tuple[str, ...] = ()
 	"""Reachable functions whose frames come from their code."""
+	exception_frame_bytes: int = 0
+	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
@@ -180,12 +182,19 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	unresolved: tuple[str, ...]
 	measured: tuple[str, ...] = ()
 	"""Reachable functions whose frames come from their code."""
+	exception_frame_bytes: int = 0
+	"""The interrupt frame the RTOS model adds to a thread's depth, included in
+	``at_least_bytes``."""
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
 	match bound:
-		case Bounded(bytes=depth, measured=measured):
-			return BoundedStack(bytes=depth, measured=tuple(sorted(measured)))
+		case Bounded(bytes=depth, measured=measured, exception_frame=exception_frame):
+			return BoundedStack(
+				bytes=depth,
+				measured=tuple(sorted(measured)),
+				exception_frame_bytes=exception_frame,
+			)
 		case Unbounded():
 			return UnboundedStack(
 				at_least_bytes=bound.at_least,
@@ -194,6 +203,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				dynamic=tuple(sorted(bound.dynamic)),
 				unresolved=tuple(sorted(bound.unresolved)),
 				measured=tuple(sorted(bound.measured)),
+				exception_frame_bytes=bound.exception_frame,
 			)
 		case _ as unreachable:
 			assert_never(unreachable)

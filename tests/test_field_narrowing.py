@@ -272,12 +272,13 @@ def test_analyze_narrows_the_device_api_calls_to_what_their_fields_hold(
 
 def _recursing(measured: tuple[str, ...]) -> UnboundedStack:
 	return UnboundedStack(
-		at_least_bytes=184,
+		at_least_bytes=184 + 36,
 		recursion=("i2c_emul_transfer",),
 		unmeasured=(),
 		dynamic=(),
 		unresolved=(),
 		measured=measured,
+		exception_frame_bytes=36,
 	)
 
 
@@ -288,7 +289,9 @@ def _recursing(measured: tuple[str, ...]) -> UnboundedStack:
 		(
 			"sensor-threads",
 			{
-				"motion_tid": BoundedStack(bytes=184, measured=("__aeabi_ldivmod", "memset")),
+				"motion_tid": BoundedStack(
+					bytes=184 + 36, measured=("__aeabi_ldivmod", "memset"), exception_frame_bytes=36
+				),
 				"thermal_tid": _recursing(("__aeabi_ldivmod", "memset")),
 			},
 		),

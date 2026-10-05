@@ -38,7 +38,7 @@ from dynamic_call_tree_resolution.loader import (
 	X64Relocation,
 	defined_function_names,
 )
-from dynamic_call_tree_resolution.model import InstructionSet, aligned
+from dynamic_call_tree_resolution.model import ArmCore, ArmProfile, InstructionSet, aligned
 from dynamic_call_tree_resolution.points_to import instruction_set_at, read_pointer
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
 from tests.toolchains import FIXTURES, build_cortex_a15, build_cortex_m3, host_cc
@@ -669,3 +669,13 @@ def test_load_names_anonymous_types_by_typedef_or_by_their_die(
 		for member in program.layouts["struct visitor"].members
 		if isinstance(member, FunctionPointerMember) and member.signature is not None
 	] == [("struct <anonymous> *",), ("anon_ops_t *",)]
+
+
+@pytest.mark.image
+def test_the_build_attributes_name_the_arm_core_and_other_machines_have_none(
+	zephyr_fixtures: Path, fixture_elfs: dict[str, Path]
+) -> None:
+	assert (
+		load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf").arm_core,
+		load(fixture_elfs["nopie"]).arm_core,
+	) == (ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=False), None)

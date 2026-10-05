@@ -8,11 +8,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import msgspec
 import pytest
 from salix import Struct
 
 from dynamic_call_tree_resolution import build_report, load, resolve
 from dynamic_call_tree_resolution.cli import stack
+from dynamic_call_tree_resolution.report import BoundedStack, StackEntryReport
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from tests.toolchains import zephyr_console_cortex_m3
 
@@ -38,6 +40,34 @@ def test_each_thread_reports_its_own_stack_high_water_on_qemu(zephyr_fixtures: P
 	)
 
 
+def test_motion_tids_measured_high_water_is_within_its_bound_with_the_exception_frame(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", narrow_by_field=True, json=True)
+	used = {
+		thread: int(size) - int(unused)
+		for line in QEMU_CONSOLE
+		if " unused " in line
+		for thread, _, unused, _, size in (line.split(),)
+	}
+	assert next(
+		(
+			used["motion_tid"],
+			row.bound,
+			row.bound.bytes - used["motion_tid"] if isinstance(row.bound, BoundedStack) else None,
+		)
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+		if row.entry == "motion_tid"
+	) == (
+		160,
+		BoundedStack(
+			bytes=184 + 36, measured=("__aeabi_ldivmod", "memset"), exception_frame_bytes=36
+		),
+		60,
+	)
+
+
 def test_the_readme_quotes_each_threads_high_water_as_qemu_prints_it() -> None:
 	assert [
 		line
@@ -60,7 +90,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="motion_tid")
 	assert (thermal, capsys.readouterr().out.splitlines()[1:10]) == (
 		[
-			"thermal_tid: unbounded, at least 1056 bytes (recursion: 43, unmeasured: 4, measured: 6)",
+			"thermal_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)",
 			"thermal_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"adt7420_sample_fetch +32 = 72 bytes via indirect: candidate",
@@ -69,7 +99,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 			"adt7420_init +8 = 144 bytes via indirect: fallback (recursion)",
 		],
 		[
-			"motion_tid: unbounded, at least 1068 bytes (recursion: 43, unmeasured: 4, measured: 6)",
+			"motion_tid: unbounded, at least 1104 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)",
 			"motion_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"bmi160_sample_fetch +24 = 64 bytes via indirect: candidate",
