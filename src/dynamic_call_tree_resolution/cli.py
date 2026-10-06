@@ -19,7 +19,12 @@ from dynamic_call_tree_resolution.call_sites import (
 	per_caller_candidates,
 	resolve,
 )
-from dynamic_call_tree_resolution.callgraph import CallEdge, callgraph_files, callgraph_locations
+from dynamic_call_tree_resolution.callgraph import (
+	CallEdge,
+	EdgeKind,
+	callgraph_files,
+	callgraph_locations,
+)
 from dynamic_call_tree_resolution.descriptors import load_descriptors
 from dynamic_call_tree_resolution.field_narrowing import field_narrowings
 from dynamic_call_tree_resolution.identity import (
@@ -86,7 +91,9 @@ from dynamic_call_tree_resolution.stack_usage import (
 	stack_usage_files,
 	stack_usage_locations,
 )
+from dynamic_call_tree_resolution.vsa.abi import normalized
 from dynamic_call_tree_resolution.vsa.frames import code_depths
+from dynamic_call_tree_resolution.vsa.links import linked_calls
 
 if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
@@ -550,29 +557,36 @@ def _expand_from_elf(
 		names=image.names,
 	)
 	unresolved = unresolved_slots(image.program, resolution.assignments)
-	threads_edges, threads_frames = _thread_graph(image, model, in_image_edges, artifacts.frames)
 	expanded = expand_indirect_calls(
 		artifacts.edges,
 		targets_by_caller,
 		fallback,
 		field_targets_by_caller=field_targets_by_caller,
 	)
+	binary = _binary_edges(image, expanded, artifacts.frames)
+	threads_edges, threads_frames = _thread_graph(
+		image, model, (*in_image_edges, *binary), artifacts.frames
+	)
 	return _Expansion(
-		expanded=(*expanded, *threads_edges),
+		expanded=(*expanded, *binary, *threads_edges),
 		in_image_edges=(*in_image_edges, *threads_edges),
 		frames=(
 			*artifacts.frames,
 			*threads_frames,
-			*_code_frames(image, (*expanded, *threads_edges), (*artifacts.frames, *threads_frames)),
+			*_code_frames(
+				image,
+				(*expanded, *binary, *threads_edges),
+				(*artifacts.frames, *threads_frames),
+			),
 		),
 		threads=frozenset(thread.name for thread in model.threads),
 		own_edges={
-			thread: (*expanded, *own)
+			thread: (*expanded, *binary, *own)
 			for thread, own in _own_thread_graphs(
 				image,
 				model,
 				resolution,
-				in_image_edges,
+				(*in_image_edges, *binary),
 				_Targets(
 					by_caller=targets_by_caller,
 					field_by_caller=field_targets_by_caller,
@@ -590,6 +604,42 @@ def _expand_from_elf(
 		membership=artifacts.membership,
 		dropped=artifacts.dropped,
 		phantom_libcalls=artifacts.phantom_libcalls,
+	)
+
+
+def _call_pair(edge: CallEdge) -> tuple[str, str]:
+	return edge.caller, edge.callee
+
+
+def _binary_edges(
+	image: _Image, edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...]
+) -> tuple[CallEdge, ...]:
+	framed = frozenset(frame_key(frame.function) for frame in frames)
+	known = frozenset((frame_key(edge.caller), frame_key(edge.callee)) for edge in edges)
+	calls = tuple(
+		(caller, callee)
+		for call in linked_calls(image.program)
+		if call.caller is not None
+		for caller in (normalized(call.caller, image.program.machine),)
+		for callee in (normalized(call.callee, image.program.machine),)
+		if caller in image.names and callee in image.names
+	)
+	measured = code_depths(
+		image.program,
+		frozenset(caller for caller, _ in calls if frame_key(image.names[caller]) not in framed),
+	).keys()
+	return tuple(
+		sorted(
+			{
+				CallEdge(
+					caller=image.names[caller], callee=image.names[callee], kind=EdgeKind.BINARY
+				)
+				for caller, callee in calls
+				if caller not in measured
+				and (frame_key(image.names[caller]), frame_key(image.names[callee])) not in known
+			},
+			key=_call_pair,
+		)
 	)
 
 

@@ -38,7 +38,8 @@ with no target.
    from its record.
 
 Stack depths combine the resulting call graph with GCC's
-`-fstack-usage`/`-fcallgraph-info` build artifacts. Each indirect call also expands to
+`-fstack-usage`/`-fcallgraph-info` build artifacts, plus the direct calls the linker kept
+that `.ci` does not record. Each indirect call also expands to
 the fallback: every function whose address the image stores, a non-branch instruction
 computes, or an address relocation kept by `--emit-relocs` names. The exception is a
 site inside a thread's tree that the thread's own analysis resolved.
@@ -214,6 +215,9 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `measured`, on a bounded or unbounded row, counts the functions without a `.su` record
   whose frames `stack --elf` measured from their code; the row rests on those
   measurements.
+- A `binary` edge is a direct call or tail call that the linker kept (`--emit-relocs`)
+  and `.ci` does not record: a compiler helper such as `__aeabi_read_tp`, or a call from
+  library code without `.su`, such as `__l_vfprintf`'s to `__ultoa_invert`.
 - `stack reservation`, on a thread row, is what the RTOS model adds for the top of the
   thread's stack that the RTOS takes before the thread's entry runs, and the row's
   number includes it.
@@ -254,8 +258,9 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `stack --json` carries the full function names behind each count.
 - `stack --path ENTRY` prints that entry alone, then its deepest path, one function per
   line: its frame, the running total, the edge it is called through (`static`,
-  `indirect: candidate`, `indirect: fallback`, or `thread record`), and what its own
-  frame, calls, or cycle add to an unbounded depth. The last total is the entry's depth.
+  `indirect: candidate`, `indirect: field`, `indirect: fallback`, `thread record`, or
+  `binary`), and what its own frame, calls, or cycle add to an unbounded depth. The last
+  total is the entry's depth.
 
 ## Per-thread trees
 
@@ -317,15 +322,15 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
-thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -338,7 +343,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -377,17 +382,17 @@ With `--narrow-by-field`, each thread's tree stays below its own bus emulator:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
 ...
-thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 2, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 3, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
-motion_tid: 236 bytes (measured: 2, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 3, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
-- `motion_tid` is bounded. Two of its frames are measured from code: `memset` and
-  `__aeabi_ldivmod`, prebuilt library functions without `.su` records. Its bound
-  includes the stack reservation and the exception frame, and its QEMU mark above is
-  within it;
-  `test_sensor_threads` asserts that, with the margin ([#169]).
+- `motion_tid` is bounded. Three of its frames are measured from code: `memset`,
+  `__aeabi_ldivmod` and `__aeabi_read_tp`, prebuilt library functions without `.su`
+  records. `.ci` does not record the call to `__aeabi_read_tp`, a `binary` edge. Its
+  bound includes the stack reservation and the exception frame, and its QEMU mark above
+  is within it; `test_sensor_threads` asserts that, with the margin ([#169]).
 - `thermal_tid` recurses through `i2c_emul_transfer`, which can forward a transfer to
   another bus. That recursion is in the code, and no narrowing removes it.
 
@@ -398,8 +403,8 @@ Stating that bounds `thermal_tid` too:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-no-recursion i2c_emul_transfer
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
 ...
-motion_tid: 236 bytes (measured: 2, stack reservation: 16 bytes, exception frame: 36 bytes)
-thermal_tid: 236 bytes (measured: 2, assumed no recursion: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 3, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
@@ -525,6 +530,12 @@ contradicts does not hold.
   stays unmeasured. A function symbol of size zero (hand-written assembly) is measured
   up to the next function. x86 code is not measured: its `.su` records appear to count
   the return address, and that convention is unchecked ([#195]).
+- With `--elf`, a direct call the linker kept joins the graph when `.ci` lacks it and its
+  caller has a `.su` frame or code that cannot be measured. A measured frame already
+  counts its callees, so its calls are not added again. A tail call counts as a call,
+  which can over-count. Without `--emit-relocs`, the image keeps no call relocations,
+  and no such call is added. A call from assembly of symbol size zero has no caller yet
+  ([#78]).
 
 ### Residue
 

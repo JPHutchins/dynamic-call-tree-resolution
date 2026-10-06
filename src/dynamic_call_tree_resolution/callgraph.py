@@ -27,6 +27,7 @@ class EdgeKind(StrEnum):
 	FIELD = "indirect: field"
 	FALLBACK = "indirect: fallback"
 	THREAD = "thread record"
+	BINARY = "binary"
 
 
 class CallEdge(Struct):
