@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
+import msgspec
 import pytest
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
@@ -16,8 +17,9 @@ from salix import replace
 
 from dynamic_call_tree_resolution import Address, ReferenceKind, load
 from dynamic_call_tree_resolution.callgraph import load_callgraph
+from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.points_to import read_pointer
-from dynamic_call_tree_resolution.report import referrers_report
+from dynamic_call_tree_resolution.report import StackEntryReport, referrers_report
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, frame_key
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken, linked_calls
@@ -334,4 +336,44 @@ def test_a_call_the_linker_kept_has_no_caller_inside_size_zero_assembly(
 		"z_arm_fault",
 		"z_do_kernel_oops",
 		"z_prep_c",
+	]
+
+
+def test_the_calls_ci_leaves_out_join_the_stack_graph(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", json=True)
+	assert [
+		row.bound.measured
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+		if row.entry == "z_thread_entry"
+	] == [
+		(
+			"__aeabi_ldivmod",
+			"__aeabi_memcpy8",
+			"__aeabi_read_tp",
+			"__ultoa_invert",
+			"memset",
+			"strcmp",
+			"strnlen",
+			"z_SysNmiOnReset",
+			"z_arm_pendsv",
+		)
+	]
+
+
+def test_a_path_continues_through_a_call_only_the_binary_records(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="boot_banner")
+	assert capsys.readouterr().out.splitlines()[1:] == [
+		"boot_banner: unbounded, at least 76 bytes (unmeasured: 1, measured: 3)",
+		"boot_banner +8 = 8 bytes",
+		"printk +16 = 24 bytes via static",
+		"vprintk +0 = 24 bytes via static",
+		"vprintk_core +32 = 56 bytes via static",
+		"__l_vfprintf +0 = 56 bytes via static (unmeasured)",
+		"__ultoa_invert +20 = 76 bytes via binary (measured)",
 	]

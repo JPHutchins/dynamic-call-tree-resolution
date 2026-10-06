@@ -292,18 +292,18 @@ def _recursing(measured: tuple[str, ...]) -> UnboundedStack:
 			{
 				"motion_tid": BoundedStack(
 					bytes=16 + 184 + 36,
-					measured=("__aeabi_ldivmod", "memset"),
+					measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 					stack_reservation_bytes=16,
 					exception_frame_bytes=36,
 				),
-				"thermal_tid": _recursing(("__aeabi_ldivmod", "memset")),
+				"thermal_tid": _recursing(("__aeabi_ldivmod", "__aeabi_read_tp", "memset")),
 			},
 		),
 		(
 			"sensor-two-impl",
 			{
-				"motion_tid": _recursing(("__aeabi_ldivmod",)),
-				"thermal_tid": _recursing(("__aeabi_ldivmod",)),
+				"motion_tid": _recursing(("__aeabi_ldivmod", "__aeabi_read_tp")),
+				"thermal_tid": _recursing(("__aeabi_ldivmod", "__aeabi_read_tp")),
 			},
 		),
 	],

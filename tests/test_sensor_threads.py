@@ -70,7 +70,7 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 			160,
 			BoundedStack(
 				bytes=16 + 184 + 36,
-				measured=("__aeabi_ldivmod", "memset"),
+				measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 				stack_reservation_bytes=16,
 				exception_frame_bytes=36,
 			),
@@ -80,7 +80,7 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 			184,
 			BoundedStack(
 				bytes=16 + 184 + 36,
-				measured=("__aeabi_ldivmod", "memset"),
+				measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 				stack_reservation_bytes=16,
 				exception_frame_bytes=36,
 				assumed_no_recursion=("i2c_emul_transfer",),
@@ -112,7 +112,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="motion_tid")
 	assert (thermal, capsys.readouterr().out.splitlines()[1:10]) == (
 		[
-			"thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)",
 			"thermal_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"adt7420_sample_fetch +32 = 72 bytes via indirect: candidate",
@@ -121,7 +121,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 			"adt7420_init +8 = 144 bytes via indirect: fallback (recursion)",
 		],
 		[
-			"motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)",
 			"motion_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"bmi160_sample_fetch +24 = 64 bytes via indirect: candidate",
