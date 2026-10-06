@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING, Final, assert_never
 from msgspec import Struct
 from salix import Struct as SalixStruct
 
-from dynamic_call_tree_resolution.call_sites import call_site_candidates, resolve
+from dynamic_call_tree_resolution.call_sites import (
+	call_site_candidates,
+	narrowing_signature,
+	resolve,
+	site_targets,
+)
 from dynamic_call_tree_resolution.callgraph import EdgeKind
 from dynamic_call_tree_resolution.field_narrowing import narrowed, narrowing_at
 from dynamic_call_tree_resolution.linker import Membership
@@ -64,6 +69,13 @@ class SlotAssignmentReport(Struct):
 	relocated: bool
 
 
+class SignatureReport(Struct):
+	"""A function signature rendered for consumers."""
+
+	return_type: str
+	parameters: tuple[str, ...]
+
+
 class CallSiteReport(Struct):
 	"""One extracted indirect call site, rendered for consumers."""
 
@@ -74,13 +86,9 @@ class CallSiteReport(Struct):
 	candidates: tuple[Candidate, ...]
 	field: str | None
 	"""The struct field ``--narrow-by-field`` narrowed the candidates to; unsound under casts."""
-
-
-class SignatureReport(Struct):
-	"""A function signature rendered for consumers."""
-
-	return_type: str
-	parameters: tuple[str, ...]
+	signature: SignatureReport | None = None
+	"""The slot signature ``--narrow-by-signature`` narrowed the candidates to; unsound under
+	casts."""
 
 
 class UnresolvedSlotReport(Struct):
@@ -175,6 +183,10 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
 	assumed_no_recursion: tuple[str, ...] = ()
 	"""Reachable functions assumed never to call themselves."""
+	narrowed_by_field: tuple[str, ...] = ()
+	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
+	narrowed_by_signature: tuple[str, ...] = ()
+	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
@@ -195,6 +207,10 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	``at_least_bytes``."""
 	assumed_no_recursion: tuple[str, ...] = ()
 	"""Reachable functions assumed never to call themselves."""
+	narrowed_by_field: tuple[str, ...] = ()
+	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
+	narrowed_by_signature: tuple[str, ...] = ()
+	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
@@ -206,6 +222,8 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=exception_frame,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
+				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
+				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
 			)
 		case Unbounded():
 			return UnboundedStack(
@@ -218,6 +236,8 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=bound.exception_frame,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
+				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
+				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -423,9 +443,11 @@ def build_report(
 					if narrowing is not None
 					else None
 				),
+				signature=_render_signature(narrowing_signature(findings)),
 			)
 			for site in call_sites
-			for chased in (call_site_candidates(program, site, resolved_map, signatures),)
+			for findings in (site_targets(program, site, resolved_map, signatures),)
+			for chased in (frozenset(target for found in findings for target in found.targets),)
 			for narrowing in (
 				None if chased else narrowing_at(narrowed_by_field, site.site_address),
 			)

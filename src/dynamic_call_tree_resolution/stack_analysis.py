@@ -37,6 +37,10 @@ class Bounded(Struct):
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
 	assumed_no_recursion: frozenset[str] = frozenset()
 	"""Reachable functions assumed never to call themselves."""
+	narrowed_by_field: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
+	narrowed_by_signature: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 
 
 class Unbounded(Struct):
@@ -60,6 +64,10 @@ class Unbounded(Struct):
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``at_least``."""
 	assumed_no_recursion: frozenset[str] = frozenset()
 	"""Reachable functions assumed never to call themselves."""
+	narrowed_by_field: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
+	narrowed_by_signature: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 
 
 class StackReport(Struct):
@@ -78,6 +86,8 @@ class Reason(StrEnum):
 	UNRESOLVED = "unresolved"
 	MEASURED = "measured"
 	ASSUMED_NO_RECURSION = "assumed no recursion"
+	NARROWED_BY_FIELD = "narrowed by field"
+	NARROWED_BY_SIGNATURE = "narrowed by signature"
 
 
 type _Reasons = frozenset[tuple[Reason, str]]
@@ -106,6 +116,8 @@ class StackGraph(Struct):
 	roots: tuple[str, ...]
 	assumed_no_recursion: frozenset[str] = frozenset()
 	"""The functions whose call to themselves an assumption removed."""
+	narrowings: Mapping[str, frozenset[Reason]] = {}
+	"""The narrowings each node's own indirect calls rest on."""
 
 
 class PathStep(Struct):
@@ -131,7 +143,18 @@ _MAX_CYCLE_SIZE: Final = 16
 
 INDIRECT_CALLEE: Final = "__indirect_call"
 
-_NOTED: Final = frozenset({Reason.MEASURED, Reason.ASSUMED_NO_RECURSION})
+_NOTED: Final = frozenset(
+	{
+		Reason.MEASURED,
+		Reason.ASSUMED_NO_RECURSION,
+		Reason.NARROWED_BY_FIELD,
+		Reason.NARROWED_BY_SIGNATURE,
+	}
+)
+_NARROWED: Final = {
+	EdgeKind.FIELD: Reason.NARROWED_BY_FIELD,
+	EdgeKind.SIGNATURE: Reason.NARROWED_BY_SIGNATURE,
+}
 
 
 def expand_indirect_calls(
@@ -140,7 +163,7 @@ def expand_indirect_calls(
 	fallback: frozenset[str],
 	*,
 	exact: bool = False,
-	field_targets_by_caller: Mapping[str, frozenset[str]] | None = None,
+	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]] | None = None,
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
@@ -150,7 +173,7 @@ def expand_indirect_calls(
 		for callee, kind in (
 			_expansion(
 				targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
-				(field_targets_by_caller or {}).get(frame_key(edge.caller), frozenset[str]()),
+				(narrowed_by_caller or {}).get(frame_key(edge.caller), {}),
 				fallback,
 				graph_targets,
 				exact=exact,
@@ -164,7 +187,7 @@ def expand_indirect_calls(
 
 def _expansion(
 	targets: frozenset[str],
-	field_targets: frozenset[str],
+	narrowed: Mapping[str, EdgeKind],
 	fallback: frozenset[str],
 	graph_targets: Callable[[str], frozenset[str]],
 	*,
@@ -172,7 +195,7 @@ def _expansion(
 ) -> list[tuple[str, EdgeKind]]:
 	candidates = targets - {INDIRECT_CALLEE}
 	return sorted(
-		(graph_target, _indirect_kind(target, candidates, field_targets))
+		(graph_target, _indirect_kind(target, candidates, narrowed))
 		for target in candidates
 		| (fallback if INDIRECT_CALLEE in targets or not exact else frozenset[str]())
 		for graph_target in graph_targets(target)
@@ -180,15 +203,9 @@ def _expansion(
 
 
 def _indirect_kind(
-	target: str, candidates: frozenset[str], field_targets: frozenset[str]
+	target: str, candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]
 ) -> EdgeKind:
-	return (
-		EdgeKind.FIELD
-		if target in field_targets
-		else EdgeKind.CANDIDATE
-		if target in candidates
-		else EdgeKind.FALLBACK
-	)
+	return narrowed.get(target, EdgeKind.CANDIDATE if target in candidates else EdgeKind.FALLBACK)
 
 
 def thread_edges(
@@ -219,8 +236,8 @@ class ThreadTargets(Struct):
 	reached: frozenset[str]
 	targets_by_caller: Mapping[str, frozenset[str]]
 	sites_by_caller: Mapping[str, int]
-	field_targets_by_caller: Mapping[str, frozenset[str]] = {}
-	"""The targets each caller reaches only through ``--narrow-by-field``."""
+	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]] = {}
+	"""The targets each caller reaches only through a narrowing, with its edge."""
 
 
 def own_thread_edges(
@@ -231,7 +248,7 @@ def own_thread_edges(
 	own: ThreadTargets,
 	targets_by_caller: Mapping[str, frozenset[str]],
 	fallback: frozenset[str],
-	field_targets_by_caller: Mapping[str, frozenset[str]] | None = None,
+	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]] | None = None,
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
@@ -259,9 +276,7 @@ def own_thread_edges(
 							_indirect_kind(
 								target,
 								own.targets_by_caller[frame_key(edge.caller)],
-								own.field_targets_by_caller.get(
-									frame_key(edge.caller), frozenset[str]()
-								),
+								own.narrowed_by_caller.get(frame_key(edge.caller), {}),
 							),
 						)
 						for target in own.targets_by_caller[frame_key(edge.caller)]
@@ -270,9 +285,7 @@ def own_thread_edges(
 					if frame_key(edge.caller) in complete
 					else _expansion(
 						targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
-						(field_targets_by_caller or {}).get(
-							frame_key(edge.caller), frozenset[str]()
-						),
+						(narrowed_by_caller or {}).get(frame_key(edge.caller), {}),
 						fallback,
 						graph_targets,
 						exact=False,
@@ -378,13 +391,15 @@ def stack_graph(
 	components = _strongly_connected_components(adjacency)
 	root_callees = _callees(root_adjacency)
 	root_graph_nodes = {frame_key(node) for node in set(root_adjacency) | root_callees}
+	narrowings = _narrowings(edges_tuple)
 	return StackGraph(
 		adjacency=adjacency,
 		frame_by_name=frame_by_name,
 		components={node: frozenset(component) for component in components for node in component},
 		depths=_depths_by_component(adjacency, frame_by_name, components),
-		reasons=_reasons_by_component(adjacency, frame_by_name, components, assumed),
+		reasons=_reasons_by_component(adjacency, frame_by_name, components, assumed, narrowings),
 		assumed_no_recursion=assumed,
+		narrowings=narrowings,
 		kinds={
 			pair: frozenset(edge.kind for edge in group)
 			for pair, group in groupby(sorted(edges_tuple, key=_pair), key=_pair)
@@ -474,7 +489,9 @@ def _root_reasons(graph: StackGraph, root: str) -> _Reasons:
 	return (
 		graph.reasons[root]
 		if root in graph.reasons
-		else _own_reasons(root, graph.adjacency, graph.frame_by_name, graph.assumed_no_recursion)
+		else _own_reasons(
+			root, graph.adjacency, graph.frame_by_name, graph.assumed_no_recursion, graph.narrowings
+		)
 	)
 
 
@@ -490,6 +507,21 @@ def _root_rank(graph: StackGraph, root: str) -> tuple[bool, int, str]:
 
 def _pair(edge: CallEdge) -> tuple[str, str]:
 	return (edge.caller, edge.callee)
+
+
+def _narrowings(edges: tuple[CallEdge, ...]) -> Mapping[str, frozenset[Reason]]:
+	return {
+		caller: reasons
+		for caller, group in groupby(sorted(edges, key=_pair), key=_edge_caller)
+		for reasons in (
+			frozenset(_NARROWED[edge.kind] for edge in group if edge.kind in _NARROWED),
+		)
+		if reasons
+	}
+
+
+def _edge_caller(edge: CallEdge) -> str:
+	return edge.caller
 
 
 def _walk(
@@ -592,7 +624,7 @@ def _flags(graph: StackGraph, node: str) -> frozenset[Reason]:
 	return frozenset(
 		reason
 		for reason, _ in _own_reasons(
-			node, graph.adjacency, graph.frame_by_name, graph.assumed_no_recursion
+			node, graph.adjacency, graph.frame_by_name, graph.assumed_no_recursion, graph.narrowings
 		)
 	) | (
 		frozenset({Reason.RECURSION})
@@ -618,12 +650,16 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 			unresolved=_names(reasons, Reason.UNRESOLVED),
 			measured=_names(reasons, Reason.MEASURED),
 			assumed_no_recursion=_names(reasons, Reason.ASSUMED_NO_RECURSION),
+			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
+			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
 		)
 		if any(reason not in _NOTED for reason, _ in reasons)
 		else Bounded(
 			bytes=depth,
 			measured=_names(reasons, Reason.MEASURED),
 			assumed_no_recursion=_names(reasons, Reason.ASSUMED_NO_RECURSION),
+			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
+			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
 		)
 	)
 
@@ -647,11 +683,13 @@ def _own_reasons(
 	adjacency: Mapping[str, frozenset[str]],
 	frame_by_name: Mapping[str, Frame],
 	assumed_no_recursion: frozenset[str],
+	narrowings: Mapping[str, frozenset[Reason]],
 ) -> _Reasons:
 	return frozenset(
 		(reason, frame_key(node))
 		for reason in (
 			*_frame_reasons(frame_by_name.get(frame_key(node)), node),
+			*narrowings.get(node, frozenset[Reason]()),
 			*(
 				(Reason.ASSUMED_NO_RECURSION,)
 				if frame_key(node) in assumed_no_recursion
@@ -683,13 +721,14 @@ def _reasons_by_component(
 	frame_by_name: Mapping[str, Frame],
 	components: tuple[tuple[str, ...], ...],
 	assumed_no_recursion: frozenset[str],
+	narrowings: Mapping[str, frozenset[Reason]],
 ) -> Mapping[str, _Reasons]:
 	closure: dict[str, _Reasons] = {}
 	for component in components:
 		members = frozenset(component)
 		reasons = frozenset[tuple[Reason, str]]().union(
 			*(
-				_own_reasons(member, adjacency, frame_by_name, assumed_no_recursion)
+				_own_reasons(member, adjacency, frame_by_name, assumed_no_recursion, narrowings)
 				for member in component
 			),
 			*(

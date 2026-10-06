@@ -777,13 +777,13 @@ def test_depth_through_cyclic_nodes_matches_all_paths() -> None:
 
 def test_a_target_only_a_field_narrowing_reaches_reads_indirect_field_in_both_expansions() -> None:
 	targets = {"entry": frozenset({"cheap", "costly"})}
-	field_targets = {"entry": frozenset({"costly"})}
+	narrowed = {"entry": {"costly": EdgeKind.FIELD}}
 	fallback = frozenset({"entry", "cheap", "costly"})
 	assert (
 		[
 			(edge.callee, edge.kind)
 			for edge in expand_indirect_calls(
-				SHARED_ENTRY_EDGES, targets, fallback, field_targets_by_caller=field_targets
+				SHARED_ENTRY_EDGES, targets, fallback, narrowed_by_caller=narrowed
 			)
 			if edge.caller == "/src/app.c:entry"
 		],
@@ -801,11 +801,11 @@ def test_a_target_only_a_field_narrowing_reaches_reads_indirect_field_in_both_ex
 						"entry": frozenset({"cheap", "costly"}),
 					},
 					sites_by_caller={"trampoline": 1, "entry": 1},
-					field_targets_by_caller=field_targets,
+					narrowed_by_caller=narrowed,
 				),
 				targets,
 				fallback,
-				field_targets,
+				narrowed,
 			)
 			if edge.caller.endswith(":/src/app.c:entry")
 		],
