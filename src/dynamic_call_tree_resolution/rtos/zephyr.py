@@ -11,6 +11,7 @@ from dynamic_call_tree_resolution.model import (
 	Address,
 	ArmCore,
 	ArmProfile,
+	Machine,
 	RtosModel,
 	ThreadCreation,
 	ThreadRoot,
@@ -31,6 +32,9 @@ _STATIC_START: Final = "z_init_static_threads"
 _BASIC_FRAME: Final = 8 * 4
 _EXTENDED_FRAME: Final = 26 * 4
 _ALIGNMENT_PAD: Final = 4
+_TLS_SETUP: Final = "arch_tls_stack_setup"
+_TOOLCHAIN_TLS_POINTERS: Final = 2
+_STACK_POINTER_ALIGNMENT: Final = 8
 
 
 def detect(program: Program) -> RtosModel | None:
@@ -52,6 +56,7 @@ def detect(program: Program) -> RtosModel | None:
 		evidence=(_TRAMPOLINE, _RECORD),
 		threads=threads,
 		trampoline=_TRAMPOLINE,
+		stack_reservation=_stack_reservation(program),
 		exception_frame=_exception_frame(program.arm_core),
 		creation=ThreadCreation(
 			frame_builders=_FRAME_BUILDERS,
@@ -63,6 +68,41 @@ def detect(program: Program) -> RtosModel | None:
 				else None
 			),
 		),
+	)
+
+
+def _stack_reservation(program: Program) -> int:
+	match program.machine:
+		case Machine.EM_ARM:
+			return (
+				_tls_reservation(program.tls_size, program.pointer_size)
+				if _TLS_SETUP in program.symbol_addresses
+				else 0
+			)
+		case Machine.EM_386 | Machine.EM_X86_64:
+			return 0
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _tls_reservation(tls_size: int, pointer_size: int) -> int:
+	"""What an ARM thread's stack gives to thread-local storage (TLS) before its entry runs.
+
+	The TLS copy and two toolchain pointers sit at the top of the stack, and the stack
+	pointer starts below them, aligned down to 8 bytes: ``ARCH_STACK_PTR_ALIGN`` with
+	``CONFIG_STACK_ALIGN_DOUBLE_WORD``, which also covers the 4 without it.
+
+	>>> _tls_reservation(4, 4)
+	16
+	>>> _tls_reservation(0, 4)
+	8
+	>>> _tls_reservation(12, 4)
+	24
+	"""
+	return (
+		(tls_size + _TOOLCHAIN_TLS_POINTERS * pointer_size + _STACK_POINTER_ALIGNMENT - 1)
+		// _STACK_POINTER_ALIGNMENT
+		* _STACK_POINTER_ALIGNMENT
 	)
 
 

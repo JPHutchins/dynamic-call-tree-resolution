@@ -256,6 +256,8 @@ class Program(Struct):
 	"""Where each function symbol's code starts, aliases included."""
 	arm_core: ArmCore | None = None
 	"""The ARM core the build attributes target; ``None`` for other machines."""
+	tls_size: int = 0
+	"""The bytes of each thread's copy of thread-local storage (TLS), from the TLS segment."""
 
 
 class ArmProfile(StrEnum):
@@ -309,6 +311,8 @@ class RtosModel(Struct):
 	trampoline: str | None
 	"""The function that calls each thread's entry."""
 	creation: ThreadCreation | None = None
+	stack_reservation: int = 0
+	"""The bytes the RTOS takes from the top of each thread's stack before the thread's entry runs."""
 	exception_frame: int = 0
 	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
 

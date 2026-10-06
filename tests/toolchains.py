@@ -3,6 +3,7 @@
 
 """C compiler invocations for the fixture programs, and their runners."""
 
+import shlex
 import subprocess
 from itertools import islice
 from pathlib import Path
@@ -15,6 +16,19 @@ CORTEX_A15_HARNESS = FIXTURES / "cortex-a15"
 HOST_HARNESS = FIXTURES / "host"
 
 _CC_FLAGS = ("-std=gnu2x", "-Wall", "-Wextra", "-Werror", "-Wdouble-promotion")
+_ZEPHYR_QEMU_CORTEX_M3 = (
+	"qemu-system-arm",
+	"-machine",
+	"lm3s6965evb",
+	"-cpu",
+	"cortex-m3",
+	"-monitor",
+	"none",
+	"-icount",
+	"shift=6,align=off,sleep=off",
+	"-rtc",
+	"clock=vm",
+)
 
 
 def host_cc(*flags: str) -> tuple[str, ...]:
@@ -107,20 +121,10 @@ def zephyr_console_cortex_m3(elf: Path, line_count: int) -> tuple[str, ...]:
 		[
 			"timeout",
 			"30",
-			"qemu-system-arm",
-			"-machine",
-			"lm3s6965evb",
-			"-cpu",
-			"cortex-m3",
+			*_ZEPHYR_QEMU_CORTEX_M3,
 			"-nographic",
-			"-monitor",
-			"none",
 			"-serial",
 			"stdio",
-			"-icount",
-			"shift=6,align=off,sleep=off",
-			"-rtc",
-			"clock=vm",
 			"-kernel",
 			str(elf),
 		],
@@ -133,6 +137,53 @@ def zephyr_console_cortex_m3(elf: Path, line_count: int) -> tuple[str, ...]:
 		)
 		qemu.terminate()
 		return lines
+
+
+def zephyr_stack_pointers_cortex_m3(elf: Path, breakpoint: str, hits: int) -> tuple[int, ...]:
+	"""The stack pointer at each of a breakpoint's first hits, under gdb on QEMU."""
+	return tuple(
+		int(stack_pointer, 16)
+		for line in subprocess.run(
+			[
+				"timeout",
+				"60",
+				"arm-none-eabi-gdb",
+				"-batch",
+				"-nx",
+				"-ex",
+				"target remote | "
+				+ shlex.join(
+					(
+						*_ZEPHYR_QEMU_CORTEX_M3,
+						"-display",
+						"none",
+						"-serial",
+						"null",
+						"-kernel",
+						str(elf),
+						"-S",
+						"-gdb",
+						"stdio",
+					)
+				),
+				"-ex",
+				f"break {breakpoint}",
+				*(
+					argument
+					for _ in range(hits)
+					for argument in ("-ex", "continue", "-ex", r'printf "hit %#x\n", $sp')
+				),
+				"-ex",
+				"kill",
+				str(elf),
+			],
+			check=False,
+			capture_output=True,
+			text=True,
+		).stdout.splitlines()
+		if line.startswith("hit ")
+		for _, stack_pointer in (line.split(),)
+	)
 
 
 def _run_qemu(

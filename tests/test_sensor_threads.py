@@ -16,7 +16,7 @@ from dynamic_call_tree_resolution import build_report, load, resolve
 from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.report import BoundedStack, StackEntryReport
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
-from tests.toolchains import zephyr_console_cortex_m3
+from tests.toolchains import zephyr_console_cortex_m3, zephyr_stack_pointers_cortex_m3
 
 if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
@@ -40,7 +40,7 @@ def test_each_thread_reports_its_own_stack_high_water_on_qemu(zephyr_fixtures: P
 	)
 
 
-def test_each_threads_measured_high_water_is_within_its_bound_with_the_exception_frame(
+def test_each_threads_measured_high_water_is_within_its_bound(
 	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
 	artifacts = zephyr_fixtures / "sensor-threads"
@@ -69,19 +69,23 @@ def test_each_threads_measured_high_water_is_within_its_bound_with_the_exception
 		"motion_tid": (
 			160,
 			BoundedStack(
-				bytes=184 + 36, measured=("__aeabi_ldivmod", "memset"), exception_frame_bytes=36
+				bytes=16 + 184 + 36,
+				measured=("__aeabi_ldivmod", "memset"),
+				stack_reservation_bytes=16,
+				exception_frame_bytes=36,
 			),
-			60,
+			76,
 		),
 		"thermal_tid": (
 			184,
 			BoundedStack(
-				bytes=184 + 36,
+				bytes=16 + 184 + 36,
 				measured=("__aeabi_ldivmod", "memset"),
+				stack_reservation_bytes=16,
 				exception_frame_bytes=36,
 				assumed_no_recursion=("i2c_emul_transfer",),
 			),
-			36,
+			52,
 		),
 	}
 
@@ -108,7 +112,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="motion_tid")
 	assert (thermal, capsys.readouterr().out.splitlines()[1:10]) == (
 		[
-			"thermal_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)",
+			"thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)",
 			"thermal_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"adt7420_sample_fetch +32 = 72 bytes via indirect: candidate",
@@ -117,7 +121,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 			"adt7420_init +8 = 144 bytes via indirect: fallback (recursion)",
 		],
 		[
-			"motion_tid: unbounded, at least 1104 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)",
+			"motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)",
 			"motion_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"bmi160_sample_fetch +24 = 64 bytes via indirect: candidate",
@@ -128,6 +132,18 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 			"adt7420_init +8 = 156 bytes via indirect: fallback (recursion)",
 		],
 	)
+
+
+def test_a_threads_path_ends_with_what_the_rtos_model_adds_to_its_code(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", narrow_by_field=True, path="motion_tid")
+	assert capsys.readouterr().out.splitlines()[-3:] == [
+		"elapsed@cortex_m_systick.c +8 = 184 bytes via static",
+		"(stack reservation) +16 = 200 bytes",
+		"(exception frame) +36 = 236 bytes",
+	]
 
 
 class _Resolved(Struct):
@@ -161,6 +177,22 @@ def test_each_thread_runs_only_its_own_driver(resolved: _Resolved) -> None:
 			"bmi160_read_spi",
 			"bmi160_sample_fetch",
 		],
+	}
+
+
+def test_each_thread_starts_its_stack_reservation_below_its_stack_top_on_qemu(
+	zephyr_fixtures: Path, resolved: _Resolved
+) -> None:
+	assert set(
+		zephyr_stack_pointers_cortex_m3(
+			zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf", "*z_thread_entry", 3
+		)
+	) == {
+		stack.address + stack.size - model.stack_reservation
+		for model in (rtos_model(resolved.program, RtosChoice.AUTO),)
+		for stack in resolved.program.objects.values()
+		if stack.name
+		in {"z_main_stack", "_k_thread_stack_motion_tid", "_k_thread_stack_thermal_tid"}
 	}
 
 

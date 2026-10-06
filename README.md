@@ -214,6 +214,9 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `measured`, on a bounded or unbounded row, counts the functions without a `.su` record
   whose frames `stack --elf` measured from their code; the row rests on those
   measurements.
+- `stack reservation`, on a thread row, is what the RTOS model adds for the top of the
+  thread's stack that the RTOS takes before the thread's entry runs, and the row's
+  number includes it.
 - `exception frame`, on a thread row, is what the RTOS model adds for the frame an
   interrupt's hardware stacks on the thread's stack, and the row's number includes it.
 - Entry points come from the `.ci` graph, which also records functions the linker
@@ -314,15 +317,15 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1104 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)
-thermal_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1092 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -335,7 +338,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1104 bytes (recursion: 43, unmeasured: 4, measured: 6, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 6, stack reservation: 16 bytes, exception frame: 36 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -374,15 +377,16 @@ With `--narrow-by-field`, each thread's tree stays below its own bus emulator:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
 ...
-thermal_tid: unbounded, at least 220 bytes (recursion: 1, measured: 2, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 2, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
-motion_tid: 220 bytes (measured: 2, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 2, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
 - `motion_tid` is bounded. Two of its frames are measured from code: `memset` and
   `__aeabi_ldivmod`, prebuilt library functions without `.su` records. Its bound
-  includes the exception frame, and its QEMU mark above is within it;
+  includes the stack reservation and the exception frame, and its QEMU mark above is
+  within it;
   `test_sensor_threads` asserts that, with the margin ([#169]).
 - `thermal_tid` recurses through `i2c_emul_transfer`, which can forward a transfer to
   another bus. That recursion is in the code, and no narrowing removes it.
@@ -394,15 +398,17 @@ Stating that bounds `thermal_tid` too:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-no-recursion i2c_emul_transfer
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
 ...
-motion_tid: 220 bytes (measured: 2, exception frame: 36 bytes)
-thermal_tid: 220 bytes (measured: 2, assumed no recursion: 1, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 2, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: 236 bytes (measured: 2, assumed no recursion: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
 - Both QEMU marks above are within these bounds, and `test_sensor_threads` asserts it
   with each margin ([#169]).
-- QEMU's mark also counts the thread-local storage Zephyr reserves at the top of each
-  thread's stack, which a row leaves out ([#151]).
+- Each row starts at the top of its stack, as QEMU's mark does. Zephyr gives that top
+  to thread-local storage (TLS) before the thread runs, so the stack pointer reaches
+  `z_thread_entry` one stack reservation below it. `test_sensor_threads` reads that
+  stack pointer with gdb on QEMU, for both threads and main ([#151]).
 
 Zephyr's own `samples/synchronization`, built at `$DCTR_FIXTURES/synchronization`,
 starts `thread_b` from a record and `thread_a` with `k_thread_create`. The call that
@@ -504,6 +510,14 @@ contradicts does not hold.
   main stack, whose own depth no row covers yet ([#151]). Zephyr's context switch saves
   registers in the thread object, not on its stack. Other cores' exception stacking is
   not modeled.
+- Under Zephyr on Arm, when the image sets up thread-local storage
+  (`arch_tls_stack_setup`), a thread row also adds the top of the stack Zephyr takes
+  before the thread runs: the image's TLS segment and two toolchain pointers, rounded up
+  to an 8-byte boundary. Without `CONFIG_STACK_ALIGN_DOUBLE_WORD`, Zephyr rounds to a
+  4-byte boundary, so the row can over-count. Zephyr can take more, which the model leaves
+  out: userspace-local data, a random stack-pointer offset, and stack canaries placed
+  with TLS. The main thread's row gets neither this nor the exception frame, and x86
+  images get neither ([#151]).
 - With `--elf`, a function the graph reaches without a `.su` record, such as prebuilt
   library code, gets a frame measured from its Arm code: the deepest its stack pointer
   goes, or the depth at a call plus that callee's measured depth. A function whose stack
