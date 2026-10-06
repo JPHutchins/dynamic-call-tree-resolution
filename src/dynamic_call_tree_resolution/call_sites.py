@@ -276,6 +276,8 @@ def own_targets(
 	resolved: tuple[SlotAssignment, ...],
 	names: Mapping[Address, str] | None = None,
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
+	*,
+	narrow_by_signature: bool = False,
 ) -> ThreadTargets:
 	return ThreadTargets(
 		reached=frozenset(
@@ -285,7 +287,7 @@ def own_targets(
 			program,
 			thread.sites,
 			resolved,
-			narrow_by_signature=False,
+			narrow_by_signature=narrow_by_signature,
 			narrowed_by_field=narrowed_by_field,
 			names=names,
 		),
@@ -293,6 +295,11 @@ def own_targets(
 			frame_key(stack_name(program, names, site.caller_address)) for site in thread.sites
 		),
 		field_targets_by_caller=field_only_targets(
-			program, thread.sites, resolved, narrowed_by_field=narrowed_by_field, names=names
+			program,
+			thread.sites,
+			resolved,
+			narrow_by_signature=narrow_by_signature,
+			narrowed_by_field=narrowed_by_field,
+			names=names,
 		),
 	)

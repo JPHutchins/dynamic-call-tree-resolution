@@ -32,6 +32,7 @@ FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 	"residue": ("residue.c", ("-g", "-O0", "-no-pie")),
 	"threads": ("static_threads.c", ("-g", "-O0", "-no-pie")),
 	"shared_threads": ("shared_threads.c", ("-g", "-O0", "-no-pie")),
+	"signature_thread": ("signature_thread.c", ("-g", "-O2", "-no-pie")),
 }
 
 

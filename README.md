@@ -483,12 +483,15 @@ contradicts does not hold.
   sub-registers or a few kinds of write ([#113]).
 - Inside a thread's tree, a site the thread's analysis resolved drops the fallback, so a
   gap in that analysis drops a target there. With `--narrow-by-field`, so does a site
-  its field narrowed, and the edge reads `indirect: field`.
+  its field narrowed, and the edge reads `indirect: field`; with `--narrow-by-signature`,
+  so does a site its slot's signature narrowed ([#197]).
 - Zephyr's I2C and SPI emulators find their target in a list that init code builds in
   RAM, so their sites stay unresolved, and two threads' trees rejoin below them ([#151],
   [#159]). With `--narrow-by-field`, each narrows to the emulator on its own bus.
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
-  it. It is off by default.
+  it. It is off by default. It narrows only a site whose call instruction reads its
+  target from memory, such as x86 `call *(%rax)`. An Arm `blx` takes its target from a
+  register, so on Arm it narrows nothing yet ([#211]).
 - `--assume-no-recursion FUNCTION`, repeated for each function, states that the function
   never calls itself and drops its call to itself. Only a direct self-call is dropped: a
   function on a longer cycle stays recursive. Nothing checks the assumption; the header
@@ -622,5 +625,7 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
 [#185]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/185
 [#195]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/195
+[#197]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/197
 [#198]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/198
 [#202]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/202
+[#211]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/211

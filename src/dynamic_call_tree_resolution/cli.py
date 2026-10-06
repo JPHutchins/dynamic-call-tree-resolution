@@ -601,6 +601,7 @@ def _expand_from_elf(
 					field_by_caller=field_targets_by_caller,
 					fallback=fallback,
 					narrowed_by_field=narrowed_by_field,
+					narrow_by_signature=narrow_by_signature,
 				),
 			).items()
 		},
@@ -717,6 +718,7 @@ class _Targets(Struct):
 	"""Reached only through ``--narrow-by-field``."""
 	fallback: frozenset[str]
 	narrowed_by_field: tuple[NarrowedSpan, ...]
+	narrow_by_signature: bool
 
 
 def _own_thread_graphs(
@@ -743,6 +745,7 @@ def _own_thread_graphs(
 						resolution.assignments,
 						image.names,
 						targets.narrowed_by_field,
+						narrow_by_signature=targets.narrow_by_signature,
 					),
 					targets.by_caller,
 					targets.fallback,
