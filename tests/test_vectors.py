@@ -84,11 +84,11 @@ def test_each_handler_only_the_hardware_calls_is_a_row_of_its_own(
 	) == (
 		True,
 		{
-			"__start": (888, ("__l_vfprintf", "__start")),
-			"z_arm_hard_fault": (280, ("__l_vfprintf", "z_arm_hard_fault")),
+			"__start": (1016, ()),
+			"z_arm_hard_fault": (1048, ()),
 			"z_arm_nmi": BoundedStack(bytes=8, measured=("z_SysNmiOnReset",)),
 			"z_arm_pendsv": BoundedStack(bytes=0, measured=("z_arm_pendsv",)),
-			"z_arm_svc": (216, ("__l_vfprintf", "z_arm_svc")),
+			"z_arm_svc": (944, ()),
 		},
 	)
 

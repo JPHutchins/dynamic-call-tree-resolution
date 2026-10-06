@@ -100,7 +100,14 @@ class MeasuredFrame(Struct):
 	bytes: int
 
 
-type Frame = StackUsage | MeasuredFrame
+class OwnFrame(Struct):
+	"""A function's own frame, measured from its code; its callees count through its edges."""
+
+	function: str
+	bytes: int
+
+
+type Frame = StackUsage | MeasuredFrame | OwnFrame
 
 
 class StackGraph(Struct):
@@ -326,7 +333,7 @@ def _in_thread(thread: str, name: str) -> str:
 	return f"{thread}/:{name}"
 
 
-def thread_frames[F: (StackUsage, MeasuredFrame)](
+def thread_frames[F: (StackUsage, MeasuredFrame, OwnFrame)](
 	frames: Iterable[F], trampoline: str, threads: Iterable[str]
 ) -> tuple[F, ...]:
 	frames_tuple = tuple(frames)
@@ -710,7 +717,7 @@ def _frame_reasons(frame: Frame | None, node: str) -> tuple[Reason, ...]:
 			return tuple[Reason, ...]() if node == INDIRECT_CALLEE else (Reason.UNMEASURED,)
 		case StackUsage(bounded=bounded):
 			return tuple[Reason, ...]() if bounded else (Reason.DYNAMIC,)
-		case MeasuredFrame():
+		case MeasuredFrame() | OwnFrame():
 			return (Reason.MEASURED,)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -873,7 +880,7 @@ def _record(frame: Frame) -> StackUsage | None:
 	match frame:
 		case StackUsage():
 			return frame
-		case MeasuredFrame():
+		case MeasuredFrame() | OwnFrame():
 			return None
 		case _ as unreachable:
 			assert_never(unreachable)

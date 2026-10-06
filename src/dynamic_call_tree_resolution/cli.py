@@ -4,6 +4,7 @@
 """Command line interface for analyzing ELF images."""
 
 import sys
+from collections import Counter
 from itertools import accumulate
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
 from typing import TYPE_CHECKING, Annotated, Final, assert_never
@@ -73,6 +74,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	Bounded,
 	Frame,
 	MeasuredFrame,
+	OwnFrame,
 	PathStep,
 	StackGraph,
 	StackReport,
@@ -93,7 +95,13 @@ from dynamic_call_tree_resolution.stack_usage import (
 	stack_usage_locations,
 )
 from dynamic_call_tree_resolution.vsa.abi import normalized
-from dynamic_call_tree_resolution.vsa.frames import code_depths
+from dynamic_call_tree_resolution.vsa.frames import (
+	CodeMeasure,
+	OwnCode,
+	code_depths,
+	code_measure,
+	own_frames,
+)
 from dynamic_call_tree_resolution.vsa.links import linked_calls
 from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers
 
@@ -102,7 +110,7 @@ if TYPE_CHECKING:
 
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
-	from dynamic_call_tree_resolution.model import Program, RtosModel, UnresolvedSlot
+	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel, UnresolvedSlot
 
 app = App(name="dctr")
 
@@ -575,33 +583,34 @@ def _expand_from_elf(
 		names=image.names,
 	)
 	unresolved = unresolved_slots(image.program, resolution.assignments)
+	measure = code_measure(image.program)
+	register = _register_callers(image, measure, resolution.sites, artifacts.frames)
 	expanded = expand_indirect_calls(
-		artifacts.edges,
+		(*artifacts.edges, *register.edges),
 		targets_by_caller,
 		fallback,
 		narrowed_by_caller=narrowed_by_caller,
 	)
-	binary = _binary_edges(image, expanded, artifacts.frames)
+	binary = _binary_edges(image, measure, expanded, artifacts.frames)
 	threads_edges, threads_frames = _thread_graph(
 		image, model, (*in_image_edges, *binary), artifacts.frames
 	)
+	code = _code_measures(
+		image,
+		measure,
+		(*expanded, *binary, *threads_edges),
+		(*artifacts.frames, *threads_frames, *register.frames),
+		hardware_roots,
+		frozenset(),
+	)
 	return _Expansion(
-		expanded=(*expanded, *binary, *threads_edges),
+		expanded=(*expanded, *binary, *code.edges, *threads_edges),
 		in_image_edges=(*in_image_edges, *threads_edges),
-		frames=(
-			*artifacts.frames,
-			*threads_frames,
-			*_code_frames(
-				image,
-				(*expanded, *binary, *threads_edges),
-				(*artifacts.frames, *threads_frames),
-				hardware_roots,
-			),
-		),
+		frames=(*artifacts.frames, *threads_frames, *register.frames, *code.frames),
 		threads=frozenset(thread.name for thread in model.threads),
 		hardware_roots=hardware_roots,
 		own_edges={
-			thread: (*expanded, *binary, *own)
+			thread: (*expanded, *binary, *code.edges, *own)
 			for thread, own in _own_thread_graphs(
 				image,
 				model,
@@ -633,7 +642,7 @@ def _call_pair(edge: CallEdge) -> tuple[str, str]:
 
 
 def _binary_edges(
-	image: _Image, edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...]
+	image: _Image, measure: CodeMeasure, edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...]
 ) -> tuple[CallEdge, ...]:
 	framed = frozenset(frame_key(frame.function) for frame in frames)
 	known = frozenset((frame_key(edge.caller), frame_key(edge.callee)) for edge in edges)
@@ -646,7 +655,7 @@ def _binary_edges(
 		if caller in image.names and callee in image.names
 	)
 	measured = code_depths(
-		image.program,
+		measure,
 		frozenset(caller for caller, _ in calls if frame_key(image.names[caller]) not in framed),
 	).keys()
 	return tuple(
@@ -664,26 +673,99 @@ def _binary_edges(
 	)
 
 
-def _code_frames(
+class _CodeMeasures(Struct):
+	"""Frames measured from code, and the calls that code adds to the graph."""
+
+	frames: tuple[Frame, ...]
+	edges: tuple[CallEdge, ...]
+
+
+def _register_callers(
+	image: _Image, measure: CodeMeasure, sites: tuple[CallSite, ...], frames: tuple[StackUsage, ...]
+) -> _CodeMeasures:
+	framed = frozenset(frame_key(frame.function) for frame in frames)
+	sites_by_start = Counter(
+		normalized(site.caller_address, image.program.machine) for site in sites
+	)
+	owns = own_frames(
+		measure,
+		frozenset(
+			start
+			for start in sites_by_start
+			if start in image.names and frame_key(image.names[start]) not in framed
+		),
+	)
+	return _CodeMeasures(
+		frames=tuple(
+			OwnFrame(function=image.names[start], bytes=own.bytes) for start, own in owns.items()
+		),
+		edges=tuple(
+			edge
+			for start, own in sorted(owns.items())
+			for edge in (
+				*(
+					CallEdge(caller=image.names[start], callee=INDIRECT_CALLEE)
+					for _ in range(sites_by_start[start])
+				),
+				*_direct_edges(image, start, own),
+			)
+		),
+	)
+
+
+def _direct_edges(image: _Image, start: Address, own: OwnCode) -> tuple[CallEdge, ...]:
+	return tuple(
+		CallEdge(caller=image.names[start], callee=image.names[callee], kind=EdgeKind.BINARY)
+		for callee in sorted(own.callees)
+		if callee in image.names
+	)
+
+
+def _code_measures(
 	image: _Image,
+	measure: CodeMeasure,
 	edges: tuple[CallEdge, ...],
-	frames: tuple[StackUsage, ...],
+	frames: tuple[Frame, ...],
 	roots: frozenset[str],
-) -> tuple[MeasuredFrame, ...]:
+	attempted: frozenset[str],
+) -> _CodeMeasures:
 	unframed = (
 		frozenset(frame_key(node) for edge in edges for node in (edge.caller, edge.callee))
 		| frozenset(map(frame_key, roots))
-	) - ({frame_key(frame.function) for frame in frames} | {INDIRECT_CALLEE})
+	) - ({frame_key(frame.function) for frame in frames} | {INDIRECT_CALLEE} | attempted)
+	if not unframed:
+		return _CodeMeasures(frames=(), edges=())
 	starts = {address: name for address, name in image.names.items() if frame_key(name) in unframed}
-	depths = code_depths(image.program, frozenset(starts))
-	return tuple(
-		MeasuredFrame(function=starts[address], bytes=depths[address])
+	depths = code_depths(measure, frozenset(starts))
+	owns = own_frames(measure, frozenset(starts) - depths.keys())
+	measured = tuple(
+		address
 		for key in unframed
 		for addresses in (
 			frozenset(address for address in starts if frame_key(starts[address]) == key),
 		)
-		if addresses and addresses <= depths.keys()
+		if addresses and addresses <= depths.keys() | owns.keys()
 		for address in addresses
+	)
+	found = _CodeMeasures(
+		frames=tuple(
+			MeasuredFrame(function=starts[address], bytes=depths[address])
+			if address in depths
+			else OwnFrame(function=starts[address], bytes=owns[address].bytes)
+			for address in measured
+		),
+		edges=tuple(
+			edge
+			for address in sorted(measured)
+			if address not in depths
+			for edge in _direct_edges(image, address, owns[address])
+		),
+	)
+	following = _code_measures(
+		image, measure, found.edges, (*frames, *found.frames), frozenset(), attempted | unframed
+	)
+	return _CodeMeasures(
+		frames=(*found.frames, *following.frames), edges=(*found.edges, *following.edges)
 	)
 
 
