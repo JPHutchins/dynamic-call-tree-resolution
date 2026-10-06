@@ -7,9 +7,9 @@ license = { file = "LICENSE" }
 authors = [{ name = "JP Hutchins", email = "jphutchins@gmail.com" }]
 requires-python = ">=3.14"
 dependencies = [
-    "capstone>=5.0.9",
-    "cyclopts>=5.0.0",
-    "msgspec>=0.21.1",
+    "capstone>=5.0.9,<6",
+    "cyclopts>=5.0.0,<6",
+    "msgspec>=0.21.1,<0.22",
     "pyelftools==0.33",
     "salix",
 ]
