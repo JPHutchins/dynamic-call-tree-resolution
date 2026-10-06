@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+from itertools import chain, groupby
 from typing import TYPE_CHECKING
 
 from salix import Struct
@@ -13,9 +15,9 @@ from dynamic_call_tree_resolution.model import Address, ReferenceKind
 from dynamic_call_tree_resolution.vsa.abi import normalized
 
 if TYPE_CHECKING:
-	from collections.abc import Iterator
+	from collections.abc import Iterator, Mapping
 
-	from dynamic_call_tree_resolution.model import Function, Program
+	from dynamic_call_tree_resolution.model import Function, Machine, Program
 
 
 class LinkedCall(Struct):
@@ -57,10 +59,59 @@ def linked_targets(program: Program, kind: ReferenceKind) -> Iterator[tuple[Addr
 
 def function_covering(program: Program, address: Address) -> Function | None:
 	return next(
-		(
-			function
-			for function in program.functions.values()
-			if address - normalized(function.address, program.machine) in range(function.size)
+		chain(
+			(
+				function
+				for function in program.functions.values()
+				if address - normalized(function.address, program.machine) in range(function.size)
+			),
+			_assembly_covering(program, address),
 		),
 		None,
 	)
+
+
+def _assembly_covering(program: Program, address: Address) -> Iterator[Function]:
+	yield from (
+		function
+		for functions in (functions_by_start(program),)
+		for start, function in functions.items()
+		if function.size == 0
+		and address - start in range(function_extent(program, functions, start))
+	)
+
+
+def function_extent(program: Program, functions: Mapping[Address, Function], start: Address) -> int:
+	return (
+		functions[start].size
+		or min(
+			(
+				*(following for following in functions if following > start),
+				*(
+					base + len(section.data)
+					for base, section in program.sections.items()
+					if base <= start < base + len(section.data)
+				),
+			),
+			default=start,
+		)
+		- start
+	)
+
+
+def functions_by_start(program: Program) -> Mapping[Address, Function]:
+	return {
+		start: max(group, key=_size)
+		for start, group in groupby(
+			sorted(program.functions.values(), key=partial(_code_start, program.machine)),
+			key=partial(_code_start, program.machine),
+		)
+	}
+
+
+def _code_start(machine: Machine, function: Function) -> Address:
+	return normalized(function.address, machine)
+
+
+def _size(function: Function) -> int:
+	return function.size

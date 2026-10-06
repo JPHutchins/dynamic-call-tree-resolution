@@ -224,8 +224,14 @@ def _addresses_by_name(program: Program, elf: Path) -> dict[str, frozenset[int]]
 			"sensor-two-impl",
 			212,
 			[
+				("__aeabi_ldivmod", "__aeabi_idiv0"),
+				("__aeabi_ldivmod", "__udivmoddi4"),
 				("__l_vfprintf", "__ultoa_invert"),
 				("__l_vfprintf", "strnlen"),
+				("__start", "z_prep_c"),
+				("z_SysNmiOnReset", "z_SysNmiOnReset"),
+				("z_arm_hard_fault", "z_arm_fault"),
+				("z_arm_svc", "z_do_kernel_oops"),
 				("z_thread_entry", "__aeabi_read_tp"),
 			],
 			286,
@@ -235,8 +241,15 @@ def _addresses_by_name(program: Program, elf: Path) -> dict[str, frozenset[int]]
 			"sensor-threads",
 			221,
 			[
+				("__aeabi_ldivmod", "__aeabi_idiv0"),
+				("__aeabi_ldivmod", "__udivmoddi4"),
 				("__l_vfprintf", "__ultoa_invert"),
 				("__l_vfprintf", "strnlen"),
+				("__start", "arch_early_memset"),
+				("__start", "z_prep_c"),
+				("z_SysNmiOnReset", "z_SysNmiOnReset"),
+				("z_arm_hard_fault", "z_arm_fault"),
+				("z_arm_svc", "z_do_kernel_oops"),
 				("z_thread_entry", "__aeabi_read_tp"),
 			],
 			286,
@@ -248,7 +261,11 @@ def _addresses_by_name(program: Program, elf: Path) -> dict[str, frozenset[int]]
 			[
 				("__l_vfprintf", "__ultoa_invert"),
 				("__l_vfprintf", "strnlen"),
+				("__start", "z_prep_c"),
 				("hello_loop", "__aeabi_read_tp"),
+				("z_SysNmiOnReset", "z_SysNmiOnReset"),
+				("z_arm_hard_fault", "z_arm_fault"),
+				("z_arm_svc", "z_do_kernel_oops"),
 				("z_thread_entry", "__aeabi_read_tp"),
 			],
 			279,
@@ -317,26 +334,35 @@ def test_hello_has_no_ci_and_the_calls_the_linker_kept_are_its_only_call_graph(
 				if call.caller is not None
 			}
 		),
-	) == ((), 138)
+	) == ((), 142)
 
 
-def test_a_call_the_linker_kept_has_no_caller_inside_size_zero_assembly(
+def test_a_call_the_linker_kept_inside_size_zero_assembly_belongs_to_that_function(
 	zephyr_fixtures: Path,
 ) -> None:
 	program = load(zephyr_fixtures / "sensor-two-impl" / "zephyr" / "zephyr.elf")
-	assert sorted(
-		program.functions[call.callee].name for call in linked_calls(program) if call.caller is None
-	) == [
-		"__aeabi_idiv0",
-		"__udivmoddi4",
-		"__udivmoddi4",
-		"__udivmoddi4",
-		"__udivmoddi4",
-		"z_SysNmiOnReset",
-		"z_arm_fault",
-		"z_do_kernel_oops",
-		"z_prep_c",
-	]
+	assert (
+		[call for call in linked_calls(program) if call.caller is None],
+		sorted(
+			(program.functions[caller].name, program.functions[call.callee].name)
+			for call in linked_calls(program)
+			for caller in (call.caller,)
+			if caller is not None and program.functions[caller].size == 0
+		),
+	) == (
+		[],
+		[
+			("__aeabi_ldivmod", "__aeabi_idiv0"),
+			("__aeabi_ldivmod", "__udivmoddi4"),
+			("__aeabi_ldivmod", "__udivmoddi4"),
+			("__aeabi_ldivmod", "__udivmoddi4"),
+			("__aeabi_ldivmod", "__udivmoddi4"),
+			("__start", "z_prep_c"),
+			("z_SysNmiOnReset", "z_SysNmiOnReset"),
+			("z_arm_hard_fault", "z_arm_fault"),
+			("z_arm_svc", "z_do_kernel_oops"),
+		],
+	)
 
 
 def test_the_calls_ci_leaves_out_join_the_stack_graph(

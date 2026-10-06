@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from functools import cache, partial
-from itertools import accumulate, groupby
+from itertools import accumulate
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct, replace
@@ -20,6 +20,7 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 	indirect_operand,
 )
 from dynamic_call_tree_resolution.vsa.interpret import block_states, transfer
+from dynamic_call_tree_resolution.vsa.links import function_extent, functions_by_start
 from dynamic_call_tree_resolution.vsa.memory import context_for
 from dynamic_call_tree_resolution.vsa.state import NO_WRITES, top_seed
 
@@ -65,7 +66,7 @@ def code_depths(program: Program, starts: frozenset[Address]) -> Mapping[Address
 					program,
 					disassemblers(),
 					context_for(program, NO_WRITES),
-					_functions_by_start(program),
+					functions_by_start(program),
 				)
 			)
 			return {
@@ -128,7 +129,7 @@ def _own(
 			program,
 			decoders,
 			start,
-			replace(functions[start], size=_extent(program, functions, start)),
+			replace(functions[start], size=function_extent(program, functions, start)),
 		)
 		if start in functions
 		else None
@@ -161,42 +162,6 @@ def _measured_blocks(
 			starts,
 		)
 	)
-
-
-def _extent(program: Program, functions: Mapping[Address, Function], start: Address) -> int:
-	return (
-		functions[start].size
-		or min(
-			(
-				*(following for following in functions if following > start),
-				*(
-					base + len(section.data)
-					for base, section in program.sections.items()
-					if base <= start < base + len(section.data)
-				),
-			),
-			default=start,
-		)
-		- start
-	)
-
-
-def _functions_by_start(program: Program) -> Mapping[Address, Function]:
-	return {
-		start: max(group, key=_size)
-		for start, group in groupby(
-			sorted(program.functions.values(), key=partial(_code_start, program.machine)),
-			key=partial(_code_start, program.machine),
-		)
-	}
-
-
-def _code_start(machine: Machine, function: Function) -> Address:
-	return normalized(function.address, machine)
-
-
-def _size(function: Function) -> int:
-	return function.size
 
 
 def _step(context: Context, state: State, instruction: CsInsn) -> State:

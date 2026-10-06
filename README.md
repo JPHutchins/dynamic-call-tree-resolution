@@ -228,9 +228,8 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - On an M-profile image, each handler only the vector table holds is an entry: the reset
   handler `__start`, exception handlers such as `z_arm_svc`, and the interrupt entry
   `_isr_wrapper`. Its row is that handler's own depth; what nested handlers add on the
-  main stack is not modeled yet ([#151]). An assembly handler's row is its own frame,
-  or `unmeasured`, until a call from assembly of symbol size zero gets its caller
-  ([#78]).
+  main stack is not modeled yet ([#151]). An assembly handler such as `__start` has no
+  `.ci` record, so its row follows the calls the linker kept ([#78]).
 - Entry points come from the `.ci` graph, which also records functions the linker
   discarded, such as `shell_readline`. With an ELF, calls from functions not in the
   image are ignored, so a function only they call, such as `work_queue_main`, is an
@@ -511,8 +510,8 @@ contradicts does not hold.
   The table is the one that holds the ELF entry point after a nonzero, 8-byte-aligned
   initial stack pointer.
 - Code without `.ci` records (assembly, prebuilt libraries) joins the stack call graph
-  only through the direct calls the linker kept. A call from assembly of symbol size
-  zero has no caller yet, and `native_sim` host code is absent ([#78]).
+  only through the direct calls the linker kept, and `native_sim` host code is absent
+  ([#78], [#163]).
 
 ### Stack depths
 
@@ -548,8 +547,8 @@ contradicts does not hold.
   caller has a `.su` frame or code that cannot be measured. A measured frame already
   counts its callees, so its calls are not added again. A tail call counts as a call,
   which can over-count. Without `--emit-relocs`, the image keeps no call relocations,
-  and no such call is added. A call from assembly of symbol size zero has no caller yet
-  ([#78]).
+  and no such call is added. A call inside a function symbol of size zero belongs to that
+  function, up to the next function, as its measured frame does ([#78]).
 
 ### Residue
 
@@ -619,6 +618,7 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#151]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/151
 [#158]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/158
 [#159]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/159
+[#163]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/163
 [#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
 [#185]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/185
 [#195]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/195
