@@ -379,25 +379,10 @@ def test_the_calls_ci_leaves_out_join_the_stack_graph(
 			"__aeabi_ldivmod",
 			"__aeabi_memcpy8",
 			"__aeabi_read_tp",
+			"__l_vfprintf",
 			"__ultoa_invert",
 			"memset",
 			"strcmp",
 			"strnlen",
 		)
-	]
-
-
-def test_a_path_continues_through_a_call_only_the_binary_records(
-	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-	artifacts = zephyr_fixtures / "sensor-threads"
-	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="boot_banner")
-	assert capsys.readouterr().out.splitlines()[1:] == [
-		"boot_banner: unbounded, at least 76 bytes (unmeasured: 1, measured: 3)",
-		"boot_banner +8 = 8 bytes",
-		"printk +16 = 24 bytes via static",
-		"vprintk +0 = 24 bytes via static",
-		"vprintk_core +32 = 56 bytes via static",
-		"__l_vfprintf +0 = 56 bytes via static (unmeasured)",
-		"__ultoa_invert +20 = 76 bytes via binary (measured)",
 	]

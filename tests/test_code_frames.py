@@ -1,17 +1,18 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Frames measured from the code of functions without a ``.su`` record (#195)."""
+"""Frames measured from the code of functions without a ``.su`` record (#195, #214)."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import msgspec
 import pytest
 
-from dynamic_call_tree_resolution import Address, load
+from dynamic_call_tree_resolution import Address, StackEntryReport, UnboundedStack, load
 from dynamic_call_tree_resolution.cli import stack
-from dynamic_call_tree_resolution.vsa.frames import code_depths
+from dynamic_call_tree_resolution.vsa.frames import code_depths, code_measure
 from tests.toolchains import FIXTURES, build_cortex_m3
 
 if TYPE_CHECKING:
@@ -21,7 +22,8 @@ if TYPE_CHECKING:
 def _depths(elf: Path, names: tuple[str, ...]) -> dict[str, int | None]:
 	program = load(elf)
 	depths = code_depths(
-		program, frozenset(start for name in names for start in program.symbol_addresses[name])
+		code_measure(program),
+		frozenset(start for name in names for start in program.symbol_addresses[name]),
 	)
 	return {name: depths.get(start) for name in names for start in program.symbol_addresses[name]}
 
@@ -57,7 +59,7 @@ def test_an_address_that_starts_no_function_has_no_depth(tmp_path: Path) -> None
 	)
 	assert (
 		code_depths(
-			program,
+			code_measure(program),
 			frozenset(Address(start + 2) for start in program.symbol_addresses["leaf_push"]),
 		)
 		== {}
@@ -119,4 +121,55 @@ def test_a_su_record_wins_over_the_code_and_only_callees_without_one_are_measure
 		"main: 44 bytes (measured: 1)",
 		"main +16 = 16 bytes",
 		"calls_leaf +28 = 44 bytes via static (measured)",
+	]
+
+
+def test_a_function_that_calls_through_a_register_counts_its_own_frame_and_its_site(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	elf = build_cortex_m3(
+		(FIXTURES / "reproducers" / "own_frame.c",), tmp_path / "image.elf", "-O2", "-g"
+	)
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	stack(build_directory, elf, path="reset")
+	assert capsys.readouterr().out.splitlines()[1:] == [
+		"reset: unbounded, at least 64 bytes (unmeasured: 1, measured: 4)",
+		"reset +24 = 24 bytes (measured)",
+		"main +8 = 32 bytes via binary (measured)",
+		"dispatch +32 = 64 bytes via binary (measured)",
+		"handler +0 = 64 bytes via indirect: fallback (measured)",
+	]
+
+
+def test_a_function_that_branches_through_a_register_stays_unmeasured(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	elf = build_cortex_m3(
+		(FIXTURES / "reproducers" / "own_frame.c",), tmp_path / "image.elf", "-O2", "-g"
+	)
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	stack(build_directory, elf, json=True)
+	assert [
+		(row.bound.unmeasured, row.bound.measured)
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+		if row.entry == "reset" and isinstance(row.bound, UnboundedStack)
+	] == [(("forward",), ("dispatch", "handler", "main", "reset"))]
+
+
+@pytest.mark.image
+def test_library_code_without_su_adds_its_own_frame_and_its_register_calls_to_a_path(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="boot_banner")
+	assert capsys.readouterr().out.splitlines()[1:8] == [
+		"boot_banner: unbounded, at least 960 bytes (recursion: 50, measured: 8)",
+		"boot_banner +8 = 8 bytes (recursion)",
+		"printk +16 = 24 bytes via static (recursion)",
+		"vprintk +0 = 24 bytes via static (recursion)",
+		"vprintk_core +32 = 56 bytes via static (recursion)",
+		"__l_vfprintf +80 = 136 bytes via static (measured, recursion)",
+		"adt7420_attr_get +16 = 152 bytes via indirect: fallback (recursion)",
 	]

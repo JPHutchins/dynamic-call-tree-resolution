@@ -12,7 +12,13 @@ from typing import TYPE_CHECKING, assert_never
 from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import Address, Machine
-from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, disassemblers, normalized
+from dynamic_call_tree_resolution.vsa.abi import (
+	ARM_CALLS,
+	SP_REGISTERS,
+	arm_mnemonic,
+	disassemblers,
+	normalized,
+)
 from dynamic_call_tree_resolution.vsa.cfg import (
 	branch_target,
 	call_target,
@@ -41,6 +47,15 @@ class _Own(Struct):
 
 	depth: int
 	calls: tuple[tuple[int, Address], ...]
+	register_calls: int
+	"""Calls through a register, whose callees the code does not name."""
+
+
+class OwnCode(Struct):
+	"""A function's own frame, measured from its code, and what that code calls directly."""
+
+	bytes: int
+	callees: frozenset[Address]
 
 
 class _Callee(Struct):
@@ -49,36 +64,65 @@ class _Callee(Struct):
 	start: Address
 
 
+class _RegisterCall(Struct):
+	"""A call through a register: the code goes on after it, to an unnamed callee."""
+
+
 class _Lost(Struct):
 	"""A transfer whose target the code does not name, or names outside every function."""
 
 
-type _Exit = _Callee | _Lost | None
+type _Exit = _Callee | _RegisterCall | _Lost | None
 
 
-def code_depths(program: Program, starts: frozenset[Address]) -> Mapping[Address, int]:
-	"""How deep each function takes the stack, its callees included, where its code can say."""
+class CodeMeasure(Struct):
+	"""One image's code, measured once per function."""
+
+	own: Callable[[Address], _Own | None]
+
+
+def code_measure(program: Program) -> CodeMeasure:
 	match program.machine:
 		case Machine.EM_ARM:
-			measure = cache(
-				partial(
-					_own,
-					program,
-					disassemblers(),
-					context_for(program, NO_WRITES),
-					functions_by_start(program),
+			return CodeMeasure(
+				own=cache(
+					partial(
+						_own,
+						program,
+						disassemblers(),
+						context_for(program, NO_WRITES),
+						functions_by_start(program),
+					)
 				)
 			)
-			return {
-				start: depth
-				for start in starts
-				for depth in (_worst(measure, start, frozenset()),)
-				if depth is not None
-			}
 		case Machine.EM_386 | Machine.EM_X86_64:
-			return {}
+			return CodeMeasure(own=_unmeasured)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def code_depths(measure: CodeMeasure, starts: frozenset[Address]) -> Mapping[Address, int]:
+	"""How deep each function takes the stack, its callees included, where its code can say."""
+	return {
+		start: depth
+		for start in starts
+		for depth in (_worst(measure.own, start, frozenset()),)
+		if depth is not None
+	}
+
+
+def own_frames(measure: CodeMeasure, starts: frozenset[Address]) -> Mapping[Address, OwnCode]:
+	"""Each function's own frame, where its code can say even though a callee is unnamed."""
+	return {
+		start: OwnCode(bytes=own.depth, callees=frozenset(callee for _, callee in own.calls))
+		for start in starts
+		for own in (measure.own(start),)
+		if own is not None
+	}
+
+
+def _unmeasured(_start: Address) -> _Own | None:
+	return None
 
 
 def _worst(
@@ -87,8 +131,10 @@ def _worst(
 	match measure(start):
 		case None:
 			return None
-		case _Own(depth=depth, calls=calls):
+		case _Own(register_calls=0, depth=depth, calls=calls):
 			return _deepest(measure, depth, calls, visiting | {start})
+		case _Own():
+			return None
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -203,6 +249,7 @@ def _measured(
 				for callee in (_called(exit_),)
 				if callee is not None
 			),
+			register_calls=sum(map(_through_register, exits)),
 		)
 		if None not in offsets
 		else None
@@ -220,7 +267,7 @@ def _exit(
 	starts: AbstractSet[Address],
 ) -> _Exit:
 	if indirect_operand(instruction, program.machine) is not None:
-		return _Lost()
+		return _RegisterCall() if arm_mnemonic(instruction) in ARM_CALLS else _Lost()
 	branch = branch_target(instruction, program.machine)
 	called = call_target(instruction, program.machine)
 	match (
@@ -241,8 +288,18 @@ def _called(exit_: _Exit) -> Address | None:
 	match exit_:
 		case _Callee(start=start):
 			return start
-		case _Lost() | None:
+		case _RegisterCall() | _Lost() | None:
 			return None
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _through_register(exit_: _Exit) -> bool:
+	match exit_:
+		case _RegisterCall():
+			return True
+		case _Callee() | _Lost() | None:
+			return False
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -251,7 +308,7 @@ def _lost(exit_: _Exit) -> bool:
 	match exit_:
 		case _Lost():
 			return True
-		case _Callee() | None:
+		case _Callee() | _RegisterCall() | None:
 			return False
 		case _ as unreachable:
 			assert_never(unreachable)

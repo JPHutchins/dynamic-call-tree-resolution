@@ -220,9 +220,10 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `narrowed by field` and `narrowed by signature`, on a row, count the callers whose
   indirect call `--narrow-by-field` or `--narrow-by-signature` narrowed. The row rests on
   that flag's assumption, which a cast can break, and `stack --json` names the callers.
-- A `binary` edge is a direct call or tail call that the linker kept (`--emit-relocs`)
-  and `.ci` does not record: a compiler helper such as `__aeabi_read_tp`, or a call from
-  library code without `.su`, such as `__l_vfprintf`'s to `__ultoa_invert`.
+- A `binary` edge is a direct call or tail call that the binary records and `.ci` does
+  not: one the linker kept (`--emit-relocs`), such as a call to the compiler helper
+  `__aeabi_read_tp`, or one decoded from the code of a function measured for its own
+  frame, such as `__l_vfprintf`'s to `__ultoa_invert`.
 - `stack reservation`, on a thread row, is what the RTOS model adds for the top of the
   thread's stack that the RTOS takes before the thread's entry runs, and the row's
   number includes it.
@@ -332,15 +333,15 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1040 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
-thermal_tid: unbounded, at least 1028 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1028 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -353,7 +354,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1040 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -544,17 +545,22 @@ contradicts does not hold.
   images get neither ([#151]).
 - With `--elf`, a function the graph reaches without a `.su` record, such as prebuilt
   library code, gets a frame measured from its Arm code: the deepest its stack pointer
-  goes, or the depth at a call plus that callee's measured depth. A function whose stack
-  pointer becomes unknown, that calls or branches through a register, or that recurses,
-  stays unmeasured. A function symbol of size zero (hand-written assembly) is measured
-  up to the next function. x86 code is not measured: its `.su` records appear to count
+  goes, or the depth at a call plus that callee's measured depth. When that whole depth
+  can't be measured, because the function calls through a register or a callee can't
+  be measured, it gets its own frame from its code instead, and its calls count through
+  the graph: direct calls as `binary` edges, and calls through a register as indirect
+  sites, resolved to candidates or expanded to the fallback ([#214]). A function whose
+  stack pointer becomes unknown, or that branches through a register other than to
+  return, stays unmeasured. A function symbol of size zero (hand-written assembly) is
+  measured up to the next function. x86 code is not measured: its `.su` records appear to count
   the return address, and that convention is unchecked ([#195]).
 - With `--elf`, a direct call the linker kept joins the graph when `.ci` lacks it and its
   caller has a `.su` frame or code that cannot be measured. A measured frame already
   counts its callees, so its calls are not added again. A tail call counts as a call,
-  which can over-count. Without `--emit-relocs`, the image keeps no call relocations,
-  and no such call is added. A call inside a function symbol of size zero belongs to that
-  function, up to the next function, as its measured frame does ([#78]).
+  which can over-count. Without `--emit-relocs`, the image keeps no call relocations, and
+  only the calls decoded from a function measured for its own frame join. A call inside
+  a function symbol of size zero belongs to that function, up to the next function, as
+  its measured frame does ([#78]).
 
 ### Residue
 
@@ -632,3 +638,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#198]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/198
 [#202]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/202
 [#211]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/211
+[#214]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/214
