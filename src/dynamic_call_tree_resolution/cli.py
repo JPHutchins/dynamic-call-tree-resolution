@@ -14,7 +14,7 @@ from elftools.common.exceptions import ELFError
 from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import (
-	field_only_targets,
+	narrowed_targets,
 	own_targets,
 	per_caller_candidates,
 	resolve,
@@ -56,6 +56,7 @@ from dynamic_call_tree_resolution.report import (
 	PathStepReport,
 	ReferrerReport,
 	RtosReport,
+	SignatureReport,
 	SlotCounts,
 	StackEntryReport,
 	StackPathReport,
@@ -149,6 +150,8 @@ def _render(report: StackReport) -> str:
 				(
 					("measured", bound.measured),
 					("assumed no recursion", bound.assumed_no_recursion),
+					("narrowed by field", bound.narrowed_by_field),
+					("narrowed by signature", bound.narrowed_by_signature),
 				),
 				_thread_stack_additions(bound),
 			)
@@ -160,6 +163,8 @@ def _render(report: StackReport) -> str:
 					("unmeasured", bound.unmeasured),
 					("measured", bound.measured),
 					("assumed no recursion", bound.assumed_no_recursion),
+					("narrowed by field", bound.narrowed_by_field),
+					("narrowed by signature", bound.narrowed_by_signature),
 					("dynamic", bound.dynamic),
 					("unresolved", bound.unresolved),
 				),
@@ -201,6 +206,10 @@ def _thread_stack_steps(
 		)
 		if added
 	)
+
+
+def _signature_text(signature: SignatureReport) -> str:
+	return f"{signature.return_type} ({', '.join(signature.parameters)})"
 
 
 def _residue_label(residue: Residue) -> str:
@@ -298,6 +307,8 @@ def analyze(
 		narrowing = (
 			f" (narrowed by field {site.field}, unsound under casts)"
 			if site.field is not None
+			else f" (narrowed by signature {_signature_text(site.signature)}, unsound under casts)"
+			if site.signature is not None
 			else ""
 		)
 		print(f"{label}: {targets or '<unresolved>'}{narrowing}")
@@ -555,7 +566,7 @@ def _expand_from_elf(
 		narrowed_by_field=narrowed_by_field,
 		names=image.names,
 	)
-	field_targets_by_caller = field_only_targets(
+	narrowed_by_caller = narrowed_targets(
 		image.program,
 		resolution.sites,
 		resolution.assignments,
@@ -568,7 +579,7 @@ def _expand_from_elf(
 		artifacts.edges,
 		targets_by_caller,
 		fallback,
-		field_targets_by_caller=field_targets_by_caller,
+		narrowed_by_caller=narrowed_by_caller,
 	)
 	binary = _binary_edges(image, expanded, artifacts.frames)
 	threads_edges, threads_frames = _thread_graph(
@@ -598,7 +609,7 @@ def _expand_from_elf(
 				(*in_image_edges, *binary),
 				_Targets(
 					by_caller=targets_by_caller,
-					field_by_caller=field_targets_by_caller,
+					narrowed_by_caller=narrowed_by_caller,
 					fallback=fallback,
 					narrowed_by_field=narrowed_by_field,
 					narrow_by_signature=narrow_by_signature,
@@ -714,8 +725,8 @@ class _Targets(Struct):
 	"""The whole image's targets for the indirect calls, by caller key."""
 
 	by_caller: Mapping[str, frozenset[str]]
-	field_by_caller: Mapping[str, frozenset[str]]
-	"""Reached only through ``--narrow-by-field``."""
+	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]]
+	"""Reached only through a narrowing, with its edge."""
 	fallback: frozenset[str]
 	narrowed_by_field: tuple[NarrowedSpan, ...]
 	narrow_by_signature: bool
@@ -749,7 +760,7 @@ def _own_thread_graphs(
 					),
 					targets.by_caller,
 					targets.fallback,
-					targets.field_by_caller,
+					targets.narrowed_by_caller,
 				)
 				for thread, sites in resolution.threads.items()
 			}

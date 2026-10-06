@@ -217,6 +217,9 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `measured`, on a bounded or unbounded row, counts the functions without a `.su` record
   whose frames `stack --elf` measured from their code; the row rests on those
   measurements.
+- `narrowed by field` and `narrowed by signature`, on a row, count the callers whose
+  indirect call `--narrow-by-field` or `--narrow-by-signature` narrowed. The row rests on
+  that flag's assumption, which a cast can break, and `stack --json` names the callers.
 - A `binary` edge is a direct call or tail call that the linker kept (`--emit-relocs`)
   and `.ci` does not record: a compiler helper such as `__aeabi_read_tp`, or a call from
   library code without `.su`, such as `__l_vfprintf`'s to `__ultoa_invert`.
@@ -265,9 +268,9 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `stack --json` carries the full function names behind each count.
 - `stack --path ENTRY` prints that entry alone, then its deepest path, one function per
   line: its frame, the running total, the edge it is called through (`static`,
-  `indirect: candidate`, `indirect: field`, `indirect: fallback`, `thread record`, or
-  `binary`), and what its own frame, calls, or cycle add to an unbounded depth. The last
-  total is the entry's depth.
+  `indirect: candidate`, `indirect: field`, `indirect: signature`, `indirect: fallback`,
+  `thread record`, or `binary`), and what its own frame, calls, or cycle add to an
+  unbounded depth. The last total is the entry's depth.
 
 ## Per-thread trees
 
@@ -389,9 +392,9 @@ With `--narrow-by-field`, each thread's tree stays below its own bus emulator:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
 ...
-thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 3, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
-motion_tid: 236 bytes (measured: 3, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
@@ -410,8 +413,8 @@ Stating that bounds `thermal_tid` too:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-no-recursion i2c_emul_transfer
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
 ...
-motion_tid: 236 bytes (measured: 3, stack reservation: 16 bytes, exception frame: 36 bytes)
-thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 

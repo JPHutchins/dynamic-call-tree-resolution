@@ -25,6 +25,7 @@ class EdgeKind(StrEnum):
 	STATIC = "static"
 	CANDIDATE = "indirect: candidate"
 	FIELD = "indirect: field"
+	SIGNATURE = "indirect: signature"
 	FALLBACK = "indirect: fallback"
 	THREAD = "thread record"
 	BINARY = "binary"

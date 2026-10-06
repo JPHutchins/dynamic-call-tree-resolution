@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.callgraph import EdgeKind
 from dynamic_call_tree_resolution.field_narrowing import narrowed
 from dynamic_call_tree_resolution.identity import stack_name
 from dynamic_call_tree_resolution.model import (
@@ -112,14 +113,75 @@ def call_site_candidates(
 	resolved_by_slot: Mapping[Address, SlotAssignment],
 	signatures_by_slot: Mapping[Address, FunctionSignature] | None = None,
 ) -> frozenset[Address]:
+	return frozenset(
+		target
+		for found in site_targets(program, site, resolved_by_slot, signatures_by_slot)
+		for target in found.targets
+	)
+
+
+class Chased(Struct):
+	"""What the image's values say a site can call."""
+
+	targets: frozenset[Address]
+
+
+class SignatureNarrowed(Struct):
+	"""The functions of the site's slot's signature, as ``--narrow-by-signature`` assumes."""
+
+	signature: FunctionSignature
+	targets: frozenset[Address]
+
+
+type SiteTargets = Chased | SignatureNarrowed
+
+
+def site_targets(
+	program: Program,
+	site: CallSite,
+	resolved_by_slot: Mapping[Address, SlotAssignment],
+	signatures_by_slot: Mapping[Address, FunctionSignature] | None = None,
+) -> tuple[SiteTargets, ...]:
+	"""What a site can call, each set with where it came from."""
 	signatures = (
 		signatures_by_slot if signatures_by_slot is not None else dict[Address, FunctionSignature]()
 	)
 	chased = _chased(program, site, resolved_by_slot, signatures)
-	if chased:
-		return chased
-	signature = signatures.get(site.slot) if site.slot is not None else None
-	return matching_targets(program, signature) if signature is not None else frozenset()
+	return (
+		chased
+		if any(found.targets for found in chased)
+		else tuple(
+			_narrowed_by(program, signature)
+			for signature in (signatures.get(site.slot) if site.slot is not None else None,)
+			if signature is not None
+		)
+	)
+
+
+def narrowing_signature(findings: tuple[SiteTargets, ...]) -> FunctionSignature | None:
+	return next(
+		(
+			signature
+			for found in findings
+			for signature in (_signature(found),)
+			if signature is not None and found.targets
+		),
+		None,
+	)
+
+
+def _signature(found: SiteTargets) -> FunctionSignature | None:
+	match found:
+		case Chased():
+			return None
+		case SignatureNarrowed(signature=signature):
+			return signature
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _narrowed_by(program: Program, signature: FunctionSignature) -> SiteTargets:
+	return SignatureNarrowed(signature=signature, targets=matching_targets(program, signature))
 
 
 def _chased(
@@ -127,18 +189,15 @@ def _chased(
 	site: CallSite,
 	resolved_by_slot: Mapping[Address, SlotAssignment],
 	signatures_by_slot: Mapping[Address, FunctionSignature],
-) -> frozenset[Address]:
+) -> tuple[SiteTargets, ...]:
 	match site.target:
 		case Known(values=values):
-			return frozenset(
-				address
-				for candidate in values
-				for address in _chase_target(
-					program, candidate, resolved_by_slot, signatures_by_slot, frozenset()
-				)
+			return tuple(
+				_chase_target(program, candidate, resolved_by_slot, signatures_by_slot, frozenset())
+				for candidate in sorted(values)
 			)
 		case Top() | Unreached():
-			return frozenset()
+			return ()
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -149,18 +208,22 @@ def _chase_target(
 	resolved_by_slot: Mapping[Address, SlotAssignment],
 	signatures_by_slot: Mapping[Address, FunctionSignature],
 	visited: frozenset[Address],
-) -> frozenset[Address]:
+) -> SiteTargets:
 	if address in visited:
-		return frozenset()
+		return Chased(targets=frozenset())
 	if address in program.functions:
-		return frozenset({address})
+		return Chased(targets=frozenset({address}))
 	assignment = resolved_by_slot.get(address)
 	if assignment is not None:
-		return assignment.candidates
+		return Chased(targets=assignment.candidates)
 	target = None if in_writable_memory(program, address) else pointer_at(program, address)
 	if target is None:
 		signature = signatures_by_slot.get(address)
-		return matching_targets(program, signature) if signature is not None else frozenset()
+		return (
+			_narrowed_by(program, signature)
+			if signature is not None
+			else Chased(targets=frozenset())
+		)
 	return _chase_target(program, target, resolved_by_slot, signatures_by_slot, visited | {address})
 
 
@@ -211,16 +274,16 @@ def _targets_by_caller(
 	}
 
 
-def field_only_targets(
+def narrowed_targets(
 	program: Program,
 	sites: tuple[CallSite, ...],
 	resolved: tuple[SlotAssignment, ...],
 	*,
 	narrow_by_signature: bool = False,
-	narrowed_by_field: tuple[NarrowedSpan, ...],
+	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	names: Mapping[Address, str] | None = None,
-) -> Mapping[str, frozenset[str]]:
-	"""The targets each caller reaches only through ``--narrow-by-field``, by caller key."""
+) -> Mapping[str, Mapping[str, EdgeKind]]:
+	"""The targets each caller reaches only through a narrowing, with its edge, by caller key."""
 	return {
 		caller: only
 		for caller, group in groupby(
@@ -230,9 +293,15 @@ def field_only_targets(
 			key=_caller,
 		)
 		for entries in (tuple(group),)
+		for candidates in (
+			frozenset(target for _, target, kind in entries if kind is EdgeKind.CANDIDATE),
+		)
 		for only in (
-			frozenset(target for _, target, by_field in entries if by_field)
-			- frozenset(target for _, target, by_field in entries if not by_field),
+			{
+				target: kind
+				for _, target, kind in entries
+				if kind is not EdgeKind.CANDIDATE and target not in candidates
+			},
 		)
 		if only
 	}
@@ -245,7 +314,7 @@ def _caller_targets(
 	narrow_by_signature: bool,
 	narrowed_by_field: tuple[NarrowedSpan, ...],
 	names: Mapping[Address, str] | None,
-) -> tuple[tuple[str, str, bool], ...]:
+) -> tuple[tuple[str, str, EdgeKind], ...]:
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
 	signatures = (
 		signatures_by_slot(unresolved_slots(program, resolved)) if narrow_by_signature else None
@@ -253,20 +322,36 @@ def _caller_targets(
 	name = partial(stack_name, program, names)
 	return tuple(
 		sorted(
-			(frame_key(name(site.caller_address)), target, bool(field_targets))
+			(frame_key(name(site.caller_address)), target, kind)
 			for site in sites
-			for chased in (call_site_candidates(program, site, resolved_map, signatures),)
-			for field_targets in (
-				frozenset[Address]()
-				if chased
-				else narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
+			for targets, kind in _labeled(
+				site_targets(program, site, resolved_map, signatures),
+				narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
 			)
-			for target in frozenset(map(name, chased or field_targets)) or {INDIRECT_CALLEE}
+			for target in frozenset(map(name, targets)) or {INDIRECT_CALLEE}
 		)
 	)
 
 
-def _caller(entry: tuple[str, str, bool]) -> str:
+def _labeled(
+	findings: tuple[SiteTargets, ...], field: frozenset[Address]
+) -> tuple[tuple[frozenset[Address], EdgeKind], ...]:
+	return tuple((found.targets, _kind(found)) for found in findings if found.targets) or (
+		((field, EdgeKind.FIELD),) if field else ((frozenset[Address](), EdgeKind.CANDIDATE),)
+	)
+
+
+def _kind(found: SiteTargets) -> EdgeKind:
+	match found:
+		case Chased():
+			return EdgeKind.CANDIDATE
+		case SignatureNarrowed():
+			return EdgeKind.SIGNATURE
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _caller(entry: tuple[str, str, EdgeKind]) -> str:
 	return entry[0]
 
 
@@ -294,7 +379,7 @@ def own_targets(
 		sites_by_caller=Counter(
 			frame_key(stack_name(program, names, site.caller_address)) for site in thread.sites
 		),
-		field_targets_by_caller=field_only_targets(
+		narrowed_by_caller=narrowed_targets(
 			program,
 			thread.sites,
 			resolved,

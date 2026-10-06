@@ -15,10 +15,13 @@ from dynamic_call_tree_resolution import (
 	AddressTakenReport,
 	AnalysisReport,
 	AnalysisSummary,
+	BoundedStack,
+	CallSiteReport,
 	ComparisonReport,
 	EdgeKind,
 	PathStepReport,
 	Reason,
+	SignatureReport,
 	StackEntryReport,
 	StackPathReport,
 	UnboundedStack,
@@ -309,11 +312,7 @@ def test_cli_stack_with_elf_bounds_each_thread_of_a_shared_entry_by_its_own_reco
 	)
 
 
-def test_cli_stack_narrows_a_threads_site_by_its_slot_signature_only_when_asked(
-	tmp_path: Path,
-	fixture_elfs: dict[str, Path],
-	capsys: pytest.CaptureFixture[str],
-) -> None:
+def _signature_thread_build(tmp_path: Path) -> Path:
 	build_directory = tmp_path / "build"
 	build_directory.mkdir()
 	(build_directory / "signature_thread.c.ci").write_text(
@@ -328,6 +327,15 @@ def test_cli_stack_narrows_a_threads_site_by_its_slot_signature_only_when_asked(
 		"signature_thread.c:19:6:other\t64\tstatic\n"
 		"signature_thread.c:29:6:worker\t32\tstatic\n"
 	)
+	return build_directory
+
+
+def test_cli_stack_narrows_a_threads_site_by_its_slot_signature_only_when_asked(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = _signature_thread_build(tmp_path)
 	stack(build_directory, fixture_elfs["signature_thread"], path="worker_tid")
 	unnarrowed = capsys.readouterr().out.splitlines()[1:]
 	stack(
@@ -345,12 +353,73 @@ def test_cli_stack_narrows_a_threads_site_by_its_slot_signature_only_when_asked(
 			"other +64 = 144 bytes via indirect: fallback",
 		],
 		[
-			"worker_tid: 56 bytes",
+			"worker_tid: 56 bytes (narrowed by signature: 1)",
 			"worker_tid +16 = 16 bytes",
-			"worker +32 = 48 bytes via thread record",
-			"handle +8 = 56 bytes via indirect: candidate",
+			"worker +32 = 48 bytes via thread record (narrowed by signature)",
+			"handle +8 = 56 bytes via indirect: signature",
 		],
 	)
+
+
+def test_cli_stack_json_names_the_callers_a_narrowing_resolved_only_when_asked(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = _signature_thread_build(tmp_path)
+	stack(build_directory, fixture_elfs["signature_thread"], json=True)
+	unnarrowed = _worker_bound(capsys.readouterr().out)
+	stack(build_directory, fixture_elfs["signature_thread"], json=True, narrow_by_signature=True)
+	narrowed = _worker_bound(capsys.readouterr().out)
+	assert (
+		(unnarrowed.narrowed_by_signature, unnarrowed.narrowed_by_field),
+		(narrowed.narrowed_by_signature, narrowed.narrowed_by_field),
+	) == (((), ()), (("worker",), ()))
+
+
+def _worker_bound(out: str) -> BoundedStack | UnboundedStack:
+	(bound,) = (
+		row.bound
+		for row in msgspec.json.decode(out, type=tuple[StackEntryReport, ...])
+		if row.entry == "worker_tid"
+	)
+	return bound
+
+
+def test_cli_analyze_json_marks_a_site_its_slot_signature_narrowed_only_when_asked(
+	fixture_elfs: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+	analyze(fixture_elfs["signature_thread"], json=True)
+	unnarrowed = _worker_site(capsys.readouterr().out)
+	analyze(fixture_elfs["signature_thread"], json=True, narrow_by_signature=True)
+	narrowed = _worker_site(capsys.readouterr().out)
+	assert (
+		(unnarrowed.signature, unnarrowed.candidates),
+		(narrowed.signature, tuple(candidate.name for candidate in narrowed.candidates)),
+	) == (
+		(None, ()),
+		(SignatureReport(return_type="void", parameters=("int",)), ("handle",)),
+	)
+
+
+def test_cli_analyze_prints_the_signature_it_narrowed_a_site_to(
+	fixture_elfs: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+	analyze(fixture_elfs["signature_thread"], narrow_by_signature=True)
+	assert [
+		line.split(": ", 1)[1]
+		for line in capsys.readouterr().out.splitlines()
+		if line.startswith("worker@")
+	] == ["handle (narrowed by signature void (int), unsound under casts)"]
+
+
+def _worker_site(out: str) -> CallSiteReport:
+	(site,) = (
+		site
+		for site in msgspec.json.decode(out, type=AnalysisReport).call_sites
+		if site.caller == "worker"
+	)
+	return site
 
 
 def test_cli_stack_json_carries_every_name(
