@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 import msgspec
 import pytest
@@ -78,22 +78,26 @@ def test_each_handler_only_the_hardware_calls_is_a_row_of_its_own(
 	assert (
 		{"_isr_wrapper", "sys_clock_isr"} <= rows.keys(),
 		{
-			entry: rows[entry]
+			entry: _shown(rows[entry])
 			for entry in ("__start", "z_arm_hard_fault", "z_arm_nmi", "z_arm_pendsv", "z_arm_svc")
 		},
 	) == (
 		True,
 		{
-			"__start": _bare("__start"),
-			"z_arm_hard_fault": _bare("z_arm_hard_fault"),
+			"__start": (888, ("__l_vfprintf", "__start")),
+			"z_arm_hard_fault": (280, ("__l_vfprintf", "z_arm_hard_fault")),
 			"z_arm_nmi": BoundedStack(bytes=8, measured=("z_SysNmiOnReset",)),
 			"z_arm_pendsv": BoundedStack(bytes=0, measured=("z_arm_pendsv",)),
-			"z_arm_svc": _bare("z_arm_svc"),
+			"z_arm_svc": (216, ("__l_vfprintf", "z_arm_svc")),
 		},
 	)
 
 
-def _bare(handler: str) -> UnboundedStack:
-	return UnboundedStack(
-		at_least_bytes=0, recursion=(), unmeasured=(handler,), dynamic=(), unresolved=()
-	)
+def _shown(bound: BoundedStack | UnboundedStack) -> BoundedStack | tuple[int, tuple[str, ...]]:
+	match bound:
+		case BoundedStack():
+			return bound
+		case UnboundedStack(at_least_bytes=at_least, unmeasured=unmeasured):
+			return at_least, unmeasured
+		case _ as unreachable:
+			assert_never(unreachable)
