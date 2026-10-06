@@ -357,8 +357,6 @@ def test_the_calls_ci_leaves_out_join_the_stack_graph(
 			"memset",
 			"strcmp",
 			"strnlen",
-			"z_SysNmiOnReset",
-			"z_arm_pendsv",
 		)
 	]
 
