@@ -309,6 +309,50 @@ def test_cli_stack_with_elf_bounds_each_thread_of_a_shared_entry_by_its_own_reco
 	)
 
 
+def test_cli_stack_narrows_a_threads_site_by_its_slot_signature_only_when_asked(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "signature_thread.c.ci").write_text(
+		"graph: { "
+		'edge: { sourcename: "z_thread_entry" targetname: "__indirect_call" } '
+		'edge: { sourcename: "worker" targetname: "__indirect_call" } '
+		"}\n"
+	)
+	(build_directory / "signature_thread.c.su").write_text(
+		"signature_thread.c:8:6:z_thread_entry\t16\tstatic\n"
+		"signature_thread.c:17:6:handle\t8\tstatic\n"
+		"signature_thread.c:19:6:other\t64\tstatic\n"
+		"signature_thread.c:29:6:worker\t32\tstatic\n"
+	)
+	stack(build_directory, fixture_elfs["signature_thread"], path="worker_tid")
+	unnarrowed = capsys.readouterr().out.splitlines()[1:]
+	stack(
+		build_directory,
+		fixture_elfs["signature_thread"],
+		path="worker_tid",
+		narrow_by_signature=True,
+	)
+	assert (unnarrowed, capsys.readouterr().out.splitlines()[1:]) == (
+		[
+			"worker_tid: unbounded, at least 144 bytes (recursion: 1, unmeasured: 5)",
+			"worker_tid +16 = 16 bytes",
+			"worker +32 = 48 bytes via thread record",
+			"worker +32 = 80 bytes via indirect: fallback (recursion)",
+			"other +64 = 144 bytes via indirect: fallback",
+		],
+		[
+			"worker_tid: 56 bytes",
+			"worker_tid +16 = 16 bytes",
+			"worker +32 = 48 bytes via thread record",
+			"handle +8 = 56 bytes via indirect: candidate",
+		],
+	)
+
+
 def test_cli_stack_json_carries_every_name(
 	tmp_path: Path,
 	capsys: pytest.CaptureFixture[str],
