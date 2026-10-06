@@ -289,6 +289,13 @@ class ThreadRoot(Struct):
 	"""What the entry is started with, by ABI argument position."""
 
 
+class SystemThread(Struct):
+	"""A thread the RTOS creates for itself while it starts, through the same trampoline."""
+
+	name: str
+	entry: Address
+
+
 class ThreadCreation(Struct):
 	"""How an RTOS's thread creations reach its trampoline."""
 
@@ -317,6 +324,7 @@ class RtosModel(Struct):
 	"""The bytes the RTOS takes from the top of each thread's stack before the thread's entry runs."""
 	exception_frame: int = 0
 	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
+	system_threads: tuple[SystemThread, ...] = ()
 
 
 BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)

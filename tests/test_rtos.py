@@ -22,12 +22,17 @@ from dynamic_call_tree_resolution import (
 	resolve,
 )
 from dynamic_call_tree_resolution.cli import analyze, stack
-from dynamic_call_tree_resolution.model import BARE_METAL, RtosModel, ThreadCreation
+from dynamic_call_tree_resolution.model import (
+	BARE_METAL,
+	RtosModel,
+	SystemThread,
+	ThreadCreation,
+)
 from dynamic_call_tree_resolution.points_to import pointer_at
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.programs import build_program
-from tests.toolchains import zephyr_console_cortex_m3
+from tests.toolchains import zephyr_console_cortex_m3, zephyr_stack_pointers_cortex_m3
 
 if TYPE_CHECKING:
 	from collections.abc import Callable
@@ -168,6 +173,51 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 		),
 		stack_reservation=16,
 		exception_frame=36,
+		system_threads=(
+			SystemThread(name="z_main_thread", entry=Address(0xCD9)),
+			SystemThread(name="z_idle_threads", entry=Address(0x1E05)),
+		),
+	)
+
+
+@pytest.mark.image
+def test_the_main_and_idle_threads_start_their_stack_reservation_below_their_stack_tops_on_qemu(
+	zephyr_fixtures: Path,
+) -> None:
+	program = load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf")
+	assert set(
+		zephyr_stack_pointers_cortex_m3(
+			zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf", "*z_thread_entry", 2
+		)
+	) == {
+		stack.address + stack.size - model.stack_reservation
+		for model in (rtos_model(program, RtosChoice.AUTO),)
+		for stack in program.objects.values()
+		if stack.name in {"z_main_stack", "z_idle_stacks"}
+	}
+
+
+@pytest.mark.image
+def test_a_system_thread_takes_the_trampolines_frame_and_calls_from_its_code_without_su_or_ci(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	build_directory = zephyr_fixtures / "hello"
+	stack(build_directory, build_directory / "zephyr" / "zephyr.elf", path="z_main_thread")
+	main_thread = capsys.readouterr().out.splitlines()[1:4]
+	stack(build_directory, build_directory / "zephyr" / "zephyr.elf", path="z_idle_threads")
+	assert (main_thread, capsys.readouterr().out.splitlines()[1:]) == (
+		[
+			"z_main_thread: unbounded, at least 492 bytes (recursion: 18, unmeasured: 1, measured: 45, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"z_main_thread +8 = 8 bytes (measured)",
+			"bg_thread_main +40 = 48 bytes via system thread (measured, recursion)",
+		],
+		[
+			"z_idle_threads: 228 bytes (measured: 5, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"z_idle_threads +8 = 8 bytes (measured)",
+			"z_impl_k_thread_abort +168 = 176 bytes via binary (measured)",
+			"(stack reservation) +16 = 192 bytes",
+			"(exception frame) +36 = 228 bytes",
+		],
 	)
 
 
