@@ -148,6 +148,53 @@ def test_a_threads_path_ends_with_what_the_rtos_model_adds_to_its_code(
 	]
 
 
+def test_the_main_and_idle_threads_are_rows_in_place_of_their_entries(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", json=True)
+	rows = {
+		row.entry: row.bound
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+	}
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", rtos=RtosChoice.NONE, json=True)
+	bare_metal = {
+		row.entry
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+	}
+	threads_and_entries = {"z_main_thread", "z_idle_threads", "bg_thread_main", "idle"}
+	assert (
+		sorted(rows.keys() & threads_and_entries),
+		sorted(bare_metal & threads_and_entries),
+		rows.get("z_idle_threads"),
+	) == (
+		["z_idle_threads", "z_main_thread"],
+		["bg_thread_main", "idle"],
+		BoundedStack(
+			bytes=16 + 184 + 36,
+			measured=("__aeabi_read_tp",),
+			stack_reservation_bytes=16,
+			exception_frame_bytes=36,
+		),
+	)
+
+
+def test_the_main_threads_path_starts_in_the_trampoline_and_ends_with_what_the_rtos_model_adds(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="z_main_thread")
+	lines = capsys.readouterr().out.splitlines()
+	assert (lines[1:4], lines[-2:]) == (
+		[
+			"z_main_thread: unbounded, at least 1020 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"z_main_thread +8 = 8 bytes",
+			"bg_thread_main +40 = 48 bytes via system thread (recursion)",
+		],
+		["(stack reservation) +16 = 984 bytes", "(exception frame) +36 = 1020 bytes"],
+	)
+
+
 class _Resolved(Struct):
 	program: Program
 	resolution: ProgramResolution

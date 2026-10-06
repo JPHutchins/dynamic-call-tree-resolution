@@ -216,13 +216,15 @@ def _indirect_kind(
 
 
 def thread_edges(
-	edges: Iterable[CallEdge], trampoline: str, entries_by_thread: Mapping[str, str]
+	edges: Iterable[CallEdge],
+	trampoline: str,
+	entries_by_thread: Mapping[str, tuple[str, EdgeKind]],
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	names_by_key = _raw_names_by_key(edges_tuple)
 	return tuple(
 		thread_edge
-		for thread, entry in entries_by_thread.items()
+		for thread, (entry, started_by) in entries_by_thread.items()
 		for thread_edge in (
 			*(
 				CallEdge(caller=thread, callee=edge.callee, kind=edge.kind)
@@ -230,7 +232,7 @@ def thread_edges(
 				if frame_key(edge.caller) == trampoline and edge.callee != INDIRECT_CALLEE
 			),
 			*(
-				CallEdge(caller=thread, callee=name, kind=EdgeKind.THREAD)
+				CallEdge(caller=thread, callee=name, kind=started_by)
 				for name in sorted(_graph_names(names_by_key, entry))
 			),
 		)
@@ -333,7 +335,7 @@ def _in_thread(thread: str, name: str) -> str:
 	return f"{thread}/:{name}"
 
 
-def thread_frames[F: (StackUsage, MeasuredFrame, OwnFrame)](
+def thread_frames[F: Frame](
 	frames: Iterable[F], trampoline: str, threads: Iterable[str]
 ) -> tuple[F, ...]:
 	frames_tuple = tuple(frames)
@@ -439,16 +441,22 @@ def thread_reports(
 	rtos: RtosModel = BARE_METAL,
 ) -> tuple[StackReport, ...]:
 	return tuple(
-		sorted(
-			(
-				_on_thread_stack(_report(own_graphs[report.entry], report.entry), rtos)
-				if report.entry in own_graphs
-				else report
-				for report in reports
-			),
-			key=_report_order,
-		)
+		sorted((_thread_report(report, own_graphs, rtos) for report in reports), key=_report_order)
 	)
+
+
+def _thread_report(
+	report: StackReport, own_graphs: Mapping[str, StackGraph], rtos: RtosModel
+) -> StackReport:
+	match own_graphs.get(report.entry):
+		case StackGraph() as own:
+			return _on_thread_stack(_report(own, report.entry), rtos)
+		case None if any(thread.name == report.entry for thread in rtos.system_threads):
+			return _on_thread_stack(report, rtos)
+		case None:
+			return report
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:

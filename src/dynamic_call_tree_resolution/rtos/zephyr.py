@@ -13,6 +13,7 @@ from dynamic_call_tree_resolution.model import (
 	ArmProfile,
 	Machine,
 	RtosModel,
+	SystemThread,
 	ThreadCreation,
 	ThreadRoot,
 )
@@ -35,6 +36,7 @@ _ALIGNMENT_PAD: Final = 4
 _TLS_SETUP: Final = "arch_tls_stack_setup"
 _TOOLCHAIN_TLS_POINTERS: Final = 2
 _STACK_POINTER_ALIGNMENT: Final = 8
+_SYSTEM_THREADS: Final = (("z_main_thread", "bg_thread_main"), ("z_idle_threads", "idle"))
 
 
 def detect(program: Program) -> RtosModel | None:
@@ -58,6 +60,11 @@ def detect(program: Program) -> RtosModel | None:
 		trampoline=_TRAMPOLINE,
 		stack_reservation=_stack_reservation(program),
 		exception_frame=_exception_frame(program.arm_core),
+		system_threads=tuple(
+			system_thread
+			for name, entry in _SYSTEM_THREADS
+			if (system_thread := _system_thread(program, name, entry)) is not None
+		),
 		creation=ThreadCreation(
 			frame_builders=_FRAME_BUILDERS,
 			setup=_SETUP,
@@ -69,6 +76,18 @@ def detect(program: Program) -> RtosModel | None:
 			),
 		),
 	)
+
+
+def _system_thread(program: Program, name: str, entry: str) -> SystemThread | None:
+	match tuple(
+		address for address, function in program.functions.items() if function.name == entry
+	):
+		case (address,) if any(
+			data_object.name == name for data_object in program.objects.values()
+		):
+			return SystemThread(name=name, entry=address)
+		case _:
+			return None
 
 
 def _stack_reservation(program: Program) -> int:

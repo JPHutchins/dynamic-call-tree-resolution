@@ -260,6 +260,9 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   such as `thermal_tid`. It is `z_thread_entry`'s frame and calls, with the indirect call
   that starts the thread going to that thread's entry alone. The entry function is then
   no longer an entry of its own.
+- The threads Zephyr creates for itself while it starts are entries the same way, named
+  for their thread objects: `z_main_thread` runs `bg_thread_main`, and `z_idle_threads`
+  runs `idle`. Their trees below the entry are the image's.
 - Below that, a thread's tree comes from an analysis of the thread alone, started from
   its record. A site that analysis tracked to known functions expands to those functions
   without the fallback, provided it decoded as many indirect calls in the function as
@@ -270,8 +273,8 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `stack --path ENTRY` prints that entry alone, then its deepest path, one function per
   line: its frame, the running total, the edge it is called through (`static`,
   `indirect: candidate`, `indirect: field`, `indirect: signature`, `indirect: fallback`,
-  `thread record`, or `binary`), and what its own frame, calls, or cycle add to an
-  unbounded depth. The last total is the entry's depth.
+  `thread record`, `system thread`, or `binary`), and what its own frame, calls, or
+  cycle add to an unbounded depth. The last total is the entry's depth.
 
 ## Per-thread trees
 
@@ -424,7 +427,21 @@ thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, narrowed by field:
 - Each row starts at the top of its stack, as QEMU's mark does. Zephyr gives that top
   to thread-local storage (TLS) before the thread runs, so the stack pointer reaches
   `z_thread_entry` one stack reservation below it. `test_sensor_threads` reads that
-  stack pointer with gdb on QEMU, for both threads and main ([#151]).
+  stack pointer with gdb on QEMU, for both threads and main, and `test_rtos` for main
+  and idle in `hello_world` ([#151]).
+- `z_idle_threads` is bounded, but its deepest path is `z_thread_entry`'s own call to
+  abort a thread whose entry returns, which `idle` never does:
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_idle_threads
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+z_idle_threads: 236 bytes (measured: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+z_idle_threads +8 = 8 bytes
+z_impl_k_thread_abort +0 = 8 bytes via static
+...
+(stack reservation) +16 = 200 bytes
+(exception frame) +36 = 236 bytes
+```
 
 Zephyr's own `samples/synchronization`, built at `$DCTR_FIXTURES/synchronization`,
 starts `thread_b` from a record and `thread_a` with `k_thread_create`. The call that
@@ -541,8 +558,7 @@ contradicts does not hold.
   to an 8-byte boundary. Without `CONFIG_STACK_ALIGN_DOUBLE_WORD`, Zephyr rounds to a
   4-byte boundary, so the row can over-count. Zephyr can take more, which the model leaves
   out: userspace-local data, a random stack-pointer offset, and stack canaries placed
-  with TLS. The main thread's row gets neither this nor the exception frame, and x86
-  images get neither ([#151]).
+  with TLS. x86 images get neither this nor the exception frame ([#151]).
 - With `--elf`, a function the graph reaches without a `.su` record, such as prebuilt
   library code, gets a frame measured from its Arm code: the deepest its stack pointer
   goes, or the depth at a call plus that callee's measured depth. When that whole depth

@@ -593,7 +593,10 @@ def _expand_from_elf(
 	)
 	binary = _binary_edges(image, measure, expanded, artifacts.frames)
 	threads_edges, threads_frames = _thread_graph(
-		image, model, (*in_image_edges, *binary), artifacts.frames
+		image,
+		model,
+		(*in_image_edges, *binary, *register.edges),
+		(*artifacts.frames, *register.frames),
 	)
 	code = _code_measures(
 		image,
@@ -607,7 +610,8 @@ def _expand_from_elf(
 		expanded=(*expanded, *binary, *code.edges, *threads_edges),
 		in_image_edges=(*in_image_edges, *threads_edges),
 		frames=(*artifacts.frames, *threads_frames, *register.frames, *code.frames),
-		threads=frozenset(thread.name for thread in model.threads),
+		threads=frozenset(thread.name for thread in model.threads)
+		| frozenset(thread.name for thread in model.system_threads),
 		hardware_roots=hardware_roots,
 		own_edges={
 			thread: (*expanded, *binary, *code.edges, *own)
@@ -785,11 +789,15 @@ def _thread_graph(
 	image: _Image,
 	model: RtosModel,
 	edges: tuple[CallEdge, ...],
-	frames: tuple[StackUsage, ...],
-) -> tuple[tuple[CallEdge, ...], tuple[StackUsage, ...]]:
+	frames: tuple[Frame, ...],
+) -> tuple[tuple[CallEdge, ...], tuple[Frame, ...]]:
 	entries_by_thread = {
-		thread.name: frame_key(stack_name(image.program, image.names, thread.entry))
-		for thread in model.threads
+		thread.name: (frame_key(stack_name(image.program, image.names, thread.entry)), started_by)
+		for threads, started_by in (
+			(model.threads, EdgeKind.THREAD),
+			(model.system_threads, EdgeKind.SYSTEM_THREAD),
+		)
+		for thread in threads
 	}
 	match model.trampoline:
 		case None:

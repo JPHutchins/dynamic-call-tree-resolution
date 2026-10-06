@@ -31,6 +31,7 @@ from dynamic_call_tree_resolution import (
 	stack_reports,
 	worst_case_depths,
 )
+from dynamic_call_tree_resolution.model import Address, RtosModel, SystemThread
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	ThreadTargets,
@@ -38,6 +39,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	own_thread_edges,
 	thread_edges,
 	thread_frames,
+	thread_reports,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +69,7 @@ def test_a_thread_is_the_trampolines_frame_and_calls_with_its_indirect_call_to_t
 		StackUsage(function="entry", bytes=100, bounded=True),
 		StackUsage(function="leaf", bytes=10, bounded=True),
 	)
-	threads = thread_edges(edges, "trampoline", {"worker_tid": "entry"})
+	threads = thread_edges(edges, "trampoline", {"worker_tid": ("entry", EdgeKind.THREAD)})
 	depths = {
 		report.entry: report.bound
 		for report in worst_case_depths(
@@ -81,6 +83,31 @@ def test_a_thread_is_the_trampolines_frame_and_calls_with_its_indirect_call_to_t
 		),
 		Bounded(bytes=118),
 		False,
+	)
+
+
+def test_a_system_threads_row_adds_what_the_rtos_model_adds_to_the_whole_images_tree() -> None:
+	assert thread_reports(
+		(
+			StackReport(entry="main_thread", bound=Bounded(bytes=8 + 40)),
+			StackReport(entry="isr", bound=Bounded(bytes=24)),
+		),
+		{},
+		RtosModel(
+			name="test",
+			evidence=(),
+			threads=(),
+			trampoline="trampoline",
+			stack_reservation=16,
+			exception_frame=36,
+			system_threads=(SystemThread(name="main_thread", entry=Address(0x100)),),
+		),
+	) == (
+		StackReport(
+			entry="main_thread",
+			bound=Bounded(bytes=16 + 8 + 40 + 36, stack_reservation=16, exception_frame=36),
+		),
+		StackReport(entry="isr", bound=Bounded(bytes=24)),
 	)
 
 
