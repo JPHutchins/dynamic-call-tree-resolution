@@ -360,6 +360,7 @@ def stack_graph(
 	*,
 	entry_edges: Iterable[CallEdge] | None = None,
 	assumed_no_recursion: frozenset[str] = frozenset(),
+	hardware_roots: frozenset[str] = frozenset(),
 ) -> StackGraph:
 	given = tuple(edges)
 	edges_tuple = tuple(edge for edge in given if not _assumed_away(edge, assumed_no_recursion))
@@ -400,6 +401,7 @@ def stack_graph(
 					}
 					- root_graph_nodes
 				)
+				| frozenset(map(frame_key, hardware_roots))
 			)
 		),
 	)
@@ -465,7 +467,7 @@ def deepest_path(graph: StackGraph, entry: str) -> tuple[PathStep, ...]:
 
 
 def _root_depth(graph: StackGraph, root: str) -> int:
-	return graph.depths[root] if root in graph.depths else graph.frame_by_name[root].bytes
+	return graph.depths[root] if root in graph.depths else _frame_size(graph, root)
 
 
 def _root_reasons(graph: StackGraph, root: str) -> _Reasons:

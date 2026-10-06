@@ -258,6 +258,8 @@ class Program(Struct):
 	"""The ARM core the build attributes target; ``None`` for other machines."""
 	tls_size: int = 0
 	"""The bytes of each thread's copy of thread-local storage (TLS), from the TLS segment."""
+	entry_point: Address = Address(0)
+	"""Where execution starts, from the ELF header."""
 
 
 class ArmProfile(StrEnum):

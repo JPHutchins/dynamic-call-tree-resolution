@@ -42,7 +42,9 @@ Stack depths combine the resulting call graph with GCC's
 that `.ci` does not record. Each indirect call also expands to
 the fallback: every function whose address the image stores, a non-branch instruction
 computes, or an address relocation kept by `--emit-relocs` names. The exception is a
-site inside a thread's tree that the thread's own analysis resolved.
+site inside a thread's tree that the thread's own analysis resolved. On an M-profile
+image, the fallback also leaves out a handler whose address only the vector table holds:
+only the hardware calls it, so it is an entry of its own.
 
 ## Usage
 
@@ -223,6 +225,12 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   number includes it.
 - `exception frame`, on a thread row, is what the RTOS model adds for the frame an
   interrupt's hardware stacks on the thread's stack, and the row's number includes it.
+- On an M-profile image, each handler only the vector table holds is an entry: the reset
+  handler `__start`, exception handlers such as `z_arm_svc`, and the interrupt entry
+  `_isr_wrapper`. Its row is that handler's own depth; what nested handlers add on the
+  main stack is not modeled yet ([#151]). An assembly handler's row is its own frame,
+  or `unmeasured`, until a call from assembly of symbol size zero gets its caller
+  ([#78]).
 - Entry points come from the `.ci` graph, which also records functions the linker
   discarded, such as `shell_readline`. With an ELF, calls from functions not in the
   image are ignored, so a function only they call, such as `work_queue_main`, is an
@@ -322,15 +330,15 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
-thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1040 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1028 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1108 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1028 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -343,7 +351,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1120 bytes (recursion: 43, unmeasured: 4, measured: 9, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1040 bytes (recursion: 39, unmeasured: 1, measured: 7, stack reservation: 16 bytes, exception frame: 36 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -497,8 +505,14 @@ contradicts does not hold.
   by `--emit-relocs` names, including a relative offset such as `.word f - table`.
   Without `--emit-relocs`, a function pointer built by other arithmetic, or in code
   outside every function symbol, is missed ([#96]).
-- Code without `.ci` records (assembly, `native_sim` host code) is absent from the
-  stack call graph ([#78]).
+- A handler leaves the fallback only when every reference to its address is a slot of
+  the vector table. That assumes no software loads a handler from the table and calls
+  it; such a load, when the value-set analysis tracks it, still resolves to the handler.
+  The table is the one that holds the ELF entry point after a nonzero, 8-byte-aligned
+  initial stack pointer.
+- Code without `.ci` records (assembly, prebuilt libraries) joins the stack call graph
+  only through the direct calls the linker kept. A call from assembly of symbol size
+  zero has no caller yet, and `native_sim` host code is absent ([#78]).
 
 ### Stack depths
 

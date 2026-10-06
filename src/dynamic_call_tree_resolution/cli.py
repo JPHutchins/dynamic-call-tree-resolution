@@ -94,6 +94,7 @@ from dynamic_call_tree_resolution.stack_usage import (
 from dynamic_call_tree_resolution.vsa.abi import normalized
 from dynamic_call_tree_resolution.vsa.frames import code_depths
 from dynamic_call_tree_resolution.vsa.links import linked_calls
+from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers
 
 if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
@@ -400,6 +401,8 @@ class _Expansion(Struct):
 	in_image_edges: tuple[CallEdge, ...]
 	frames: tuple[Frame, ...]
 	threads: frozenset[str]
+	hardware_roots: frozenset[str]
+	"""The handlers only the vector table holds, by their names in the stack graph."""
 	own_edges: Mapping[str, tuple[CallEdge, ...]]
 	"""Each thread's tree from its own analysis, by thread."""
 	indirect_sites: int
@@ -540,6 +543,10 @@ def _expand_from_elf(
 	model = rtos_model(image.program, rtos)
 	resolution = resolve(image.program, model)
 	narrowed_by_field = _narrowed_by_field(image.elf, image.program) if narrow_by_field else ()
+	hardware_roots = frozenset(
+		stack_name(image.program, image.names, handler)
+		for handler in hardware_handlers(image.program)
+	)
 	targets_by_caller, fallback = per_caller_candidates(
 		image.program,
 		resolution.sites,
@@ -577,9 +584,11 @@ def _expand_from_elf(
 				image,
 				(*expanded, *binary, *threads_edges),
 				(*artifacts.frames, *threads_frames),
+				hardware_roots,
 			),
 		),
 		threads=frozenset(thread.name for thread in model.threads),
+		hardware_roots=hardware_roots,
 		own_edges={
 			thread: (*expanded, *binary, *own)
 			for thread, own in _own_thread_graphs(
@@ -644,13 +653,15 @@ def _binary_edges(
 
 
 def _code_frames(
-	image: _Image, edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...]
+	image: _Image,
+	edges: tuple[CallEdge, ...],
+	frames: tuple[StackUsage, ...],
+	roots: frozenset[str],
 ) -> tuple[MeasuredFrame, ...]:
 	unframed = (
 		frozenset(frame_key(node) for edge in edges for node in (edge.caller, edge.callee))
-		- {frame_key(frame.function) for frame in frames}
-		- {INDIRECT_CALLEE}
-	)
+		| frozenset(map(frame_key, roots))
+	) - ({frame_key(frame.function) for frame in frames} | {INDIRECT_CALLEE})
 	starts = {address: name for address, name in image.names.items() if frame_key(name) in unframed}
 	depths = code_depths(image.program, frozenset(starts))
 	return tuple(
@@ -747,7 +758,9 @@ def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[
 	return tuple(
 		report
 		for report in reports
-		if report.entry in expansion.image_functions or report.entry in expansion.threads
+		if report.entry in expansion.image_functions
+		or report.entry in expansion.threads
+		or report.entry in expansion.hardware_roots
 	)
 
 
@@ -794,6 +807,7 @@ def stack(
 		expansion.frames if expansion is not None else artifacts.frames,
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
 		assumed_no_recursion=frozenset(assume_no_recursion),
+		hardware_roots=expansion.hardware_roots if expansion is not None else frozenset(),
 	)
 	reports = stack_reports(graph)
 	own_graphs = _own_graphs(expansion, frozenset(assume_no_recursion))
@@ -902,6 +916,7 @@ def summary(
 			expansion.frames,
 			entry_edges=expansion.in_image_edges,
 			assumed_no_recursion=frozenset(assume_no_recursion),
+			hardware_roots=expansion.hardware_roots,
 		)
 	)
 	kept = _in_image(

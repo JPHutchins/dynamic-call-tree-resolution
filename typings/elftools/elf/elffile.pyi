@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from typing import BinaryIO, Literal
+from typing import BinaryIO, Literal, overload
 
 from elftools.dwarf.dwarfinfo import DWARFInfo
 from elftools.elf.sections import Section
@@ -8,7 +8,10 @@ from elftools.elf.segments import Segment
 class ELFHeader:
 	e_machine: str
 	e_ident: dict[str, int]
+	@overload
 	def __getitem__(self, name: Literal["e_machine", "e_type"]) -> str: ...
+	@overload
+	def __getitem__(self, name: Literal["e_entry"]) -> int: ...
 
 class ELFFile:
 	header: ELFHeader

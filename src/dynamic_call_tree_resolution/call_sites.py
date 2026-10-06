@@ -32,6 +32,7 @@ from dynamic_call_tree_resolution.points_to import (
 from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, ThreadTargets, frame_key
 from dynamic_call_tree_resolution.vsa import Analysis, address_taken, analyze, runtime_value
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
+from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -173,17 +174,41 @@ def per_caller_candidates(
 	names: Mapping[Address, str] | None = None,
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
 	return (
-		{
-			caller: frozenset(target for _, target, _ in group)
-			for caller, group in groupby(
-				_caller_targets(
-					program, sites, resolved, narrow_by_signature, narrowed_by_field, names
-				),
-				key=_caller,
+		_targets_by_caller(
+			program,
+			sites,
+			resolved,
+			narrow_by_signature=narrow_by_signature,
+			narrowed_by_field=narrowed_by_field,
+			names=names,
+		),
+		frozenset(
+			map(
+				partial(stack_name, program, names),
+				address_taken(program) - hardware_handlers(program),
 			)
-		},
-		frozenset(map(partial(stack_name, program, names), address_taken(program))),
+		),
 	)
+
+
+def _targets_by_caller(
+	program: Program,
+	sites: tuple[CallSite, ...],
+	resolved: tuple[SlotAssignment, ...],
+	*,
+	narrow_by_signature: bool,
+	narrowed_by_field: tuple[NarrowedSpan, ...],
+	names: Mapping[Address, str] | None,
+) -> Mapping[str, frozenset[str]]:
+	return {
+		caller: frozenset(target for _, target, _ in group)
+		for caller, group in groupby(
+			_caller_targets(
+				program, sites, resolved, narrow_by_signature, narrowed_by_field, names
+			),
+			key=_caller,
+		)
+	}
 
 
 def field_only_targets(
@@ -252,14 +277,18 @@ def own_targets(
 	names: Mapping[Address, str] | None = None,
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 ) -> ThreadTargets:
-	targets_by_caller, _ = per_caller_candidates(
-		program, thread.sites, resolved, narrowed_by_field=narrowed_by_field, names=names
-	)
 	return ThreadTargets(
 		reached=frozenset(
 			frame_key(stack_name(program, names, address)) for address in thread.reached
 		),
-		targets_by_caller=targets_by_caller,
+		targets_by_caller=_targets_by_caller(
+			program,
+			thread.sites,
+			resolved,
+			narrow_by_signature=False,
+			narrowed_by_field=narrowed_by_field,
+			names=names,
+		),
 		sites_by_caller=Counter(
 			frame_key(stack_name(program, names, site.caller_address)) for site in thread.sites
 		),
