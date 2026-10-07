@@ -14,6 +14,7 @@ from salix import replace
 from dynamic_call_tree_resolution import Address, load
 from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.report import BoundedStack, StackEntryReport, UnboundedStack
+from dynamic_call_tree_resolution.stack_analysis import LevelSource
 from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers, vector_table
 from tests.toolchains import FIXTURES, build_cortex_m3
 
@@ -101,3 +102,52 @@ def _shown(bound: BoundedStack | UnboundedStack) -> BoundedStack | tuple[int, tu
 			return at_least, unmeasured
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+@pytest.mark.image
+def test_the_main_stack_nests_on_the_reset_path_at_most_one_exception_per_priority_level(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="z_interrupt_stacks")
+	assert capsys.readouterr().out.splitlines()[1:] == [
+		"z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each)",
+		"(exception 1) __start +1016 = 1016 bytes",
+		"(exception 4) z_arm_hard_fault +36 +1048 = 2100 bytes",
+		"(exception 5) z_arm_hard_fault +36 +1048 = 3184 bytes",
+		"(exception 6) z_arm_hard_fault +36 +1048 = 4268 bytes",
+		"(exception 12) z_arm_hard_fault +36 +1048 = 5352 bytes",
+		"(exception 15) sys_clock_isr +36 +1040 = 6428 bytes",
+		"(exception 16) _isr_wrapper +36 +976 = 7440 bytes",
+		"(exception 17) _isr_wrapper +36 +976 = 8452 bytes",
+		"(exception 18) _isr_wrapper +36 +976 = 9464 bytes",
+		"(exception 3) z_arm_hard_fault +36 +1048 = 10548 bytes",
+		"(exception 2) z_arm_nmi +36 +8 = 10592 bytes",
+	]
+
+
+def _nesting_levels(out: str) -> tuple[int, LevelSource, int]:
+	(nesting,) = (
+		row.nesting
+		for row in msgspec.json.decode(out, type=tuple[StackEntryReport, ...])
+		if row.nesting is not None
+	)
+	return nesting.priority_levels, nesting.priority_levels_from, len(nesting.chain)
+
+
+@pytest.mark.image
+def test_without_its_devicetree_the_main_stack_takes_its_levels_from_the_vector_table(
+	zephyr_fixtures: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	elf = tmp_path / "zephyr.elf"
+	elf.write_bytes((zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf").read_bytes())
+	stack(tmp_path, elf, json=True)
+	without = _nesting_levels(capsys.readouterr().out)
+	(tmp_path / "zephyr.dts").write_bytes(
+		(zephyr_fixtures / "hello" / "zephyr" / "zephyr.dts").read_bytes()
+	)
+	stack(tmp_path, elf, json=True)
+	assert (without, _nesting_levels(capsys.readouterr().out)) == (
+		(50, LevelSource.VECTOR_TABLE, 2 + 50),
+		(8, LevelSource.DEVICETREE, 2 + 8),
+	)

@@ -177,6 +177,7 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 			SystemThread(name="z_main_thread", entry=Address(0xCD9)),
 			SystemThread(name="z_idle_threads", entry=Address(0x1E05)),
 		),
+		interrupt_stack="z_interrupt_stacks",
 	)
 
 

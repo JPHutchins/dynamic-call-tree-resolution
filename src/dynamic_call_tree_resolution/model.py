@@ -325,6 +325,9 @@ class RtosModel(Struct):
 	exception_frame: int = 0
 	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
 	system_threads: tuple[SystemThread, ...] = ()
+	interrupt_stack: str | None = None
+	"""The stack exception handlers run on, which an M-profile core's main stack pointer (MSP)
+	addresses."""
 
 
 BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)
