@@ -94,7 +94,7 @@ def test_cli_compare_json(fixture_elfs: dict[str, Path]) -> None:
 		dctr("compare", "--json", str(fixture_elfs["nopie"])), type=list[ComparisonReport]
 	)
 	assert [comparison.elf for comparison in comparisons] == ["device_model.nopie.elf"]
-	assert comparisons[0].call_sites == 7
+	assert comparisons[0].call_sites == 10
 
 
 def test_cli_compare_json_in_process(
@@ -103,7 +103,7 @@ def test_cli_compare_json_in_process(
 ) -> None:
 	compare([fixture_elfs["nopie"]], json=True)
 	comparisons = msgspec.json.decode(capsys.readouterr().out, type=list[ComparisonReport])
-	assert comparisons[0].call_sites == 7
+	assert comparisons[0].call_sites == 10
 
 
 def test_cli_compare_plain_text_and_directories(
@@ -119,7 +119,7 @@ def test_cli_compare_plain_text_and_directories(
 	output = capsys.readouterr().out
 	assert output.count("EM_X86_64") == 2
 	assert "11/2/13" in output
-	assert "5/5/7" in output
+	assert "5/5/10" in output
 
 
 def test_cli_main_entry(

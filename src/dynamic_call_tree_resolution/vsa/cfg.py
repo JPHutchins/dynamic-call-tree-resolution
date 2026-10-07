@@ -10,7 +10,7 @@ from itertools import groupby, takewhile
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from capstone import arm_const, x86_const
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily, Machine, aligned
 from dynamic_call_tree_resolution.points_to import (
@@ -34,6 +34,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 	program_counter,
 )
+from dynamic_call_tree_resolution.vsa.links import function_extent, functions_by_start
 
 if TYPE_CHECKING:
 	from collections.abc import Callable, Iterable, Mapping
@@ -63,14 +64,33 @@ def _function_address(function: Function) -> Address:
 
 def control_flow_graphs(program: Program) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
 	decoders = disassemblers()
+	by_start = functions_by_start(program)
 	return {
 		start: graph
 		for start, functions in groupby(
 			sorted(program.functions.values(), key=_function_address),
 			key=partial(_code_start, program.machine),
 		)
-		if (graph := _first_graph(program, decoders, start, functions)) is not None
+		if (
+			graph := _first_graph(
+				program, decoders, start, _with_extent(program, by_start, start, functions)
+			)
+		)
+		is not None
 	}
+
+
+def _with_extent(
+	program: Program,
+	by_start: Mapping[Address, Function],
+	start: Address,
+	functions: Iterable[Function],
+) -> Iterable[Function]:
+	return (
+		functions
+		if by_start[start].size
+		else (replace(by_start[start], size=function_extent(program, by_start, start)),)
+	)
 
 
 def _code_start(machine: Machine, function: Function) -> Address:
