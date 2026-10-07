@@ -23,7 +23,9 @@ class RtosChoice(StrEnum):
 	NONE = "none"
 
 
-def rtos_model(program: Program, choice: RtosChoice) -> RtosModel:
+def rtos_model(
+	program: Program, choice: RtosChoice, options: zephyr.Kconfig = zephyr.NO_KCONFIG
+) -> RtosModel:
 	"""The model the choice selects for the image.
 
 	Raises:
@@ -33,7 +35,7 @@ def rtos_model(program: Program, choice: RtosChoice) -> RtosModel:
 		case RtosChoice.NONE:
 			return BARE_METAL
 		case RtosChoice.AUTO | RtosChoice.ZEPHYR:
-			match zephyr.detect(program):
+			match zephyr.detect(program, options):
 				case RtosModel() as detected:
 					return detected
 				case None if choice is RtosChoice.AUTO:

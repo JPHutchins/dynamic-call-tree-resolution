@@ -295,6 +295,10 @@ class StackEntryReport(Struct, omit_defaults=True):
 	bound: BoundedStack | UnboundedStack
 	nesting: NestingReport | None = None
 	"""How an interrupt stack's row stacks its exceptions."""
+	stack_bytes: int | None = None
+	"""The size of the stack the entry runs on, as the RTOS model declares it."""
+	margin_bytes: int | None = None
+	"""``stack_bytes`` less a bounded depth; negative when the depth exceeds the stack."""
 
 
 class PathStepReport(Struct):
@@ -315,6 +319,10 @@ class StackPathReport(Struct, omit_defaults=True):
 	path: tuple[PathStepReport, ...]
 	nesting: NestingReport | None = None
 	"""How an interrupt stack's row stacks its exceptions, in place of a call path."""
+	stack_bytes: int | None = None
+	"""The size of the stack the entry runs on, as the RTOS model declares it."""
+	margin_bytes: int | None = None
+	"""``stack_bytes`` less a bounded depth; negative when the depth exceeds the stack."""
 
 
 class AnalysisSummary(Struct):

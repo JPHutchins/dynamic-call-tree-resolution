@@ -229,6 +229,12 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   number includes it.
 - `exception frame`, on a thread row, is what the RTOS model adds for the frame an
   interrupt's hardware stacks on the thread's stack, and the row's number includes it.
+- `stack`, on a thread row or the main stack's row, is the stack size the build
+  declares: a static thread's record, or `CONFIG_MAIN_STACK_SIZE`,
+  `CONFIG_IDLE_STACK_SIZE` and `CONFIG_ISR_STACK_SIZE` from the `.config` beside the
+  image. `margin` is that size less a bounded row's number, and is negative when the
+  number is larger. An unbounded row's `at least` above its stack is not an overflow
+  finding: it is the depth of one path the search found, fallback edges included.
 - On an M-profile image, each handler only the vector table holds is an entry: the reset
   handler `__start`, exception handlers such as `z_arm_svc`, and the interrupt entry
   `_isr_wrapper`. Its row is that handler's own depth. An assembly handler such as
@@ -351,9 +357,9 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each)
-motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
-thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
+z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
+motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 ...
 ```
 
@@ -363,7 +369,7 @@ by its exception number:
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_interrupt_stacks
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each)
+z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
 (exception 1) __start +1016 = 1016 bytes
 (exception 4) z_arm_hard_fault +36 +1048 = 2100 bytes
 (exception 5) z_arm_hard_fault +36 +1048 = 3184 bytes
@@ -380,7 +386,7 @@ z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -393,7 +399,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -432,9 +438,9 @@ With `--narrow-by-field`, each thread's tree stays below its own bus emulator:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
 ...
-thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 ...
-motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
 ...
 ```
 
@@ -442,7 +448,8 @@ motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 
   `__aeabi_ldivmod` and `__aeabi_read_tp`, prebuilt library functions without `.su`
   records. `.ci` does not record the call to `__aeabi_read_tp`, a `binary` edge. Its
   bound includes the stack reservation and the exception frame, and its QEMU mark above
-  is within it; `test_sensor_threads` asserts that, with the margin ([#169]).
+  is within it; `test_sensor_threads` asserts that, and how far below the bound the mark
+  is ([#169]).
 - `thermal_tid` recurses through `i2c_emul_transfer`, which can forward a transfer to
   another bus. That recursion is in the code, and no narrowing removes it.
 
@@ -453,25 +460,27 @@ Stating that bounds `thermal_tid` too:
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-no-recursion i2c_emul_transfer
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
 ...
-motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
-thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
+thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
 ...
 ```
 
-- Both QEMU marks above are within these bounds, and `test_sensor_threads` asserts it
-  with each margin ([#169]).
+- Both QEMU marks above are within these bounds, and `test_sensor_threads` asserts it,
+  and how far below each bound each mark is ([#169]). Each row's `stack` is the size QEMU
+  prints, and its `margin` is no more than what QEMU leaves unused.
 - Each row starts at the top of its stack, as QEMU's mark does. Zephyr gives that top
   to thread-local storage (TLS) before the thread runs, so the stack pointer reaches
   `z_thread_entry` one stack reservation below it. `test_sensor_threads` reads that
   stack pointer with gdb on QEMU, for both threads and main, and `test_rtos` for main
   and idle in `hello_world` ([#151]).
 - `z_idle_threads` is bounded, but its deepest path is `z_thread_entry`'s own call to
-  abort a thread whose entry returns, which `idle` never does:
+  abort a thread whose entry returns, which `idle` never does, so its small margin
+  understates the room `idle` has:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_idle_threads
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-z_idle_threads: 236 bytes (measured: 1, stack reservation: 16 bytes, exception frame: 36 bytes)
+z_idle_threads: 236 bytes (measured: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 256 bytes, margin: 20 bytes)
 z_idle_threads +8 = 8 bytes
 z_impl_k_thread_abort +0 = 8 bytes via static
 ...
@@ -604,6 +613,12 @@ contradicts does not hold.
   4-byte boundary, so the row can over-count. Zephyr can take more, which the model leaves
   out: userspace-local data, a random stack-pointer offset, and stack canaries placed
   with TLS. x86 images get neither this nor the exception frame ([#151]).
+- A row's `stack` is the size the build declares. Zephyr's usable stack is that size
+  rounded up to the stack alignment, so it is at least the declared size, and a `margin`
+  can understate the room but not overstate it. A row shows its `stack` only when the
+  `.config` beside the image is read and says the thread can use all of it: not under
+  `native_sim`, whose threads run on host stacks, and not with `CONFIG_MPU_STACK_GUARD`,
+  which can carve its guard out of the stack ([#151]).
 - With `--elf`, a function the graph reaches without a `.su` record, such as prebuilt
   library code, gets a frame measured from its Arm code: the deepest its stack pointer
   goes, or the depth at a call plus that callee's measured depth. When that whole depth

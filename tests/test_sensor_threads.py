@@ -92,6 +92,34 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 	}
 
 
+def test_each_threads_stack_is_the_size_qemu_reports_and_its_margin_is_within_qemus_unused(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(
+		artifacts,
+		artifacts / "zephyr" / "zephyr.elf",
+		narrow_by_field=True,
+		assume_no_recursion=("i2c_emul_transfer",),
+		json=True,
+	)
+	qemu = {
+		thread: (int(size), int(unused))
+		for line in QEMU_CONSOLE
+		if " unused " in line
+		for thread, _, unused, _, size in (line.split(),)
+	}
+	assert {
+		row.entry: (
+			row.stack_bytes,
+			row.margin_bytes,
+			row.margin_bytes is not None and row.margin_bytes <= qemu[row.entry][1],
+		)
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+		if row.entry in qemu
+	} == {thread: (size, size - (16 + 184 + 36), True) for thread, (size, _) in qemu.items()}
+
+
 def test_the_readme_quotes_each_threads_high_water_as_qemu_prints_it() -> None:
 	assert [
 		line
@@ -114,7 +142,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="motion_tid")
 	assert (thermal, capsys.readouterr().out.splitlines()[1:10]) == (
 		[
-			"thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"thermal_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"adt7420_sample_fetch +32 = 72 bytes via indirect: candidate",
@@ -123,7 +151,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 			"adt7420_init +8 = 144 bytes via indirect: fallback (recursion)",
 		],
 		[
-			"motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"motion_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"bmi160_sample_fetch +24 = 64 bytes via indirect: candidate",
@@ -187,7 +215,7 @@ def test_the_main_threads_path_starts_in_the_trampoline_and_ends_with_what_the_r
 	lines = capsys.readouterr().out.splitlines()
 	assert (lines[1:4], lines[-2:]) == (
 		[
-			"z_main_thread: unbounded, at least 1020 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"z_main_thread: unbounded, at least 1020 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"z_main_thread +8 = 8 bytes",
 			"bg_thread_main +40 = 48 bytes via system thread (recursion)",
 		],

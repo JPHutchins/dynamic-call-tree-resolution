@@ -111,7 +111,7 @@ def test_the_main_stack_nests_on_the_reset_path_at_most_one_exception_per_priori
 	artifacts = zephyr_fixtures / "sensor-threads"
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="z_interrupt_stacks")
 	assert capsys.readouterr().out.splitlines()[1:] == [
-		"z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each)",
+		"z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)",
 		"(exception 1) __start +1016 = 1016 bytes",
 		"(exception 4) z_arm_hard_fault +36 +1048 = 2100 bytes",
 		"(exception 5) z_arm_hard_fault +36 +1048 = 3184 bytes",

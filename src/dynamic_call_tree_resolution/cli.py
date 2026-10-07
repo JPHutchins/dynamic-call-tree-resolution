@@ -71,7 +71,7 @@ from dynamic_call_tree_resolution.report import (
 	stack_bound_report,
 )
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
-from dynamic_call_tree_resolution.rtos.zephyr import priority_levels
+from dynamic_call_tree_resolution.rtos.zephyr import NO_KCONFIG, Kconfig, kconfig, priority_levels
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	Bounded,
@@ -177,7 +177,7 @@ def _render(report: StackReport) -> str:
 					("narrowed by signature", bound.narrowed_by_signature),
 				),
 				_thread_stack_additions(bound),
-				_nesting_notes(report.nesting),
+				(*_nesting_notes(report.nesting), *_stack_notes(report)),
 			)
 			return f"{report.entry}: {depth} bytes" + (f" ({notes})" if notes else "")
 		case Unbounded() as bound:
@@ -193,7 +193,7 @@ def _render(report: StackReport) -> str:
 					("unresolved", bound.unresolved),
 				),
 				_thread_stack_additions(bound),
-				_nesting_notes(report.nesting),
+				(*_nesting_notes(report.nesting), *_stack_notes(report)),
 			)
 			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({notes})"
 		case _ as unreachable:
@@ -286,6 +286,23 @@ def _nesting_notes(nesting: Nesting | None) -> tuple[str, ...]:
 		if nesting is not None
 		else ()
 	)
+
+
+def _stack_notes(report: StackReport) -> tuple[str, ...]:
+	return (
+		*((f"stack: {report.stack_size} bytes",) if report.stack_size is not None else ()),
+		*(f"margin: {margin} bytes" for margin in (_margin(report),) if margin is not None),
+	)
+
+
+def _margin(report: StackReport) -> int | None:
+	match report.bound, report.stack_size:
+		case Bounded(bytes=depth), int() as stack_size:
+			return stack_size - depth
+		case ((Bounded() | Unbounded()), (int() | None)):
+			return None
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _signature_text(signature: SignatureReport) -> str:
@@ -635,7 +652,7 @@ def _expand_from_elf(
 		edge for edge in artifacts.edges if frame_key(edge.caller) in image_functions
 	)
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
-	model = rtos_model(image.program, rtos)
+	model = rtos_model(image.program, rtos, _kconfig(image.elf))
 	resolution = resolve(image.program, model)
 	narrowed_by_field = _narrowed_by_field(image.elf, image.program) if narrow_by_field else ()
 	hardware_roots = frozenset(
@@ -951,7 +968,10 @@ def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[
 		if report.entry in expansion.image_functions
 		or report.entry in expansion.threads
 		or report.entry in expansion.hardware_roots
-		or report.entry == expansion.rtos.interrupt_stack
+		or (
+			expansion.rtos.interrupt_stack is not None
+			and report.entry == expansion.rtos.interrupt_stack.name
+		)
 	)
 
 
@@ -965,7 +985,7 @@ def _interrupt_stacks(expansion: _Expansion | None, graph: StackGraph) -> tuple[
 	return (
 		tuple(
 			interrupt_stack_report(
-				name,
+				stack.name,
 				_handled(graph, expansion.exceptions, RESET),
 				tuple(
 					_handled(graph, expansion.exceptions, number)
@@ -980,11 +1000,19 @@ def _interrupt_stacks(expansion: _Expansion | None, graph: StackGraph) -> tuple[
 				levels=expansion.priority_levels,
 				exception_frame=expansion.rtos.exception_frame,
 			)
-			for name in (expansion.rtos.interrupt_stack,)
-			if name is not None and RESET in expansion.exceptions
+			for stack in (expansion.rtos.interrupt_stack,)
+			if stack is not None and RESET in expansion.exceptions
 		)
 		if expansion is not None
 		else ()
+	)
+
+
+def _kconfig(elf: Path) -> Kconfig:
+	return (
+		kconfig((elf.parent / ".config").read_text(errors="replace"))
+		if (elf.parent / ".config").is_file()
+		else NO_KCONFIG
 	)
 
 
@@ -1123,6 +1151,8 @@ def _stack_document(
 				entry=report.entry,
 				bound=stack_bound_report(report.bound),
 				nesting=_nesting_document(report.nesting),
+				stack_bytes=report.stack_size,
+				margin_bytes=_margin(report),
 			)
 			for report in shown
 		)
@@ -1132,6 +1162,8 @@ def _stack_document(
 			bound=stack_bound_report(shown[0].bound),
 			path=tuple(_step_report(step) for step in steps),
 			nesting=_nesting_document(shown[0].nesting),
+			stack_bytes=shown[0].stack_size,
+			margin_bytes=_margin(shown[0]),
 		)
 	)
 

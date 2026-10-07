@@ -24,6 +24,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.cli import analyze, stack
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
+	InterruptStack,
 	RtosModel,
 	SystemThread,
 	ThreadCreation,
@@ -177,7 +178,7 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 			SystemThread(name="z_main_thread", entry=Address(0xCD9)),
 			SystemThread(name="z_idle_threads", entry=Address(0x1E05)),
 		),
-		interrupt_stack="z_interrupt_stacks",
+		interrupt_stack=InterruptStack(name="z_interrupt_stacks"),
 	)
 
 
@@ -208,12 +209,12 @@ def test_a_system_thread_takes_the_trampolines_frame_and_calls_from_its_code_wit
 	stack(build_directory, build_directory / "zephyr" / "zephyr.elf", path="z_idle_threads")
 	assert (main_thread, capsys.readouterr().out.splitlines()[1:]) == (
 		[
-			"z_main_thread: unbounded, at least 492 bytes (recursion: 18, unmeasured: 1, measured: 45, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"z_main_thread: unbounded, at least 492 bytes (recursion: 18, unmeasured: 1, measured: 45, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"z_main_thread +8 = 8 bytes (measured)",
 			"bg_thread_main +40 = 48 bytes via system thread (measured, recursion)",
 		],
 		[
-			"z_idle_threads: 228 bytes (measured: 5, stack reservation: 16 bytes, exception frame: 36 bytes)",
+			"z_idle_threads: 228 bytes (measured: 5, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 256 bytes, margin: 28 bytes)",
 			"z_idle_threads +8 = 8 bytes (measured)",
 			"z_impl_k_thread_abort +168 = 176 bytes via binary (measured)",
 			"(stack reservation) +16 = 192 bytes",

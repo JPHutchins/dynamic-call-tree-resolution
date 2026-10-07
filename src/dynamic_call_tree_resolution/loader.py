@@ -858,7 +858,9 @@ def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 				continue
 			key = _layout_name(die)
 			layout = StructureLayout(
-				members=tuple(_layout_members(aggregate)), size=_byte_size(aggregate) or 0
+				members=tuple(_layout_members(aggregate)),
+				size=_byte_size(aggregate) or 0,
+				offsets=_member_offsets(aggregate),
 			)
 			existing = layouts.get(key)
 			if existing is None or len(layout.members) > len(existing.members):
@@ -891,6 +893,16 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 		member = _member(_member_kind(_type_die(child)), _member_name(child), offset)
 		if member is not None:
 			yield member
+
+
+def _member_offsets(struct_die: DIE) -> dict[str, int]:
+	return {
+		name: offset
+		for child in struct_die.iter_children()
+		if child.tag == "DW_TAG_member"
+		and (name := _member_name(child)) is not None
+		and (offset := _member_offset(child)) is not None
+	}
 
 
 def _member_name(member_die: DIE) -> str | None:

@@ -8,10 +8,13 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final, assert_never
 
+from salix import Struct
+
 from dynamic_call_tree_resolution.model import (
 	Address,
 	ArmCore,
 	ArmProfile,
+	InterruptStack,
 	Machine,
 	RtosModel,
 	SystemThread,
@@ -21,6 +24,8 @@ from dynamic_call_tree_resolution.model import (
 from dynamic_call_tree_resolution.points_to import in_writable_memory, pointer_at
 
 if TYPE_CHECKING:
+	from collections.abc import Mapping
+
 	from dynamic_call_tree_resolution.model import DataObject, Program, StructureLayout
 
 _RECORD: Final = "struct _static_thread_data"
@@ -28,6 +33,7 @@ _TRAMPOLINE: Final = "z_thread_entry"
 _RECORD_PREFIX: Final = "_k_thread_data_"
 _ENTRY: Final = "init_entry"
 _ARGUMENTS: Final = ("init_p1", "init_p2", "init_p3")
+_STACK_SIZE: Final = "init_stack_size"
 _FRAME_BUILDERS: Final = ("arch_new_thread", "arch_switch_to_main_thread")
 _SETUP: Final = "z_setup_new_thread"
 _STATIC_START: Final = "z_init_static_threads"
@@ -37,12 +43,78 @@ _ALIGNMENT_PAD: Final = 4
 _TLS_SETUP: Final = "arch_tls_stack_setup"
 _TOOLCHAIN_TLS_POINTERS: Final = 2
 _STACK_POINTER_ALIGNMENT: Final = 8
-_SYSTEM_THREADS: Final = (("z_main_thread", "bg_thread_main"), ("z_idle_threads", "idle"))
+_SYSTEM_THREADS: Final = (
+	("z_main_thread", "bg_thread_main", "CONFIG_MAIN_STACK_SIZE"),
+	("z_idle_threads", "idle", "CONFIG_IDLE_STACK_SIZE"),
+)
 _INTERRUPT_STACK: Final = "z_interrupt_stacks"
+_INTERRUPT_STACK_SIZE: Final = "CONFIG_ISR_STACK_SIZE"
+_KCONFIG_OPTION: Final = re.compile(r"^(CONFIG_\w+)=(.*)$", re.MULTILINE)
+_KCONFIG_INTEGER: Final = re.compile(r"0x[0-9a-fA-F]+|[0-9]+")
+_ARCH: Final = "CONFIG_ARCH"
+_STACK_NOT_ALL_USABLE: Final = ("CONFIG_ARCH_POSIX", "CONFIG_MPU_STACK_GUARD")
+
+
+class Kconfig(Struct):
+	"""The options a Zephyr build's ``.config`` sets."""
+
+	options: Mapping[str, str] = {}
+
+
+NO_KCONFIG: Final = Kconfig()
+
+
+def kconfig(text: str) -> Kconfig:
+	r"""The options a ``.config`` sets, each with its value as written.
+
+	>>> kconfig('CONFIG_IDLE_STACK_SIZE=256\n# CONFIG_FPU is not set\nCONFIG_BOARD="mps2"\n').options
+	{'CONFIG_IDLE_STACK_SIZE': '256', 'CONFIG_BOARD': '"mps2"'}
+	"""
+	return Kconfig(options={option[1]: option[2] for option in _KCONFIG_OPTION.finditer(text)})
+
+
+def _declared(options: Kconfig, stack_size: int | None) -> int | None:
+	r"""A declared stack size, when the build's ``.config`` shows the thread can use all of it.
+
+	Under ``native_sim`` threads run on host stacks, and an MPU stack guard can be carved out of
+	the stack.
+
+	>>> _declared(kconfig('CONFIG_ARCH="arm"\n'), 1024)
+	1024
+	>>> _declared(kconfig('CONFIG_ARCH="posix"\nCONFIG_ARCH_POSIX=y\n'), 1024) is None
+	True
+	>>> _declared(kconfig('CONFIG_ARCH="arm"\nCONFIG_MPU_STACK_GUARD=y\n'), 1024) is None
+	True
+	>>> _declared(kconfig("CONFIG_SMP=y\n"), 1024) is None
+	True
+	"""
+	return (
+		stack_size
+		if _ARCH in options.options
+		and all(options.options.get(option) != "y" for option in _STACK_NOT_ALL_USABLE)
+		else None
+	)
+
+
+def _integer(options: Kconfig, name: str) -> int | None:
+	r"""An option's value, when it is an integer.
+
+	>>> _integer(kconfig("CONFIG_ISR_STACK_SIZE=0x800\nCONFIG_SMP=y\n"), "CONFIG_ISR_STACK_SIZE")
+	2048
+	>>> _integer(kconfig("CONFIG_SMP=y\n"), "CONFIG_SMP") is None
+	True
+	"""
+	match options.options.get(name):
+		case str() as value if _KCONFIG_INTEGER.fullmatch(value):
+			return int(value, 0)
+		case _:
+			return None
+
+
 _PRIORITY_BITS: Final = re.compile(r"arm,num-irq-priority-bits = < (0x[0-9a-f]+|[0-9]+) >;")
 
 
-def detect(program: Program) -> RtosModel | None:
+def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 	layout = program.layouts.get(_RECORD)
 	if layout is None or all(
 		function.name != _TRAMPOLINE for function in program.functions.values()
@@ -54,7 +126,9 @@ def detect(program: Program) -> RtosModel | None:
 		if record.type_name == _RECORD
 	)
 	threads = tuple(
-		thread for record in records if (thread := _thread(program, layout, record)) is not None
+		thread
+		for record in records
+		if (thread := _thread(program, layout, record, options)) is not None
 	)
 	return RtosModel(
 		name="zephyr",
@@ -65,10 +139,17 @@ def detect(program: Program) -> RtosModel | None:
 		exception_frame=_exception_frame(program.arm_core),
 		system_threads=tuple(
 			system_thread
-			for name, entry in _SYSTEM_THREADS
-			if (system_thread := _system_thread(program, name, entry)) is not None
+			for name, entry, size in _SYSTEM_THREADS
+			if (
+				system_thread := _system_thread(
+					program, name, entry, _declared(options, _integer(options, size))
+				)
+			)
+			is not None
 		),
-		interrupt_stack=_interrupt_stack(program),
+		interrupt_stack=_interrupt_stack(
+			program, _declared(options, _integer(options, _INTERRUPT_STACK_SIZE))
+		),
 		creation=ThreadCreation(
 			frame_builders=_FRAME_BUILDERS,
 			setup=_SETUP,
@@ -82,24 +163,26 @@ def detect(program: Program) -> RtosModel | None:
 	)
 
 
-def _system_thread(program: Program, name: str, entry: str) -> SystemThread | None:
+def _system_thread(
+	program: Program, name: str, entry: str, stack_size: int | None
+) -> SystemThread | None:
 	match tuple(
 		address for address, function in program.functions.items() if function.name == entry
 	):
 		case (address,) if any(
 			data_object.name == name for data_object in program.objects.values()
 		):
-			return SystemThread(name=name, entry=address)
+			return SystemThread(name=name, entry=address, stack_size=stack_size)
 		case _:
 			return None
 
 
-def _interrupt_stack(program: Program) -> str | None:
+def _interrupt_stack(program: Program, stack_size: int | None) -> InterruptStack | None:
 	match program.arm_core:
 		case ArmCore(profile=ArmProfile.MICROCONTROLLER) if any(
 			data_object.name == _INTERRUPT_STACK for data_object in program.objects.values()
 		):
-			return _INTERRUPT_STACK
+			return InterruptStack(name=_INTERRUPT_STACK, stack_size=stack_size)
 		case ArmCore() | None:
 			return None
 		case _ as unreachable:
@@ -185,7 +268,9 @@ def _address(data_object: DataObject) -> Address:
 	return data_object.address
 
 
-def _thread(program: Program, layout: StructureLayout, record: DataObject) -> ThreadRoot | None:
+def _thread(
+	program: Program, layout: StructureLayout, record: DataObject, options: Kconfig
+) -> ThreadRoot | None:
 	offsets = {member.name: member.offset for member in layout.members}
 	match (
 		in_writable_memory(program, record.address),
@@ -200,6 +285,9 @@ def _thread(program: Program, layout: StructureLayout, record: DataObject) -> Th
 				entry=Address(entry),
 				entry_slot=Address(record.address + offsets[_ENTRY]),
 				arguments=(Address(p1), Address(p2), Address(p3)),
+				stack_size=_declared(
+					options, _word(program, record, layout.offsets.get(_STACK_SIZE))
+				),
 			)
 		case _:
 			return None
