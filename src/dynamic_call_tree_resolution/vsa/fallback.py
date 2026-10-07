@@ -29,10 +29,13 @@ from dynamic_call_tree_resolution.points_to import instruction_runs, instruction
 from dynamic_call_tree_resolution.vsa.abi import (
 	arm_mnemonic,
 	disassemblers,
-	normalized,
 	program_counter,
 )
-from dynamic_call_tree_resolution.vsa.links import linked_targets
+from dynamic_call_tree_resolution.vsa.links import (
+	function_extent,
+	functions_by_start,
+	linked_targets,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Iterator, Mapping
@@ -140,16 +143,17 @@ def _computed_slots(program: Program) -> Iterator[tuple[Address, int]]:
 
 def _non_branch_instructions(program: Program) -> Iterator[tuple[CsInsn, ...]]:
 	decoders = disassemblers()
+	functions = functions_by_start(program)
 	return (
 		tuple(
 			instruction
 			for address, code in instruction_runs(
-				program, normalized(function.address, program.machine), function.size
+				program, start, function_extent(program, functions, start)
 			)
 			for instruction in decoders[instruction_set_at(program, address)].disasm(code, address)
 			if instruction.id != 0 and not any(instruction.group(group) for group in _BRANCH_GROUPS)
 		)
-		for function in program.functions.values()
+		for start in functions
 	)
 
 
