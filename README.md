@@ -128,7 +128,7 @@ The Zephyr CAN counter sample for `native_sim` (an x86 host executable), with it
 ```console
 $ dctr compare $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 elf                                            machine    functions slots r/u/t  sites r/e/t
-zephyr.exe                                     EM_386           729 106/144/250       8/7/97
+zephyr.exe                                     EM_386           729 106/144/250      8/7/100
 ```
 
 ```console
@@ -502,6 +502,9 @@ contradicts does not hold.
 - Value-set analysis per-site sets are refinements, not over-approximations: its
   control-flow graph misses x86 `notrack` switches, and it does not model x86
   sub-registers or a few kinds of write ([#113]).
+- The value-set analysis reads a function symbol of size zero (hand-written assembly) up
+  to the next function, so the calls and stores made there count ([#219]). Code under
+  no function symbol is not read ([#96]).
 - Inside a thread's tree, a site the thread's analysis resolved drops the fallback, so a
   gap in that analysis drops a target there. With `--narrow-by-field`, so does a site
   its field narrowed, and the edge reads `indirect: field`; with `--narrow-by-signature`,
@@ -656,3 +659,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#202]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/202
 [#211]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/211
 [#214]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/214
+[#219]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/219

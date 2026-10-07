@@ -164,6 +164,7 @@ ARM_CASES: tuple[tuple[str, str], ...] = (
 	("jump_table.c", "switch_case"),
 	("writeback_walk.c", "walk"),
 	("cast_handler.c", "main"),
+	("assembly_call.c", "run"),
 )
 
 

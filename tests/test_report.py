@@ -54,19 +54,22 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 		total_slots=13,
 		resolved_slots=11,
 		unresolved_slots=2,
-		call_sites=7,
+		call_sites=10,
 		resolved_call_sites=5,
 		exact_call_sites=5,
-		candidate_size_counts=((0, 2), (1, 5)),
+		candidate_size_counts=((0, 5), (1, 5)),
 		pexplorer_dynamic_sites=None,
 		function_comparisons=(
-			FunctionComparison(
-				address=addresses["_start"] & ~1,
-				caller="_start",
-				pexplorer_dynamic_sites=0,
-				dctr_call_sites=1,
-				dctr_resolved_sites=0,
-				dctr_exact_sites=0,
+			*(
+				FunctionComparison(
+					address=addresses[caller] & ~1,
+					caller=caller,
+					pexplorer_dynamic_sites=0,
+					dctr_call_sites=1,
+					dctr_resolved_sites=0,
+					dctr_exact_sites=0,
+				)
+				for caller in ("_init", "_start", "deregister_tm_clones")
 			),
 			FunctionComparison(
 				address=addresses["main"] & ~1,
@@ -75,6 +78,14 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 				dctr_call_sites=6,
 				dctr_resolved_sites=5,
 				dctr_exact_sites=5,
+			),
+			FunctionComparison(
+				address=addresses["register_tm_clones"] & ~1,
+				caller="register_tm_clones",
+				pexplorer_dynamic_sites=0,
+				dctr_call_sites=1,
+				dctr_resolved_sites=0,
+				dctr_exact_sites=0,
 			),
 		),
 	)
