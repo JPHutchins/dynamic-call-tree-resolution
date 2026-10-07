@@ -54,7 +54,7 @@ from dynamic_call_tree_resolution.model import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Iterator, Mapping
+	from collections.abc import Callable, Iterable, Iterator, Mapping
 	from pathlib import Path
 	from typing import BinaryIO
 
@@ -78,6 +78,7 @@ _DW_OP_ADDR: Final = 0x03
 _SHF_WRITE: Final = 0x1
 _SHF_ALLOC: Final = 0x2
 _SHF_EXECINSTR: Final = 0x4
+_SHF_TLS: Final = 0x400
 _MAPPING_SYMBOL: Final = re.compile(r"\$[adt](\..*)?")
 _CONSTANT_FORMS: Final = frozenset(
 	{
@@ -205,8 +206,26 @@ def _load(stream: BinaryIO) -> Program:
 		declarations=_declarations(dwarf),
 		symbol_addresses=_symbol_addresses(symtab, machine),
 		arm_core=_arm_core(elf),
-		tls_size=sum(segment["p_memsz"] for segment in elf.iter_segments(type="PT_TLS")),
+		tls_size=_aligned_total(
+			(section.header.sh_size, section.header.sh_addralign)
+			for section in elf.iter_sections()
+			if section.header.sh_flags & _SHF_TLS
+		),
 		entry_point=Address(elf.header["e_entry"]),
+	)
+
+
+def _aligned_total(blocks: Iterable[tuple[int, int]]) -> int:
+	"""Each block's size rounded up to its alignment, summed.
+
+	>>> _aligned_total(((4, 8), (4, 4)))
+	12
+	>>> _aligned_total(((4, 0), (6, 1)))
+	10
+	"""
+	return sum(
+		size if alignment <= 1 else (size + alignment - 1) // alignment * alignment
+		for size, alignment in blocks
 	)
 
 

@@ -606,13 +606,20 @@ contradicts does not hold.
   or masking keep exceptions from nesting. Reading the image's priorities is a later,
   opt-in narrowing ([#151]). Its base, the reset path, is `__start`'s deepest path,
   fallback edges included.
-- Under Zephyr on Arm, when the image sets up thread-local storage
-  (`arch_tls_stack_setup`), a thread row also adds the top of the stack Zephyr takes
-  before the thread runs: the image's TLS segment and two toolchain pointers, rounded up
-  to an 8-byte boundary. Without `CONFIG_STACK_ALIGN_DOUBLE_WORD`, Zephyr rounds to a
-  4-byte boundary, so the row can over-count. Zephyr can take more, which the model leaves
-  out: userspace-local data, a random stack-pointer offset, and stack canaries placed
-  with TLS. x86 images get neither this nor the exception frame ([#151]).
+- Under Zephyr on Arm, a thread row also adds the top of the stack Zephyr takes before
+  the thread runs:
+  - with thread-local storage, the image's TLS sections, each rounded up to its
+    alignment as Zephyr counts them, and two toolchain pointers. The
+    `.config` beside the image says whether the build has it
+    (`CONFIG_THREAD_LOCAL_STORAGE`), and so does the `arch_tls_stack_setup` symbol, when
+    link-time optimization has not inlined it;
+  - with `CONFIG_STACK_POINTER_RANDOM`, the largest random offset;
+  - rounded up to an 8-byte boundary, or a 4-byte one when the `.config` does not set
+    `CONFIG_STACK_ALIGN_DOUBLE_WORD`.
+
+  Zephyr can take more, which the model leaves out: userspace-local data, and stack
+  canaries placed with TLS. x86 images get neither this nor the exception frame
+  ([#151]).
 - A row's `stack` is the size the build declares. Zephyr's usable stack is that size
   rounded up to the stack alignment, so it is at least the declared size, and a `margin`
   can understate the room but not overstate it. A row shows its `stack` only when the
