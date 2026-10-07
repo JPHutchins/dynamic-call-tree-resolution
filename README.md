@@ -525,7 +525,8 @@ contradicts does not hold.
   is stored into, such as a parameter, does not narrow.
 - The fallback holds every function address the image stores, that one instruction or
   a `movw`/`movt` pair in a function symbol computes, or that an address relocation kept
-  by `--emit-relocs` names, including a relative offset such as `.word f - table`.
+  by `--emit-relocs` names, including a relative offset such as `.word f - table`. A
+  function symbol of size zero (hand-written assembly) is read up to the next function.
   Without `--emit-relocs`, a function pointer built by other arithmetic, or in code
   outside every function symbol, is missed ([#96]).
 - A handler leaves the fallback only when every reference to its address is a slot of

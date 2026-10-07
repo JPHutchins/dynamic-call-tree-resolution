@@ -13,6 +13,7 @@ from enum import Enum
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
+import msgspec
 import pytest
 from salix import Struct, replace
 
@@ -25,6 +26,7 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.call_sites import per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
+from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.model import (
 	Address,
 	ReferenceKind,
@@ -33,6 +35,7 @@ from dynamic_call_tree_resolution.model import (
 	render_path,
 )
 from dynamic_call_tree_resolution.points_to import assignments, pointer_at
+from dynamic_call_tree_resolution.report import StackPathReport
 from dynamic_call_tree_resolution.stack_analysis import (
 	expand_indirect_calls,
 	frame_key,
@@ -205,6 +208,15 @@ STACK_IMAGES = tuple(
 	for level in ARM_LEVELS
 )
 
+ASSEMBLY_ADDRESS_IMAGES = tuple(
+	Image(
+		source="assembly_address.c",
+		platform=Platform.CORTEX_M3,
+		flags=(level, "-fstack-usage", "-fcallgraph-info=su,da"),
+	)
+	for level in ARM_LEVELS
+)
+
 THREAD_RECORD_IMAGES = tuple(
 	Image(source="thread_record.c", platform=platform, flags=flags)
 	for platform, flags in (
@@ -226,7 +238,7 @@ SHARED_ENTRY_IMAGES = tuple(
 
 OBSERVED_CASES = (
 	*(case for case, _ in CANDIDATES),
-	*(Case(image=image, caller="main") for image in STACK_IMAGES),
+	*(Case(image=image, caller="main") for image in (*STACK_IMAGES, *ASSEMBLY_ADDRESS_IMAGES)),
 	*(
 		Case(image=image, caller="worker")
 		for image in (*THREAD_RECORD_IMAGES, *ESCAPED_RECORD_IMAGES)
@@ -245,6 +257,7 @@ IMAGES = tuple(
 			(
 				*(case.image for case, _ in CANDIDATES),
 				*STACK_IMAGES,
+				*ASSEMBLY_ADDRESS_IMAGES,
 				*THREAD_RECORD_IMAGES,
 				*ESCAPED_RECORD_IMAGES,
 				*SHARED_ENTRY_IMAGES,
@@ -433,6 +446,35 @@ def test_a_bounded_reset_covers_the_frames_on_the_path_the_run_took(
 	assert isinstance(reset.bound, Unbounded) or reset.bound.bytes >= sum(
 		bytes_by_function[function] for function in ("reset", "main", "deep")
 	)
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in ASSEMBLY_ADDRESS_IMAGES]
+)
+def test_a_target_whose_address_only_unsized_assembly_computes_is_address_taken(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	outcome = outcomes[image]
+	program = load(outcome.elf)
+	assert (
+		outcome.observations["main"]
+		- {program.functions[address].name for address in address_taken(program)}
+		== set()
+	)
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in ASSEMBLY_ADDRESS_IMAGES]
+)
+def test_the_stack_reaches_a_target_whose_address_only_unsized_assembly_computes(
+	image: Image, outcomes: Mapping[Image, Outcome], capsys: pytest.CaptureFixture[str]
+) -> None:
+	elf = outcomes[image].elf
+	stack(elf.parent, elf, path="reset", json=True)
+	assert [
+		step.function
+		for step in msgspec.json.decode(capsys.readouterr().out, type=StackPathReport).path
+	][:5] == ["reset", "main", "install", "run", "deep"]
 
 
 @pytest.mark.parametrize("image", [pytest.param(image, id=_image_id(image)) for image in IMAGES])
