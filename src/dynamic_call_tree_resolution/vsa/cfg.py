@@ -63,7 +63,7 @@ def _function_address(function: Function) -> Address:
 
 
 def control_flow_graphs(program: Program) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
-	decoders = disassemblers()
+	decoders = disassemblers(program.arm_core)
 	by_start = functions_by_start(program)
 	return {
 		start: graph

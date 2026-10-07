@@ -61,9 +61,9 @@ def _registers(program: Program, sites: tuple[CallSite, ...]) -> Mapping[Address
 		site: next(
 			(
 				register
-				for instruction in disassemblers()[instruction_set_at(program, site)].disasm(
-					memory_at(program, site, 4), site, 1
-				)
+				for instruction in disassemblers(program.arm_core)[
+					instruction_set_at(program, site)
+				].disasm(memory_at(program, site, 4), site, 1)
 				if instruction.mnemonic in {"blx", "bx"}
 				for register in (_GDB_REGISTERS.get(instruction.op_str, instruction.op_str),)
 				if _GDB_REGISTER.fullmatch(register)

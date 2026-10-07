@@ -89,7 +89,7 @@ def code_measure(program: Program) -> CodeMeasure:
 					partial(
 						_own,
 						program,
-						disassemblers(),
+						disassemblers(program.arm_core),
 						context_for(program, NO_WRITES),
 						functions_by_start(program),
 					)

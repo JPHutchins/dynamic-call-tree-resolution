@@ -525,7 +525,8 @@ contradicts does not hold.
 - A link with `--emit-relocs` loads as the same link without it, plus the references
   it keeps: the linker already applied them, so they are not applied again.
 - `EM_ARM`, `EM_386`, and `EM_X86_64`; other machines are rejected. `EM_ARM` code is
-  decoded as A32 inside the spans of `$a` mapping symbols and as Thumb elsewhere.
+  decoded as A32 inside the spans of `$a` mapping symbols and as Thumb elsewhere, with
+  the M-profile encodings when the build attributes name an M-profile core.
 - Zephyr is the only RTOS modeled, and only its static threads get trees of their own:
   a thread created with `k_thread_create` starts its entry with unknown arguments.
 - The call in `z_thread_entry` that starts every thread goes to the entries the image's
@@ -541,6 +542,10 @@ contradicts does not hold.
   candidates, or the fallback where it has none; what `--narrow-by-field` narrows the
   site to; and, on a static thread, what the thread's own analysis resolved ([#75]). A
   run covers only the calls its code reaches.
+- On the same fixtures, `test_decode` checks the decoding against GNU objdump: every
+  instruction starts where objdump starts one, every direct branch and call goes where
+  objdump says, objdump's register branches are exactly the indirect call sites, and
+  every other write to `pc` is a return or a jump table the decoder follows ([#75]).
 - A read-only slot's value is its value in the image as linked. A writable slot's
   candidates are its initializer and the values stored to it, so a store whose address
   or value is unknown leaves it unresolved.
