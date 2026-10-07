@@ -124,6 +124,25 @@ def test_a_su_record_wins_over_the_code_and_only_callees_without_one_are_measure
 	]
 
 
+def test_a_register_call_its_ci_record_leaves_out_joins_the_graph_from_the_code(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	elf = build_cortex_m3((FIXTURES / "code_frames.c",), tmp_path / "image.elf", "-g", "-O2")
+	(tmp_path / "main.c.ci").write_text(
+		'graph: { edge: { sourcename: "main" targetname: "indirect" } }\n'
+	)
+	(tmp_path / "main.c.su").write_text(
+		"main.c:1:5:main\t16\tstatic\nmain.c:2:6:indirect\t8\tstatic\n"
+	)
+	stack(tmp_path, elf=elf, path="main")
+	assert capsys.readouterr().out.splitlines()[1:] == [
+		"main: 44 bytes (measured: 1)",
+		"main +16 = 16 bytes",
+		"indirect +8 = 24 bytes via static",
+		"leaf_push +20 = 44 bytes via indirect: candidate (measured)",
+	]
+
+
 def test_a_function_that_calls_through_a_register_counts_its_own_frame_and_its_site(
 	tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

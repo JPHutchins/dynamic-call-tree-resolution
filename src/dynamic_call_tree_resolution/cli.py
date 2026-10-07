@@ -504,7 +504,9 @@ def _narrowed_by_field(elf: Path, program: Program) -> tuple[NarrowedSpan, ...]:
 	)
 
 
-class _Expansion(Struct):
+class Expansion(Struct):
+	"""A build's call graph and frames, its indirect calls expanded against its ELF image."""
+
 	expanded: tuple[CallEdge, ...]
 	in_image_edges: tuple[CallEdge, ...]
 	frames: tuple[Frame, ...]
@@ -520,6 +522,7 @@ class _Expansion(Struct):
 	indirect_sites: int
 	program: Program
 	rtos: RtosModel
+	resolution: ProgramResolution
 	counts: SlotCounts
 	unresolved: tuple[UnresolvedSlot, ...]
 	image_functions: frozenset[str]
@@ -639,6 +642,25 @@ def _named_frames(
 	)
 
 
+def elf_expansion(
+	build_directory: Path,
+	elf: Path,
+	*,
+	narrow_by_signature: bool,
+	narrow_by_field: bool,
+	rtos: RtosChoice,
+) -> Expansion:
+	"""Expand a build directory's indirect calls against its ELF image."""
+	image = _loaded(elf)
+	return _expand_from_elf(
+		_artifacts(build_directory, image),
+		image,
+		narrow_by_signature=narrow_by_signature,
+		narrow_by_field=narrow_by_field,
+		rtos=rtos,
+	)
+
+
 def _expand_from_elf(
 	artifacts: _Artifacts,
 	image: _Image,
@@ -646,7 +668,7 @@ def _expand_from_elf(
 	narrow_by_signature: bool,
 	narrow_by_field: bool,
 	rtos: RtosChoice,
-) -> _Expansion:
+) -> Expansion:
 	image_functions = _image_functions(artifacts, image)
 	in_image_edges = tuple(
 		edge for edge in artifacts.edges if frame_key(edge.caller) in image_functions
@@ -686,8 +708,9 @@ def _expand_from_elf(
 	unresolved = unresolved_slots(image.program, resolution.assignments)
 	measure = code_measure(image.program)
 	register = _register_callers(image, measure, resolution.sites, artifacts.frames)
+	unrecorded = _unrecorded_sites(image, resolution.sites, (*in_image_edges, *register.edges))
 	expanded = expand_indirect_calls(
-		(*artifacts.edges, *register.edges),
+		(*artifacts.edges, *register.edges, *unrecorded),
 		targets_by_caller,
 		fallback,
 		narrowed_by_caller=narrowed_by_caller,
@@ -707,9 +730,9 @@ def _expand_from_elf(
 		hardware_roots | frozenset(exceptions.values()),
 		frozenset(),
 	)
-	return _Expansion(
+	return Expansion(
 		expanded=(*expanded, *binary, *code.edges, *threads_edges),
-		in_image_edges=(*in_image_edges, *threads_edges),
+		in_image_edges=(*in_image_edges, *unrecorded, *threads_edges),
 		frames=(*artifacts.frames, *threads_frames, *register.frames, *code.frames),
 		threads=frozenset(thread.name for thread in model.threads)
 		| frozenset(thread.name for thread in model.system_threads),
@@ -722,7 +745,7 @@ def _expand_from_elf(
 				image,
 				model,
 				resolution,
-				(*in_image_edges, *binary),
+				(*in_image_edges, *unrecorded, *binary),
 				_Targets(
 					by_caller=targets_by_caller,
 					narrowed_by_caller=narrowed_by_caller,
@@ -735,6 +758,7 @@ def _expand_from_elf(
 		indirect_sites=indirect_sites,
 		program=image.program,
 		rtos=model,
+		resolution=resolution,
 		counts=slot_counts(resolution.assignments, unresolved),
 		unresolved=unresolved,
 		image_functions=image_functions,
@@ -818,6 +842,32 @@ def _register_callers(
 			)
 		),
 	)
+
+
+def _unrecorded_sites(
+	image: _Image, sites: tuple[CallSite, ...], edges: tuple[CallEdge, ...]
+) -> tuple[CallEdge, ...]:
+	match image.program.machine:
+		case Machine.EM_ARM:
+			recorded = Counter(
+				frame_key(edge.caller) for edge in edges if edge.callee == INDIRECT_CALLEE
+			)
+			return tuple(
+				CallEdge(caller=caller, callee=INDIRECT_CALLEE)
+				for caller, found in sorted(
+					Counter(
+						image.names[start]
+						for site in sites
+						for start in (normalized(site.caller_address, image.program.machine),)
+						if start in image.names
+					).items()
+				)
+				for _ in range(found - recorded[frame_key(caller)])
+			)
+		case Machine.EM_386 | Machine.EM_X86_64:
+			return ()
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _direct_edges(image: _Image, start: Address, own: OwnCode) -> tuple[CallEdge, ...]:
@@ -961,7 +1011,7 @@ def _own_thread_graphs(
 			assert_never(unreachable)
 
 
-def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[StackReport, ...]:
+def _in_image(reports: tuple[StackReport, ...], expansion: Expansion) -> tuple[StackReport, ...]:
 	return tuple(
 		report
 		for report in reports
@@ -976,12 +1026,12 @@ def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[
 
 
 def _with_interrupt_stack(
-	expansion: _Expansion | None, graph: StackGraph
+	expansion: Expansion | None, graph: StackGraph
 ) -> tuple[StackReport, ...]:
 	return (*stack_reports(graph), *_interrupt_stacks(expansion, graph))
 
 
-def _interrupt_stacks(expansion: _Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
+def _interrupt_stacks(expansion: Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
 	return (
 		tuple(
 			interrupt_stack_report(
@@ -1115,7 +1165,7 @@ def stack(
 		print(line)
 
 
-def _not_in_image(names_dropped: int, expansion: _Expansion) -> str:
+def _not_in_image(names_dropped: int, expansion: Expansion) -> str:
 	match expansion.membership:
 		case Membership.NAMES:
 			return str(names_dropped)
@@ -1130,7 +1180,7 @@ def _not_in_image(names_dropped: int, expansion: _Expansion) -> str:
 
 
 def _own_graphs(
-	expansion: _Expansion | None, assumed_no_recursion: frozenset[str]
+	expansion: Expansion | None, assumed_no_recursion: frozenset[str]
 ) -> Mapping[str, StackGraph]:
 	return (
 		{
@@ -1186,10 +1236,9 @@ def summary(
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
-	image = _loaded(elf)
-	expansion = _expand_from_elf(
-		_artifacts(build_directory, image),
-		image,
+	expansion = elf_expansion(
+		build_directory,
+		elf,
 		narrow_by_signature=narrow_by_signature,
 		narrow_by_field=narrow_by_field,
 		rtos=rtos,
