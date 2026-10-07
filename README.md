@@ -614,9 +614,12 @@ uv run camas testbeds_lock            # after editing testbeds/manifest/west.yml
 `nix build .#fixtures` builds the same testbeds in the Nix sandbox, from the projects
 `testbeds/west2nix.toml` locks. `nix develop` exports that build as `$DCTR_FIXTURES`,
 which the tests marked image and the examples above read, so the first `nix develop` on
-a machine builds it. The `qemu_cortex_m3` testbeds link with `--emit-relocs` and
-`--print-gc-sections`, and each ships its `zephyr_final.map` and the final link's
-`gc-sections.txt` next to the ELF ([#150]).
+a machine builds it. Each testbed ships its whole build folder: the ELF, `.config`, the
+generated devicetree and headers, the link maps, and the `.su` and `.ci` files where
+they were built. Nix store paths in it are scrubbed, so it refers to nothing outside
+itself. The `qemu_cortex_m3` testbeds link with `--emit-relocs` and
+`--print-gc-sections`, and each also ships the final link's `gc-sections.txt` next to
+the ELF, taken from the build log ([#150]).
 
 Each Arm testbed also ships `descriptors.txt`: for every indirect call, what GCC saw it
 load its callee from (a struct field, a parameter, a variable or an array element), and

@@ -8,8 +8,7 @@
   ninja,
   dtc,
   gitMinimal,
-  glibc,
-  removeReferencesTo,
+  nukeReferences,
   gcc-arm-embedded-14,
   descriptorPlugin,
   src,
@@ -29,8 +28,29 @@ stdenv.mkDerivation {
     ninja
     dtc
     gitMinimal
-    removeReferencesTo
+    nukeReferences
   ];
+
+  exportReferencesGraph = lib.concatLists (
+    lib.imap0
+      (index: input: [
+        "input-closure-${toString index}"
+        input
+      ])
+      [
+        sdk
+        pythonEnv
+        west2nixHook
+        cmake
+        ninja
+        dtc
+        gitMinimal
+        nukeReferences
+        gcc-arm-embedded-14
+        descriptorPlugin
+        stdenv.cc
+      ]
+  );
 
   hardeningDisable = [ "all" ];
   dontUseCmakeConfigure = true;
@@ -63,29 +83,25 @@ stdenv.mkDerivation {
 
   installPhase = ''
     runHook preInstall
+    mkdir -p $out
   ''
   + lib.concatMapStrings (
     build:
     ''
-      (cd build/${build.NAME} && find . \( -name '*.su' -o -name '*.ci' \) \
-        -exec install -D -m 644 {} $out/${build.NAME}/{} \;)
-      install -D build/${build.NAME}/zephyr/zephyr.exe -t $out/${build.NAME}/zephyr \
-        || install -D build/${build.NAME}/zephyr/zephyr.elf -t $out/${build.NAME}/zephyr
-    ''
-    + lib.optionalString (build.TOOLCHAIN == "zephyr") ''
-      install -D -m 644 build/${build.NAME}/zephyr/descriptors.txt -t $out/${build.NAME}/zephyr
+      cp -r build/${build.NAME} $out/${build.NAME}
     ''
     + lib.optionalString (lib.hasInfix "--print-gc-sections" build.EXTRA_LDFLAGS) ''
-      install -D -m 644 build/${build.NAME}/zephyr/zephyr_final.map -t $out/${build.NAME}/zephyr
       sed -n '/Linking C executable zephyr\/zephyr.elf$/,$p' build/${build.NAME}.log \
         | sed -n 's|^.*/ld\.bfd: \(removing unused section .*\)$|\1|p' \
         > $out/${build.NAME}/zephyr/gc-sections.txt
     ''
   ) builds
   + ''
-    find $out -type f -exec remove-references-to -t $out -t ${sdk} -t ${stdenv.cc.cc} \
-      -t ${stdenv.cc.cc.lib} -t ${stdenv.cc.libc} -t ${glibc.dev} -t ${gcc-arm-embedded-14} \
-      -t ${descriptorPlugin} {} +
+    find $out -type f -exec nuke-refs {} +
+    { grep -ho '/nix/store/[0-9a-z]\{32\}' $NIX_BUILD_TOP/input-closure-* | cut -c12-; \
+      basename $out | cut -c1-32; } | sort -u > $TMPDIR/hashes
+    sed 's|.*|s/&/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/g|' $TMPDIR/hashes > $TMPDIR/scrub.sed
+    grep -rlF --null -f $TMPDIR/hashes $out | xargs -0 -r sed -i -f $TMPDIR/scrub.sed
     runHook postInstall
   '';
 }
