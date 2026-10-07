@@ -34,8 +34,15 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.model import Address, RtosModel, SystemThread
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
+	Handled,
+	LevelSource,
+	Nested,
+	Nesting,
+	PriorityLevels,
 	ThreadTargets,
+	entry_report,
 	frame_key,
+	interrupt_stack_report,
 	own_thread_edges,
 	thread_edges,
 	thread_frames,
@@ -108,6 +115,100 @@ def test_a_system_threads_row_adds_what_the_rtos_model_adds_to_the_whole_images_
 			bound=Bounded(bytes=16 + 8 + 40 + 36, stack_reservation=16, exception_frame=36),
 		),
 		StackReport(entry="isr", bound=Bounded(bytes=24)),
+	)
+
+
+def _handler(exception: int, name: str, depth: int) -> Handled:
+	return Handled(exception=exception, report=StackReport(entry=name, bound=Bounded(bytes=depth)))
+
+
+def test_an_interrupt_stack_nests_the_deepest_configurable_handlers_that_fit_then_the_fixed() -> (
+	None
+):
+	levels = PriorityLevels(count=3, source=LevelSource.DEVICETREE)
+	assert interrupt_stack_report(
+		"interrupts",
+		_handler(1, "reset", 100),
+		(_handler(3, "hard_fault", 20), _handler(2, "nmi", 8)),
+		(
+			_handler(4, "fault", 20),
+			_handler(5, "fault", 20),
+			_handler(16, "isr", 50),
+			_handler(17, "isr", 50),
+			_handler(11, "svc", 10),
+		),
+		levels=levels,
+		exception_frame=36,
+	) == StackReport(
+		entry="interrupts",
+		bound=Bounded(bytes=100 + 2 * (36 + 50) + (36 + 20) + (36 + 20) + (36 + 8)),
+		nesting=Nesting(
+			base=Nested(exception=1, handler="reset", depth=100),
+			chain=(
+				Nested(exception=16, handler="isr", depth=50),
+				Nested(exception=17, handler="isr", depth=50),
+				Nested(exception=4, handler="fault", depth=20),
+				Nested(exception=3, handler="hard_fault", depth=20),
+				Nested(exception=2, handler="nmi", depth=8),
+			),
+			levels=levels,
+			exception_frame=36,
+		),
+	)
+
+
+def test_an_interrupt_stack_is_unbounded_when_a_handler_outside_its_chain_is() -> None:
+	assert interrupt_stack_report(
+		"interrupts",
+		_handler(1, "reset", 100),
+		(),
+		(
+			_handler(16, "isr", 50),
+			Handled(
+				exception=11,
+				report=StackReport(
+					entry="svc",
+					bound=Unbounded(
+						at_least=4,
+						recursion=frozenset({"svc"}),
+						unmeasured=frozenset(),
+						dynamic=frozenset(),
+						unresolved=frozenset(),
+					),
+				),
+			),
+		),
+		levels=PriorityLevels(count=1, source=LevelSource.VECTOR_TABLE),
+		exception_frame=36,
+	).bound == Unbounded(
+		at_least=100 + 36 + 50,
+		recursion=frozenset({"svc"}),
+		unmeasured=frozenset(),
+		dynamic=frozenset(),
+		unresolved=frozenset(),
+	)
+
+
+def test_an_entry_report_reads_a_node_that_is_not_a_root_and_a_function_the_graph_lacks() -> None:
+	graph = stack_graph(
+		(CallEdge(caller="main", callee="handler"),),
+		(
+			StackUsage(function="main", bytes=8, bounded=True),
+			StackUsage(function="handler", bytes=24, bounded=True),
+		),
+	)
+	assert (entry_report(graph, "handler"), entry_report(graph, "missing")) == (
+		StackReport(entry="handler", bound=Bounded(bytes=24)),
+		StackReport(
+			entry="missing",
+			bound=Unbounded(
+				at_least=0,
+				recursion=frozenset(),
+				unmeasured=frozenset({"missing"}),
+				dynamic=frozenset(),
+				unresolved=frozenset(),
+			),
+		),
 	)
 
 

@@ -54,6 +54,7 @@ from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
 	ComparisonReport,
+	NestingReport,
 	PathStepReport,
 	ReferrerReport,
 	RtosReport,
@@ -63,25 +64,33 @@ from dynamic_call_tree_resolution.report import (
 	StackPathReport,
 	build_comparison,
 	build_report,
+	nesting_report,
 	referrers_report,
 	rtos_report,
 	slot_counts,
 	stack_bound_report,
 )
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
+from dynamic_call_tree_resolution.rtos.zephyr import priority_levels
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	Bounded,
 	Frame,
+	Handled,
+	LevelSource,
 	MeasuredFrame,
+	Nesting,
 	OwnFrame,
 	PathStep,
+	PriorityLevels,
 	StackGraph,
 	StackReport,
 	Unbounded,
 	deepest_path,
+	entry_report,
 	expand_indirect_calls,
 	frame_key,
+	interrupt_stack_report,
 	own_thread_edges,
 	stack_graph,
 	stack_reports,
@@ -103,7 +112,13 @@ from dynamic_call_tree_resolution.vsa.frames import (
 	own_frames,
 )
 from dynamic_call_tree_resolution.vsa.links import linked_calls
-from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers
+from dynamic_call_tree_resolution.vsa.vectors import (
+	HARD_FAULT,
+	NMI,
+	RESET,
+	exception_handlers,
+	hardware_handlers,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Iterator, Mapping
@@ -162,6 +177,7 @@ def _render(report: StackReport) -> str:
 					("narrowed by signature", bound.narrowed_by_signature),
 				),
 				_thread_stack_additions(bound),
+				_nesting_notes(report.nesting),
 			)
 			return f"{report.entry}: {depth} bytes" + (f" ({notes})" if notes else "")
 		case Unbounded() as bound:
@@ -177,6 +193,7 @@ def _render(report: StackReport) -> str:
 					("unresolved", bound.unresolved),
 				),
 				_thread_stack_additions(bound),
+				_nesting_notes(report.nesting),
 			)
 			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({notes})"
 		case _ as unreachable:
@@ -184,12 +201,15 @@ def _render(report: StackReport) -> str:
 
 
 def _notes(
-	counts: tuple[tuple[str, frozenset[str]], ...], additions: tuple[tuple[str, int], ...]
+	counts: tuple[tuple[str, frozenset[str]], ...],
+	additions: tuple[tuple[str, int], ...],
+	nesting: tuple[str, ...],
 ) -> str:
 	return ", ".join(
 		(
 			*(f"{name}: {len(functions)}" for name, functions in counts if functions),
 			*(f"{name}: {added} bytes" for name, added in additions if added),
+			*nesting,
 		)
 	)
 
@@ -213,6 +233,58 @@ def _thread_stack_steps(
 			additions, accumulate(added for _, added in additions), strict=True
 		)
 		if added
+	)
+
+
+def _path_steps(report: StackReport, graph: StackGraph) -> tuple[PathStep, ...]:
+	return deepest_path(graph, report.entry) if report.nesting is None else ()
+
+
+def _nesting_steps(
+	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
+) -> tuple[str, ...]:
+	return tuple(
+		line
+		for report in shown[:1]
+		if steps is not None and report.nesting is not None
+		for nesting in (report.nesting,)
+		for line in (
+			(
+				f"(exception {nesting.base.exception}) {nesting.base.handler} "
+				f"+{nesting.base.depth} = {nesting.base.depth} bytes"
+			),
+			*(
+				f"(exception {nested.exception}) {nested.handler} "
+				f"+{nesting.exception_frame} +{nested.depth} "
+				f"= {total} bytes"
+				for nested, total in zip(
+					nesting.chain,
+					tuple(
+						accumulate(
+							(nesting.exception_frame + nested.depth for nested in nesting.chain),
+							initial=nesting.base.depth,
+						)
+					)[1:],
+					strict=True,
+				)
+			),
+		)
+	)
+
+
+def _nesting_document(nesting: Nesting | None) -> NestingReport | None:
+	return nesting_report(nesting) if nesting is not None else None
+
+
+def _nesting_notes(nesting: Nesting | None) -> tuple[str, ...]:
+	return (
+		(
+			f"nested exceptions: {len(nesting.chain)}",
+			f"priority levels: {nesting.levels.count} ({nesting.levels.source})",
+			f"exception frame: {nesting.exception_frame} bytes each",
+		)
+		if nesting is not None
+		else ()
 	)
 
 
@@ -422,6 +494,10 @@ class _Expansion(Struct):
 	threads: frozenset[str]
 	hardware_roots: frozenset[str]
 	"""The handlers only the vector table holds, by their names in the stack graph."""
+	exceptions: Mapping[int, str]
+	"""Each exception's handler on an interrupt stack the RTOS model names, by exception
+	number."""
+	priority_levels: PriorityLevels
 	own_edges: Mapping[str, tuple[CallEdge, ...]]
 	"""Each thread's tree from its own analysis, by thread."""
 	indirect_sites: int
@@ -566,6 +642,14 @@ def _expand_from_elf(
 		stack_name(image.program, image.names, handler)
 		for handler in hardware_handlers(image.program)
 	)
+	exceptions = (
+		{
+			number: frame_key(stack_name(image.program, image.names, handler))
+			for number, handler in exception_handlers(image.program).items()
+		}
+		if model.interrupt_stack is not None
+		else {}
+	)
 	targets_by_caller, fallback = per_caller_candidates(
 		image.program,
 		resolution.sites,
@@ -603,7 +687,7 @@ def _expand_from_elf(
 		measure,
 		(*expanded, *binary, *threads_edges),
 		(*artifacts.frames, *threads_frames, *register.frames),
-		hardware_roots,
+		hardware_roots | frozenset(exceptions.values()),
 		frozenset(),
 	)
 	return _Expansion(
@@ -613,6 +697,8 @@ def _expand_from_elf(
 		threads=frozenset(thread.name for thread in model.threads)
 		| frozenset(thread.name for thread in model.system_threads),
 		hardware_roots=hardware_roots,
+		exceptions=exceptions,
+		priority_levels=_priority_levels(image.elf, exceptions),
 		own_edges={
 			thread: (*expanded, *binary, *code.edges, *own)
 			for thread, own in _own_thread_graphs(
@@ -865,7 +951,62 @@ def _in_image(reports: tuple[StackReport, ...], expansion: _Expansion) -> tuple[
 		if report.entry in expansion.image_functions
 		or report.entry in expansion.threads
 		or report.entry in expansion.hardware_roots
+		or report.entry == expansion.rtos.interrupt_stack
 	)
+
+
+def _with_interrupt_stack(
+	expansion: _Expansion | None, graph: StackGraph
+) -> tuple[StackReport, ...]:
+	return (*stack_reports(graph), *_interrupt_stacks(expansion, graph))
+
+
+def _interrupt_stacks(expansion: _Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
+	return (
+		tuple(
+			interrupt_stack_report(
+				name,
+				_handled(graph, expansion.exceptions, RESET),
+				tuple(
+					_handled(graph, expansion.exceptions, number)
+					for number in (HARD_FAULT, NMI)
+					if number in expansion.exceptions
+				),
+				tuple(
+					_handled(graph, expansion.exceptions, number)
+					for number in sorted(expansion.exceptions)
+					if number > HARD_FAULT
+				),
+				levels=expansion.priority_levels,
+				exception_frame=expansion.rtos.exception_frame,
+			)
+			for name in (expansion.rtos.interrupt_stack,)
+			if name is not None and RESET in expansion.exceptions
+		)
+		if expansion is not None
+		else ()
+	)
+
+
+def _handled(graph: StackGraph, exceptions: Mapping[int, str], number: int) -> Handled:
+	return Handled(exception=number, report=entry_report(graph, exceptions[number]))
+
+
+def _priority_levels(elf: Path, exceptions: Mapping[int, str]) -> PriorityLevels:
+	match priority_levels(
+		(elf.parent / "zephyr.dts").read_text(errors="replace")
+		if (elf.parent / "zephyr.dts").is_file()
+		else ""
+	):
+		case int() as count:
+			return PriorityLevels(count=count, source=LevelSource.DEVICETREE)
+		case None:
+			return PriorityLevels(
+				count=sum(number > HARD_FAULT for number in exceptions),
+				source=LevelSource.VECTOR_TABLE,
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 @app.command  # type: ignore[misc]
@@ -913,7 +1054,7 @@ def stack(
 		assumed_no_recursion=frozenset(assume_no_recursion),
 		hardware_roots=expansion.hardware_roots if expansion is not None else frozenset(),
 	)
-	reports = stack_reports(graph)
+	reports = _with_interrupt_stack(expansion, graph)
 	own_graphs = _own_graphs(expansion, frozenset(assume_no_recursion))
 	kept = (
 		_in_image(thread_reports(reports, own_graphs, expansion.rtos), expansion)
@@ -921,7 +1062,7 @@ def stack(
 		else reports
 	)
 	shown = kept if path is None else _entry_report(kept, path)
-	steps = None if path is None else deepest_path(own_graphs.get(path, graph), path)
+	steps = None if path is None else _path_steps(shown[0], own_graphs.get(path, graph))
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(_stack_document(shown, steps)).decode()))
 		return
@@ -941,6 +1082,8 @@ def stack(
 	for step in steps or ():
 		print(_render_step(step))
 	for line in _thread_stack_steps(shown, steps):
+		print(line)
+	for line in _nesting_steps(shown, steps):
 		print(line)
 
 
@@ -976,7 +1119,11 @@ def _stack_document(
 ) -> tuple[StackEntryReport, ...] | StackPathReport:
 	return (
 		tuple(
-			StackEntryReport(entry=report.entry, bound=stack_bound_report(report.bound))
+			StackEntryReport(
+				entry=report.entry,
+				bound=stack_bound_report(report.bound),
+				nesting=_nesting_document(report.nesting),
+			)
 			for report in shown
 		)
 		if steps is None
@@ -984,6 +1131,7 @@ def _stack_document(
 			entry=shown[0].entry,
 			bound=stack_bound_report(shown[0].bound),
 			path=tuple(_step_report(step) for step in steps),
+			nesting=_nesting_document(shown[0].nesting),
 		)
 	)
 
@@ -1014,14 +1162,15 @@ def summary(
 		narrow_by_field=narrow_by_field,
 		rtos=rtos,
 	)
-	reports = stack_reports(
+	reports = _with_interrupt_stack(
+		expansion,
 		stack_graph(
 			expansion.expanded,
 			expansion.frames,
 			entry_edges=expansion.in_image_edges,
 			assumed_no_recursion=frozenset(assume_no_recursion),
 			hardware_roots=expansion.hardware_roots,
-		)
+		),
 	)
 	kept = _in_image(
 		thread_reports(

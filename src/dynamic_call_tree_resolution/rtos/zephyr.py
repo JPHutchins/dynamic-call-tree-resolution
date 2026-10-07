@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Final, assert_never
 
 from dynamic_call_tree_resolution.model import (
@@ -37,6 +38,8 @@ _TLS_SETUP: Final = "arch_tls_stack_setup"
 _TOOLCHAIN_TLS_POINTERS: Final = 2
 _STACK_POINTER_ALIGNMENT: Final = 8
 _SYSTEM_THREADS: Final = (("z_main_thread", "bg_thread_main"), ("z_idle_threads", "idle"))
+_INTERRUPT_STACK: Final = "z_interrupt_stacks"
+_PRIORITY_BITS: Final = re.compile(r"arm,num-irq-priority-bits = < (0x[0-9a-f]+|[0-9]+) >;")
 
 
 def detect(program: Program) -> RtosModel | None:
@@ -65,6 +68,7 @@ def detect(program: Program) -> RtosModel | None:
 			for name, entry in _SYSTEM_THREADS
 			if (system_thread := _system_thread(program, name, entry)) is not None
 		),
+		interrupt_stack=_interrupt_stack(program),
 		creation=ThreadCreation(
 			frame_builders=_FRAME_BUILDERS,
 			setup=_SETUP,
@@ -88,6 +92,35 @@ def _system_thread(program: Program, name: str, entry: str) -> SystemThread | No
 			return SystemThread(name=name, entry=address)
 		case _:
 			return None
+
+
+def _interrupt_stack(program: Program) -> str | None:
+	match program.arm_core:
+		case ArmCore(profile=ArmProfile.MICROCONTROLLER) if any(
+			data_object.name == _INTERRUPT_STACK for data_object in program.objects.values()
+		):
+			return _INTERRUPT_STACK
+		case ArmCore() | None:
+			return None
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def priority_levels(devicetree: str) -> int | None:
+	"""The priority levels an M-profile interrupt controller has, from Zephyr's ``zephyr.dts``.
+
+	>>> priority_levels("arm,num-irq-priority-bits = < 0x3 >;")
+	8
+	>>> priority_levels("/ { };") is None
+	True
+	"""
+	match _PRIORITY_BITS.search(devicetree):
+		case None:
+			return None
+		case re.Match() as bits:
+			return 1 << int(bits[1], 0)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _stack_reservation(program: Program) -> int:

@@ -1,7 +1,7 @@
 # dynamic-call-tree-resolution
 
-Static resolution of indirect calls in embedded firmware ELF images, in service of
-worst-case stack usage analysis.
+Static resolution of indirect calls in embedded firmware ELF (Executable and Linkable
+Format) images, in service of worst-case stack usage analysis.
 
 > [!CAUTION]
 > dctr's stack depths are **not** sound worst-case bounds, and its call-target sets are
@@ -231,9 +231,24 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
   interrupt's hardware stacks on the thread's stack, and the row's number includes it.
 - On an M-profile image, each handler only the vector table holds is an entry: the reset
   handler `__start`, exception handlers such as `z_arm_svc`, and the interrupt entry
-  `_isr_wrapper`. Its row is that handler's own depth; what nested handlers add on the
-  main stack is not modeled yet ([#151]). An assembly handler such as `__start` has no
-  `.ci` record, so its row follows the calls the linker kept ([#78]).
+  `_isr_wrapper`. Its row is that handler's own depth. An assembly handler such as
+  `__start` has no `.ci` record, so its row follows the calls the linker kept ([#78]).
+- Under Zephyr on an M-profile core, `z_interrupt_stacks` is the row of the main stack:
+  the stack exception handlers run on, which the main stack pointer (MSP) addresses
+  ([#151]). Its depth is the reset path's, then a chain of nested exceptions, each adding
+  its exception frame and its handler's depth:
+  - the non-maskable interrupt (NMI) and HardFault, whose priorities are fixed, once each;
+  - the deepest of the configurable-priority exceptions: MemManage, BusFault, UsageFault,
+    SVCall, DebugMonitor, PendSV, SysTick and each interrupt request (IRQ). A nested
+    exception needs a strictly higher priority than the one it interrupts, so the chain
+    holds at most one per priority level.
+  - The levels come from `arm,num-irq-priority-bits` in the `zephyr.dts` beside the ELF,
+    or, without it, from the count of configurable exceptions in the vector table. The
+    row names which.
+  - Each exception counts once, by its number: `z_arm_hard_fault` handles five of them,
+    and `_isr_wrapper` handles every IRQ.
+  - `stack --path z_interrupt_stacks` prints the chain, one exception per line, in place
+    of a call path.
 - Entry points come from the `.ci` graph, which also records functions the linker
   discarded, such as `shell_readline`. With an ELF, calls from functions not in the
   image are ignored, so a function only they call, such as `work_queue_main`, is an
@@ -336,9 +351,30 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each)
 motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
 thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes)
 ...
+```
+
+The main stack's row stacks on the reset path the exceptions that can nest there, each
+by its exception number:
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_interrupt_stacks
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each)
+(exception 1) __start +1016 = 1016 bytes
+(exception 4) z_arm_hard_fault +36 +1048 = 2100 bytes
+(exception 5) z_arm_hard_fault +36 +1048 = 3184 bytes
+(exception 6) z_arm_hard_fault +36 +1048 = 4268 bytes
+(exception 12) z_arm_hard_fault +36 +1048 = 5352 bytes
+(exception 15) sys_clock_isr +36 +1040 = 6428 bytes
+(exception 16) _isr_wrapper +36 +976 = 7440 bytes
+(exception 17) _isr_wrapper +36 +976 = 8452 bytes
+(exception 18) _isr_wrapper +36 +976 = 9464 bytes
+(exception 3) z_arm_hard_fault +36 +1048 = 10548 bytes
+(exception 2) z_arm_nmi +36 +8 = 10592 bytes
 ```
 
 ```console
@@ -553,9 +589,14 @@ contradicts does not hold.
 - Under Zephyr on an M-profile core, a thread row adds the frame the hardware stacks
   on the thread's stack when an interrupt arrives: 8 words without an FPU, 26 with one,
   plus a word that may align the stack. It is added once, since handlers run on the
-  main stack, whose own depth no row covers yet ([#151]). Zephyr's context switch saves
-  registers in the thread object, not on its stack. Other cores' exception stacking is
-  not modeled.
+  main stack, whose row is `z_interrupt_stacks`. Zephyr's context switch saves registers
+  in the thread object, not on its stack. Other cores' exception stacking is not
+  modeled.
+- The main stack's row reads no priorities. It assumes any configurable-priority
+  exception can nest at any level, so it over-counts where priorities, priority grouping
+  or masking keep exceptions from nesting. Reading the image's priorities is a later,
+  opt-in narrowing ([#151]). Its base, the reset path, is `__start`'s deepest path,
+  fallback edges included.
 - Under Zephyr on Arm, when the image sets up thread-local storage
   (`arch_tls_stack_setup`), a thread row also adds the top of the stack Zephyr takes
   before the thread runs: the image's TLS segment and two toolchain pointers, rounded up

@@ -41,7 +41,14 @@ from dynamic_call_tree_resolution.points_to import (
 	signatures_by_slot,
 	unresolved_slots,
 )
-from dynamic_call_tree_resolution.stack_analysis import Bounded, Reason, Unbounded
+from dynamic_call_tree_resolution.stack_analysis import (
+	Bounded,
+	LevelSource,
+	Nested,
+	Nesting,
+	Reason,
+	Unbounded,
+)
 from dynamic_call_tree_resolution.vsa import address_taken, referrers
 from dynamic_call_tree_resolution.vsa.links import function_covering
 
@@ -243,11 +250,51 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 			assert_never(unreachable)
 
 
-class StackEntryReport(Struct):
+class NestedReport(Struct):
+	"""One exception an interrupt stack's depth stacks."""
+
+	exception: int
+	handler: str
+	depth_bytes: int
+	"""The handler's depth, or its lower bound."""
+
+
+class NestingReport(Struct):
+	"""How an interrupt stack's depth stacks exceptions on the code that starts on it."""
+
+	base: NestedReport
+	chain: tuple[NestedReport, ...]
+	"""The nested exceptions' handlers, in the order the depth adds them."""
+	priority_levels: int
+	"""The most configurable-priority exceptions one chain holds."""
+	priority_levels_from: LevelSource
+	exception_frame_bytes: int
+	"""What each nested exception's hardware frame adds."""
+
+
+def nesting_report(nesting: Nesting) -> NestingReport:
+	return NestingReport(
+		base=_nested_report(nesting.base),
+		chain=tuple(map(_nested_report, nesting.chain)),
+		priority_levels=nesting.levels.count,
+		priority_levels_from=nesting.levels.source,
+		exception_frame_bytes=nesting.exception_frame,
+	)
+
+
+def _nested_report(nested: Nested) -> NestedReport:
+	return NestedReport(
+		exception=nested.exception, handler=nested.handler, depth_bytes=nested.depth
+	)
+
+
+class StackEntryReport(Struct, omit_defaults=True):
 	"""One row of ``stack --json``."""
 
 	entry: str
 	bound: BoundedStack | UnboundedStack
+	nesting: NestingReport | None = None
+	"""How an interrupt stack's row stacks its exceptions."""
 
 
 class PathStepReport(Struct):
@@ -260,12 +307,14 @@ class PathStepReport(Struct):
 	flags: tuple[Reason, ...]
 
 
-class StackPathReport(Struct):
+class StackPathReport(Struct, omit_defaults=True):
 	"""The output of ``stack --path --json``."""
 
 	entry: str
 	bound: BoundedStack | UnboundedStack
 	path: tuple[PathStepReport, ...]
+	nesting: NestingReport | None = None
+	"""How an interrupt stack's row stacks its exceptions, in place of a call path."""
 
 
 class AnalysisSummary(Struct):

@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import Program, Section
 
 _STACK_ALIGNMENT: Final = 8
+RESET: Final = 1
+NMI: Final = 2
+HARD_FAULT: Final = 3
 
 
 def vector_table(program: Program) -> Mapping[Address, Address]:
@@ -47,6 +50,16 @@ def vector_table(program: Program) -> Mapping[Address, Address]:
 			return {}
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def exception_handlers(program: Program) -> Mapping[int, Address]:
+	"""Each exception the vector table handles, by exception number, with its handler."""
+	return {
+		(slot - reset) // program.pointer_size + RESET: handler
+		for table in (vector_table(program),)
+		for reset in (min(table, default=0),)
+		for slot, handler in table.items()
+	}
 
 
 def hardware_handlers(program: Program) -> frozenset[Address]:

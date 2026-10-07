@@ -70,11 +70,53 @@ class Unbounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 
 
+class LevelSource(StrEnum):
+	"""Where the most configurable-priority exceptions one nesting chain holds comes from."""
+
+	DEVICETREE = "devicetree"
+	VECTOR_TABLE = "vector table"
+
+
+class PriorityLevels(Struct):
+	"""The most configurable-priority exceptions one nesting chain holds."""
+
+	count: int
+	source: LevelSource
+
+
+class Nested(Struct):
+	"""One exception an interrupt stack's depth stacks."""
+
+	exception: int
+	handler: str
+	depth: int
+	"""The handler's depth, or its lower bound."""
+
+
+class Nesting(Struct):
+	"""How an interrupt stack's depth stacks exceptions on the code that starts on it."""
+
+	base: Nested
+	chain: tuple[Nested, ...]
+	"""The nested exceptions' handlers, in the order the depth adds them."""
+	levels: PriorityLevels
+	exception_frame: int
+	"""What each nested exception's hardware frame adds."""
+
+
 class StackReport(Struct):
 	"""One worst-case stack depth."""
 
 	entry: str
 	bound: Bounded | Unbounded
+	nesting: Nesting | None = None
+
+
+class Handled(Struct):
+	"""One exception's handler, with the handler's depth."""
+
+	exception: int
+	report: StackReport
 
 
 class Reason(StrEnum):
@@ -483,6 +525,97 @@ def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def entry_report(graph: StackGraph, entry: str) -> StackReport:
+	return min(
+		(
+			_report(graph, node)
+			for node in graph.depths.keys() | graph.frame_by_name.keys()
+			if frame_key(node) == entry
+		),
+		key=_report_order,
+		default=_report(graph, entry),
+	)
+
+
+def interrupt_stack_report(
+	name: str,
+	base: Handled,
+	fixed: tuple[Handled, ...],
+	configurable: tuple[Handled, ...],
+	*,
+	levels: PriorityLevels,
+	exception_frame: int,
+) -> StackReport:
+	chain = (*sorted(configurable, key=_deepest_first)[: levels.count], *fixed)
+	return StackReport(
+		entry=name,
+		bound=_bound(
+			_bound_depth(base.report.bound)
+			+ sum(exception_frame + _bound_depth(handled.report.bound) for handled in chain),
+			frozenset[tuple[Reason, str]]().union(
+				*(_bound_reasons(handled.report.bound) for handled in (base, *fixed, *configurable))
+			),
+		),
+		nesting=Nesting(
+			base=_nested(base),
+			chain=tuple(map(_nested, chain)),
+			levels=levels,
+			exception_frame=exception_frame,
+		),
+	)
+
+
+def _nested(handled: Handled) -> Nested:
+	return Nested(
+		exception=handled.exception,
+		handler=handled.report.entry,
+		depth=_bound_depth(handled.report.bound),
+	)
+
+
+def _deepest_first(handled: Handled) -> int:
+	return -_bound_depth(handled.report.bound)
+
+
+def _bound_depth(bound: Bounded | Unbounded) -> int:
+	match bound:
+		case Bounded(bytes=depth):
+			return depth
+		case Unbounded(at_least=at_least):
+			return at_least
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _bound_reasons(bound: Bounded | Unbounded) -> _Reasons:
+	return frozenset((reason, name) for reason, names in _reason_sets(bound) for name in names)
+
+
+def _reason_sets(bound: Bounded | Unbounded) -> tuple[tuple[Reason, frozenset[str]], ...]:
+	match bound:
+		case Bounded():
+			return _noted_sets(bound)
+		case Unbounded():
+			return (
+				(Reason.RECURSION, bound.recursion),
+				(Reason.UNMEASURED, bound.unmeasured),
+				(Reason.DYNAMIC, bound.dynamic),
+				(Reason.UNRESOLVED, bound.unresolved),
+				*_noted_sets(bound),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _noted_sets(bound: Bounded | Unbounded) -> tuple[tuple[Reason, frozenset[str]], ...]:
+	return (
+		(Reason.MEASURED, bound.measured),
+		(Reason.ASSUMED_NO_RECURSION, bound.assumed_no_recursion),
+		(Reason.NARROWED_BY_FIELD, bound.narrowed_by_field),
+		(Reason.NARROWED_BY_SIGNATURE, bound.narrowed_by_signature),
+	)
 
 
 def deepest_path(graph: StackGraph, entry: str) -> tuple[PathStep, ...]:
