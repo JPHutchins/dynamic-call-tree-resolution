@@ -536,6 +536,11 @@ contradicts does not hold.
 
 ### Call targets
 
+- On the four Arm fixtures, `test_qemu_targets` runs each image on QEMU under gdb and
+  checks every indirect call it makes against what the analysis reports: the site's
+  candidates, or the fallback where it has none; what `--narrow-by-field` narrows the
+  site to; and, on a static thread, what the thread's own analysis resolved ([#75]). A
+  run covers only the calls its code reaches.
 - A read-only slot's value is its value in the image as linked. A writable slot's
   candidates are its initializer and the values stored to it, so a store whose address
   or value is unknown leaves it unresolved.
@@ -708,6 +713,7 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
+[#75]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/75
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
