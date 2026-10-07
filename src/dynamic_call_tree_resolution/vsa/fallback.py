@@ -142,7 +142,7 @@ def _computed_slots(program: Program) -> Iterator[tuple[Address, int]]:
 
 
 def _non_branch_instructions(program: Program) -> Iterator[tuple[CsInsn, ...]]:
-	decoders = disassemblers()
+	decoders = disassemblers(program.arm_core)
 	functions = functions_by_start(program)
 	return (
 		tuple(

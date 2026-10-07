@@ -13,6 +13,7 @@ from capstone import (
 	CS_MODE_32,
 	CS_MODE_64,
 	CS_MODE_ARM,
+	CS_MODE_MCLASS,
 	CS_MODE_THUMB,
 	Cs,
 	arm_const,
@@ -21,6 +22,8 @@ from capstone import (
 
 from dynamic_call_tree_resolution.model import (
 	Address,
+	ArmCore,
+	ArmProfile,
 	InstructionFamily,
 	InstructionSet,
 	Machine,
@@ -295,12 +298,26 @@ def normalized(address: Address, machine: Machine) -> Address:
 			assert_never(unreachable)
 
 
-def disassemblers() -> Mapping[InstructionSet, Cs]:
-	return {instruction_set: _disassembler(instruction_set) for instruction_set in InstructionSet}
+def disassemblers(core: ArmCore | None) -> Mapping[InstructionSet, Cs]:
+	return {
+		instruction_set: _disassembler(*_architecture_and_mode(instruction_set, core))
+		for instruction_set in InstructionSet
+	}
 
 
-def _disassembler(instruction_set: InstructionSet) -> Cs:
-	disassembler = Cs(*DISASSEMBLERS[instruction_set])
+def _architecture_and_mode(
+	instruction_set: InstructionSet, core: ArmCore | None
+) -> tuple[int, int]:
+	"""An M-profile core's Thumb code has its own encodings, such as ``mrs r0, MSP``."""
+	match instruction_set, core:
+		case InstructionSet.T32, ArmCore(profile=ArmProfile.MICROCONTROLLER):
+			return CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_MCLASS
+		case _:
+			return DISASSEMBLERS[instruction_set]
+
+
+def _disassembler(architecture: int, mode: int) -> Cs:
+	disassembler = Cs(architecture, mode)
 	disassembler.detail = True
 	disassembler.skipdata = True
 	return disassembler

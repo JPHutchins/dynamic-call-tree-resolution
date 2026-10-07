@@ -6,6 +6,7 @@ CS_MODE_32: int
 CS_MODE_64: int
 CS_MODE_ARM: int
 CS_MODE_THUMB: int
+CS_MODE_MCLASS: int
 CS_GRP_JUMP: int
 CS_GRP_CALL: int
 CS_GRP_RET: int
