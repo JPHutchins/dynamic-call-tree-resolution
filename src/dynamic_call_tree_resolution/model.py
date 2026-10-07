@@ -171,6 +171,8 @@ class StructureLayout(Struct):
 	members: tuple[Member, ...]
 	"""Only those that hold or may lead to code."""
 	size: int
+	offsets: Mapping[str, int] = {}
+	"""Every named member's offset, whatever it holds."""
 
 
 class Relocation(Struct):
@@ -287,6 +289,8 @@ class ThreadRoot(Struct):
 	"""Where the thread's record holds the entry."""
 	arguments: tuple[Address, ...]
 	"""What the entry is started with, by ABI argument position."""
+	stack_size: int | None = None
+	"""The stack size the record declares."""
 
 
 class SystemThread(Struct):
@@ -294,6 +298,16 @@ class SystemThread(Struct):
 
 	name: str
 	entry: Address
+	stack_size: int | None = None
+	"""The stack size the build's configuration declares."""
+
+
+class InterruptStack(Struct):
+	"""The stack exception handlers run on: the main stack pointer's (MSP's) on M-profile."""
+
+	name: str
+	stack_size: int | None = None
+	"""The stack size the build's configuration declares."""
 
 
 class ThreadCreation(Struct):
@@ -325,9 +339,7 @@ class RtosModel(Struct):
 	exception_frame: int = 0
 	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
 	system_threads: tuple[SystemThread, ...] = ()
-	interrupt_stack: str | None = None
-	"""The stack exception handlers run on, which an M-profile core's main stack pointer (MSP)
-	addresses."""
+	interrupt_stack: InterruptStack | None = None
 
 
 BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)

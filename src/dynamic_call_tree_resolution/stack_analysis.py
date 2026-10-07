@@ -110,6 +110,8 @@ class StackReport(Struct):
 	entry: str
 	bound: Bounded | Unbounded
 	nesting: Nesting | None = None
+	stack_size: int | None = None
+	"""The size of the stack the entry runs on, as the RTOS model declares it."""
 
 
 class Handled(Struct):
@@ -483,8 +485,33 @@ def thread_reports(
 	rtos: RtosModel = BARE_METAL,
 ) -> tuple[StackReport, ...]:
 	return tuple(
-		sorted((_thread_report(report, own_graphs, rtos) for report in reports), key=_report_order)
+		sorted(
+			(
+				replace(
+					_thread_report(report, own_graphs, rtos), stack_size=sizes.get(report.entry)
+				)
+				for sizes in (_stack_sizes(rtos),)
+				for report in reports
+			),
+			key=_report_order,
+		)
 	)
+
+
+def _stack_sizes(rtos: RtosModel) -> Mapping[str, int]:
+	return {
+		name: size
+		for name, size in (
+			*((thread.name, thread.stack_size) for thread in rtos.threads),
+			*((thread.name, thread.stack_size) for thread in rtos.system_threads),
+			*(
+				(stack.name, stack.stack_size)
+				for stack in (rtos.interrupt_stack,)
+				if stack is not None
+			),
+		)
+		if size is not None
+	}
 
 
 def _thread_report(
