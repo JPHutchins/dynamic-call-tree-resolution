@@ -3,11 +3,20 @@
 
 """C compiler invocations for the fixture programs, and their runners."""
 
+from __future__ import annotations
+
 import shlex
 import subprocess
 from itertools import islice
 from pathlib import Path
-from typing import IO, cast
+from typing import IO, TYPE_CHECKING, cast
+
+from salix import Struct
+
+from dynamic_call_tree_resolution import Address
+
+if TYPE_CHECKING:
+	from collections.abc import Mapping
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ARM_HARNESS = FIXTURES / "arm" / "harness.c"
@@ -183,6 +192,73 @@ def zephyr_stack_pointers_cortex_m3(elf: Path, breakpoint: str, hits: int) -> tu
 		).stdout.splitlines()
 		if line.startswith("hit ")
 		for _, stack_pointer in (line.split(),)
+	)
+
+
+class IndirectCall(Struct):
+	"""One indirect call QEMU ran."""
+
+	site: Address
+	target: Address
+	thread: Address
+	"""The address of the ``struct k_thread`` that was current."""
+
+
+def zephyr_indirect_calls_cortex_m3(
+	elf: Path, registers: Mapping[Address, str], script: Path, seconds: int, hits: int
+) -> frozenset[IndirectCall]:
+	"""Each indirect call QEMU runs at a site, read from the register the site branches through,
+	under gdb until the seconds or the hits run out."""
+	script.write_text(
+		"set pagination off\nset confirm off\nset $hits = 0\n"
+		"target remote | "
+		+ shlex.join(
+			(
+				*_ZEPHYR_QEMU_CORTEX_M3,
+				"-display",
+				"none",
+				"-serial",
+				"null",
+				"-kernel",
+				str(elf),
+				"-S",
+				"-gdb",
+				"stdio",
+			)
+		)
+		+ "\n"
+		+ "".join(
+			f"break *{site:#x}\ncommands\nsilent\n"
+			f'printf "call %#x %#x %#x\\n", $pc, ${register}, '
+			"(unsigned)_kernel.cpus[0].current\n"
+			f"set $hits = $hits + 1\nif $hits >= {hits}\nkill\nquit\nend\ncontinue\nend\n"
+			for site, register in registers.items()
+		)
+		+ "continue\nkill\nquit\n"
+	)
+	return frozenset(
+		IndirectCall(
+			site=Address(int(site, 16)),
+			target=Address(int(target, 16)),
+			thread=Address(int(thread, 16)),
+		)
+		for line in subprocess.run(
+			[
+				"timeout",
+				str(seconds),
+				"arm-none-eabi-gdb",
+				"-batch",
+				"-nx",
+				"-x",
+				str(script),
+				str(elf),
+			],
+			check=False,
+			capture_output=True,
+			text=True,
+		).stdout.splitlines()
+		if line.startswith("call ")
+		for _, site, target, thread in (line.split(),)
 	)
 
 
