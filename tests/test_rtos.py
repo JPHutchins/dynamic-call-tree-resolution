@@ -223,6 +223,62 @@ def test_a_system_thread_takes_the_trampolines_frame_and_calls_from_its_code_wit
 	)
 
 
+@pytest.fixture(scope="module")
+def hello_program(zephyr_fixtures: Path) -> Program:
+	return load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf")
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("config", "setup_symbol", "reservation"),
+	[
+		pytest.param(
+			"", True, 4 + 8 + 4, id="without .config, the setup symbol and 8-byte alignment"
+		),
+		pytest.param("", False, 0, id="without .config or the setup symbol, none"),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_THREAD_LOCAL_STORAGE=y\nCONFIG_STACK_ALIGN_DOUBLE_WORD=y\n',
+			False,
+			4 + 8 + 4,
+			id="TLS from .config when link-time optimization inlined the setup",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_THREAD_LOCAL_STORAGE=y\n',
+			True,
+			4 + 8,
+			id="4-byte alignment without CONFIG_STACK_ALIGN_DOUBLE_WORD",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_THREAD_LOCAL_STORAGE=y\nCONFIG_STACK_ALIGN_DOUBLE_WORD=y\n'
+			"CONFIG_STACK_POINTER_RANDOM=64\n",
+			True,
+			4 + 8 + 63 + 5,
+			id="the largest random offset",
+		),
+	],
+)
+def test_the_stack_reservation_follows_the_builds_config(
+	hello_program: Program, config: str, setup_symbol: bool, reservation: int
+) -> None:
+	assert (
+		rtos_model(
+			hello_program
+			if setup_symbol
+			else replace(
+				hello_program,
+				symbol_addresses={
+					name: addresses
+					for name, addresses in hello_program.symbol_addresses.items()
+					if name != "arch_tls_stack_setup"
+				},
+			),
+			RtosChoice.ZEPHYR,
+			zephyr.kconfig(config),
+		).stack_reservation
+		== reservation
+	)
+
+
 def _trampoline_targets(program: Program, model: RtosModel) -> list[str]:
 	resolution = resolve(program, model)
 	(site,) = (

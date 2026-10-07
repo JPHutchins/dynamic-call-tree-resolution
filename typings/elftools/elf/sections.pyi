@@ -3,6 +3,7 @@ from typing import Literal, TypedDict, overload
 
 class SectionHeader:
 	sh_addr: int
+	sh_addralign: int
 	sh_flags: int
 	sh_size: int
 	sh_type: str

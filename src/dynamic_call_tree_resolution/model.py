@@ -259,7 +259,8 @@ class Program(Struct):
 	arm_core: ArmCore | None = None
 	"""The ARM core the build attributes target; ``None`` for other machines."""
 	tls_size: int = 0
-	"""The bytes of each thread's copy of thread-local storage (TLS), from the TLS segment."""
+	"""The bytes of each thread's copy of thread-local storage (TLS): each TLS section rounded up
+	to its alignment, as Zephyr's ``z_tls_data_size`` counts it."""
 	entry_point: Address = Address(0)
 	"""Where execution starts, from the ELF header."""
 

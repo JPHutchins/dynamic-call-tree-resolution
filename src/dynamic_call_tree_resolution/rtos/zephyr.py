@@ -42,7 +42,11 @@ _EXTENDED_FRAME: Final = 26 * 4
 _ALIGNMENT_PAD: Final = 4
 _TLS_SETUP: Final = "arch_tls_stack_setup"
 _TOOLCHAIN_TLS_POINTERS: Final = 2
-_STACK_POINTER_ALIGNMENT: Final = 8
+_DOUBLE_WORD: Final = 8
+_SINGLE_WORD: Final = 4
+_TLS: Final = "CONFIG_THREAD_LOCAL_STORAGE"
+_RANDOM_OFFSET: Final = "CONFIG_STACK_POINTER_RANDOM"
+_ALIGN_DOUBLE_WORD: Final = "CONFIG_STACK_ALIGN_DOUBLE_WORD"
 _SYSTEM_THREADS: Final = (
 	("z_main_thread", "bg_thread_main", "CONFIG_MAIN_STACK_SIZE"),
 	("z_idle_threads", "idle", "CONFIG_IDLE_STACK_SIZE"),
@@ -135,7 +139,7 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 		evidence=(_TRAMPOLINE, _RECORD),
 		threads=threads,
 		trampoline=_TRAMPOLINE,
-		stack_reservation=_stack_reservation(program),
+		stack_reservation=_stack_reservation(program, options),
 		exception_frame=_exception_frame(program.arm_core),
 		system_threads=tuple(
 			system_thread
@@ -206,13 +210,12 @@ def priority_levels(devicetree: str) -> int | None:
 			assert_never(unreachable)
 
 
-def _stack_reservation(program: Program) -> int:
+def _stack_reservation(program: Program, options: Kconfig) -> int:
 	match program.machine:
 		case Machine.EM_ARM:
-			return (
-				_tls_reservation(program.tls_size, program.pointer_size)
-				if _TLS_SETUP in program.symbol_addresses
-				else 0
+			return _headroom(
+				_tls_bytes(program, options) + _random_offset(options),
+				_stack_pointer_alignment(options),
 			)
 		case Machine.EM_386 | Machine.EM_X86_64:
 			return 0
@@ -220,25 +223,61 @@ def _stack_reservation(program: Program) -> int:
 			assert_never(unreachable)
 
 
-def _tls_reservation(tls_size: int, pointer_size: int) -> int:
+def _tls_bytes(program: Program, options: Kconfig) -> int:
 	"""What an ARM thread's stack gives to thread-local storage (TLS) before its entry runs.
 
-	The TLS copy and two toolchain pointers sit at the top of the stack, and the stack
-	pointer starts below them, aligned down to 8 bytes: ``ARCH_STACK_PTR_ALIGN`` with
-	``CONFIG_STACK_ALIGN_DOUBLE_WORD``, which also covers the 4 without it.
-
-	>>> _tls_reservation(4, 4)
-	16
-	>>> _tls_reservation(0, 4)
-	8
-	>>> _tls_reservation(12, 4)
-	24
+	The TLS copy and two toolchain pointers sit at the top of the stack. The ``.config`` says
+	whether the build has TLS, and the setup function's symbol does without one or when
+	link-time optimization did not inline it.
 	"""
 	return (
-		(tls_size + _TOOLCHAIN_TLS_POINTERS * pointer_size + _STACK_POINTER_ALIGNMENT - 1)
-		// _STACK_POINTER_ALIGNMENT
-		* _STACK_POINTER_ALIGNMENT
+		program.tls_size + _TOOLCHAIN_TLS_POINTERS * program.pointer_size
+		if _TLS_SETUP in program.symbol_addresses or options.options.get(_TLS) == "y"
+		else 0
 	)
+
+
+def _random_offset(options: Kconfig) -> int:
+	r"""The largest random offset Zephyr can lower a thread's first stack pointer by.
+
+	>>> _random_offset(kconfig("CONFIG_STACK_POINTER_RANDOM=64\n"))
+	63
+	>>> _random_offset(NO_KCONFIG)
+	0
+	"""
+	return max((_integer(options, _RANDOM_OFFSET) or 0) - 1, 0)
+
+
+def _stack_pointer_alignment(options: Kconfig) -> int:
+	r"""``ARCH_STACK_PTR_ALIGN`` on ARM: 8 with ``CONFIG_STACK_ALIGN_DOUBLE_WORD``, else 4.
+
+	Without a ``.config``, the larger.
+
+	>>> _stack_pointer_alignment(kconfig('CONFIG_ARCH="arm"\nCONFIG_STACK_ALIGN_DOUBLE_WORD=y\n'))
+	8
+	>>> _stack_pointer_alignment(kconfig('CONFIG_ARCH="arm"\n'))
+	4
+	>>> _stack_pointer_alignment(NO_KCONFIG)
+	8
+	"""
+	return (
+		_DOUBLE_WORD
+		if _ARCH not in options.options or options.options.get(_ALIGN_DOUBLE_WORD) == "y"
+		else _SINGLE_WORD
+	)
+
+
+def _headroom(delta: int, alignment: int) -> int:
+	"""The top of a thread's stack Zephyr takes, rounded up to the stack pointer's alignment.
+
+	>>> _headroom(4 + 2 * 4, 8)
+	16
+	>>> _headroom(4 + 2 * 4, 4)
+	12
+	>>> _headroom(0, 8)
+	0
+	"""
+	return (delta + alignment - 1) // alignment * alignment
 
 
 def _exception_frame(core: ArmCore | None) -> int:
