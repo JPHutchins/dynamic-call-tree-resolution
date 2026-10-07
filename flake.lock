@@ -83,16 +83,16 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1790378491,
-        "narHash": "sha256-Cn6poHQxkixRBfd2M+rCeHMsk8o2O8XAGwoV4b0S9gI=",
+        "lastModified": 1791410015,
+        "narHash": "sha256-uTD5ecnxCbhztO0E/7jW6g6qcu+jbkJzMHBTNxwTlps=",
         "owner": "JPHutchins",
         "repo": "jphfmt",
-        "rev": "b426a9d6c17f31e032041652f821132aea9f0b7f",
+        "rev": "2b2dcf8e3005b0c96d9bbd508fc36460c00a37a5",
         "type": "github"
       },
       "original": {
         "owner": "JPHutchins",
-        "ref": "v0.2.2",
+        "ref": "v0.3.0",
         "repo": "jphfmt",
         "type": "github"
       }
