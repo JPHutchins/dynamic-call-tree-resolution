@@ -5,13 +5,11 @@
 
 from __future__ import annotations
 
-import re
-import subprocess
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from itertools import groupby
-from typing import TYPE_CHECKING, Final, assert_never
+from typing import TYPE_CHECKING, assert_never
 
 import msgspec
 import pytest
@@ -44,6 +42,15 @@ from dynamic_call_tree_resolution.stack_analysis import (
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 from dynamic_call_tree_resolution.vsa import address_taken, linked_calls
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
+from tests.decode_oracle import (
+	Decoded,
+	decoded,
+	misaligned,
+	misdirected,
+	register_branches,
+	unexplained_pc_writes,
+	unreadable,
+)
 from tests.sites import tracked_values
 from tests.toolchains import (
 	FIXTURES,
@@ -56,6 +63,7 @@ from tests.toolchains import (
 )
 
 if TYPE_CHECKING:
+	import subprocess
 	from collections.abc import Iterator, Mapping
 	from pathlib import Path
 
@@ -268,12 +276,7 @@ IMAGES = tuple(
 	)
 )
 
-A15_IMAGES = tuple(image for image in IMAGES if image.platform is Platform.CORTEX_A15)
-
-REGISTER_INDIRECT_BRANCH: Final = re.compile(
-	r"\t(?:blx|bx)(?:eq|ne|cs|cc|hs|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)?(?:\.[nw])?"
-	r"\t(?!lr\b)(?:r\d+|sb|sl|fp|ip)\b"
-)
+ARM_IMAGES = tuple(image for image in IMAGES if image.platform is not Platform.HOST)
 
 
 class Outcome(Struct):
@@ -284,6 +287,8 @@ class Outcome(Struct):
 	"""Target names the run observed, by caller."""
 	sites: tuple[tuple[str, frozenset[str]], ...]
 	"""Each call site's caller and dctr's candidate names."""
+	code: Decoded | None
+	"""The image's code as objdump lists it and as dctr decodes it; none on the host."""
 
 
 def _build(image: Image, directory: Path) -> Path:
@@ -336,7 +341,10 @@ def _sites(elf: Path) -> tuple[tuple[str, frozenset[str]], ...]:
 def _outcome(image: Image, directory: Path) -> Outcome:
 	elf = _build(image, directory)
 	return Outcome(
-		elf=elf, observations=_observations(_run(image.platform, elf)), sites=_sites(elf)
+		elf=elf,
+		observations=_observations(_run(image.platform, elf)),
+		sites=_sites(elf),
+		code=decoded(elf) if image.platform is not Platform.HOST else None,
 	)
 
 
@@ -508,18 +516,20 @@ def test_switch_case_sites_name_every_case(image: Image, outcomes: Mapping[Image
 
 @pytest.mark.parametrize(
 	"image",
-	[pytest.param(image, id=_image_id(image)) for image in A15_IMAGES],
+	[pytest.param(image, id=_image_id(image)) for image in ARM_IMAGES],
 )
-def test_a32_sites_are_objdumps_register_indirect_branches(
+def test_each_arm_image_decodes_as_objdump_lists_it(
 	image: Image, outcomes: Mapping[Image, Outcome]
 ) -> None:
-	listing = subprocess.run(
-		["arm-none-eabi-objdump", "-d", str(outcomes[image].elf)],
-		check=True,
-		capture_output=True,
-		text=True,
-	).stdout
-	assert len(outcomes[image].sites) == sum(1 for _ in REGISTER_INDIRECT_BRANCH.finditer(listing))
+	code = outcomes[image].code
+	assert code is not None
+	assert (
+		misaligned(code),
+		unreadable(code),
+		misdirected(code),
+		register_branches(code) ^ code.sites,
+		unexplained_pc_writes(code),
+	) == ([], [], [], frozenset(), [])
 
 
 def _record_thread(program: Program, name: str, index: int) -> ThreadRoot:
