@@ -39,9 +39,9 @@ with no target.
 
 Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts, plus the direct calls the linker kept
-that `.ci` does not record. Each indirect call also expands to
-the fallback: every function whose address the image stores, a non-branch instruction
-computes, or an address relocation kept by `--emit-relocs` names. The exception is a
+and the indirect call sites in the Arm code that `.ci` does not record. Each indirect call also
+expands to the fallback: every function whose address the image stores, a non-branch
+instruction computes, or an address relocation kept by `--emit-relocs` names. The exception is a
 site inside a thread's tree that the thread's own analysis resolved. On an M-profile
 image, the fallback also leaves out a handler whose address only the vector table holds:
 only the hardware calls it, so it is an entry of its own.
@@ -654,6 +654,11 @@ contradicts does not hold.
   only the calls decoded from a function measured for its own frame join. A call inside
   a function symbol of size zero belongs to that function, up to the next function, as
   its measured frame does ([#78]).
+- With `--elf`, an indirect call site found in a function's Arm code joins the graph when
+  `.ci` records fewer indirect calls for that function. That covers a call from inline
+  assembly, such as Zephyr's `arch_switch_to_main_thread`, and a call from code built
+  without `-fcallgraph-info` whose frame can't be measured ([#75]). x86 sites are not
+  added ([#228]).
 
 ### Residue
 
@@ -737,3 +742,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#211]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/211
 [#214]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/214
 [#219]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/219
+[#228]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/228
