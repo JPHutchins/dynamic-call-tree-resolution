@@ -29,6 +29,7 @@ from dynamic_call_tree_resolution import (
 	matching_targets,
 	per_caller_candidates,
 	resolve,
+	signature_narrowings,
 	unresolved_slots,
 )
 from dynamic_call_tree_resolution.model import FUNCTION_POINTER, InstructionSet, Unreached
@@ -1942,7 +1943,8 @@ def _signature_program() -> Program:
 		sections={
 			Address(0x1000): Section(
 				data=bytes.fromhex("48 c7 c0 00 20 00 00ff d0"), writable=False
-			)
+			),
+			Address(0x6000): Section(data=(0x3000).to_bytes(8, "little"), writable=False),
 		},
 	)
 
@@ -1960,16 +1962,16 @@ def test_matching_targets_filters_by_exact_signature() -> None:
 	)
 
 
-def test_chase_of_an_unreadable_slot_narrows_to_the_slot_signature() -> None:
+def test_chase_of_an_unreadable_slot_narrows_to_the_address_taken_functions_of_its_signature() -> (
+	None
+):
 	program = _signature_program()
 	(site,) = extract_call_sites(program)
-	signatures_by_slot = {
-		Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))
-	}
-	assert site.target == Known(values=frozenset({Address(0x2000)}))
-	assert call_site_candidates(program, site, {}, signatures_by_slot) == frozenset(
-		{Address(0x3000), Address(0x4000)}
+	narrowings = signature_narrowings(
+		program, {Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))}
 	)
+	assert site.target == Known(values=frozenset({Address(0x2000)}))
+	assert call_site_candidates(program, site, {}, narrowings) == frozenset({Address(0x3000)})
 
 
 def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
@@ -2002,18 +2004,17 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 		data_in_code=(),
 		arm_code=(),
 		sections={
-			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False)
+			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False),
+			Address(0x6000): Section(data=(0x3000).to_bytes(8, "little"), writable=False),
 		},
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot == 0x2000
 	assert site.target == Top()
-	signatures_by_slot = {
-		Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))
-	}
-	assert call_site_candidates(program, site, {}, signatures_by_slot) == frozenset(
-		{Address(0x3000)}
+	narrowings = signature_narrowings(
+		program, {Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))}
 	)
+	assert call_site_candidates(program, site, {}, narrowings) == frozenset({Address(0x3000)})
 
 
 def _bss_slot_site_program() -> Program:
@@ -2037,6 +2038,12 @@ def _bss_slot_site_program() -> Program:
 				size=1,
 				signature=FunctionSignature(return_type="int", parameters=()),
 			),
+			Address(0x5000): Function(
+				name="never_stored",
+				address=Address(0x5000),
+				size=1,
+				signature=FunctionSignature(return_type="void", parameters=("int",)),
+			),
 		},
 		objects={
 			Address(0x2000): DataObject(
@@ -2053,7 +2060,10 @@ def _bss_slot_site_program() -> Program:
 		arm_code=(),
 		sections={
 			Address(0x1000): Section(data=bytes.fromhex("ff 15 fa 0f 00 00"), writable=False),
-			Address(0x6000): Section(data=(0x4000).to_bytes(8, "little"), writable=False),
+			Address(0x6000): Section(
+				data=(0x4000).to_bytes(8, "little") + (0x3000).to_bytes(8, "little"),
+				writable=False,
+			),
 		},
 	)
 
@@ -2078,11 +2088,11 @@ def test_stack_expansion_narrows_a_bss_site_to_its_slot_signature_only_when_aske
 	sites = extract_call_sites(program)
 	assert per_caller_candidates(program, sites, ()) == (
 		{"caller": frozenset({INDIRECT_CALLEE})},
-		frozenset({"non_matching"}),
+		frozenset({"matching", "non_matching"}),
 	)
 	assert per_caller_candidates(program, sites, (), narrow_by_signature=True) == (
 		{"caller": frozenset({"matching"})},
-		frozenset({"non_matching"}),
+		frozenset({"matching", "non_matching"}),
 	)
 
 

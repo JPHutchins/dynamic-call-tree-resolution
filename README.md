@@ -32,7 +32,7 @@ with no target.
    over every function's machine code, seeded from observed direct calls. The narrowed
    sets are refinements, not over-approximations. With `--narrow-by-signature`, a site
    whose slot the image leaves unset also narrows to the functions of the slot's DWARF
-   signature. With `--narrow-by-field`, a site that loads its callee from a struct field
+   signature whose address the image takes. With `--narrow-by-field`, a site that loads its callee from a struct field
    narrows to what that field holds: its initializers in the image and the functions the
    build stores into it. Each RTOS static thread is also analyzed on its own, started
    from its record.
@@ -551,7 +551,7 @@ contradicts does not hold.
   a narrowing names, globally or in a thread's own analysis, is in the fallback, so
   removing a resolution never lowers a bound; and that no entry is deeper with its
   candidates alone than with the fallback too ([#75]). On counter-su (x86), the first
-  fails ([#228]), and the second fails with `--narrow-by-signature` ([#231]).
+  fails ([#228]).
 - A read-only slot's value is its value in the image as linked. A writable slot's
   candidates are its initializer and the values stored to it, so a store whose address
   or value is unknown leaves it unresolved.
@@ -749,4 +749,3 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#214]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/214
 [#219]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/219
 [#228]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/228
-[#231]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/231

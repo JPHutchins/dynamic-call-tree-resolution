@@ -13,6 +13,7 @@ from dynamic_call_tree_resolution.call_sites import (
 	call_site_candidates,
 	narrowing_signature,
 	resolve,
+	signature_narrowings,
 	site_targets,
 )
 from dynamic_call_tree_resolution.callgraph import EdgeKind
@@ -462,6 +463,7 @@ def build_report(
 	narrow_by_signature: bool = False,
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	rtos: RtosReport = BARE_METAL_REPORT,
+	fallback: frozenset[Address] | None = None,
 ) -> AnalysisReport:
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
@@ -469,7 +471,11 @@ def build_report(
 		**{slot.slot: slot.path for slot in unresolved},
 		**{slot: assignment.path for slot, assignment in resolved_map.items()},
 	}
-	signatures = signatures_by_slot(unresolved) if narrow_by_signature else None
+	narrowings = (
+		signature_narrowings(program, signatures_by_slot(unresolved), fallback)
+		if narrow_by_signature
+		else None
+	)
 	counts = slot_counts(resolved, unresolved)
 	return AnalysisReport(
 		assignments=tuple(
@@ -503,7 +509,7 @@ def build_report(
 				signature=_render_signature(narrowing_signature(findings)),
 			)
 			for site in call_sites
-			for findings in (site_targets(program, site, resolved_map, signatures),)
+			for findings in (site_targets(program, site, resolved_map, narrowings),)
 			for chased in (frozenset(target for found in findings for target in found.targets),)
 			for narrowing in (
 				None if chased else narrowing_at(narrowed_by_field, site.site_address),
@@ -550,13 +556,17 @@ def build_comparison(
 	resolved = resolution.assignments
 	unresolved = unresolved_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
-	signatures = signatures_by_slot(unresolved) if narrow_by_signature else None
+	narrowings = (
+		signature_narrowings(program, signatures_by_slot(unresolved), resolution.fallback)
+		if narrow_by_signature
+		else None
+	)
 	counts = slot_counts(resolved, unresolved)
 	sites = resolution.sites
 	candidate_sizes = sorted(
 		len(
 			narrowed(
-				call_site_candidates(program, site, resolved_map, signatures),
+				call_site_candidates(program, site, resolved_map, narrowings),
 				narrowed_by_field,
 				site.site_address,
 			)
@@ -569,7 +579,7 @@ def build_comparison(
 	sites_by_caller = {
 		caller_address: [
 			narrowed(
-				call_site_candidates(program, site, resolved_map, signatures),
+				call_site_candidates(program, site, resolved_map, narrowings),
 				narrowed_by_field,
 				site.site_address,
 			)

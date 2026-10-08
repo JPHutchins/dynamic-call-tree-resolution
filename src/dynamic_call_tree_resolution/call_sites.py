@@ -55,6 +55,7 @@ class ProgramResolution(Struct):
 	"""RAM initializers include the program's stores, and drop out when a store is unknown."""
 	seeded: frozenset[str]
 	threads: Mapping[str, ThreadSites]
+	fallback: frozenset[Address]
 
 
 def resolve(program: Program, rtos: RtosModel = BARE_METAL) -> ProgramResolution:
@@ -63,6 +64,7 @@ def resolve(program: Program, rtos: RtosModel = BARE_METAL) -> ProgramResolution
 		sites=analysis.sites,
 		seeded=analysis.seeded,
 		threads=analysis.threads,
+		fallback=_fallback(program, analysis.address_taken),
 		assignments=tuple(
 			runtime
 			for assignment in assignments(program)
@@ -111,11 +113,11 @@ def call_site_candidates(
 	program: Program,
 	site: CallSite,
 	resolved_by_slot: Mapping[Address, SlotAssignment],
-	signatures_by_slot: Mapping[Address, FunctionSignature] | None = None,
+	narrowings: Mapping[Address, SignatureNarrowed] | None = None,
 ) -> frozenset[Address]:
 	return frozenset(
 		target
-		for found in site_targets(program, site, resolved_by_slot, signatures_by_slot)
+		for found in site_targets(program, site, resolved_by_slot, narrowings)
 		for target in found.targets
 	)
 
@@ -136,24 +138,44 @@ class SignatureNarrowed(Struct):
 type SiteTargets = Chased | SignatureNarrowed
 
 
+def fallback_addresses(program: Program) -> frozenset[Address]:
+	return _fallback(program, address_taken(program))
+
+
+def _fallback(program: Program, taken: frozenset[Address]) -> frozenset[Address]:
+	return taken - hardware_handlers(program)
+
+
+def signature_narrowings(
+	program: Program,
+	signatures: Mapping[Address, FunctionSignature],
+	fallback: frozenset[Address] | None = None,
+) -> Mapping[Address, SignatureNarrowed]:
+	return {
+		slot: SignatureNarrowed(
+			signature=signature, targets=matching_targets(program, signature) & available
+		)
+		for available in (fallback if fallback is not None else fallback_addresses(program),)
+		for slot, signature in signatures.items()
+	}
+
+
 def site_targets(
 	program: Program,
 	site: CallSite,
 	resolved_by_slot: Mapping[Address, SlotAssignment],
-	signatures_by_slot: Mapping[Address, FunctionSignature] | None = None,
+	narrowings: Mapping[Address, SignatureNarrowed] | None = None,
 ) -> tuple[SiteTargets, ...]:
 	"""What a site can call, each set with where it came from."""
-	signatures = (
-		signatures_by_slot if signatures_by_slot is not None else dict[Address, FunctionSignature]()
-	)
-	chased = _chased(program, site, resolved_by_slot, signatures)
+	by_slot = narrowings if narrowings is not None else dict[Address, SignatureNarrowed]()
+	chased = _chased(program, site, resolved_by_slot, by_slot)
 	return (
 		chased
 		if any(found.targets for found in chased)
 		else tuple(
-			_narrowed_by(program, signature)
-			for signature in (signatures.get(site.slot) if site.slot is not None else None,)
-			if signature is not None
+			narrowing
+			for narrowing in (by_slot.get(site.slot) if site.slot is not None else None,)
+			if narrowing is not None
 		)
 	)
 
@@ -180,20 +202,16 @@ def _signature(found: SiteTargets) -> FunctionSignature | None:
 			assert_never(unreachable)
 
 
-def _narrowed_by(program: Program, signature: FunctionSignature) -> SiteTargets:
-	return SignatureNarrowed(signature=signature, targets=matching_targets(program, signature))
-
-
 def _chased(
 	program: Program,
 	site: CallSite,
 	resolved_by_slot: Mapping[Address, SlotAssignment],
-	signatures_by_slot: Mapping[Address, FunctionSignature],
+	narrowings: Mapping[Address, SignatureNarrowed],
 ) -> tuple[SiteTargets, ...]:
 	match site.target:
 		case Known(values=values):
 			return tuple(
-				_chase_target(program, candidate, resolved_by_slot, signatures_by_slot, frozenset())
+				_chase_target(program, candidate, resolved_by_slot, narrowings, frozenset())
 				for candidate in sorted(values)
 			)
 		case Top() | Unreached():
@@ -206,7 +224,7 @@ def _chase_target(
 	program: Program,
 	address: Address,
 	resolved_by_slot: Mapping[Address, SlotAssignment],
-	signatures_by_slot: Mapping[Address, FunctionSignature],
+	narrowings: Mapping[Address, SignatureNarrowed],
 	visited: frozenset[Address],
 ) -> SiteTargets:
 	if address in visited:
@@ -218,13 +236,8 @@ def _chase_target(
 		return Chased(targets=assignment.candidates)
 	target = None if in_writable_memory(program, address) else pointer_at(program, address)
 	if target is None:
-		signature = signatures_by_slot.get(address)
-		return (
-			_narrowed_by(program, signature)
-			if signature is not None
-			else Chased(targets=frozenset())
-		)
-	return _chase_target(program, target, resolved_by_slot, signatures_by_slot, visited | {address})
+		return narrowings.get(address, Chased(targets=frozenset()))
+	return _chase_target(program, target, resolved_by_slot, narrowings, visited | {address})
 
 
 def per_caller_candidates(
@@ -235,7 +248,9 @@ def per_caller_candidates(
 	narrow_by_signature: bool = False,
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	names: Mapping[Address, str] | None = None,
+	fallback: frozenset[Address] | None = None,
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
+	available = fallback if fallback is not None else fallback_addresses(program)
 	return (
 		_targets_by_caller(
 			program,
@@ -244,13 +259,9 @@ def per_caller_candidates(
 			narrow_by_signature=narrow_by_signature,
 			narrowed_by_field=narrowed_by_field,
 			names=names,
+			fallback=available,
 		),
-		frozenset(
-			map(
-				partial(stack_name, program, names),
-				address_taken(program) - hardware_handlers(program),
-			)
-		),
+		frozenset(map(partial(stack_name, program, names), available)),
 	)
 
 
@@ -262,12 +273,13 @@ def _targets_by_caller(
 	narrow_by_signature: bool,
 	narrowed_by_field: tuple[NarrowedSpan, ...],
 	names: Mapping[Address, str] | None,
+	fallback: frozenset[Address] | None,
 ) -> Mapping[str, frozenset[str]]:
 	return {
 		caller: frozenset(target for _, target, _ in group)
 		for caller, group in groupby(
 			_caller_targets(
-				program, sites, resolved, narrow_by_signature, narrowed_by_field, names
+				program, sites, resolved, narrow_by_signature, narrowed_by_field, names, fallback
 			),
 			key=_caller,
 		)
@@ -282,13 +294,14 @@ def narrowed_targets(
 	narrow_by_signature: bool = False,
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	names: Mapping[Address, str] | None = None,
+	fallback: frozenset[Address] | None = None,
 ) -> Mapping[str, Mapping[str, EdgeKind]]:
 	"""The targets each caller reaches only through a narrowing, with its edge, by caller key."""
 	return {
 		caller: only
 		for caller, group in groupby(
 			_caller_targets(
-				program, sites, resolved, narrow_by_signature, narrowed_by_field, names
+				program, sites, resolved, narrow_by_signature, narrowed_by_field, names, fallback
 			),
 			key=_caller,
 		)
@@ -314,10 +327,15 @@ def _caller_targets(
 	narrow_by_signature: bool,
 	narrowed_by_field: tuple[NarrowedSpan, ...],
 	names: Mapping[Address, str] | None,
+	fallback: frozenset[Address] | None,
 ) -> tuple[tuple[str, str, EdgeKind], ...]:
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
-	signatures = (
-		signatures_by_slot(unresolved_slots(program, resolved)) if narrow_by_signature else None
+	narrowings = (
+		signature_narrowings(
+			program, signatures_by_slot(unresolved_slots(program, resolved)), fallback
+		)
+		if narrow_by_signature
+		else None
 	)
 	name = partial(stack_name, program, names)
 	return tuple(
@@ -325,7 +343,7 @@ def _caller_targets(
 			(frame_key(name(site.caller_address)), target, kind)
 			for site in sites
 			for targets, kind in _labeled(
-				site_targets(program, site, resolved_map, signatures),
+				site_targets(program, site, resolved_map, narrowings),
 				narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
 			)
 			for target in frozenset(map(name, targets)) or {INDIRECT_CALLEE}
@@ -363,6 +381,7 @@ def own_targets(
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	*,
 	narrow_by_signature: bool = False,
+	fallback: frozenset[Address] | None = None,
 ) -> ThreadTargets:
 	return ThreadTargets(
 		reached=frozenset(
@@ -375,6 +394,7 @@ def own_targets(
 			narrow_by_signature=narrow_by_signature,
 			narrowed_by_field=narrowed_by_field,
 			names=names,
+			fallback=fallback,
 		),
 		sites_by_caller=Counter(
 			frame_key(stack_name(program, names, site.caller_address)) for site in thread.sites
@@ -386,5 +406,6 @@ def own_targets(
 			narrow_by_signature=narrow_by_signature,
 			narrowed_by_field=narrowed_by_field,
 			names=names,
+			fallback=fallback,
 		),
 	)

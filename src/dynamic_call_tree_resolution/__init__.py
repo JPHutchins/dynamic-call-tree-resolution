@@ -21,6 +21,9 @@ from dynamic_call_tree_resolution.call_sites import (
 from dynamic_call_tree_resolution.call_sites import (
 	resolve as resolve,
 )
+from dynamic_call_tree_resolution.call_sites import (
+	signature_narrowings as signature_narrowings,
+)
 from dynamic_call_tree_resolution.callgraph import (
 	CallEdge as CallEdge,
 )

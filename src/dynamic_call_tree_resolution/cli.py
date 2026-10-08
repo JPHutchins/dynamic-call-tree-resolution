@@ -385,6 +385,7 @@ def analyze(
 		narrow_by_signature=narrow_by_signature,
 		narrowed_by_field=_narrowed_by_field(elf, program) if narrow_by_field else (),
 		rtos=rtos_report(program, model, resolution.seeded),
+		fallback=resolution.fallback,
 	)
 	if json:
 		print(msgspec.json.format(msgspec.json.encode(report).decode()))
@@ -696,6 +697,7 @@ def _expand_from_elf(
 		narrow_by_signature=narrow_by_signature,
 		narrowed_by_field=narrowed_by_field,
 		names=image.names,
+		fallback=resolution.fallback,
 	)
 	narrowed_by_caller = narrowed_targets(
 		image.program,
@@ -704,6 +706,7 @@ def _expand_from_elf(
 		narrow_by_signature=narrow_by_signature,
 		narrowed_by_field=narrowed_by_field,
 		names=image.names,
+		fallback=resolution.fallback,
 	)
 	unresolved = unresolved_slots(image.program, resolution.assignments)
 	measure = code_measure(image.program)
@@ -1000,6 +1003,7 @@ def _own_thread_graphs(
 						image.names,
 						targets.narrowed_by_field,
 						narrow_by_signature=targets.narrow_by_signature,
+						fallback=resolution.fallback,
 					),
 					targets.by_caller,
 					targets.fallback,

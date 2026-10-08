@@ -72,6 +72,7 @@ class Analysis(Struct):
 	seeded: frozenset[str]
 	"""The threads whose entry started from its record's arguments rather than unknown ones."""
 	threads: Mapping[str, ThreadSites]
+	address_taken: frozenset[Address]
 
 
 def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
@@ -147,6 +148,7 @@ def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 				for trampoline in _trampoline(program, rtos)
 				for thread in rtos.threads
 			},
+			address_taken=taken,
 		)
 
 
