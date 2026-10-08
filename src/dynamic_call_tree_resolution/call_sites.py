@@ -56,7 +56,6 @@ class ProgramResolution(Struct):
 	seeded: frozenset[str]
 	threads: Mapping[str, ThreadSites]
 	fallback: frozenset[Address]
-	"""The functions an indirect call can reach when nothing narrows it."""
 
 
 def resolve(program: Program, rtos: RtosModel = BARE_METAL) -> ProgramResolution:
@@ -251,20 +250,18 @@ def per_caller_candidates(
 	names: Mapping[Address, str] | None = None,
 	fallback: frozenset[Address] | None = None,
 ) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
-	return next(
-		(
-			_targets_by_caller(
-				program,
-				sites,
-				resolved,
-				narrow_by_signature=narrow_by_signature,
-				narrowed_by_field=narrowed_by_field,
-				names=names,
-				fallback=available,
-			),
-			frozenset(map(partial(stack_name, program, names), available)),
-		)
-		for available in (fallback if fallback is not None else fallback_addresses(program),)
+	available = fallback if fallback is not None else fallback_addresses(program)
+	return (
+		_targets_by_caller(
+			program,
+			sites,
+			resolved,
+			narrow_by_signature=narrow_by_signature,
+			narrowed_by_field=narrowed_by_field,
+			names=names,
+			fallback=available,
+		),
+		frozenset(map(partial(stack_name, program, names), available)),
 	)
 
 
