@@ -36,7 +36,7 @@ from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Callable, Mapping
 
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
@@ -118,7 +118,7 @@ def call_site_candidates(
 	return frozenset(
 		target
 		for found in site_targets(program, site, resolved_by_slot, narrowings)
-		for target in found.targets
+		for target in target_addresses(found)
 	)
 
 
@@ -135,7 +135,23 @@ class SignatureNarrowed(Struct):
 	targets: frozenset[Address]
 
 
-type SiteTargets = Chased | SignatureNarrowed
+class External(Struct):
+	"""A call through a slot the dynamic loader fills with an undefined symbol's address."""
+
+	symbol: str
+
+
+type SiteTargets = Chased | SignatureNarrowed | External
+
+
+def target_addresses(found: SiteTargets) -> frozenset[Address]:
+	match found:
+		case Chased(targets=targets) | SignatureNarrowed(targets=targets):
+			return targets
+		case External():
+			return frozenset()
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def fallback_addresses(program: Program) -> frozenset[Address]:
@@ -167,11 +183,13 @@ def site_targets(
 	narrowings: Mapping[Address, SignatureNarrowed] | None = None,
 ) -> tuple[SiteTargets, ...]:
 	"""What a site can call, each set with where it came from."""
+	if site.external is not None:
+		return (External(symbol=site.external),)
 	by_slot = narrowings if narrowings is not None else dict[Address, SignatureNarrowed]()
 	chased = _chased(program, site, resolved_by_slot, by_slot)
 	return (
 		chased
-		if any(found.targets for found in chased)
+		if any(map(target_addresses, chased))
 		else tuple(
 			narrowing
 			for narrowing in (by_slot.get(site.slot) if site.slot is not None else None,)
@@ -186,7 +204,7 @@ def narrowing_signature(findings: tuple[SiteTargets, ...]) -> FunctionSignature 
 			signature
 			for found in findings
 			for signature in (_signature(found),)
-			if signature is not None and found.targets
+			if signature is not None and target_addresses(found)
 		),
 		None,
 	)
@@ -194,7 +212,7 @@ def narrowing_signature(findings: tuple[SiteTargets, ...]) -> FunctionSignature 
 
 def _signature(found: SiteTargets) -> FunctionSignature | None:
 	match found:
-		case Chased():
+		case Chased() | External():
 			return None
 		case SignatureNarrowed(signature=signature):
 			return signature
@@ -345,18 +363,35 @@ def _caller_targets(
 			for targets, kind in _labeled(
 				site_targets(program, site, resolved_map, narrowings),
 				narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
+				name,
 			)
-			for target in frozenset(map(name, targets)) or {INDIRECT_CALLEE}
+			for target in targets or {INDIRECT_CALLEE}
 		)
 	)
 
 
 def _labeled(
-	findings: tuple[SiteTargets, ...], field: frozenset[Address]
-) -> tuple[tuple[frozenset[Address], EdgeKind], ...]:
-	return tuple((found.targets, _kind(found)) for found in findings if found.targets) or (
-		((field, EdgeKind.FIELD),) if field else ((frozenset[Address](), EdgeKind.CANDIDATE),)
+	findings: tuple[SiteTargets, ...],
+	field: frozenset[Address],
+	name: Callable[[Address], str],
+) -> tuple[tuple[frozenset[str], EdgeKind], ...]:
+	return tuple(
+		(names, _kind(found)) for found in findings for names in (_names(found, name),) if names
+	) or (
+		((frozenset(map(name, field)), EdgeKind.FIELD),)
+		if field
+		else ((frozenset[str](), EdgeKind.CANDIDATE),)
 	)
+
+
+def _names(found: SiteTargets, name: Callable[[Address], str]) -> frozenset[str]:
+	match found:
+		case Chased(targets=targets) | SignatureNarrowed(targets=targets):
+			return frozenset(map(name, targets))
+		case External(symbol=symbol):
+			return frozenset({symbol})
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _kind(found: SiteTargets) -> EdgeKind:
@@ -365,6 +400,8 @@ def _kind(found: SiteTargets) -> EdgeKind:
 			return EdgeKind.CANDIDATE
 		case SignatureNarrowed():
 			return EdgeKind.SIGNATURE
+		case External():
+			return EdgeKind.EXTERNAL
 		case _ as unreachable:
 			assert_never(unreachable)
 

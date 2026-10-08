@@ -15,6 +15,7 @@ from dynamic_call_tree_resolution.call_sites import (
 	resolve,
 	signature_narrowings,
 	site_targets,
+	target_addresses,
 )
 from dynamic_call_tree_resolution.callgraph import EdgeKind
 from dynamic_call_tree_resolution.field_narrowing import narrowed, narrowing_at
@@ -97,6 +98,8 @@ class CallSiteReport(Struct):
 	signature: SignatureReport | None = None
 	"""The slot signature ``--narrow-by-signature`` narrowed the candidates to; unsound under
 	casts."""
+	external: str | None = None
+	"""The undefined symbol whose address the dynamic loader writes to the slot."""
 
 
 class UnresolvedSlotReport(Struct):
@@ -507,10 +510,13 @@ def build_report(
 					else None
 				),
 				signature=_render_signature(narrowing_signature(findings)),
+				external=site.external,
 			)
 			for site in call_sites
 			for findings in (site_targets(program, site, resolved_map, narrowings),)
-			for chased in (frozenset(target for found in findings for target in found.targets),)
+			for chased in (
+				frozenset(target for found in findings for target in target_addresses(found)),
+			)
 			for narrowing in (
 				None if chased else narrowing_at(narrowed_by_field, site.site_address),
 			)

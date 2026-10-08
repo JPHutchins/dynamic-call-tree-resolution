@@ -53,6 +53,7 @@ from dynamic_call_tree_resolution.pexplorer import PexplorerReport, load_pexplor
 from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
+	CallSiteReport,
 	ComparisonReport,
 	NestingReport,
 	PathStepReport,
@@ -409,7 +410,11 @@ def analyze(
 			if site.signature is not None
 			else ""
 		)
-		print(f"{label}: {targets or '<unresolved>'}{narrowing}")
+		print(f"{label}: {targets or _no_candidates(site)}{narrowing}")
+
+
+def _no_candidates(site: CallSiteReport) -> str:
+	return f"<external: {site.external}>" if site.external is not None else "<unresolved>"
 
 
 @app.command  # type: ignore[misc]

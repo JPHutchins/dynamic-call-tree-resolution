@@ -524,6 +524,37 @@ def test_cli_stack_path_with_elf_names_the_indirect_edge(
 	]
 
 
+def test_cli_analyze_names_the_external_function_a_slot_the_dynamic_loader_fills_calls(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	report = msgspec.json.decode(
+		dctr("analyze", "--json", str(fixture_elfs["nopie"])), type=AnalysisReport
+	)
+	assert {
+		(site.caller, site.external, site.candidates)
+		for site in report.call_sites
+		if site.external is not None
+	} == {("_start", "__libc_start_main", ())}
+
+
+def test_cli_stack_path_with_elf_ends_a_call_through_a_loader_filled_slot_at_its_external(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "start.c.ci").write_text(
+		'graph: { edge: { sourcename: "_start" targetname: "__indirect_call" } }\n'
+	)
+	stack(build_directory, elf=fixture_elfs["nopie"], path="_start")
+	assert capsys.readouterr().out.splitlines()[1:] == [
+		"_start: unbounded, at least 0 bytes (unmeasured: 2)",
+		"_start +0 = 0 bytes (unmeasured)",
+		"__libc_start_main +0 = 0 bytes via indirect: external (unmeasured)",
+	]
+
+
 def test_cli_stack_without_an_elf_reports_every_indirect_call_as_unresolved(
 	tmp_path: Path,
 	capsys: pytest.CaptureFixture[str],

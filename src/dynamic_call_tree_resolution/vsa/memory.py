@@ -47,7 +47,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Hashable, Iterable
+	from collections.abc import Hashable, Iterable, Mapping
 
 	from capstone import CsInsn, CsMemOperand, CsOperand
 
@@ -66,6 +66,8 @@ class Context(Struct):
 	read_only_starts: tuple[int, ...]
 	global_writes: Writes
 	function_starts: frozenset[Address]
+	external_symbols: Mapping[Address, str]
+	"""The undefined symbol whose address the dynamic loader writes to each slot."""
 
 
 def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
@@ -105,6 +107,11 @@ def context_for(program: Program, global_writes: Writes) -> Context:
 		function_starts=frozenset(
 			normalized(function.address, program.machine) for function in program.functions.values()
 		),
+		external_symbols={
+			relocation.slot: relocation.symbol
+			for relocation in program.relocations
+			if relocation.symbol is not None
+		},
 	)
 
 
@@ -162,7 +169,7 @@ def _image_read(context: Context, state: State, addresses: frozenset[Address]) -
 			local is None
 			and (state.globals.wild or context.global_writes.wild)
 			and not _read_only(context, address)
-		):
+		) or address in context.external_symbols:
 			return Top()
 		value = _pointer_value(context, address)
 		if value is not None:

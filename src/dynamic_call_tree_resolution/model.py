@@ -182,6 +182,8 @@ class Relocation(Struct):
 	target: Address
 	addend: int
 	type_name: str
+	symbol: str | None = None
+	"""The undefined symbol whose address the dynamic loader writes to the slot."""
 
 
 class ReferenceKind(StrEnum):
@@ -403,6 +405,8 @@ class CallSite(Struct):
 	"""
 	target: Unreached | ValueSet
 	"""What the value-set analysis tracked into the operand, before chasing."""
+	external: str | None = None
+	"""The undefined symbol whose address the dynamic loader writes to the slot."""
 
 
 class Residue(StrEnum):

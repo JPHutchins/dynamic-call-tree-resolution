@@ -248,8 +248,19 @@ def _expansion(
 	return sorted(
 		(graph_target, _indirect_kind(target, candidates, narrowed))
 		for target in candidates
-		| (fallback if INDIRECT_CALLEE in targets or not exact else frozenset[str]())
+		| (
+			fallback
+			if INDIRECT_CALLEE in targets
+			or (not exact and not _external_only(candidates, narrowed))
+			else frozenset[str]()
+		)
 		for graph_target in graph_targets(target)
+	)
+
+
+def _external_only(candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]) -> bool:
+	return bool(candidates) and all(
+		narrowed.get(target) is EdgeKind.EXTERNAL for target in candidates
 	)
 
 
