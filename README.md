@@ -41,10 +41,12 @@ Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts, plus the direct calls the linker kept
 and the indirect call sites in the Arm code that `.ci` does not record. Each indirect call also
 expands to the fallback: every function whose address the image stores, a non-branch
-instruction computes, or an address relocation kept by `--emit-relocs` names. The exception is a
-site inside a thread's tree that the thread's own analysis resolved. On an M-profile
-image, the fallback also leaves out a handler whose address only the vector table holds:
-only the hardware calls it, so it is an entry of its own.
+instruction computes, or an address relocation kept by `--emit-relocs` names. The exceptions
+are a site inside a thread's tree that the thread's own analysis resolved, and a call through
+a slot the dynamic loader fills with an undefined symbol's address: that call goes to the
+symbol, an external function the graph counts as unmeasured. On an M-profile image, the
+fallback also leaves out a handler whose address only the vector table holds: only the
+hardware calls it, so it is an entry of its own.
 
 ## Usage
 
@@ -555,6 +557,12 @@ contradicts does not hold.
 - A read-only slot's value is its value in the image as linked. A writable slot's
   candidates are its initializer and the values stored to it, so a store whose address
   or value is unknown leaves it unresolved.
+- On a dynamically linked image, a slot that a dynamic relocation fills with an undefined
+  symbol reads as unknown, not as the zero the image holds. A call that reads its target
+  from such a slot, such as x86 `call *__libc_start_main@GOTPCREL(%rip)` in glibc's
+  `_start`, goes to that symbol as an external function. A call that first loads the slot
+  into a register, such as the `__gmon_start__` call in `_init`, stays unresolved and
+  expands to the fallback ([#211], [#228]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - A store whose address the analysis cannot compute makes every writable address

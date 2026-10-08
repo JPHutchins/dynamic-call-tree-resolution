@@ -1078,18 +1078,18 @@ def _relocations(
 			addend = _relocation_addend(
 				section.is_RELA(), relocation, sections, slot, pointer_size, byte_order
 			)
+			symbol = symbol_table.get_symbol(relocation["r_info_sym"])
 			relocations.append(
 				Relocation(
 					slot=slot,
 					target=Address(
-						_relocation_target(
-							relocation["r_info_sym"],
-							symbol_table.get_symbol(relocation["r_info_sym"])["st_value"],
-							addend,
-						)
+						_relocation_target(relocation["r_info_sym"], symbol["st_value"], addend)
 					),
 					addend=addend,
 					type_name=describe_reloc_type(relocation["r_info_type"], elf),
+					symbol=symbol.name
+					if relocation["r_info_sym"] != 0 and symbol["st_shndx"] == "SHN_UNDEF"
+					else None,
 				)
 			)
 	return tuple(relocations)

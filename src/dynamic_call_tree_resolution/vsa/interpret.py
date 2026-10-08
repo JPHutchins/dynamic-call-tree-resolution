@@ -341,11 +341,13 @@ def _site_resolution(
 				target=value,
 			)
 		case MemorySite(operand=operand):
+			slot = _single(_site_operand_addresses(context, state, instruction, operand))
 			return CallSite(
 				caller_address=caller_address,
 				site_address=Address(instruction.address),
-				slot=_single(_site_operand_addresses(context, state, instruction, operand)),
+				slot=slot,
 				target=load_value(context, state, instruction, operand),
+				external=context.external_symbols.get(slot) if slot is not None else None,
 			)
 		case _ as unreachable:
 			assert_never(unreachable)

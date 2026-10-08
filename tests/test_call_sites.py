@@ -687,6 +687,17 @@ def test_analyze_is_deterministic(fixture_elfs: dict[str, Path]) -> None:
 	assert extract_call_sites(program) == extract_call_sites(program)
 
 
+def test_a_target_loaded_from_a_slot_the_dynamic_loader_fills_is_unknown(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	program = load(fixture_elfs["nopie"])
+	assert {
+		(program.functions[site.caller_address].name, site.target, site.external)
+		for site in extract_call_sites(program)
+		if program.functions[site.caller_address].name in {"_init", "_start"}
+	} == {("_init", Top(), None), ("_start", Top(), "__libc_start_main")}
+
+
 def test_function_without_code_bytes_has_no_sites() -> None:
 	program = _program(Machine.EM_X86_64, b"", functions=(("bare", 0x5000, 4),))
 	assert extract_call_sites(program) == ()
