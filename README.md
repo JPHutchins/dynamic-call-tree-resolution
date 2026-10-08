@@ -546,6 +546,12 @@ contradicts does not hold.
   instruction starts where objdump starts one, every direct branch and call goes where
   objdump says, objdump's register branches are exactly the indirect call sites, and
   every other write to `pc` is a return or a jump table the decoder follows ([#75]).
+- On every Zephyr fixture, `test_invariants` checks that every candidate `analyze`
+  reports is a callee of its site in the stack graph; that every target a resolution or
+  a narrowing names, globally or in a thread's own analysis, is in the fallback, so
+  removing a resolution never lowers a bound; and that no entry is deeper with its
+  candidates alone than with the fallback too ([#75]). On counter-su (x86), the first
+  fails ([#228]), and the second fails with `--narrow-by-signature` ([#231]).
 - A read-only slot's value is its value in the image as linked. A writable slot's
   candidates are its initializer and the values stored to it, so a store whose address
   or value is unknown leaves it unresolved.
@@ -743,3 +749,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#214]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/214
 [#219]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/219
 [#228]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/228
+[#231]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/231
