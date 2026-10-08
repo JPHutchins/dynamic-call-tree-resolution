@@ -136,11 +136,7 @@ def _narrowed(
 @pytest.mark.parametrize(
 	("name", "narrowing"),
 	[
-		pytest.param(
-			name,
-			narrowing,
-			marks=_tracked(231) if (name, narrowing) == ("counter-su", Narrowing.SIGNATURE) else (),
-		)
+		(name, narrowing)
 		for name in FIXTURES
 		for narrowing in Narrowing
 		if not (name == "counter-su" and narrowing is Narrowing.FIELD)
