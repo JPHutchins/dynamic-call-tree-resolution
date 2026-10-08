@@ -496,10 +496,13 @@ def build_report(
 				caller=program.functions[site.caller_address].name,
 				site_address=site.site_address,
 				slot_address=site.slot,
-				member_path=(
-					render_path(slot_paths[site.slot])
-					if site.slot is not None and site.slot in slot_paths
-					else None
+				member_path=next(
+					(
+						render_path(slot_paths[slot])
+						for slot in (site.loaded_from, site.slot)
+						if slot is not None and slot in slot_paths
+					),
+					None,
 				),
 				candidates=_candidates(
 					program, narrowed(chased, narrowed_by_field, site.site_address)

@@ -405,8 +405,10 @@ class CallSite(Struct):
 	"""
 	target: Unreached | ValueSet
 	"""What the value-set analysis tracked into the operand, before chasing."""
+	loaded_from: Address | None = None
+	"""The one image address the target was loaded from."""
 	external: str | None = None
-	"""The undefined symbol whose address the dynamic loader writes to the slot."""
+	"""The undefined symbol whose address the dynamic loader writes there."""
 
 
 class Residue(StrEnum):

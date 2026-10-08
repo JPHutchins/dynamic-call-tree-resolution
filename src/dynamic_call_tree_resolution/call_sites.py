@@ -192,7 +192,9 @@ def site_targets(
 		if any(map(target_addresses, chased))
 		else tuple(
 			narrowing
-			for narrowing in (by_slot.get(site.slot) if site.slot is not None else None,)
+			for narrowing in (
+				by_slot.get(site.loaded_from) if site.loaded_from is not None else None,
+			)
 			if narrowing is not None
 		)
 	)

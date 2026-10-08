@@ -29,7 +29,7 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Container, Iterable, Mapping
+	from collections.abc import Collection, Container, Iterable, Mapping
 
 	from capstone import CsInsn
 
@@ -60,6 +60,8 @@ class State(Struct):
 	"""What the stores on the path to the block wrote."""
 	escaped: bool
 	"""A frame address may be held where the analysis does not track it."""
+	loaded_from: Mapping[int, Address]
+	"""The one image address each register's value was loaded from."""
 
 
 class Store(Struct):
@@ -78,6 +80,7 @@ def top_seed(machine: Machine) -> State:
 		stack={},
 		globals=NO_WRITES,
 		escaped=False,
+		loaded_from={},
 	)
 
 
@@ -93,6 +96,11 @@ def join_states(current: State | None, incoming: State) -> State:
 		escaped=current.escaped
 		or incoming.escaped
 		or frame_copies_lost(current.sp_offsets, incoming.sp_offsets, sp_offsets),
+		loaded_from={
+			register: address
+			for register, address in current.loaded_from.items()
+			if incoming.loaded_from.get(register) == address
+		},
 	)
 
 
@@ -115,6 +123,10 @@ def _join_writes(current: Writes, incoming: Writes) -> Writes:
 
 
 def set_register(state: State, register: int, value: ValueSet) -> State:
+	return set_loaded(state, register, value, None)
+
+
+def set_loaded(state: State, register: int, value: ValueSet, source: Address | None) -> State:
 	sp_offsets = dict(state.sp_offsets)
 	sp_offsets.pop(register, None)
 	return State(
@@ -123,6 +135,33 @@ def set_register(state: State, register: int, value: ValueSet) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
+		loaded_from=_loaded(state.loaded_from, register, source),
+	)
+
+
+def _loaded(
+	loaded_from: Mapping[int, Address], register: int, source: Address | None
+) -> Mapping[int, Address]:
+	return (
+		{**loaded_from, register: source}
+		if source is not None
+		else {held: address for held, address in loaded_from.items() if held != register}
+		if register in loaded_from
+		else loaded_from
+	)
+
+
+def without_loaded(
+	loaded_from: Mapping[int, Address], registers: Collection[int]
+) -> Mapping[int, Address]:
+	return (
+		loaded_from
+		if loaded_from.keys().isdisjoint(registers)
+		else {
+			register: address
+			for register, address in loaded_from.items()
+			if register not in registers
+		}
 	)
 
 
@@ -135,6 +174,7 @@ def set_offsets(state: State, register: int, value: OffsetSet) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped or is_top(value),
+		loaded_from=_loaded(state.loaded_from, register, None),
 	)
 
 
@@ -148,6 +188,7 @@ def top_registers(state: State, registers: tuple[int, ...]) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
+		loaded_from=without_loaded(state.loaded_from, registers),
 	)
 
 
@@ -162,6 +203,7 @@ def unknown_memory(state: State) -> State:
 		stack={},
 		globals=Writes(values={}, wild=True),
 		escaped=state.escaped,
+		loaded_from=state.loaded_from,
 	)
 
 
@@ -174,6 +216,7 @@ def escaping(state: State, registers: Iterable[int]) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=True,
+		loaded_from=state.loaded_from,
 	)
 
 
@@ -204,6 +247,7 @@ def top_written(instruction: CsInsn, state: State) -> State:
 				instruction.reg_name(register) not in FLAG_REGISTER_NAMES for register in written
 			)
 		),
+		loaded_from=without_loaded(state.loaded_from, written),
 	)
 
 
@@ -333,4 +377,6 @@ def copy_register(state: State, destination: int, source: int) -> State:
 		return state
 	if source in state.sp_offsets:
 		return set_offsets(state, destination, Known(values=state.sp_offsets[source]))
-	return set_register(state, destination, lookup(state.registers, source))
+	return set_loaded(
+		state, destination, lookup(state.registers, source), state.loaded_from.get(source)
+	)

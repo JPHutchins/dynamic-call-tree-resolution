@@ -709,4 +709,5 @@ def _argument_state(
 		stack=stack,
 		globals=NO_WRITES,
 		escaped=False,
+		loaded_from={},
 	)
