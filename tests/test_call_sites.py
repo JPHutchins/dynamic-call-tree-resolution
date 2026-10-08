@@ -171,6 +171,18 @@ def test_an_x86_register_write_reaches_its_whole_register_family(
 	assert site.target == target
 
 
+def test_an_x86_64_32_bit_copy_of_a_frame_address_escapes_the_frame() -> None:
+	code = bytes.fromhex("48 c7 c0 00 30 00 0050 8d 44 24 08e8 ef 1f 00 0058 ff d0")
+	(site,) = extract_call_sites(
+		build_program(
+			Machine.EM_X86_64,
+			(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+			sections={0x1000: code, 0x3000: b"\xc3"},
+		)
+	)
+	assert site.target == Top()
+
+
 def test_an_x86_8_bit_write_drops_the_slot_its_register_was_loaded_from() -> None:
 	(site,) = extract_call_sites(
 		_x86(
