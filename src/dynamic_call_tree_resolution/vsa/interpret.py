@@ -100,6 +100,7 @@ def _called(state: State, machine: Machine) -> State:
 			stack={} if passed.escaped else passed.stack,
 			globals=Writes(values={}, wild=passed.globals.wild),
 			escaped=passed.escaped,
+			loaded_from=passed.loaded_from,
 		),
 		machine,
 	)
@@ -334,23 +335,44 @@ def _site_resolution(
 	match site_operand:
 		case RegisterSite(operand=operand):
 			value = lookup(state.registers, operand.reg)
-			return CallSite(
-				caller_address=caller_address,
-				site_address=Address(instruction.address),
-				slot=_single(value),
-				target=value,
+			return _call_site(
+				context,
+				caller_address,
+				instruction,
+				_single(value),
+				value,
+				state.loaded_from.get(operand.reg),
 			)
 		case MemorySite(operand=operand):
 			slot = _single(_site_operand_addresses(context, state, instruction, operand))
-			return CallSite(
-				caller_address=caller_address,
-				site_address=Address(instruction.address),
-				slot=slot,
-				target=load_value(context, state, instruction, operand),
-				external=context.external_symbols.get(slot) if slot is not None else None,
+			return _call_site(
+				context,
+				caller_address,
+				instruction,
+				slot,
+				load_value(context, state, instruction, operand),
+				slot,
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _call_site(
+	context: Context,
+	caller_address: Address,
+	instruction: CsInsn,
+	slot: Address | None,
+	target: ValueSet,
+	loaded_from: Address | None,
+) -> CallSite:
+	return CallSite(
+		caller_address=caller_address,
+		site_address=Address(instruction.address),
+		slot=slot,
+		target=target,
+		loaded_from=loaded_from,
+		external=context.external_symbols.get(loaded_from) if loaded_from is not None else None,
+	)
 
 
 def _single(value: ValueSet) -> Address | None:

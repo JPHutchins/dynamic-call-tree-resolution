@@ -30,6 +30,7 @@ from dynamic_call_tree_resolution.vsa.memory import (
 	Frame,
 	anywhere,
 	load_value,
+	loaded,
 	memory_addresses,
 	memory_destination,
 	stack_offsets,
@@ -42,10 +43,12 @@ from dynamic_call_tree_resolution.vsa.state import (
 	copy_register,
 	escaping,
 	frame_based,
+	set_loaded,
 	set_offsets,
 	set_register,
 	stack_read,
 	top_written,
+	without_loaded,
 )
 
 if TYPE_CHECKING:
@@ -68,8 +71,8 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 					state, destination.reg, Known(values=frozenset({Address(source.imm)}))
 				)
 			case (x86_const.X86_OP_REG, x86_const.X86_OP_MEM):
-				return set_register(
-					state, destination.reg, load_value(context, state, instruction, source)
+				return set_loaded(
+					state, destination.reg, *loaded(context, state, instruction, source)
 				)
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_REG):
 				return store_value(
@@ -204,4 +207,5 @@ def _pop(state: State, sp: int, pointer_size: int, destination: int) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
+		loaded_from=without_loaded(state.loaded_from, (destination,)),
 	)

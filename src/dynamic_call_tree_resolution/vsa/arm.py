@@ -33,7 +33,7 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 )
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
-	load_value,
+	loaded,
 	register_destination,
 	scaled_addresses,
 	store_at,
@@ -46,11 +46,13 @@ from dynamic_call_tree_resolution.vsa.state import (
 	copy_register,
 	escaping,
 	frame_based,
+	set_loaded,
 	set_offsets,
 	set_register,
 	stack_read,
 	top_written,
 	unknown_memory,
+	without_loaded,
 )
 
 if TYPE_CHECKING:
@@ -91,18 +93,19 @@ def _apply_unconditional(
 		)
 	if base_mnemonic in ARM_LOADS:
 		load_destination, load_source = _arm_operands(instruction)[0], instruction.operands[1]
-		value = load_value(context, state, instruction, load_source)
+		value, origin = loaded(context, state, instruction, load_source)
 		if len(instruction.operands) == 3:
 			offset = instruction.operands[2]
 			updated = _advance(state, load_source.mem.base, offset.imm)
-			return set_register(updated, load_destination.reg, value)
+			return set_loaded(updated, load_destination.reg, value, origin)
 		if instruction.writeback and load_source.mem.base != load_destination.reg:
-			return set_register(
+			return set_loaded(
 				_advance(state, load_source.mem.base, load_source.mem.disp),
 				load_destination.reg,
 				value,
+				origin,
 			)
-		return set_register(state, load_destination.reg, value)
+		return set_loaded(state, load_destination.reg, value, origin)
 	if base_mnemonic in ARM_STORE_WIDTHS:
 		return _arm_store(context, instruction, base_mnemonic, state)
 	if base_mnemonic.startswith(("st", "vst")):
@@ -286,4 +289,5 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
+		loaded_from=without_loaded(state.loaded_from, registers),
 	)

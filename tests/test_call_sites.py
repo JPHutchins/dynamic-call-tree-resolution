@@ -94,6 +94,34 @@ def test_a_site_in_a_block_control_flow_never_reaches_is_unreached() -> None:
 	assert (site.site_address, site.target) == (0x1001, Unreached())
 
 
+@pytest.mark.parametrize(
+	("code", "loaded_from"),
+	[
+		pytest.param("48 8b 05 f9 0f 00 00ff d0", 0x2000, id="loaded"),
+		pytest.param("48 8b 05 f9 0f 00 0048 89 c3ff d3", 0x2000, id="copied"),
+		pytest.param("48 8b 05 f9 0f 00 0048 c7 c0 00 30 00 00ff d0", None, id="overwritten"),
+		pytest.param(
+			"48 8b 05 f9 0f 00 0048 85 c074 0748 8b 05 f5 0f 00 00ff d0",
+			None,
+			id="loaded from two slots on two paths",
+		),
+	],
+)
+def test_x86_register_site_records_the_one_slot_its_target_was_loaded_from(
+	code: str, loaded_from: int | None
+) -> None:
+	(site,) = extract_call_sites(
+		_x86(
+			bytes.fromhex(code),
+			objects=(
+				("slot", 0x2000, _pointer(0x3000, 8)),
+				("other", 0x2008, _pointer(0x3000, 8)),
+			),
+		)
+	)
+	assert site.loaded_from == loaded_from
+
+
 def test_x86_register_load_chain_dereferences() -> None:
 	program = _x86(
 		bytes.fromhex("48 8b 05 f9 0f 00 00ff d0"), objects=(("slot", 0x2000, _pointer(0x3000, 8)),)
@@ -695,7 +723,7 @@ def test_a_target_loaded_from_a_slot_the_dynamic_loader_fills_is_unknown(
 		(program.functions[site.caller_address].name, site.target, site.external)
 		for site in extract_call_sites(program)
 		if program.functions[site.caller_address].name in {"_init", "_start"}
-	} == {("_init", Top(), None), ("_start", Top(), "__libc_start_main")}
+	} == {("_init", Top(), "__gmon_start__"), ("_start", Top(), "__libc_start_main")}
 
 
 def test_function_without_code_bytes_has_no_sites() -> None:

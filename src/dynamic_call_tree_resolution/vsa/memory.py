@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
 	from capstone import CsInsn, CsMemOperand, CsOperand
 
-	from dynamic_call_tree_resolution.model import Program
+	from dynamic_call_tree_resolution.model import Machine, Program
 
 
 class Context(Struct):
@@ -225,44 +225,30 @@ def memory_addresses(context: Context, state: State, memory: CsMemOperand) -> Va
 
 
 def load_value(context: Context, state: State, instruction: CsInsn, operand: CsOperand) -> ValueSet:
-	match context.program.machine.family:
-		case InstructionFamily.X86:
-			return _x86_load_value(context, state, instruction, operand)
-		case InstructionFamily.ARM:
-			return _arm_load_value(context, state, instruction, operand)
+	return loaded(context, state, instruction, operand)[0]
+
+
+def loaded(
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand
+) -> tuple[ValueSet, Address | None]:
+	"""A load's value, and the one image address it reads when there is one."""
+	memory = operand.mem
+	match _load_addresses(context, state, instruction, memory):
+		case None:
+			return stack_read(state.stack, stack_offsets(state, memory, memory.base)), None
+		case Known(values=values) as addresses if len(values) == 1:
+			return _image_value(context, state, addresses), next(iter(values))
+		case Known() | Top() as addresses:
+			return _image_value(context, state, addresses), None
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _x86_load_value(
-	context: Context, state: State, instruction: CsInsn, operand: CsOperand
-) -> ValueSet:
-	memory = operand.mem
-	if memory.base == x86_const.X86_REG_RIP:
-		return _pc_relative_value(context, state, instruction, memory.disp)
-	if frame_based(state, context.program.machine, memory.base):
-		return stack_read(state.stack, stack_offsets(state, memory, memory.base))
-	return _image_value(context, state, memory_addresses(context, state, memory))
-
-
-def _arm_load_value(
-	context: Context, state: State, instruction: CsInsn, operand: CsOperand
-) -> ValueSet:
-	memory = operand.mem
-	if memory.base == arm_const.ARM_REG_PC and memory.index == 0:
-		return _pc_relative_value(context, state, instruction, memory.disp)
-	if memory.base == arm_const.ARM_REG_SP or memory.base in state.sp_offsets:
-		return stack_read(state.stack, stack_offsets(state, memory, memory.base))
-	return _image_value(context, state, memory_addresses(context, state, memory))
-
-
-def _pc_relative_value(
-	context: Context, state: State, instruction: CsInsn, displacement: int
-) -> ValueSet:
-	return _image_value(
-		context,
-		state,
-		Known(
+def _load_addresses(
+	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
+) -> ValueSet | None:
+	if _pc_relative(context.program.machine, memory):
+		return Known(
 			values=frozenset(
 				{
 					Address(
@@ -270,12 +256,24 @@ def _pc_relative_value(
 							instruction,
 							instruction_set_at(context.program, Address(instruction.address)),
 						)
-						+ displacement
+						+ memory.disp
 					)
 				}
 			)
-		),
-	)
+		)
+	if frame_based(state, context.program.machine, memory.base):
+		return None
+	return memory_addresses(context, state, memory)
+
+
+def _pc_relative(machine: Machine, memory: CsMemOperand) -> bool:
+	match machine.family:
+		case InstructionFamily.X86:
+			return memory.base == x86_const.X86_REG_RIP
+		case InstructionFamily.ARM:
+			return memory.base == arm_const.ARM_REG_PC and memory.index == 0
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 class Frame(Struct):
@@ -348,6 +346,7 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 					stack=frame_write(state.stack, offsets, store, pointer_size),
 					globals=state.globals,
 					escaped=state.escaped,
+					loaded_from=state.loaded_from,
 				),
 			)
 		case Image(addresses=addresses):
@@ -361,6 +360,7 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 					stack={} if state.escaped and is_top(addresses) else state.stack,
 					globals=image_write(state.globals, addresses, store, pointer_size),
 					escaped=state.escaped,
+					loaded_from=state.loaded_from,
 				),
 			)
 		case Unknown():
@@ -399,6 +399,11 @@ def weakened(context: Context, before: State, after: State) -> State:
 		escaped=before.escaped
 		or after.escaped
 		or frame_copies_lost(before.sp_offsets, after.sp_offsets, sp_offsets),
+		loaded_from={
+			register: address
+			for register, address in before.loaded_from.items()
+			if after.loaded_from.get(register) == address
+		},
 	)
 
 

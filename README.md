@@ -560,9 +560,10 @@ contradicts does not hold.
 - On a dynamically linked image, a slot that a dynamic relocation fills with an undefined
   symbol reads as unknown, not as the zero the image holds. A call that reads its target
   from such a slot, such as x86 `call *__libc_start_main@GOTPCREL(%rip)` in glibc's
-  `_start`, goes to that symbol as an external function. A call that first loads the slot
-  into a register, such as the `__gmon_start__` call in `_init`, stays unresolved and
-  expands to the fallback ([#211], [#228]).
+  `_start`, goes to that symbol as an external function, and so does a call through a
+  register loaded from such a slot, such as the `__gmon_start__` call in x86-64 `_init`.
+  On i386, `_init` finds the slot through `__x86.get_pc_thunk.bx`, which the analysis
+  doesn't follow, so that call stays unresolved and expands to the fallback ([#228]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - A store whose address the analysis cannot compute makes every writable address
@@ -582,9 +583,9 @@ contradicts does not hold.
   RAM, so their sites stay unresolved, and two threads' trees rejoin below them ([#151],
   [#159]). With `--narrow-by-field`, each narrows to the emulator on its own bus.
 - `--narrow-by-signature` compares DWARF signatures for equality, so a cast defeats
-  it. It is off by default. It narrows only a site whose call instruction reads its
-  target from memory, such as x86 `call *(%rax)`. An Arm `blx` takes its target from a
-  register, so on Arm it narrows nothing yet ([#211]).
+  it. It is off by default. It narrows a site whose target comes from one slot the
+  analysis can name: read by the call itself, as in x86 `call *(%rax)`, or loaded into the
+  register the call branches through, as in Arm `ldr r3, [r3]; blx r3` ([#211]).
 - `--assume-no-recursion FUNCTION`, repeated for each function, states that the function
   never calls itself and drops its call to itself. Only a direct self-call is dropped: a
   function on a longer cycle stays recursive. Nothing checks the assumption; the header

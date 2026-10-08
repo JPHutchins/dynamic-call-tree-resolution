@@ -29,6 +29,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.cli import analyze, compare, main, referrers, stack, summary
 from tests.dctr import dctr
 from tests.expected import EXPECTED_PATHS
+from tests.toolchains import FIXTURES, build_cortex_m3
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -413,6 +414,20 @@ def test_cli_analyze_prints_the_signature_it_narrowed_a_site_to(
 	] == ["handle (narrowed by signature void (int), unsound under casts)"]
 
 
+def test_cli_analyze_narrows_an_arm_site_by_the_signature_of_the_slot_it_loaded_its_target_from(
+	tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	analyze(
+		build_cortex_m3((FIXTURES / "signature_thread.c",), tmp_path / "image.elf", "-O2", "-g"),
+		narrow_by_signature=True,
+	)
+	assert [
+		line.split(": ", 1)[1]
+		for line in capsys.readouterr().out.splitlines()
+		if line.startswith("worker@")
+	] == ["handle (narrowed by signature void (int), unsound under casts)"]
+
+
 def _worker_site(out: str) -> CallSiteReport:
 	(site,) = (
 		site
@@ -534,24 +549,29 @@ def test_cli_analyze_names_the_external_function_a_slot_the_dynamic_loader_fills
 		(site.caller, site.external, site.candidates)
 		for site in report.call_sites
 		if site.external is not None
-	} == {("_start", "__libc_start_main", ())}
+	} == {("_init", "__gmon_start__", ()), ("_start", "__libc_start_main", ())}
 
 
+@pytest.mark.parametrize(
+	("caller", "external"), [("_start", "__libc_start_main"), ("_init", "__gmon_start__")]
+)
 def test_cli_stack_path_with_elf_ends_a_call_through_a_loader_filled_slot_at_its_external(
 	tmp_path: Path,
 	fixture_elfs: dict[str, Path],
 	capsys: pytest.CaptureFixture[str],
+	caller: str,
+	external: str,
 ) -> None:
 	build_directory = tmp_path / "build"
 	build_directory.mkdir()
 	(build_directory / "start.c.ci").write_text(
-		'graph: { edge: { sourcename: "_start" targetname: "__indirect_call" } }\n'
+		f'graph: {{ edge: {{ sourcename: "{caller}" targetname: "__indirect_call" }} }}\n'
 	)
-	stack(build_directory, elf=fixture_elfs["nopie"], path="_start")
+	stack(build_directory, elf=fixture_elfs["nopie"], path=caller)
 	assert capsys.readouterr().out.splitlines()[1:] == [
-		"_start: unbounded, at least 0 bytes (unmeasured: 2)",
-		"_start +0 = 0 bytes (unmeasured)",
-		"__libc_start_main +0 = 0 bytes via indirect: external (unmeasured)",
+		f"{caller}: unbounded, at least 0 bytes (unmeasured: 2)",
+		f"{caller} +0 = 0 bytes (unmeasured)",
+		f"{external} +0 = 0 bytes via indirect: external (unmeasured)",
 	]
 
 
