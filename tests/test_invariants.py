@@ -51,7 +51,7 @@ class Narrowing(StrEnum):
 	SIGNATURE = "signature"
 
 
-def _unsound(issue: int) -> pytest.MarkDecorator:
+def _tracked(issue: int) -> pytest.MarkDecorator:
 	return pytest.mark.xfail(
 		strict=True,
 		raises=AssertionError,
@@ -83,7 +83,7 @@ def expansions(zephyr_fixtures: Path) -> Mapping[str, Expansion]:
 
 @pytest.mark.parametrize(
 	"name",
-	[pytest.param(name, marks=_unsound(228) if name == "counter-su" else ()) for name in FIXTURES],
+	[pytest.param(name, marks=_tracked(228) if name == "counter-su" else ()) for name in FIXTURES],
 )
 def test_every_candidate_analyze_reports_is_a_callee_of_its_site_in_the_stack_graph(
 	expansions: Mapping[str, Expansion], name: str
@@ -139,7 +139,7 @@ def _narrowed(
 		pytest.param(
 			name,
 			narrowing,
-			marks=_unsound(231) if (name, narrowing) == ("counter-su", Narrowing.SIGNATURE) else (),
+			marks=_tracked(231) if (name, narrowing) == ("counter-su", Narrowing.SIGNATURE) else (),
 		)
 		for name in FIXTURES
 		for narrowing in Narrowing
