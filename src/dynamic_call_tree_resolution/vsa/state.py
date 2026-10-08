@@ -220,18 +220,23 @@ def escaping(state: State, registers: Iterable[int]) -> State:
 	)
 
 
-def top_written(instruction: CsInsn, state: State) -> State:
+def top_written(instruction: CsInsn, state: State, roots: Mapping[int, int] | None = None) -> State:
 	read, written = instruction.regs_access()
+	dropped = (
+		written
+		if roots is None
+		else {*written, *(roots.get(register, register) for register in written)}
+	)
 	return State(
 		registers={
 			register: value
 			for register, value in state.registers.items()
-			if register not in written
+			if register not in dropped
 		},
 		sp_offsets={
 			register: value
 			for register, value in state.sp_offsets.items()
-			if register not in written
+			if register not in dropped
 		},
 		stack=state.stack,
 		globals=state.globals,
@@ -247,7 +252,7 @@ def top_written(instruction: CsInsn, state: State) -> State:
 				instruction.reg_name(register) not in FLAG_REGISTER_NAMES for register in written
 			)
 		),
-		loaded_from=without_loaded(state.loaded_from, written),
+		loaded_from=without_loaded(state.loaded_from, dropped),
 	)
 
 

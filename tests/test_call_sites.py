@@ -122,6 +122,65 @@ def test_x86_register_site_records_the_one_slot_its_target_was_loaded_from(
 	assert site.loaded_from == loaded_from
 
 
+@pytest.mark.parametrize(
+	("machine", "code", "target"),
+	[
+		pytest.param(
+			Machine.EM_X86_64,
+			"b8 00 30 00 00ff d0",
+			Known(values=frozenset({Address(0x3000)})),
+			id="a 32-bit write zero-extends",
+		),
+		pytest.param(
+			Machine.EM_X86_64,
+			"48 c7 c0 00 30 00 00b8 00 20 00 00ff d0",
+			Known(values=frozenset({Address(0x2000)})),
+			id="a 32-bit write replaces the 64-bit value",
+		),
+		pytest.param(
+			Machine.EM_X86_64,
+			"48 c7 c0 00 30 00 00b0 01ff d0",
+			Top(),
+			id="an 8-bit write leaves the 64-bit value unknown",
+		),
+		pytest.param(
+			Machine.EM_X86_64,
+			"31 c0ff d0",
+			Known(values=frozenset({Address(0)})),
+			id="a 32-bit xor zeroes the 64-bit register",
+		),
+		pytest.param(
+			Machine.EM_386,
+			"b8 00 30 00 00b0 01ff d0",
+			Top(),
+			id="an 8-bit write leaves the 32-bit value unknown",
+		),
+	],
+)
+def test_an_x86_register_write_reaches_its_whole_register_family(
+	machine: Machine, code: str, target: Known[Address] | Top
+) -> None:
+	(site,) = extract_call_sites(
+		_program(
+			machine,
+			bytes.fromhex(code),
+			functions=(("caller", 0x1000, len(bytes.fromhex(code))), ("target", 0x3000, 1)),
+			pointer_size=8 if machine is Machine.EM_X86_64 else 4,
+		)
+	)
+	assert site.target == target
+
+
+def test_an_x86_8_bit_write_drops_the_slot_its_register_was_loaded_from() -> None:
+	(site,) = extract_call_sites(
+		_x86(
+			bytes.fromhex("48 8b 05 f9 0f 00 00b0 01ff d0"),
+			objects=(("slot", 0x2000, _pointer(0x3000, 8)),),
+		)
+	)
+	assert (site.target, site.loaded_from) == (Top(), None)
+
+
 def test_x86_register_load_chain_dereferences() -> None:
 	program = _x86(
 		bytes.fromhex("48 8b 05 f9 0f 00 00ff d0"), objects=(("slot", 0x2000, _pointer(0x3000, 8)),)

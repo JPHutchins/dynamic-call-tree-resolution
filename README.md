@@ -570,8 +570,11 @@ contradicts does not hold.
   unknown, so a site that reads its target from RAM is unresolved unless its own path
   wrote that target.
 - Value-set analysis per-site sets are refinements, not over-approximations: its
-  control-flow graph misses x86 `notrack` switches, and it does not model x86
-  sub-registers or a few kinds of write ([#113]).
+  control-flow graph misses x86 `notrack` switches, and it does not model a few kinds of
+  x86 write ([#113]). An x86 register write reaches its whole family: a 32-bit write on
+  x86-64 zero-extends into its 64-bit register, and a 16- or 8-bit write leaves the
+  family's value unknown. A read of a narrower register than the family's widest is
+  unknown.
 - The value-set analysis reads a function symbol of size zero (hand-written assembly) up
   to the next function, so the calls and stores made there count ([#219]). Code under
   no function symbol is not read ([#96]).
