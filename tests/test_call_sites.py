@@ -262,6 +262,26 @@ def test_the_fall_through_of_a_call_that_never_returns_is_dead(
 	] == [(0x1004, dead)]
 
 
+@pytest.mark.parametrize(
+	("code", "targets"),
+	[
+		pytest.param("43f20103 c0f20103 9bb2 9847", {0x3001}, id="uxth"),
+		pytest.param("43f24103 dbb2 9847", {0x41}, id="uxtb"),
+		pytest.param("43f20103 c0f20103 1ffa93f3 9847", set[int](), id="uxth with a rotation"),
+	],
+)
+def test_a_zero_extend_keeps_the_low_bits_of_each_value(code: str, targets: set[int]) -> None:
+	(site,) = extract_call_sites(
+		build_program(
+			Machine.EM_ARM,
+			(("caller", 0x1000, len(bytes.fromhex(code))),),
+			sections={0x1000: bytes.fromhex(code)},
+			pointer_size=4,
+		)
+	)
+	assert tracked_values(site) == targets
+
+
 def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:
 	program = build_program(
 		Machine.EM_ARM,

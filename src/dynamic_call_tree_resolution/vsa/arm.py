@@ -19,6 +19,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_REGISTER_BYTES,
 	ARM_STORE_WIDTHS,
 	ARM_STORED_REGISTERS,
+	ARM_ZERO_EXTEND_MASKS,
 	arm_mnemonic,
 	arm_predicated,
 )
@@ -133,7 +134,22 @@ def _apply_unconditional(
 				return top_written(instruction, state)  # pragma: no cover
 	if base_mnemonic in ("add", "adds", "sub", "subs"):
 		return _arm_arithmetic(context, instruction, state, base_mnemonic)
+	if base_mnemonic in ARM_ZERO_EXTEND_MASKS:
+		return _arm_zero_extend(instruction, state, ARM_ZERO_EXTEND_MASKS[base_mnemonic])
 	return top_written(instruction, state)
+
+
+def _arm_zero_extend(instruction: CsInsn, state: State, mask: int) -> State:
+	destination, source = _arm_operands(instruction)[:2]
+	return (
+		set_register(
+			state,
+			destination.reg,
+			map_set(lookup(state.registers, source.reg), lambda value: Address(value & mask)),
+		)
+		if len(instruction.operands) == 2 and source.shift.type == arm_const.ARM_SFT_INVALID
+		else top_written(instruction, state)
+	)
 
 
 def _arm_store(context: Context, instruction: CsInsn, base_mnemonic: str, state: State) -> State:
