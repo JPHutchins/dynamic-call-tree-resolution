@@ -24,6 +24,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	SP_REGISTERS,
 	X86_64_ARGUMENT_REGISTERS,
+	is_data,
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.cfg import (
@@ -566,7 +567,7 @@ def _prewarm_instructions(
 	for _, blocks in functions:
 		for block in blocks:
 			for instruction in block.instructions:
-				if instruction.mnemonic == ".byte":
+				if is_data(instruction):
 					continue
 				for operand in instruction.operands:
 					_prewarm_operand(operand, machine)
