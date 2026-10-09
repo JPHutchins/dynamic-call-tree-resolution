@@ -39,7 +39,7 @@ from dynamic_call_tree_resolution.loader import (
 	defined_function_names,
 )
 from dynamic_call_tree_resolution.model import ArmCore, ArmProfile, InstructionSet, aligned
-from dynamic_call_tree_resolution.points_to import instruction_set_at, read_pointer
+from dynamic_call_tree_resolution.points_to import instruction_set_at, pointer_at, read_pointer
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
 from tests.toolchains import FIXTURES, build_cortex_a15, build_cortex_m3, host_cc
 
@@ -60,6 +60,68 @@ def test_load_without_dwarf(fixture_elfs: dict[str, Path]) -> None:
 	assert "driver_a_open" in names
 	assert "plain_target" in names
 	assert program.layouts == {}
+
+
+@pytest.mark.image
+def test_a_cortex_m3_image_stripped_of_debug_information_loads_from_its_symbols(
+	tmp_path: Path,
+) -> None:
+	built = build_cortex_m3(
+		(FIXTURES / "reproducers" / "config_loop.c",), tmp_path / "debug.elf", "-O2", "-g"
+	)
+	stripped = tmp_path / "stripped.elf"
+	subprocess.run(
+		["arm-none-eabi-objcopy", "--strip-debug", str(built), str(stripped)],
+		check=True,
+		capture_output=True,
+	)
+	with stripped.open("rb") as stream:
+		has_dwarf = ELFFile(stream).has_dwarf_info()
+	program = load(stripped)
+	assert (
+		has_dwarf,
+		{"run", "hook", "main"} <= {function.name for function in program.functions.values()},
+		{function.signature for function in program.functions.values()},
+		program.layouts,
+		program.never_returns,
+	) == (False, True, {None}, {}, frozenset())
+
+
+def test_a_dwarf_3_image_sizes_its_functions_as_dwarf_4_does(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	assert {
+		function.name: function.size for function in load(fixture_elfs["dwarf3"]).functions.values()
+	} == {
+		function.name: function.size for function in load(fixture_elfs["dwarf4"]).functions.values()
+	}
+
+
+@pytest.mark.image
+def test_a_big_endian_arm_image_reads_its_pointers_big_endian(tmp_path: Path) -> None:
+	elf = tmp_path / "big.elf"
+	subprocess.run(
+		[
+			"arm-none-eabi-gcc",
+			"-std=gnu2x",
+			"-mcpu=cortex-a15",
+			"-marm",
+			"-mbig-endian",
+			"-nostdlib",
+			"-O2",
+			"-e",
+			"main",
+			str(FIXTURES / "minimal.c"),
+			"-o",
+			str(elf),
+		],
+		check=True,
+		capture_output=True,
+	)
+	program = load(elf)
+	(slot,) = (data for data in program.objects.values() if data.name == "ping_cb")
+	(ping,) = (function for function in program.functions.values() if function.name == "ping")
+	assert (program.byte_order, pointer_at(program, slot.address)) == ("big", ping.address)
 
 
 def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
