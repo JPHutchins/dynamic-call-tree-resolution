@@ -53,6 +53,7 @@ from tests.decode_oracle import (
 	unexplained_pc_writes,
 	unreadable,
 )
+from tests.dwarf_call_values import checked
 from tests.sites import tracked_values
 from tests.toolchains import (
 	FIXTURES,
@@ -642,6 +643,15 @@ def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
 		seeded.seeded,
 		_worker_targets(program, seeded, seeded.sites),
 	) == (frozenset(), frozenset({"record"}), outcomes[image].observations["worker"])
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in ARM_IMAGES]
+)
+def test_every_constant_dwarf_call_value_is_an_argument_the_analysis_allows(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	assert checked(outcomes[image].elf).excluded == ()
 
 
 @pytest.mark.parametrize(
