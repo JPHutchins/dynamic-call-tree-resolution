@@ -256,6 +256,8 @@ class Program(Struct):
 	"""The code spans of each function's inlined copies, from DWARF."""
 	declarations: Mapping[Address, Declaration] = {}
 	"""Each function's declaration, by where its code starts; a clone has its origin's."""
+	never_returns: frozenset[Address] = frozenset()
+	"""Where the code of each function DWARF declares never returns starts."""
 	symbol_addresses: Mapping[str, frozenset[Address]] = {}
 	"""Where each function symbol's code starts, aliases included."""
 	labels: Mapping[str, Address] = {}
@@ -403,7 +405,7 @@ class Unreached(Struct):
 
 
 class Dead(Struct):
-	"""A site that only branches the analysis's values decide against lead to."""
+	"""A site that only decided-against branches or calls that never return lead to."""
 
 
 class CallSite(Struct):

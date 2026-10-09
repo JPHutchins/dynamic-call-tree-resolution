@@ -193,6 +193,75 @@ def test_a_site_only_branches_the_values_decide_against_lead_to_calls_nothing(
 	)
 
 
+@pytest.mark.parametrize(
+	("code", "halt", "declared", "dead"),
+	[
+		pytest.param("00f002f898477047 7047 7047 7047", 0x100A, (0x1008,), True, id="declared"),
+		pytest.param("00f002f898477047 7047 7047 7047", 0x100A, (), False, id="not declared"),
+		pytest.param("00f002f898477047 ffe7 7047 7047", 0x100A, (0x100A,), True, id="tail branch"),
+		pytest.param(
+			"00f002f898477047 004c 2047 11100000 7047 7047",
+			0x1010,
+			(0x1010,),
+			True,
+			id="tail jump through a literal",
+		),
+		pytest.param("00f002f898477047 fee7 7047 7047", 0x100A, (), True, id="a loop"),
+		pytest.param(
+			"00f002f898477047 0028 08bf 7047 00f000f8 7047 7047",
+			0x1012,
+			(0x1012,),
+			False,
+			id="a predicated return first",
+		),
+		pytest.param(
+			"00f002f898477047 08b1 00f001f8 7047 7047 7047",
+			0x1010,
+			(0x1010,),
+			False,
+			id="cbz around the call",
+		),
+		pytest.param(
+			"00f002f898477047 1847 7047 7047", 0x100A, (0x100A,), False, id="an unknown jump"
+		),
+		pytest.param(
+			"00f002f898477047 0028 02d0 00f000f8 7047 7047",
+			0x1010,
+			(0x1010,),
+			False,
+			id="a conditional branch to a function that returns",
+		),
+		pytest.param(
+			"00f002f898477047 0128 04d8 dfe800f0 0103 00f002f8 00f000f8 7047",
+			0x101A,
+			(0x101A,),
+			False,
+			id="a table branch",
+		),
+	],
+)
+def test_the_fall_through_of_a_call_that_never_returns_is_dead(
+	code: str, halt: int, declared: tuple[int, ...], dead: bool
+) -> None:
+	program = build_program(
+		Machine.EM_ARM,
+		(
+			("caller", 0x1000, 8),
+			("callee", 0x1008, halt - 0x1008),
+			("halt", halt, 2),
+			("other", halt + 2, 2),
+		),
+		sections={0x1000: bytes.fromhex(code)},
+		pointer_size=4,
+		never_returns=frozenset(declared),
+	)
+	assert [
+		(site.site_address, isinstance(site.target, Dead))
+		for site in extract_call_sites(program)
+		if site.caller_address == 0x1000
+	] == [(0x1004, dead)]
+
+
 def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:
 	program = build_program(
 		Machine.EM_ARM,

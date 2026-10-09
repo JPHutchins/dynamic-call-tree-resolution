@@ -35,6 +35,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 from dynamic_call_tree_resolution.vsa.arm import apply_arm
 from dynamic_call_tree_resolution.vsa.cfg import (
 	Block,
+	CallsNoReturn,
 	DirectCall,
 	MemorySite,
 	RegisterSite,
@@ -194,6 +195,8 @@ def _live_successors(block: Block, state: State) -> tuple[Address, ...]:
 					return fallthrough
 				case _ as unreachable:
 					assert_never(unreachable)
+		case CallsNoReturn():
+			return ()
 		case _ as unreachable:
 			assert_never(unreachable)
 

@@ -42,6 +42,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 )
 from dynamic_call_tree_resolution.stack_usage import load_stack_usages
 from dynamic_call_tree_resolution.vsa import address_taken, linked_calls
+from dynamic_call_tree_resolution.vsa.cfg import CallsNoReturn, control_flow_graphs
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.decode_oracle import (
 	Decoded,
@@ -174,6 +175,7 @@ ARM_CASES: tuple[tuple[str, str], ...] = (
 	("writeback_walk.c", "walk"),
 	("cast_handler.c", "main"),
 	("assembly_call.c", "run"),
+	("noreturn_call.c", "run"),
 )
 
 
@@ -512,6 +514,25 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 		for address in tracked_values(site)
 		if address in program.functions and address not in taken
 	] == []
+
+
+@pytest.mark.parametrize(
+	"image",
+	[
+		pytest.param(image, id=_image_id(image))
+		for image in IMAGES
+		if image.source == "noreturn_call.c"
+	],
+)
+def test_a_call_to_a_function_that_only_loops_has_no_fall_through(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	assert {
+		function.name
+		for function, blocks in control_flow_graphs(load(outcomes[image].elf)).values()
+		for block in blocks
+		if isinstance(block.condition, CallsNoReturn)
+	} >= {"run"}
 
 
 @pytest.mark.parametrize(
