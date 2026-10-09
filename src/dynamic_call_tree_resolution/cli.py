@@ -49,7 +49,7 @@ from dynamic_call_tree_resolution.loader import (
 	line_spans,
 	load,
 )
-from dynamic_call_tree_resolution.model import Address, Machine, Residue
+from dynamic_call_tree_resolution.model import Address, Dead, Machine, Residue, Unreached
 from dynamic_call_tree_resolution.pexplorer import PexplorerReport, load_pexplorer
 from dynamic_call_tree_resolution.points_to import unresolved_slots
 from dynamic_call_tree_resolution.report import (
@@ -113,6 +113,7 @@ from dynamic_call_tree_resolution.vsa.frames import (
 	code_measure,
 	own_frames,
 )
+from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from dynamic_call_tree_resolution.vsa.links import linked_calls
 from dynamic_call_tree_resolution.vsa.vectors import (
 	HARD_FAULT,
@@ -150,6 +151,12 @@ _ASSUME_NO_RECURSION: Final = Parameter(
 	"say so"
 )
 
+_ASSUME_UNWRITTEN: Final = Parameter(
+	help="assume the program never writes this data object after it loads, so a load from "
+	"it reads its value in the image even where a store's address is unknown; repeat it "
+	"for each object. Nothing checks it, and the rows that rest on it say so"
+)
+
 _RTOS: Final = Parameter(
 	help="the RTOS whose threads start their entries with known arguments: auto detects "
 	"it, and none models no RTOS"
@@ -177,6 +184,7 @@ def _render(report: StackReport) -> str:
 					("assumed no recursion", bound.assumed_no_recursion),
 					("narrowed by field", bound.narrowed_by_field),
 					("narrowed by signature", bound.narrowed_by_signature),
+					("assumed unwritten", bound.assumed_unwritten),
 				),
 				_thread_stack_additions(bound),
 				(*_nesting_notes(report.nesting), *_stack_notes(report)),
@@ -191,6 +199,7 @@ def _render(report: StackReport) -> str:
 					("assumed no recursion", bound.assumed_no_recursion),
 					("narrowed by field", bound.narrowed_by_field),
 					("narrowed by signature", bound.narrowed_by_signature),
+					("assumed unwritten", bound.assumed_unwritten),
 					("dynamic", bound.dynamic),
 					("unresolved", bound.unresolved),
 				),
@@ -548,6 +557,17 @@ class Expansion(Struct):
 	"""The entries the linker left out of the image, by why; empty under name membership."""
 	phantom_libcalls: frozenset[str]
 	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
+	assumed_unwritten: AssumedUnwritten
+
+
+class AssumedUnwritten(Struct):
+	"""What ``--assume-unwritten`` changed."""
+
+	objects: tuple[str, ...]
+	callers: frozenset[str]
+	"""The callers whose indirect calls it changed, by frame key."""
+	thread_callers: Mapping[str, frozenset[str]]
+	"""The same, in each thread's own analysis."""
 
 
 class _Artifacts(Struct):
@@ -666,6 +686,7 @@ def elf_expansion(
 	narrow_by_signature: bool,
 	narrow_by_field: bool,
 	rtos: RtosChoice,
+	assume_unwritten: tuple[str, ...] = (),
 ) -> Expansion:
 	"""Expand a build directory's indirect calls against its ELF image."""
 	image = _loaded(elf)
@@ -675,6 +696,7 @@ def elf_expansion(
 		narrow_by_signature=narrow_by_signature,
 		narrow_by_field=narrow_by_field,
 		rtos=rtos,
+		assume_unwritten=assume_unwritten,
 	)
 
 
@@ -685,6 +707,7 @@ def _expand_from_elf(
 	narrow_by_signature: bool,
 	narrow_by_field: bool,
 	rtos: RtosChoice,
+	assume_unwritten: tuple[str, ...] = (),
 ) -> Expansion:
 	image_functions = _image_functions(artifacts, image)
 	in_image_edges = tuple(
@@ -692,7 +715,8 @@ def _expand_from_elf(
 	)
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
 	model = rtos_model(image.program, rtos, _kconfig(image.elf))
-	resolution = resolve(image.program, model)
+	spans = _unwritten_spans(image.program, assume_unwritten)
+	resolution = resolve(image.program, model, assumed_unwritten=spans)
 	narrowed_by_field = _narrowed_by_field(image.elf, image.program) if narrow_by_field else ()
 	hardware_roots = frozenset(
 		stack_name(image.program, image.names, handler)
@@ -784,7 +808,62 @@ def _expand_from_elf(
 		membership=artifacts.membership,
 		dropped=artifacts.dropped,
 		phantom_libcalls=artifacts.phantom_libcalls,
+		assumed_unwritten=_assumed_unwritten(image, model, resolution, assume_unwritten),
 	)
+
+
+def _unwritten_spans(program: Program, names: tuple[str, ...]) -> tuple[tuple[int, int], ...]:
+	return tuple(span for name in names for span in (_unwritten_span(program, name),))
+
+
+def _unwritten_span(program: Program, name: str) -> tuple[int, int]:
+	match tuple(obj for obj in program.objects.values() if obj.name == name):
+		case (found,):
+			return found.address, found.address + found.size
+		case ():
+			raise ValueError(f"--assume-unwritten: no data object is named {name}")
+		case several:
+			raise ValueError(
+				f"--assume-unwritten: {len(several)} data objects are named {name}, at "
+				f"{', '.join(hex(obj.address) for obj in several)}"
+			)
+
+
+def _assumed_unwritten(
+	image: _Image, model: RtosModel, resolution: ProgramResolution, names: tuple[str, ...]
+) -> AssumedUnwritten:
+	if not names:
+		return AssumedUnwritten(objects=(), callers=frozenset(), thread_callers={})
+	baseline = resolve(image.program, model)
+	return AssumedUnwritten(
+		objects=names,
+		callers=_changed_callers(image, baseline.sites, resolution.sites),
+		thread_callers={
+			thread: _changed_callers(image, baseline.threads[thread].sites, own.sites)
+			for thread, own in resolution.threads.items()
+		},
+	)
+
+
+def _changed_callers(
+	image: _Image, before: tuple[CallSite, ...], after: tuple[CallSite, ...]
+) -> frozenset[str]:
+	targets = {(site.caller_address, site.site_address): _target_key(site) for site in before}
+	return frozenset(
+		frame_key(stack_name(image.program, image.names, site.caller_address))
+		for site in after
+		if targets.get((site.caller_address, site.site_address)) != _target_key(site)
+	)
+
+
+def _target_key(site: CallSite) -> tuple[str, frozenset[Address]]:
+	match site.target:
+		case Known(values=values):
+			return "known", values
+		case Top() | Unreached() | Dead() as other:
+			return type(other).__name__, frozenset()
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _call_pair(edge: CallEdge) -> tuple[str, str]:
@@ -1115,6 +1194,7 @@ def stack(
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	assume_no_recursion: Annotated[tuple[str, ...], _ASSUME_NO_RECURSION] = (),
+	assume_unwritten: Annotated[tuple[str, ...], _ASSUME_UNWRITTEN] = (),
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 	path: Annotated[
 		str | None,
@@ -1134,6 +1214,7 @@ def stack(
 			narrow_by_signature=narrow_by_signature,
 			narrow_by_field=narrow_by_field,
 			rtos=rtos,
+			assume_unwritten=assume_unwritten,
 		)
 		if image is not None
 		else None
@@ -1143,6 +1224,9 @@ def stack(
 		expansion.frames if expansion is not None else artifacts.frames,
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
 		assumed_no_recursion=frozenset(assume_no_recursion),
+		assumed_unwritten=expansion.assumed_unwritten.callers
+		if expansion is not None
+		else frozenset(),
 		hardware_roots=expansion.hardware_roots if expansion is not None else frozenset(),
 	)
 	reports = _with_interrupt_stack(expansion, graph)
@@ -1166,6 +1250,7 @@ def stack(
 			f"{' | narrowed by signature' if narrow_by_signature else ''}"
 			f"{' | narrowed by field' if narrow_by_field else ''}"
 			f"{f' | assumed no recursion: {", ".join(sorted(assume_no_recursion))}' if assume_no_recursion else ''}"
+			f"{f' | assumed unwritten: {", ".join(sorted(assume_unwritten))}' if assume_unwritten else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
 	for report in shown:
@@ -1197,7 +1282,13 @@ def _own_graphs(
 ) -> Mapping[str, StackGraph]:
 	return (
 		{
-			thread: stack_graph(edges, expansion.frames, assumed_no_recursion=assumed_no_recursion)
+			thread: stack_graph(
+				edges,
+				expansion.frames,
+				assumed_no_recursion=assumed_no_recursion,
+				assumed_unwritten=expansion.assumed_unwritten.callers
+				| expansion.assumed_unwritten.thread_callers.get(thread, frozenset()),
+			)
 			for thread, edges in expansion.own_edges.items()
 		}
 		if expansion is not None
@@ -1246,6 +1337,7 @@ def summary(
 	narrow_by_signature: Annotated[bool, _NARROW_BY_SIGNATURE] = False,
 	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	assume_no_recursion: Annotated[tuple[str, ...], _ASSUME_NO_RECURSION] = (),
+	assume_unwritten: Annotated[tuple[str, ...], _ASSUME_UNWRITTEN] = (),
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
@@ -1255,6 +1347,7 @@ def summary(
 		narrow_by_signature=narrow_by_signature,
 		narrow_by_field=narrow_by_field,
 		rtos=rtos,
+		assume_unwritten=assume_unwritten,
 	)
 	reports = _with_interrupt_stack(
 		expansion,
@@ -1263,6 +1356,7 @@ def summary(
 			expansion.frames,
 			entry_edges=expansion.in_image_edges,
 			assumed_no_recursion=frozenset(assume_no_recursion),
+			assumed_unwritten=expansion.assumed_unwritten.callers,
 			hardware_roots=expansion.hardware_roots,
 		),
 	)

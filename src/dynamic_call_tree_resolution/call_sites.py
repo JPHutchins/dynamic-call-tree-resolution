@@ -64,8 +64,13 @@ class ProgramResolution(Struct):
 	fallback: frozenset[Address]
 
 
-def resolve(program: Program, rtos: RtosModel = BARE_METAL) -> ProgramResolution:
-	analysis = analyze(program, rtos)
+def resolve(
+	program: Program,
+	rtos: RtosModel = BARE_METAL,
+	*,
+	assumed_unwritten: tuple[tuple[int, int], ...] = (),
+) -> ProgramResolution:
+	analysis = analyze(program, rtos, assumed_unwritten=assumed_unwritten)
 	return ProgramResolution(
 		sites=_dispatched(program, rtos, analysis.sites),
 		seeded=analysis.seeded,

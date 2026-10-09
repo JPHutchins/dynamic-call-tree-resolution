@@ -72,6 +72,9 @@ class Context(Struct):
 	function_starts: frozenset[Address]
 	external_symbols: Mapping[Address, str]
 	"""The undefined symbol whose address the dynamic loader writes to each slot."""
+	unwritten_spans: tuple[tuple[int, int], ...] = ()
+	"""The objects the user asserts the program never writes, by address span."""
+	unwritten_starts: tuple[int, ...] = ()
 
 
 def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
@@ -84,7 +87,12 @@ def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
 	return Writes(values=values, wild=wild)
 
 
-def context_for(program: Program, global_writes: Writes) -> Context:
+def context_for(
+	program: Program,
+	global_writes: Writes,
+	*,
+	assumed_unwritten: tuple[tuple[int, int], ...] = (),
+) -> Context:
 	spans = tuple(
 		sorted(
 			(object_.address, object_.address + object_.size)
@@ -119,6 +127,8 @@ def context_for(program: Program, global_writes: Writes) -> Context:
 			for relocation in program.relocations
 			if relocation.symbol is not None
 		},
+		unwritten_spans=tuple(sorted(assumed_unwritten)),
+		unwritten_starts=tuple(start for start, _ in sorted(assumed_unwritten)),
 	)
 
 
@@ -128,6 +138,11 @@ def _span_at(context: Context, address: Address) -> tuple[int, int] | None:
 		return None
 	span = context.object_spans[index]
 	return span if span[0] <= address < span[1] else None
+
+
+def _assumed_unwritten(context: Context, address: Address, width: int) -> bool:
+	index = bisect_right(context.unwritten_starts, address) - 1
+	return index >= 0 and address + width <= context.unwritten_spans[index][1]
 
 
 def _read_only(context: Context, address: Address) -> bool:
@@ -184,6 +199,12 @@ def _image_read(
 ) -> ValueSet:
 	values: set[Address] = set()
 	for address in addresses:
+		if context.unwritten_starts and _assumed_unwritten(context, address, width):
+			initial = _initial_value(context, address, width)
+			if initial is None:
+				return Top()
+			values.add(initial)
+			continue
 		if _overlapped(context, state, address, width):
 			return Top()
 		local = state.globals.values.get(address)

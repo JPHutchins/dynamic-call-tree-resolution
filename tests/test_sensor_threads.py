@@ -40,15 +40,37 @@ def test_each_thread_reports_its_own_stack_high_water_on_qemu(zephyr_fixtures: P
 	)
 
 
+@pytest.mark.parametrize(
+	("assume_no_recursion", "assume_unwritten", "provenance"),
+	[
+		pytest.param(
+			("i2c_emul_transfer",),
+			(),
+			{"assumed_no_recursion": ("i2c_emul_transfer",)},
+			id="assume no recursion",
+		),
+		pytest.param(
+			(),
+			("i2c_emul_cfg_0",),
+			{"assumed_unwritten": ("i2c_emul_transfer",)},
+			id="assume the I2C emulator's config unwritten",
+		),
+	],
+)
 def test_each_threads_measured_high_water_is_within_its_bound(
-	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+	zephyr_fixtures: Path,
+	capsys: pytest.CaptureFixture[str],
+	assume_no_recursion: tuple[str, ...],
+	assume_unwritten: tuple[str, ...],
+	provenance: dict[str, tuple[str, ...]],
 ) -> None:
 	artifacts = zephyr_fixtures / "sensor-threads"
 	stack(
 		artifacts,
 		artifacts / "zephyr" / "zephyr.elf",
 		narrow_by_field=True,
-		assume_no_recursion=("i2c_emul_transfer",),
+		assume_no_recursion=assume_no_recursion,
+		assume_unwritten=assume_unwritten,
 		json=True,
 	)
 	used = {
@@ -84,12 +106,37 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 				measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 				stack_reservation_bytes=16,
 				exception_frame_bytes=36,
-				assumed_no_recursion=("i2c_emul_transfer",),
 				narrowed_by_field=("i2c_emul_transfer",),
+				**provenance,
 			),
 			52,
 		),
 	}
+
+
+@pytest.mark.parametrize(
+	("fixture", "name", "message"),
+	[
+		pytest.param(
+			"sensor-threads",
+			"no_such_object",
+			"no data object is named no_such_object",
+			id="an unknown name",
+		),
+		pytest.param(
+			"synchronization",
+			"__func__",
+			"2 data objects are named __func__",
+			id="a name two objects share",
+		),
+	],
+)
+def test_assume_unwritten_names_one_data_object(
+	zephyr_fixtures: Path, fixture: str, name: str, message: str
+) -> None:
+	artifacts = zephyr_fixtures / fixture
+	with pytest.raises(ValueError, match=message):
+		stack(artifacts, artifacts / "zephyr" / "zephyr.elf", assume_unwritten=(name,))
 
 
 def test_each_threads_stack_is_the_size_qemu_reports_and_its_margin_is_within_qemus_unused(

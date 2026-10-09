@@ -359,6 +359,50 @@ def test_a_narrow_load_reads_the_bytes_it_names(
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("caller", "assumed", "targets"),
+	[
+		pytest.param("42f20000 0368 9847 7047", (), {0x3001, 0x5555}, id="no assumption"),
+		pytest.param(
+			"42f20000 0368 9847 7047",
+			((0x2000, 0x2004),),
+			{0x3001},
+			id="the slot assumed unwritten",
+		),
+		pytest.param(
+			"42f20000 0368 9847 7047",
+			((0x2000, 0x2002),),
+			{0x3001, 0x5555},
+			id="a read past the assumed object",
+		),
+		pytest.param(
+			"42f20010 0368 9847 7047",
+			((0x2100, 0x2104),),
+			set[int](),
+			id="an assumed object without image bytes",
+		),
+	],
+)
+def test_a_load_from_an_object_assumed_unwritten_reads_its_image_value(
+	caller: str, assumed: tuple[tuple[int, int], ...], targets: set[int]
+) -> None:
+	writer = bytes.fromhex("42f20000 45f25551 0160 7047")
+	program = build_program(
+		Machine.EM_ARM,
+		(("writer", 0x1000, len(writer)), ("caller", 0x1100, len(bytes.fromhex(caller)))),
+		objects=(("slot", 0x2000, _pointer(0x3001, 4)),),
+		sections={0x1000: writer, 0x1100: bytes.fromhex(caller)},
+		writable=frozenset({0x2000}),
+		pointer_size=4,
+	)
+	(site,) = (
+		site
+		for site in resolve(program, assumed_unwritten=assumed).sites
+		if site.caller_address == 0x1100
+	)
+	assert tracked_values(site) == targets
+
+
 def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:
 	program = build_program(
 		Machine.EM_ARM,

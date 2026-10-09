@@ -209,6 +209,8 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
 	narrowed_by_signature: tuple[str, ...] = ()
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
+	assumed_unwritten: tuple[str, ...] = ()
+	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
@@ -233,6 +235,8 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
 	narrowed_by_signature: tuple[str, ...] = ()
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
+	assumed_unwritten: tuple[str, ...] = ()
+	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
@@ -246,6 +250,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
+				assumed_unwritten=tuple(sorted(bound.assumed_unwritten)),
 			)
 		case Unbounded():
 			return UnboundedStack(
@@ -260,6 +265,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
+				assumed_unwritten=tuple(sorted(bound.assumed_unwritten)),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
