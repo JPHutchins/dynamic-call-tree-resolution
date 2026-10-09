@@ -15,6 +15,7 @@ from elftools.common.exceptions import ELFError
 from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import (
+	calls_nothing,
 	narrowed_targets,
 	own_targets,
 	per_caller_candidates,
@@ -861,27 +862,20 @@ def _register_callers(
 def _unrecorded_sites(
 	image: _Image, sites: tuple[CallSite, ...], edges: tuple[CallEdge, ...]
 ) -> tuple[CallEdge, ...]:
-	match image.program.machine:
-		case Machine.EM_ARM:
-			recorded = Counter(
-				frame_key(edge.caller) for edge in edges if edge.callee == INDIRECT_CALLEE
-			)
-			return tuple(
-				CallEdge(caller=caller, callee=INDIRECT_CALLEE)
-				for caller, found in sorted(
-					Counter(
-						image.names[start]
-						for site in sites
-						for start in (normalized(site.caller_address, image.program.machine),)
-						if start in image.names
-					).items()
-				)
-				for _ in range(found - recorded[frame_key(caller)])
-			)
-		case Machine.EM_386 | Machine.EM_X86_64:
-			return ()
-		case _ as unreachable:
-			assert_never(unreachable)
+	recorded = Counter(frame_key(edge.caller) for edge in edges if edge.callee == INDIRECT_CALLEE)
+	return tuple(
+		CallEdge(caller=caller, callee=INDIRECT_CALLEE)
+		for caller, found in sorted(
+			Counter(
+				image.names[start]
+				for site in sites
+				if not calls_nothing(image.program, site)
+				for start in (normalized(site.caller_address, image.program.machine),)
+				if start in image.names
+			).items()
+		)
+		for _ in range(found - recorded[frame_key(caller)])
+	)
 
 
 def _direct_edges(image: _Image, start: Address, own: OwnCode) -> tuple[CallEdge, ...]:

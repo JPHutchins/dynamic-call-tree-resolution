@@ -186,7 +186,9 @@ def test_cli_stack_with_elf_expands_indirect_sites(
 	output = capsys.readouterr().out
 	assert output.splitlines() == [
 		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0 | membership: names",
-		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)",
+		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 13)",
+		"_init: unbounded, at least 0 bytes (unmeasured: 2)",
+		"_start: unbounded, at least 0 bytes (unmeasured: 2)",
 		"plain_target: 64 bytes",
 	]
 
@@ -227,7 +229,9 @@ def test_cli_stack_with_elf_drops_entries_the_linker_discarded(
 	stack(build_directory, fixture_elfs["nopie"])
 	assert capsys.readouterr().out.splitlines() == [
 		"resolved slots: 11 | indirect call sites: 0 | not in the image: 1 | membership: names",
-		"main: 80 bytes",
+		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 13)",
+		"_init: unbounded, at least 0 bytes (unmeasured: 2)",
+		"_start: unbounded, at least 0 bytes (unmeasured: 2)",
 	]
 
 
@@ -247,6 +251,9 @@ def test_cli_stack_with_elf_makes_an_entry_of_what_only_discarded_functions_call
 	stack(build_directory, fixture_elfs["nopie"])
 	assert capsys.readouterr().out.splitlines() == [
 		"resolved slots: 11 | indirect call sites: 0 | not in the image: 1 | membership: names",
+		"main: unbounded, at least 64 bytes (recursion: 1, unmeasured: 14)",
+		"_init: unbounded, at least 0 bytes (unmeasured: 2)",
+		"_start: unbounded, at least 0 bytes (unmeasured: 2)",
 		"plain_target: 64 bytes",
 	]
 
@@ -347,7 +354,7 @@ def test_cli_stack_narrows_a_threads_site_by_its_slot_signature_only_when_asked(
 	)
 	assert (unnarrowed, capsys.readouterr().out.splitlines()[1:]) == (
 		[
-			"worker_tid: unbounded, at least 144 bytes (recursion: 1, unmeasured: 5)",
+			"worker_tid: unbounded, at least 144 bytes (recursion: 1, unmeasured: 6)",
 			"worker_tid +16 = 16 bytes",
 			"worker +32 = 48 bytes via thread record",
 			"worker +32 = 80 bytes via indirect: fallback (recursion)",
@@ -533,7 +540,7 @@ def test_cli_stack_path_with_elf_names_the_indirect_edge(
 	stack(build_directory, elf=fixture_elfs["nopie"], path="main")
 	assert capsys.readouterr().out.splitlines() == [
 		"resolved slots: 11 | indirect call sites: 1 | not in the image: 0 | membership: names",
-		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)",
+		"main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 13)",
 		"main +16 = 16 bytes (recursion)",
 		"plain_target +64 = 80 bytes via indirect: candidate",
 	]
@@ -683,7 +690,7 @@ def test_cli_stack_accepts_positional_elf(
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	(nested / "plain.c.su").write_text("plain.c:2:1:plain_target\t64\tstatic\n")
 	stack(build_directory, fixture_elfs["nopie"])
-	assert "main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 12)" in (
+	assert "main: unbounded, at least 80 bytes (recursion: 1, unmeasured: 13)" in (
 		capsys.readouterr().out
 	)
 
@@ -702,7 +709,7 @@ def test_cli_summary_expands_an_unresolved_site_to_every_address_taken_function(
 	(nested / "main.c.su").write_text("main.c:1:1:main\t16\tstatic\n")
 	summary(build_directory, fixture_elfs["null"])
 	report = msgspec.json.decode(capsys.readouterr().out, type=AnalysisSummary)
-	assert (report.entry_points, report.discarded_entry_points) == (1, 0)
+	assert (report.entry_points, report.discarded_entry_points) == (3, 0)
 	assert isinstance(report.worst_case, UnboundedStack)
 	assert (report.worst_case.recursion, report.worst_case.unresolved) == (("main",), ())
 
