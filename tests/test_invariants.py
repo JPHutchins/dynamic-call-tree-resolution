@@ -52,14 +52,6 @@ class Narrowing(StrEnum):
 	SIGNATURE = "signature"
 
 
-def _tracked(issue: int) -> pytest.MarkDecorator:
-	return pytest.mark.xfail(
-		strict=True,
-		raises=AssertionError,
-		reason=f"https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/{issue}",
-	)
-
-
 def _elf(fixtures: Path, name: str) -> Path:
 	return fixtures / name / "zephyr" / FIXTURES[name]
 
@@ -84,7 +76,7 @@ def expansions(zephyr_fixtures: Path) -> Mapping[str, Expansion]:
 
 @pytest.mark.parametrize(
 	"name",
-	[pytest.param(name, marks=_tracked(228) if name == "counter-su" else ()) for name in FIXTURES],
+	FIXTURES,
 )
 def test_every_candidate_analyze_reports_is_a_callee_of_its_site_in_the_stack_graph(
 	expansions: Mapping[str, Expansion], name: str

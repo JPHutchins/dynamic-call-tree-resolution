@@ -194,7 +194,7 @@ def site_targets(
 	"""What a site can call, each set with where it came from."""
 	if site.external is not None:
 		return (External(symbol=site.external),)
-	if _null(program, site):
+	if calls_nothing(program, site):
 		return (Null(),)
 	by_slot = narrowings if narrowings is not None else dict[Address, SignatureNarrowed]()
 	chased = _chased(program, site, resolved_by_slot, by_slot)
@@ -211,7 +211,7 @@ def site_targets(
 	)
 
 
-def _null(program: Program, site: CallSite) -> bool:
+def calls_nothing(program: Program, site: CallSite) -> bool:
 	return site.target == Known(values=frozenset({Address(0)})) and (
 		site.loaded_from is None or not in_writable_memory(program, site.loaded_from)
 	)

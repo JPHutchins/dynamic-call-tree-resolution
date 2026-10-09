@@ -39,7 +39,7 @@ with no target.
 
 Stack depths combine the resulting call graph with GCC's
 `-fstack-usage`/`-fcallgraph-info` build artifacts, plus the direct calls the linker kept
-and the indirect call sites in the Arm code that `.ci` does not record. Each indirect call also
+and the indirect call sites in the code that `.ci` does not record. Each indirect call also
 expands to the fallback: every function whose address the image stores, a non-branch
 instruction computes, or an address relocation kept by `--emit-relocs` names. The exceptions
 are a site inside a thread's tree that the thread's own analysis resolved, and a call through
@@ -154,9 +154,9 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-cmd_prompt_off: unbounded, at least 6264 bytes (recursion: 233, unmeasured: 149)
+cmd_prompt_off: unbounded, at least 6264 bytes (recursion: 236, unmeasured: 149)
 ...
-poll_state_thread: unbounded, at least 6056 bytes (recursion: 233, unmeasured: 149)
+poll_state_thread: unbounded, at least 6056 bytes (recursion: 236, unmeasured: 149)
 ...
 ```
 
@@ -179,8 +179,9 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-poll_state_thread: unbounded, at least 6056 bytes (recursion: 233, unmeasured: 149)
+poll_state_thread: unbounded, at least 6056 bytes (recursion: 236, unmeasured: 149)
 poll_state_thread +80 = 80 bytes (recursion)
+_init +0 = 80 bytes via indirect: fallback (recursion, unmeasured)
 bg_thread_main +80 = 160 bytes via indirect: fallback (recursion)
 boot_banner +32 = 192 bytes via indirect: fallback (recursion)
 ...
@@ -553,8 +554,7 @@ contradicts does not hold.
   reports is a callee of its site in the stack graph; that every target a resolution or
   a narrowing names, globally or in a thread's own analysis, is in the fallback, so
   removing a resolution never lowers a bound; and that no entry is deeper with its
-  candidates alone than with the fallback too ([#75]). On counter-su (x86), the first
-  fails ([#228]).
+  candidates alone than with the fallback too ([#75]).
 - A read-only slot's value is its value in the image as linked. A writable slot's
   candidates are its initializer and the values stored to it, so a store whose address
   or value is unknown leaves it unresolved.
@@ -679,11 +679,11 @@ contradicts does not hold.
   only the calls decoded from a function measured for its own frame join. A call inside
   a function symbol of size zero belongs to that function, up to the next function, as
   its measured frame does ([#78]).
-- With `--elf`, an indirect call site found in a function's Arm code joins the graph when
-  `.ci` records fewer indirect calls for that function. That covers a call from inline
-  assembly, such as Zephyr's `arch_switch_to_main_thread`, and a call from code built
-  without `-fcallgraph-info` whose frame can't be measured ([#75]). x86 sites are not
-  added ([#228]).
+- With `--elf`, an indirect call site found in a function's code joins the graph when
+  `.ci` records fewer indirect calls for that function, unless its target can only be 0.
+  That covers a call from inline assembly, such as Zephyr's `arch_switch_to_main_thread`,
+  and a call from code built without `-fcallgraph-info` whose frame can't be measured,
+  such as the native simulator's `nsi_hws_one_event` ([#75], [#228]).
 
 ### Residue
 
