@@ -33,7 +33,13 @@ from dynamic_call_tree_resolution import (
 	unresolved_slots,
 )
 from dynamic_call_tree_resolution.callgraph import CallEdge
-from dynamic_call_tree_resolution.model import FUNCTION_POINTER, InstructionSet, Unreached
+from dynamic_call_tree_resolution.model import (
+	FUNCTION_POINTER,
+	Dispatch,
+	InstructionSet,
+	RtosModel,
+	Unreached,
+)
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
 from dynamic_call_tree_resolution.report import slot_counts
 from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, expand_indirect_calls
@@ -216,6 +222,35 @@ def test_a_target_that_can_only_be_0_calls_nothing_unless_a_writable_slot_holds_
 		)
 		== callees
 	)
+
+
+@pytest.mark.parametrize(
+	("code", "dispatches"),
+	[
+		pytest.param(
+			"48 c7 c0 00 30 00 00ff d0", (frozenset({Address(0x3000)}),), id="one indirect call"
+		),
+		pytest.param("48 c7 c0 00 30 00 00ff d0ff d0", (None, None), id="two indirect calls"),
+	],
+)
+def test_a_dispatch_function_with_one_indirect_call_dispatches_it(
+	code: str, dispatches: tuple[frozenset[Address] | None, ...]
+) -> None:
+	program = build_program(
+		Machine.EM_X86_64,
+		(("z_sys_init_run_level", 0x1000, len(bytes.fromhex(code))), ("target", 0x3000, 1)),
+		sections={0x1000: bytes.fromhex(code), 0x3000: b"\xc3"},
+	)
+	model = RtosModel(
+		name="zephyr",
+		evidence=(),
+		threads=(),
+		trampoline=None,
+		dispatches=(
+			Dispatch(function="z_sys_init_run_level", targets=frozenset({Address(0x3000)})),
+		),
+	)
+	assert tuple(site.dispatch for site in resolve(program, model).sites) == dispatches
 
 
 def test_an_x86_64_32_bit_copy_of_a_frame_address_escapes_the_frame() -> None:
