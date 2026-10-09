@@ -13,7 +13,7 @@ from capstone import arm_const, x86_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
-from dynamic_call_tree_resolution.points_to import instruction_set_at, read_pointer
+from dynamic_call_tree_resolution.points_to import instruction_set_at, memory_at
 from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized, program_counter
 from dynamic_call_tree_resolution.vsa.lattice import (
 	K_BOUND,
@@ -30,6 +30,7 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	join,
 	join_maps,
 	lookup,
+	map_set,
 	shift_addresses,
 	shift_offsets,
 )
@@ -134,9 +135,25 @@ def _read_only(context: Context, address: Address) -> bool:
 	return index >= 0 and address < context.read_only_spans[index][1]
 
 
-def _pointer_value(context: Context, address: Address) -> Address | None:
+def _initial_value(context: Context, address: Address, width: int) -> Address | None:
 	span = _span_at(context, address)
-	return read_pointer(context.program, address, span[1] if span is not None else None)
+	data = memory_at(context.program, address, width)
+	return (
+		None
+		if (span is not None and address + width > span[1]) or len(data) != width
+		else Address(int.from_bytes(data, context.program.byte_order))
+	)
+
+
+def _low_bytes(context: Context, values: ValueSet, width: int) -> ValueSet:
+	"""The ``width`` bytes each word starts with, in the image's byte order."""
+	return (
+		values
+		if width >= context.program.pointer_size
+		else Top()
+		if context.program.byte_order == "big"
+		else map_set(values, lambda value: Address(value & ((1 << 8 * width) - 1)))
+	)
 
 
 def _section_slots(context: Context, start: Address, stride: int) -> ValueSet:
@@ -149,22 +166,29 @@ def _section_slots(context: Context, start: Address, stride: int) -> ValueSet:
 	return Known(values=frozenset(Address(start + offset * stride) for offset in range(count)))
 
 
-def _image_value(context: Context, state: State, addresses: ValueSet) -> ValueSet:
-	return bind(addresses, partial(_image_read, context, state))
+def _image_value(context: Context, state: State, addresses: ValueSet, width: int) -> ValueSet:
+	return bind(addresses, partial(_image_read, context, state, width))
 
 
 def runtime_value(context: Context, address: Address) -> ValueSet:
-	return _image_read(context, top_seed(context.program.machine), frozenset({address}))
+	return _image_read(
+		context,
+		top_seed(context.program.machine),
+		context.program.pointer_size,
+		frozenset({address}),
+	)
 
 
-def _image_read(context: Context, state: State, addresses: frozenset[Address]) -> ValueSet:
+def _image_read(
+	context: Context, state: State, width: int, addresses: frozenset[Address]
+) -> ValueSet:
 	values: set[Address] = set()
 	for address in addresses:
-		if _overlapped(context, state, address):
+		if _overlapped(context, state, address, width):
 			return Top()
 		local = state.globals.values.get(address)
 		written = local if local is not None else context.global_writes.values.get(address)
-		match written:
+		match _low_bytes(context, written, width) if written is not None else None:
 			case Top():
 				return Top()
 			case Known(values=known):
@@ -179,7 +203,7 @@ def _image_read(context: Context, state: State, addresses: frozenset[Address]) -
 			and not _read_only(context, address)
 		) or address in context.external_symbols:
 			return Top()
-		value = _pointer_value(context, address)
+		value = _initial_value(context, address, width)
 		if value is not None:
 			values.add(value)
 		elif written is None and _span_at(context, address) is not None:
@@ -187,19 +211,16 @@ def _image_read(context: Context, state: State, addresses: frozenset[Address]) -
 	return capped(frozenset(values))
 
 
-def _overlapped(context: Context, state: State, address: Address) -> bool:
-	"""Whether a write recorded at another address covers part of the word read here."""
+def _overlapped(context: Context, state: State, address: Address, width: int) -> bool:
+	"""Whether a write recorded at another address covers part of the bytes read here."""
 	pointer_size = context.program.pointer_size
 	return (
 		bool(state.globals.values)
-		and bool(
-			overlapping_keys(state.globals.values, address, pointer_size, pointer_size) - {address}
-		)
+		and bool(overlapping_keys(state.globals.values, address, width, pointer_size) - {address})
 	) or (
-		not context.global_covered.isdisjoint(range(address, address + pointer_size))
+		not context.global_covered.isdisjoint(range(address, address + width))
 		and bool(
-			overlapping_keys(context.global_writes.values, address, pointer_size, pointer_size)
-			- {address}
+			overlapping_keys(context.global_writes.values, address, width, pointer_size) - {address}
 		)
 	)
 
@@ -250,21 +271,27 @@ def memory_addresses(context: Context, state: State, memory: CsMemOperand) -> Va
 
 
 def load_value(context: Context, state: State, instruction: CsInsn, operand: CsOperand) -> ValueSet:
-	return loaded(context, state, instruction, operand)[0]
+	return loaded(context, state, instruction, operand, context.program.pointer_size)[0]
 
 
 def loaded(
-	context: Context, state: State, instruction: CsInsn, operand: CsOperand
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand, width: int
 ) -> tuple[ValueSet, Address | None]:
-	"""A load's value, and the one image address it reads when there is one."""
+	"""A load's value, zero-extended from its width, and the one image address it reads."""
 	memory = operand.mem
 	match _load_addresses(context, state, instruction, memory):
 		case None:
-			return stack_read(state.stack, stack_offsets(state, memory, memory.base)), None
+			return _low_bytes(
+				context, stack_read(state.stack, stack_offsets(state, memory, memory.base)), width
+			), None
 		case Known(values=values) as addresses if len(values) == 1:
-			return _image_value(context, state, addresses), next(iter(values))
+			return _image_value(context, state, addresses, width), next(iter(values))
 		case Known() | Top() as addresses:
-			return _image_value(context, state, addresses), None
+			return (
+				_image_value(context, state, addresses, width)
+				if width >= context.program.pointer_size
+				else Top()
+			), None
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -416,7 +443,12 @@ def weakened(context: Context, before: State, after: State) -> State:
 			values={
 				address: value
 				if before.globals.values.get(address) == value
-				else join(value, _image_read(context, before, frozenset({address})))
+				else join(
+					value,
+					_image_read(
+						context, before, context.program.pointer_size, frozenset({address})
+					),
+				)
 				for address, value in after.globals.values.items()
 			},
 			wild=after.globals.wild,

@@ -311,6 +311,54 @@ def test_an_unaligned_load_sees_a_store_another_function_makes_over_part_of_it(
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("load", "writable", "writer", "targets"),
+	[
+		pytest.param("42f20000 0388", False, "7047", {0x3001}, id="ldrh from ROM"),
+		pytest.param("42f20000 4378", False, "7047", set[int](), id="ldrb stays unknown"),
+		pytest.param("42f20000 b0f90030", False, "7047", set[int](), id="ldrsh"),
+		pytest.param(
+			"42f20000 0388",
+			True,
+			"42f20000 43f20101 c0f20101 0160 7047",
+			{0x3001},
+			id="ldrh of a stored word",
+		),
+		pytest.param(
+			"42f20000 4378",
+			True,
+			"42f20000 43f20101 c0f20101 0160 7047",
+			set[int](),
+			id="ldrb inside a stored word",
+		),
+		pytest.param("42f20000 0388", True, "0021 1160 7047", set[int](), id="ldrh when wild"),
+		pytest.param(
+			"42f20000 09b1 42f20400 0388", False, "7047", set[int](), id="ldrh of two addresses"
+		),
+		pytest.param(
+			"42f20000 0388", True, "42f20000 0121 0180 7047", set[int](), id="ldrh of a stored half"
+		),
+	],
+)
+def test_a_narrow_load_reads_the_bytes_it_names(
+	load: str, writable: bool, writer: str, targets: set[int]
+) -> None:
+	caller = bytes.fromhex(load) + bytes.fromhex("9847 7047")
+	program = build_program(
+		Machine.EM_ARM,
+		(
+			("writer", 0x1000, len(bytes.fromhex(writer))),
+			("caller", 0x1100, len(caller)),
+		),
+		objects=(("slot", 0x2000, _pointer(0x7777_3001, 4)),),
+		sections={0x1000: bytes.fromhex(writer), 0x1100: caller},
+		writable=frozenset({0x2000}) if writable else frozenset(),
+		pointer_size=4,
+	)
+	(site,) = (site for site in extract_call_sites(program) if site.caller_address == 0x1100)
+	assert tracked_values(site) == targets
+
+
 def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:
 	program = build_program(
 		Machine.EM_ARM,

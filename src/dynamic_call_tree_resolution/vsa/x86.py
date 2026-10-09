@@ -75,7 +75,10 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 				)
 			case (x86_const.X86_OP_REG, x86_const.X86_OP_MEM):
 				return _write(
-					state, machine, destination.reg, *loaded(context, state, instruction, source)
+					state,
+					machine,
+					destination.reg,
+					*loaded(context, state, instruction, source, context.program.pointer_size),
 				)
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_REG):
 				return store_value(
