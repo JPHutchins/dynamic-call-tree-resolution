@@ -414,7 +414,13 @@ def analyze(
 
 
 def _no_candidates(site: CallSiteReport) -> str:
-	return f"<external: {site.external}>" if site.external is not None else "<unresolved>"
+	return (
+		f"<external: {site.external}>"
+		if site.external is not None
+		else "<null>"
+		if site.null
+		else "<unresolved>"
+	)
 
 
 @app.command  # type: ignore[misc]

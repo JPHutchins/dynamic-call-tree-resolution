@@ -32,10 +32,11 @@ from dynamic_call_tree_resolution import (
 	signature_narrowings,
 	unresolved_slots,
 )
+from dynamic_call_tree_resolution.callgraph import CallEdge
 from dynamic_call_tree_resolution.model import FUNCTION_POINTER, InstructionSet, Unreached
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
 from dynamic_call_tree_resolution.report import slot_counts
-from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE
+from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, expand_indirect_calls
 from dynamic_call_tree_resolution.vsa import address_taken
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from tests.programs import build_program
@@ -169,6 +170,52 @@ def test_an_x86_register_write_reaches_its_whole_register_family(
 		)
 	)
 	assert site.target == target
+
+
+@pytest.mark.parametrize(
+	("machine", "code", "writable", "callees"),
+	[
+		pytest.param(Machine.EM_X86_64, "b8 00 00 00 00ff d0", False, (), id="x86-64 immediate"),
+		pytest.param(Machine.EM_X86_64, "31 c0ff d0", False, (), id="x86-64 xor"),
+		pytest.param(Machine.EM_386, "b8 00 00 00 00ff d0", False, (), id="i386 immediate"),
+		pytest.param(Machine.EM_ARM, "00 2398 47", False, (), id="arm immediate"),
+		pytest.param(
+			Machine.EM_X86_64,
+			"48 8b 05 f9 0f 00 00ff d0",
+			False,
+			(),
+			id="loaded from a read-only slot",
+		),
+		pytest.param(
+			Machine.EM_X86_64,
+			"48 8b 05 f9 0f 00 00ff d0",
+			True,
+			(INDIRECT_CALLEE,),
+			id="loaded from a writable slot",
+		),
+	],
+)
+def test_a_target_that_can_only_be_0_calls_nothing_unless_a_writable_slot_holds_it(
+	machine: Machine, code: str, writable: bool, callees: tuple[str, ...]
+) -> None:
+	program = build_program(
+		machine,
+		(("caller", 0x1000, len(bytes.fromhex(code))),),
+		objects=(("slot", 0x2000, bytes(8)),),
+		sections={0x1000: bytes.fromhex(code)},
+		writable=frozenset({0x2000}) if writable else frozenset(),
+		pointer_size=8 if machine is Machine.EM_X86_64 else 4,
+	)
+	assert (
+		tuple(
+			edge.callee
+			for edge in expand_indirect_calls(
+				(CallEdge(caller="caller", callee=INDIRECT_CALLEE),),
+				*per_caller_candidates(program, extract_call_sites(program), ()),
+			)
+		)
+		== callees
+	)
 
 
 def test_an_x86_64_32_bit_copy_of_a_frame_address_escapes_the_frame() -> None:

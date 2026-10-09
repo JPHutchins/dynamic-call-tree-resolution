@@ -575,6 +575,35 @@ def test_cli_stack_path_with_elf_ends_a_call_through_a_loader_filled_slot_at_its
 	]
 
 
+def test_cli_analyze_marks_the_sites_whose_target_can_only_be_0(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	report = msgspec.json.decode(
+		dctr("analyze", "--json", str(fixture_elfs["nopie"])), type=AnalysisReport
+	)
+	assert {site.caller for site in report.call_sites if site.null} == {
+		"deregister_tm_clones",
+		"register_tm_clones",
+	}
+
+
+def test_cli_stack_path_with_elf_makes_no_call_through_a_target_that_can_only_be_0(
+	tmp_path: Path,
+	fixture_elfs: dict[str, Path],
+	capsys: pytest.CaptureFixture[str],
+) -> None:
+	build_directory = tmp_path / "build"
+	build_directory.mkdir()
+	(build_directory / "tm.c.ci").write_text(
+		'graph: { edge: { sourcename: "register_tm_clones" targetname: "__indirect_call" } }\n'
+	)
+	stack(build_directory, elf=fixture_elfs["nopie"], path="register_tm_clones")
+	assert capsys.readouterr().out.splitlines()[1:] == [
+		"register_tm_clones: unbounded, at least 0 bytes (unmeasured: 1)",
+		"register_tm_clones +0 = 0 bytes (unmeasured)",
+	]
+
+
 def test_cli_stack_without_an_elf_reports_every_indirect_call_as_unresolved(
 	tmp_path: Path,
 	capsys: pytest.CaptureFixture[str],

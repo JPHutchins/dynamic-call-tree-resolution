@@ -44,7 +44,8 @@ expands to the fallback: every function whose address the image stores, a non-br
 instruction computes, or an address relocation kept by `--emit-relocs` names. The exceptions
 are a site inside a thread's tree that the thread's own analysis resolved, and a call through
 a slot the dynamic loader fills with an undefined symbol's address: that call goes to the
-symbol, an external function the graph counts as unmeasured. On an M-profile image, the
+symbol, an external function the graph counts as unmeasured. A call whose target can only
+be address 0 calls nothing. On an M-profile image, the
 fallback also leaves out a handler whose address only the vector table holds: only the
 hardware calls it, so it is an entry of its own.
 
@@ -564,6 +565,12 @@ contradicts does not hold.
   register loaded from such a slot, such as the `__gmon_start__` call in x86-64 `_init`.
   On i386, `_init` finds the slot through `__x86.get_pc_thunk.bx`, which the analysis
   doesn't follow, so that call stays unresolved and expands to the fallback ([#228]).
+- A site whose target can only be address 0 calls nothing: no function starts there,
+  and calling it faults. `analyze` prints `<null>` for it, and it adds no edge. This
+  holds when the code sets the 0 (glibc's `register_tm_clones` loads a weak undefined
+  symbol the linker resolved to 0) or a read-only slot holds it. A 0 read from writable
+  memory still expands to the fallback, since a store the analysis misses could change
+  it ([#228]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - A store whose address the analysis cannot compute makes every writable address
