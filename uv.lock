@@ -118,16 +118,17 @@ wheels = [
 
 [[package]]
 name = "camas"
-version = "0.1.29"
+version = "0.1.30"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/69/06/478d9a0038bccb9ba04ead373be0f5a797af59f020522850f658112cb071/camas-0.1.29.tar.gz", hash = "sha256:8ed98007cb2f66dc3e20e9d5603cc38546bbb9f11c53104e69633a1f8f43a91c", size = 203898, upload-time = "2026-07-25T01:03:47.671Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/5d/b6c65ee50b52927284c29845a25a25df306e0983d3181ad5beb08dee51ed/camas-0.1.30.tar.gz", hash = "sha256:62aaf489738825c0b6072535d4c3367b0ad7555b0e9d54c476b7ee08d5dfaa4e", size = 256821, upload-time = "2026-10-09T04:54:41.487Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/91/c5df906987d3cc8d7ca84a23280ab0c08eaf6818cad464d7974c7d535025/camas-0.1.29-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:2b02eeffde6afec72fce736a9827d3044f96c379cf1d8d3c2e1b5fcd1ff290f0", size = 788514, upload-time = "2026-07-25T01:03:38.633Z" },
-    { url = "https://files.pythonhosted.org/packages/79/8a/07e0c748dff64dc292ab5e27ca8d0c239aaca1ece69f95478d2774f39e48/camas-0.1.29-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:540b1d0ec48f481ebfdb51cf40760aa39e18dbfd760cea734f966870d755cbb6", size = 1127274, upload-time = "2026-07-25T01:03:39.982Z" },
-    { url = "https://files.pythonhosted.org/packages/52/26/fdaf5c62231b80ea5a6e9ad6cbf1a8f6ad746e522f843d472404a664f784/camas-0.1.29-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:cffb1a49be03a55cbe689b75d887e5c591bda082b32dee38fe50039241e49f36", size = 1169740, upload-time = "2026-07-25T01:03:41.797Z" },
-    { url = "https://files.pythonhosted.org/packages/1c/b7/576373d05d284cdf56bfc202b757186bff930cb3923215de22a07d07a654/camas-0.1.29-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:9e1755d53549c7419e24417796524170efd8eeb93e44780648072de80d6132d6", size = 1142613, upload-time = "2026-07-25T01:03:43.352Z" },
-    { url = "https://files.pythonhosted.org/packages/ae/93/ade1ab5bcb51b0c356c99ab40abaa47eb281fbef150696d24d62b69338d3/camas-0.1.29-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:9b890b6d0bfa2b78e22f2766e6cb79dde9aa67432eab67b2ab1497870b0065ba", size = 1163695, upload-time = "2026-07-25T01:03:44.774Z" },
-    { url = "https://files.pythonhosted.org/packages/2d/af/308bc3a442401135a9b2e3d0369b6ad7748bb6b7155f704272c6ee9fc49c/camas-0.1.29-cp314-cp314-win_amd64.whl", hash = "sha256:f93b90c0321712c023d0047ffefa084c6968cc1a569e6e5edaecdbdf747739d8", size = 654438, upload-time = "2026-07-25T01:03:46.176Z" },
+    { url = "https://files.pythonhosted.org/packages/94/94/2f253dc8cc8745ce23871b585f40dbf02b101333e8028477d6910fb37c3f/camas-0.1.30-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:13b63ebd0ef4d54f9743bdd9a2bc1fe72215d57777e8657e864f49f5df7f4faf", size = 851644, upload-time = "2026-10-09T04:54:29.206Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/e3/d2b311150af4f55d62a5bb509f2163a6311b363ae88b6612eb1d59b3c85d/camas-0.1.30-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d021645ccc8f2f5f6876237b92751af5c0ae90021dc6a2c5f9ba40b78f91721a", size = 1213466, upload-time = "2026-10-09T04:54:30.841Z" },
+    { url = "https://files.pythonhosted.org/packages/27/f5/0e3c7be817798aaa25c73ee6815caa110e722716c29c9e68245576abf6ac/camas-0.1.30-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f9b8993dd3efd6e6ba4936a4f3b3a277612132e63fe80cd7a1c89be2589b16ac", size = 1257859, upload-time = "2026-10-09T04:54:32.61Z" },
+    { url = "https://files.pythonhosted.org/packages/83/54/797174a0dc2009180695f21aee91cba3665f52dea379f4abeb95a5a3b3de/camas-0.1.30-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:13feefe0a7a5aceed21c5a66644062ff84f3b6d7a885310ae383e60dd9c9fd73", size = 1229954, upload-time = "2026-10-09T04:54:34.165Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/8b/2d3d50ff85c36766a2d3779671f1fb3816a0f5b004a4bfe1d5ee43151735/camas-0.1.30-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:6344136be28e9ad98fae1315347c11d0b5cd7e8f0c888598d3fd0f84244143dd", size = 1253782, upload-time = "2026-10-09T04:54:36.094Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/a6/d3aa6ef5a3a1e81ebfafa99a3ca8cccfc89bcf2d10eb9736a88cfc9126c0/camas-0.1.30-cp314-cp314-win_amd64.whl", hash = "sha256:ddff90ca9cff4e999b207ed179241573cdcdf2db0c811b8478f774635e1d91d8", size = 712877, upload-time = "2026-10-09T04:54:37.928Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/e4/ae2ea46867c4f3a2aed4732ba27cf273da9d880ff339d3ec5b88834a61c5/camas-0.1.30-cp314-cp314-win_arm64.whl", hash = "sha256:43ecb4aaef5319619bce85924fabbdf71a8d50c96ceb3841c9da304a93b2900b", size = 681634, upload-time = "2026-10-09T04:54:39.471Z" },
 ]
 
 [package.optional-dependencies]
@@ -594,7 +595,7 @@ build = [
 ]
 dev = [
     { name = "actionlint-py", specifier = ">=1.7.12.25" },
-    { name = "camas", extras = ["mcp"], specifier = ">=0.1.29" },
+    { name = "camas", extras = ["mcp"], specifier = ">=0.1.30" },
     { name = "mypy", specifier = ">=2.3.1" },
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.1.1" },
