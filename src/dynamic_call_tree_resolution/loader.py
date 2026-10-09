@@ -204,6 +204,7 @@ def _load(stream: BinaryIO) -> Program:
 		link_references=_link_references(elf, _reference_types(machine)),
 		inlined=_inlined(dwarf),
 		declarations=_declarations(dwarf),
+		never_returns=_never_returns(dwarf, machine),
 		symbol_addresses=_symbol_addresses(symtab, machine),
 		labels=_labels(symtab),
 		arm_core=_arm_core(elf),
@@ -436,6 +437,25 @@ def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
 		if (address := Address(_int_value(low_pc))) & ~1
 	}
+
+
+def _never_returns(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Address]:
+	if dwarf is None:
+		return frozenset()  # pragma: no cover
+	return frozenset(
+		_code_start(Address(_int_value(low_pc)), machine)
+		for compilation_unit in dwarf.iter_CUs()
+		for die in _iter_dies(compilation_unit.get_top_DIE())
+		if die.tag == "DW_TAG_subprogram"
+		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
+		if _int_value(low_pc) & ~1
+		if _noreturn(die)
+	)
+
+
+def _noreturn(die: DIE) -> bool:
+	origin = _origin(die)
+	return "DW_AT_noreturn" in die.attributes or (origin is not None and _noreturn(origin))
 
 
 def _declarations(dwarf: DWARFInfo | None) -> dict[Address, Declaration]:

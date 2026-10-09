@@ -46,7 +46,8 @@ are a site inside a thread's tree that the thread's own analysis resolved, and a
 a slot the dynamic loader fills with an undefined symbol's address: that call goes to the
 symbol, an external function the graph counts as unmeasured. A call whose target can only
 be address 0 calls nothing, and so does an Arm call that only branches the known values
-decide against lead to. On an M-profile image, the
+decide against, or the fall-through of a call that never returns, lead to. On an
+M-profile image, the
 fallback also leaves out a handler whose address only the vector table holds: only the
 hardware calls it, so it is an entry of its own.
 
@@ -82,6 +83,7 @@ console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
 z_sys_init_run_level@0xcd0: boot_banner, malloc_prepare, uart_stellaris_init, uart_console_init, sys_clock_driver_init (dispatch, from the RTOS model)
 bg_thread_main@0xd28: <dead>
+z_cstart@0xeb4: <dead>
 ...
 do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
 ```
@@ -105,9 +107,11 @@ do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
   a union arm that overlaps a member that is not a function pointer.
 - All three are listed with member paths for manual review, and all three count as
   unresolved in `compare` and `summary`.
-- `<dead>` marks a site that only branches the known values decide against lead to, so
-  it calls nothing. `bg_thread_main` walks the `k_kernel_init_post_entry` section, which
-  is empty here, and the walk's test never enters the loop that holds the call ([#202]).
+- `<dead>` marks a site that only branches the known values decide against, or the
+  fall-through of a call that never returns, lead to, so it calls nothing.
+  `bg_thread_main` walks the `k_kernel_init_post_entry` section, which is empty here, and
+  the walk's test never enters the loop that holds the call ([#202]). `z_cstart`'s walk
+  of `k_kernel_init_pre_entry` is placed after a call that never returns ([#242]).
 - `<not enumerated: reason>` marks an object or member that may hold or lead to a
   function pointer, but whose slots are not listed:
   - a pointer to a pointer, or to an array, whose target can hold a pointer;
@@ -592,8 +596,18 @@ contradicts does not hold.
   and it adds no edge, even under `--narrow-by-field`. Zephyr's walk of the
   `k_kernel_init_post_entry` section in `bg_thread_main` is one, since the section is
   empty in these builds. A direct call in dead code keeps its edge; inside a thread's tree
-  it leads to the callee's whole-image analysis rather than the thread's own. Code placed
-  after a call that never returns still counts as reached ([#202], [#242]).
+  it leads to the callee's whole-image analysis rather than the thread's own ([#202]).
+- A direct call to a function that never returns has no fall-through, so a site that only
+  that fall-through leads to is dead. A function never returns when its DWARF says so
+  (`DW_AT_noreturn`, from `FUNC_NORETURN` or `_Noreturn`), which the analysis trusts the
+  way it trusts `.ci`'s edges: a function that returns anyway breaks the compiled code
+  too. It also never returns when every way out of it is a call or jump into such a
+  function, including a jump through a literal-pool address (`ldr r4, [pc, #4]; bx r4`).
+  A way out the analysis can't follow, such as a return, a jump through an unknown
+  register or a table branch, counts as returning. On the Zephyr fixtures,
+  `arch_switch_to_main_thread` tail-jumps into `z_thread_entry`, so `z_cstart`'s walk of
+  the empty `k_kernel_init_pre_entry` section, which GCC places after that call, is dead
+  ([#242]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - A store whose address the analysis cannot compute makes every writable address

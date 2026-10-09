@@ -21,6 +21,7 @@ def build_program(
 	pointer_size: int = 8,
 	data_in_code: tuple[tuple[int, int], ...] = (),
 	arm_code: tuple[tuple[int, int], ...] = (),
+	never_returns: frozenset[int] = frozenset(),
 ) -> Program:
 	return Program(
 		byte_order="little",
@@ -46,6 +47,7 @@ def build_program(
 		relocations=(),
 		data_in_code=tuple((Address(low), Address(high)) for low, high in data_in_code),
 		arm_code=tuple(sorted((Address(low), Address(high)) for low, high in arm_code)),
+		never_returns=frozenset(map(Address, never_returns)),
 		sections={
 			Address(address): Section(data=data, writable=address in writable)
 			for address, data in (
