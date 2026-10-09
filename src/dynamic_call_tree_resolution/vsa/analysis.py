@@ -80,7 +80,12 @@ class Analysis(Struct):
 	address_taken: frozenset[Address]
 
 
-def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
+def analyze(
+	program: Program,
+	rtos: RtosModel = BARE_METAL,
+	*,
+	assumed_unwritten: tuple[tuple[int, int], ...] = (),
+) -> Analysis:
 	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())
 	_prewarm_instructions(functions, program.machine)
@@ -129,11 +134,12 @@ def analyze(program: Program, rtos: RtosModel = BARE_METAL) -> Analysis:
 				entry_seeds=entry_seeds,
 				top=top,
 				creation=creation,
+				assumed_unwritten=assumed_unwritten,
 			),
 			_Round(seeds={**entry_seeds, **roots}, writes=NO_WRITES),
 			1,
 		)
-		final_context = context_for(program, final.writes)
+		final_context = context_for(program, final.writes, assumed_unwritten=assumed_unwritten)
 		return Analysis(
 			sites=tuple(
 				site
@@ -174,6 +180,7 @@ class _Rounds(Struct):
 	entry_seeds: Mapping[Address, State]
 	top: State
 	creation: _Creation | None
+	assumed_unwritten: tuple[tuple[int, int], ...]
 
 
 class _Creation(Struct):
@@ -333,7 +340,9 @@ def _global_fixpoint(rounds: _Rounds, current: _Round, round_number: int) -> _Ro
 			partial(
 				_round_analysis,
 				rounds.program,
-				context_for(rounds.program, current.writes),
+				context_for(
+					rounds.program, current.writes, assumed_unwritten=rounds.assumed_unwritten
+				),
 				current.seeds,
 			),
 			_reached(rounds.functions, current.seeds, rounds.program.machine),

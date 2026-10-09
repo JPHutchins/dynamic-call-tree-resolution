@@ -478,6 +478,20 @@ thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, narrowed by field:
 ...
 ```
 
+The forward list's length is in the emulator's config, `i2c_emul_cfg_0`, which Zephyr
+places in writable memory. Init code stores through pointers the analysis can't follow,
+so it can't trust what that memory holds. Stating instead that nothing writes the config
+lets it read the length, 0. The forwarding loop is then dead, and `thermal_tid` is
+bounded without assuming anything about recursion:
+
+```console
+$ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-unwritten i2c_emul_cfg_0
+resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed unwritten: i2c_emul_cfg_0 | rtos: zephyr
+...
+thermal_tid: 236 bytes (measured: 3, narrowed by field: 1, assumed unwritten: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
+...
+```
+
 - Both QEMU marks above are within these bounds, and `test_sensor_threads` asserts it,
   and how far below each bound each mark is ([#169]). Each row's `stack` is the size QEMU
   prints, and its `margin` is no more than what QEMU leaves unused.
@@ -637,6 +651,14 @@ contradicts does not hold.
   never calls itself and drops its call to itself. Only a direct self-call is dropped: a
   function on a longer cycle stays recursive. Nothing checks the assumption; the header
   and every row that rests on it name it ([#169], [#202]).
+- `--assume-unwritten OBJECT`, repeated for each data object, states that the program
+  never writes the object after it loads. A load from it then reads its value in the
+  image, even where a store's address is unknown. Nothing checks the assumption; the
+  header names it, and so does every row that reaches a caller whose indirect calls it
+  changed ([#202]). It is per object on purpose. Assuming instead that every store with
+  an unknown address misses everything the analysis reads would make the emulator list
+  that Zephyr's init code builds in RAM look empty, and drop the emulator call that
+  `thermal_tid` really makes.
 - `--narrow-by-field` assumes that every function stored into a field is stored as that
   field. A cast, a `memcpy` or a union member can store one it never sees
   (`tests/fixtures/reproducers/field_cast.c`), so it is off by default. It reads the

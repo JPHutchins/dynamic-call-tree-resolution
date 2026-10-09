@@ -41,6 +41,8 @@ class Bounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
 	narrowed_by_signature: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
+	assumed_unwritten: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
 
 
 class Unbounded(Struct):
@@ -68,6 +70,8 @@ class Unbounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-field`` narrowed."""
 	narrowed_by_signature: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
+	assumed_unwritten: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
 
 
 class LevelSource(StrEnum):
@@ -132,6 +136,7 @@ class Reason(StrEnum):
 	ASSUMED_NO_RECURSION = "assumed no recursion"
 	NARROWED_BY_FIELD = "narrowed by field"
 	NARROWED_BY_SIGNATURE = "narrowed by signature"
+	ASSUMED_UNWRITTEN = "assumed unwritten"
 
 
 type _Reasons = frozenset[tuple[Reason, str]]
@@ -202,6 +207,7 @@ _NOTED: Final = frozenset(
 		Reason.ASSUMED_NO_RECURSION,
 		Reason.NARROWED_BY_FIELD,
 		Reason.NARROWED_BY_SIGNATURE,
+		Reason.ASSUMED_UNWRITTEN,
 	}
 )
 _NARROWED: Final = {
@@ -446,6 +452,7 @@ def stack_graph(
 	*,
 	entry_edges: Iterable[CallEdge] | None = None,
 	assumed_no_recursion: frozenset[str] = frozenset(),
+	assumed_unwritten: frozenset[str] = frozenset(),
 	hardware_roots: frozenset[str] = frozenset(),
 ) -> StackGraph:
 	given = tuple(edges)
@@ -464,7 +471,7 @@ def stack_graph(
 	components = _strongly_connected_components(adjacency)
 	root_callees = _callees(root_adjacency)
 	root_graph_nodes = {frame_key(node) for node in set(root_adjacency) | root_callees}
-	narrowings = _narrowings(edges_tuple)
+	narrowings = _narrowings(edges_tuple, assumed_unwritten)
 	return StackGraph(
 		adjacency=adjacency,
 		frame_by_name=frame_by_name,
@@ -662,6 +669,7 @@ def _noted_sets(bound: Bounded | Unbounded) -> tuple[tuple[Reason, frozenset[str
 		(Reason.ASSUMED_NO_RECURSION, bound.assumed_no_recursion),
 		(Reason.NARROWED_BY_FIELD, bound.narrowed_by_field),
 		(Reason.NARROWED_BY_SIGNATURE, bound.narrowed_by_signature),
+		(Reason.ASSUMED_UNWRITTEN, bound.assumed_unwritten),
 	)
 
 
@@ -704,8 +712,10 @@ def _pair(edge: CallEdge) -> tuple[str, str]:
 	return (edge.caller, edge.callee)
 
 
-def _narrowings(edges: tuple[CallEdge, ...]) -> Mapping[str, frozenset[Reason]]:
-	return {
+def _narrowings(
+	edges: tuple[CallEdge, ...], assumed_unwritten: frozenset[str]
+) -> Mapping[str, frozenset[Reason]]:
+	narrowed = {
 		caller: reasons
 		for caller, group in groupby(sorted(edges, key=_pair), key=_edge_caller)
 		for reasons in (
@@ -713,6 +723,19 @@ def _narrowings(edges: tuple[CallEdge, ...]) -> Mapping[str, frozenset[Reason]]:
 		)
 		if reasons
 	}
+	return (
+		{
+			**narrowed,
+			**{
+				node: narrowed.get(node, frozenset[Reason]()) | {Reason.ASSUMED_UNWRITTEN}
+				for edge in edges
+				for node in (edge.caller, edge.callee)
+				if frame_key(node) in assumed_unwritten
+			},
+		}
+		if assumed_unwritten
+		else narrowed
+	)
 
 
 def _edge_caller(edge: CallEdge) -> str:
@@ -847,6 +870,7 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 			assumed_no_recursion=_names(reasons, Reason.ASSUMED_NO_RECURSION),
 			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
 			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
+			assumed_unwritten=_names(reasons, Reason.ASSUMED_UNWRITTEN),
 		)
 		if any(reason not in _NOTED for reason, _ in reasons)
 		else Bounded(
@@ -855,6 +879,7 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 			assumed_no_recursion=_names(reasons, Reason.ASSUMED_NO_RECURSION),
 			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
 			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
+			assumed_unwritten=_names(reasons, Reason.ASSUMED_UNWRITTEN),
 		)
 	)
 
