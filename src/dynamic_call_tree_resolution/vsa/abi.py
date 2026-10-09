@@ -237,6 +237,7 @@ X86_UNBOUNDED_STORES: Final = frozenset(
 )
 ARM_LOADS: Final = ("ldr",)
 ARM_MOVES: Final = ("mov", "movs")
+ARM_ZERO_EXTEND_MASKS: Final[Mapping[str, int]] = {"uxtb": 0xFF, "uxth": 0xFFFF}
 ARM_CONDITION_SUFFIXES: Final[Mapping[int, str]] = {
 	arm_const.ARM_CC_EQ: "eq",
 	arm_const.ARM_CC_NE: "ne",
