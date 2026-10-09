@@ -19,6 +19,7 @@ from capstone import (
 	arm_const,
 	x86_const,
 )
+from salix import Struct
 
 from dynamic_call_tree_resolution.model import (
 	Address,
@@ -100,6 +101,65 @@ ARM_CONDITIONAL: Final = frozenset(
 		"cbnz",
 	}
 )
+
+
+class X86Register(Struct):
+	"""Where an x86 general-purpose register sits in its family."""
+
+	wide: int
+	"""The family's 64-bit register."""
+	narrow: int
+	"""The family's 32-bit register."""
+	bits: int
+
+
+_X86_FAMILIES: Final = (
+	(
+		x86_const.X86_REG_RAX,
+		x86_const.X86_REG_EAX,
+		x86_const.X86_REG_AX,
+		x86_const.X86_REG_AL,
+		x86_const.X86_REG_AH,
+	),
+	(
+		x86_const.X86_REG_RBX,
+		x86_const.X86_REG_EBX,
+		x86_const.X86_REG_BX,
+		x86_const.X86_REG_BL,
+		x86_const.X86_REG_BH,
+	),
+	(
+		x86_const.X86_REG_RCX,
+		x86_const.X86_REG_ECX,
+		x86_const.X86_REG_CX,
+		x86_const.X86_REG_CL,
+		x86_const.X86_REG_CH,
+	),
+	(
+		x86_const.X86_REG_RDX,
+		x86_const.X86_REG_EDX,
+		x86_const.X86_REG_DX,
+		x86_const.X86_REG_DL,
+		x86_const.X86_REG_DH,
+	),
+	(x86_const.X86_REG_RSI, x86_const.X86_REG_ESI, x86_const.X86_REG_SI, x86_const.X86_REG_SIL),
+	(x86_const.X86_REG_RDI, x86_const.X86_REG_EDI, x86_const.X86_REG_DI, x86_const.X86_REG_DIL),
+	(x86_const.X86_REG_RBP, x86_const.X86_REG_EBP, x86_const.X86_REG_BP, x86_const.X86_REG_BPL),
+	(x86_const.X86_REG_RSP, x86_const.X86_REG_ESP, x86_const.X86_REG_SP, x86_const.X86_REG_SPL),
+	(x86_const.X86_REG_R8, x86_const.X86_REG_R8D, x86_const.X86_REG_R8W, x86_const.X86_REG_R8B),
+	(x86_const.X86_REG_R9, x86_const.X86_REG_R9D, x86_const.X86_REG_R9W, x86_const.X86_REG_R9B),
+	(x86_const.X86_REG_R10, x86_const.X86_REG_R10D, x86_const.X86_REG_R10W, x86_const.X86_REG_R10B),
+	(x86_const.X86_REG_R11, x86_const.X86_REG_R11D, x86_const.X86_REG_R11W, x86_const.X86_REG_R11B),
+	(x86_const.X86_REG_R12, x86_const.X86_REG_R12D, x86_const.X86_REG_R12W, x86_const.X86_REG_R12B),
+	(x86_const.X86_REG_R13, x86_const.X86_REG_R13D, x86_const.X86_REG_R13W, x86_const.X86_REG_R13B),
+	(x86_const.X86_REG_R14, x86_const.X86_REG_R14D, x86_const.X86_REG_R14W, x86_const.X86_REG_R14B),
+	(x86_const.X86_REG_R15, x86_const.X86_REG_R15D, x86_const.X86_REG_R15W, x86_const.X86_REG_R15B),
+)
+X86_REGISTERS: Final[Mapping[int, X86Register]] = {
+	register: X86Register(wide=wide, narrow=narrow, bits=bits)
+	for wide, narrow, word, *bytes_ in _X86_FAMILIES
+	for register, bits in ((wide, 64), (narrow, 32), (word, 16), *((byte, 8) for byte in bytes_))
+}
 X86_CALLER_SAVED_64: Final = (
 	x86_const.X86_REG_RAX,
 	x86_const.X86_REG_RCX,
