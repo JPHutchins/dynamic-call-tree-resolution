@@ -34,6 +34,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.model import Address, RtosModel, SystemThread
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
+	NULL_CALLEE,
 	Handled,
 	LevelSource,
 	Nested,
@@ -901,6 +902,36 @@ def test_depth_through_cyclic_nodes_matches_all_paths() -> None:
 			),
 		),
 	)
+
+
+@pytest.mark.parametrize(("target", "calls"), [(NULL_CALLEE, False), (INDIRECT_CALLEE, True)])
+def test_a_caller_whose_only_target_can_only_be_0_calls_nothing_in_either_expansion(
+	target: str, calls: bool
+) -> None:
+	targets = {"trampoline": frozenset({"entry"}), "entry": frozenset({target})}
+	fallback = frozenset({"cheap"})
+	assert (
+		any(
+			edge.caller == "/src/app.c:entry"
+			for edge in expand_indirect_calls(SHARED_ENTRY_EDGES, targets, fallback)
+		),
+		any(
+			edge.caller.endswith(":/src/app.c:entry")
+			for edge in own_thread_edges(
+				SHARED_ENTRY_EDGES,
+				"trampoline",
+				"worker_tid",
+				"entry",
+				ThreadTargets(
+					reached=frozenset({"trampoline", "entry"}),
+					targets_by_caller=targets,
+					sites_by_caller={"trampoline": 1, "entry": 1},
+				),
+				targets,
+				fallback,
+			)
+		),
+	) == (calls, calls)
 
 
 def test_a_target_only_a_field_narrowing_reaches_reads_indirect_field_in_both_expansions() -> None:
