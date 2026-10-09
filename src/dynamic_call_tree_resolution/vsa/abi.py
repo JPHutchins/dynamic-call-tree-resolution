@@ -351,6 +351,7 @@ ARM_ARGUMENT_REGISTERS: Final = (
 	arm_const.ARM_REG_R3,
 )
 EM_386_STACK_ARGUMENTS: Final = 8
+ARM_STACK_ARGUMENTS: Final = 8
 
 
 def _register_arguments(machine: Machine) -> tuple[int, ...]:

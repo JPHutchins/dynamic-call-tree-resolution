@@ -687,8 +687,16 @@ def _seed_from_arguments(arguments: Mapping[int, ValueSet], program: Program) ->
 		case Machine.EM_ARM:
 			return _argument_state(
 				program,
-				{ARM_ARGUMENT_REGISTERS[position]: values for position, values in known.items()},
-				{},
+				{
+					ARM_ARGUMENT_REGISTERS[position]: values
+					for position, values in known.items()
+					if position < len(ARM_ARGUMENT_REGISTERS)
+				},
+				{
+					program.pointer_size * (position - len(ARM_ARGUMENT_REGISTERS)): values
+					for position, values in known.items()
+					if position >= len(ARM_ARGUMENT_REGISTERS)
+				},
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
