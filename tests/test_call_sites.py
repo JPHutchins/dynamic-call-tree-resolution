@@ -282,6 +282,35 @@ def test_a_zero_extend_keeps_the_low_bits_of_each_value(code: str, targets: set[
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("writer", "targets"),
+	[
+		pytest.param(
+			"42f20000 45f25551 0160 7047", set[int](), id="a word store over half the word"
+		),
+		pytest.param("7047", {0x3001}, id="no store"),
+	],
+)
+def test_an_unaligned_load_sees_a_store_another_function_makes_over_part_of_it(
+	writer: str, targets: set[int]
+) -> None:
+	caller = bytes.fromhex("42f20000 d0f80230 9847 7047")
+	program = build_program(
+		Machine.EM_ARM,
+		(
+			("writer", 0x1000, len(bytes.fromhex(writer))),
+			("caller", 0x1100, len(caller)),
+			("target", 0x3000, 2),
+		),
+		objects=(("slot", 0x2000, bytes(2) + _pointer(0x3001, 4) + bytes(2)),),
+		sections={0x1000: bytes.fromhex(writer), 0x1100: caller, 0x3000: bytes.fromhex("7047")},
+		writable=frozenset({0x2000}),
+		pointer_size=4,
+	)
+	(site,) = (site for site in extract_call_sites(program) if site.caller_address == 0x1100)
+	assert tracked_values(site) == targets
+
+
 def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:
 	program = build_program(
 		Machine.EM_ARM,

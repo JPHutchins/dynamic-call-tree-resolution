@@ -41,6 +41,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	frame_copies_lost,
 	frame_write,
 	image_write,
+	overlapping_keys,
 	stack_read,
 	top_seed,
 	unknown_memory,
@@ -65,6 +66,8 @@ class Context(Struct):
 	read_only_spans: tuple[tuple[int, int], ...]
 	read_only_starts: tuple[int, ...]
 	global_writes: Writes
+	global_covered: frozenset[int]
+	"""Every byte a word of the global writes covers."""
 	function_starts: frozenset[Address]
 	external_symbols: Mapping[Address, str]
 	"""The undefined symbol whose address the dynamic loader writes to each slot."""
@@ -104,6 +107,9 @@ def context_for(program: Program, global_writes: Writes) -> Context:
 		read_only_spans=read_only,
 		read_only_starts=tuple(span[0] for span in read_only),
 		global_writes=global_writes,
+		global_covered=frozenset(
+			key + offset for key in global_writes.values for offset in range(program.pointer_size)
+		),
 		function_starts=frozenset(
 			normalized(function.address, program.machine) for function in program.functions.values()
 		),
@@ -154,6 +160,8 @@ def runtime_value(context: Context, address: Address) -> ValueSet:
 def _image_read(context: Context, state: State, addresses: frozenset[Address]) -> ValueSet:
 	values: set[Address] = set()
 	for address in addresses:
+		if _overlapped(context, state, address):
+			return Top()
 		local = state.globals.values.get(address)
 		written = local if local is not None else context.global_writes.values.get(address)
 		match written:
@@ -177,6 +185,23 @@ def _image_read(context: Context, state: State, addresses: frozenset[Address]) -
 		elif written is None and _span_at(context, address) is not None:
 			return Top()
 	return capped(frozenset(values))
+
+
+def _overlapped(context: Context, state: State, address: Address) -> bool:
+	"""Whether a write recorded at another address covers part of the word read here."""
+	pointer_size = context.program.pointer_size
+	return (
+		bool(state.globals.values)
+		and bool(
+			overlapping_keys(state.globals.values, address, pointer_size, pointer_size) - {address}
+		)
+	) or (
+		not context.global_covered.isdisjoint(range(address, address + pointer_size))
+		and bool(
+			overlapping_keys(context.global_writes.values, address, pointer_size, pointer_size)
+			- {address}
+		)
+	)
 
 
 def stack_offsets(state: State, memory: CsMemOperand, base_register: int) -> OffsetSet:

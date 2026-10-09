@@ -354,11 +354,14 @@ def _overlapping(
 	keys: Container[int], store: Store, pointer_size: int, starts: frozenset[int]
 ) -> frozenset[int]:
 	return frozenset(
-		key
-		for start in starts
-		for key in range(start - pointer_size + 1, start + store.width)
-		if key in keys
+		key for start in starts for key in overlapping_keys(keys, start, store.width, pointer_size)
 	)
+
+
+def overlapping_keys(
+	keys: Container[int], start: int, width: int, pointer_size: int
+) -> frozenset[int]:
+	return frozenset(key for key in range(start - pointer_size + 1, start + width) if key in keys)
 
 
 def _word_keys(store: Store, pointer_size: int, starts: frozenset[int]) -> frozenset[int]:
