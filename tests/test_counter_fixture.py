@@ -53,7 +53,7 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		len(summary.worst_case.unmeasured),
 		summary.worst_case.dynamic,
 		summary.worst_case.unresolved,
-	) == (6264, 236, 149, (), ())
+	) == (6160, 234, 149, (), ())
 
 
 def test_shell_readline_is_not_in_the_linked_executable(executable: Path) -> None:

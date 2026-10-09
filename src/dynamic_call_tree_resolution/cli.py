@@ -409,6 +409,8 @@ def analyze(
 			if site.field is not None
 			else f" (narrowed by signature {_signature_text(site.signature)}, unsound under casts)"
 			if site.signature is not None
+			else " (dispatch, from the RTOS model)"
+			if site.dispatch
 			else ""
 		)
 		print(f"{label}: {targets or _no_candidates(site)}{narrowing}")

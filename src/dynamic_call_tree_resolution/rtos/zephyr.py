@@ -14,6 +14,8 @@ from dynamic_call_tree_resolution.model import (
 	Address,
 	ArmCore,
 	ArmProfile,
+	Dispatch,
+	EmbeddedStructMember,
 	InterruptStack,
 	Machine,
 	RtosModel,
@@ -53,6 +55,10 @@ _SYSTEM_THREADS: Final = (
 )
 _INTERRUPT_STACK: Final = "z_interrupt_stacks"
 _INTERRUPT_STACK_SIZE: Final = "CONFIG_ISR_STACK_SIZE"
+_DISPATCHES: Final = (
+	("z_sys_init_run_level", "struct init_entry", ("init_fn",), "__init_start", "__init_end"),
+	("do_device_init", "struct device", ("ops", "init"), "_device_list_start", "_device_list_end"),
+)
 _KCONFIG_OPTION: Final = re.compile(r"^(CONFIG_\w+)=(.*)$", re.MULTILINE)
 _KCONFIG_INTEGER: Final = re.compile(r"0x[0-9a-fA-F]+|[0-9]+")
 _ARCH: Final = "CONFIG_ARCH"
@@ -154,6 +160,12 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 		interrupt_stack=_interrupt_stack(
 			program, _declared(options, _integer(options, _INTERRUPT_STACK_SIZE))
 		),
+		dispatches=tuple(
+			dispatch
+			for function, type_name, member, start, end in _DISPATCHES
+			if (dispatch := _dispatch(program, function, type_name, member, (start, end)))
+			is not None
+		),
 		creation=ThreadCreation(
 			frame_builders=_FRAME_BUILDERS,
 			setup=_SETUP,
@@ -165,6 +177,61 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 			),
 		),
 	)
+
+
+def _dispatch(
+	program: Program,
+	function: str,
+	type_name: str,
+	member: tuple[str, ...],
+	bounds: tuple[str, str],
+) -> Dispatch | None:
+	entries = tuple(
+		data_object
+		for data_object in program.objects.values()
+		if data_object.type_name == type_name
+	)
+	offset = _member_offset(program, type_name, member)
+	start, end = (program.labels.get(bounds[0]), program.labels.get(bounds[1]))
+	if (
+		function not in program.symbol_addresses
+		or offset is None
+		or start is None
+		or end is None
+		or not entries
+		or not all(
+			start <= entry.address < end and not in_writable_memory(program, entry.address)
+			for entry in entries
+		)
+	):
+		return None
+	return Dispatch(
+		function=function,
+		targets=frozenset(
+			target
+			for entry in entries
+			for target in (pointer_at(program, Address(entry.address + offset)),)
+			if target is not None and target in program.functions
+		),
+	)
+
+
+def _member_offset(program: Program, type_name: str, member: tuple[str, ...]) -> int | None:
+	layout = program.layouts.get(type_name)
+	if layout is None or member[0] not in layout.offsets:
+		return None
+	if len(member) == 1:
+		return layout.offsets[member[0]]
+	nested = next(
+		(
+			embedded.type_name
+			for embedded in layout.members
+			if isinstance(embedded, EmbeddedStructMember) and embedded.name == member[0]
+		),
+		None,
+	)
+	inner = _member_offset(program, nested, member[1:]) if nested is not None else None
+	return layout.offsets[member[0]] + inner if inner is not None else None
 
 
 def _system_thread(

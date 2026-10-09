@@ -10,6 +10,7 @@ from msgspec import Struct
 from salix import Struct as SalixStruct
 
 from dynamic_call_tree_resolution.call_sites import (
+	Dispatched,
 	Null,
 	call_site_candidates,
 	narrowing_signature,
@@ -103,6 +104,8 @@ class CallSiteReport(Struct):
 	"""The undefined symbol whose address the dynamic loader writes to the slot."""
 	null: bool = False
 	"""The target can only be address 0, so the site calls nothing."""
+	dispatch: bool = False
+	"""The candidates are the entries the RTOS model says the site's dispatch loop calls."""
 
 
 class UnresolvedSlotReport(Struct):
@@ -518,6 +521,7 @@ def build_report(
 				signature=_render_signature(narrowing_signature(findings)),
 				external=site.external,
 				null=any(isinstance(found, Null) for found in findings),
+				dispatch=any(isinstance(found, Dispatched) for found in findings),
 			)
 			for site in call_sites
 			for findings in (site_targets(program, site, resolved_map, narrowings),)

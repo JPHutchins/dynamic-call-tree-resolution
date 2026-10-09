@@ -10,7 +10,7 @@ from functools import partial
 from itertools import groupby
 from typing import TYPE_CHECKING, assert_never
 
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.callgraph import EdgeKind
 from dynamic_call_tree_resolution.field_narrowing import narrowed
@@ -37,6 +37,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	frame_key,
 )
 from dynamic_call_tree_resolution.vsa import Analysis, address_taken, analyze, runtime_value
+from dynamic_call_tree_resolution.vsa.analysis import ThreadSites
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers
 
@@ -45,7 +46,6 @@ if TYPE_CHECKING:
 
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
-	from dynamic_call_tree_resolution.vsa.analysis import ThreadSites
 
 
 def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
@@ -66,15 +66,36 @@ class ProgramResolution(Struct):
 def resolve(program: Program, rtos: RtosModel = BARE_METAL) -> ProgramResolution:
 	analysis = analyze(program, rtos)
 	return ProgramResolution(
-		sites=analysis.sites,
+		sites=_dispatched(program, rtos, analysis.sites),
 		seeded=analysis.seeded,
-		threads=analysis.threads,
+		threads={
+			thread: ThreadSites(reached=own.reached, sites=_dispatched(program, rtos, own.sites))
+			for thread, own in analysis.threads.items()
+		},
 		fallback=_fallback(program, analysis.address_taken),
 		assignments=tuple(
 			runtime
 			for assignment in assignments(program)
 			if (runtime := _at_runtime(program, analysis, assignment)) is not None
 		),
+	)
+
+
+def _dispatched(
+	program: Program, rtos: RtosModel, sites: tuple[CallSite, ...]
+) -> tuple[CallSite, ...]:
+	callers = Counter(site.caller_address for site in sites)
+	targets = {
+		start: dispatch.targets
+		for dispatch in rtos.dispatches
+		for start, function in program.functions.items()
+		if function.name == dispatch.function and callers[start] == 1
+	}
+	return tuple(
+		replace(site, dispatch=targets[site.caller_address])
+		if site.caller_address in targets
+		else site
+		for site in sites
 	)
 
 
@@ -150,12 +171,22 @@ class Null(Struct):
 	"""A call whose target can only be address 0, which no function starts at."""
 
 
-type SiteTargets = Chased | SignatureNarrowed | External | Null
+class Dispatched(Struct):
+	"""The entries an RTOS's dispatch loop calls, as its model enumerates them."""
+
+	targets: frozenset[Address]
+
+
+type SiteTargets = Chased | SignatureNarrowed | External | Null | Dispatched
 
 
 def target_addresses(found: SiteTargets) -> frozenset[Address]:
 	match found:
-		case Chased(targets=targets) | SignatureNarrowed(targets=targets):
+		case (
+			Chased(targets=targets)
+			| SignatureNarrowed(targets=targets)
+			| Dispatched(targets=targets)
+		):
 			return targets
 		case External() | Null():
 			return frozenset()
@@ -201,6 +232,8 @@ def site_targets(
 	return (
 		chased
 		if any(map(target_addresses, chased))
+		else (Dispatched(targets=site.dispatch),)
+		if site.dispatch is not None
 		else tuple(
 			narrowing
 			for narrowing in (
@@ -231,7 +264,7 @@ def narrowing_signature(findings: tuple[SiteTargets, ...]) -> FunctionSignature 
 
 def _signature(found: SiteTargets) -> FunctionSignature | None:
 	match found:
-		case Chased() | External() | Null():
+		case Chased() | External() | Null() | Dispatched():
 			return None
 		case SignatureNarrowed(signature=signature):
 			return signature
@@ -405,7 +438,11 @@ def _labeled(
 
 def _names(found: SiteTargets, name: Callable[[Address], str]) -> frozenset[str]:
 	match found:
-		case Chased(targets=targets) | SignatureNarrowed(targets=targets):
+		case (
+			Chased(targets=targets)
+			| SignatureNarrowed(targets=targets)
+			| Dispatched(targets=targets)
+		):
 			return frozenset(map(name, targets))
 		case External(symbol=symbol):
 			return frozenset({symbol})
@@ -425,6 +462,8 @@ def _kind(found: SiteTargets) -> EdgeKind:
 			return EdgeKind.EXTERNAL
 		case Null():
 			return EdgeKind.CANDIDATE
+		case Dispatched():
+			return EdgeKind.DISPATCH
 		case _ as unreachable:
 			assert_never(unreachable)
 

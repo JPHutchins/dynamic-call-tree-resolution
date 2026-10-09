@@ -258,6 +258,8 @@ class Program(Struct):
 	"""Each function's declaration, by where its code starts; a clone has its origin's."""
 	symbol_addresses: Mapping[str, frozenset[Address]] = {}
 	"""Where each function symbol's code starts, aliases included."""
+	labels: Mapping[str, Address] = {}
+	"""Symbols without a type, such as the bounds a linker script defines, by unique name."""
 	arm_core: ArmCore | None = None
 	"""The ARM core the build attributes target; ``None`` for other machines."""
 	tls_size: int = 0
@@ -313,6 +315,13 @@ class InterruptStack(Struct):
 	"""The stack size the build's configuration declares."""
 
 
+class Dispatch(Struct):
+	"""A function an RTOS calls each entry of a linker-built table through."""
+
+	function: str
+	targets: frozenset[Address]
+
+
 class ThreadCreation(Struct):
 	"""How an RTOS's thread creations reach its trampoline."""
 
@@ -343,6 +352,7 @@ class RtosModel(Struct):
 	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
 	system_threads: tuple[SystemThread, ...] = ()
 	interrupt_stack: InterruptStack | None = None
+	dispatches: tuple[Dispatch, ...] = ()
 
 
 BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)
@@ -409,6 +419,8 @@ class CallSite(Struct):
 	"""The one image address the target was loaded from."""
 	external: str | None = None
 	"""The undefined symbol whose address the dynamic loader writes there."""
+	dispatch: frozenset[Address] | None = None
+	"""What the RTOS model says the site's dispatch loop calls."""
 
 
 class Residue(StrEnum):
