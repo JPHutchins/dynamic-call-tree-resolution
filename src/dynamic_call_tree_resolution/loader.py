@@ -75,6 +75,7 @@ class _SectionBytes(Struct):
 
 
 _DW_OP_ADDR: Final = 0x03
+_DW_OP_PLUS_UCONST: Final = 0x23
 _SHF_WRITE: Final = 0x1
 _SHF_ALLOC: Final = 0x2
 _SHF_EXECINSTR: Final = 0x4
@@ -90,6 +91,9 @@ _CONSTANT_FORMS: Final = frozenset(
 		"DW_FORM_sdata",
 		"DW_FORM_implicit_const",
 	}
+)
+_BLOCK_FORMS: Final = frozenset(
+	{"DW_FORM_exprloc", "DW_FORM_block1", "DW_FORM_block2", "DW_FORM_block4"}
 )
 
 
@@ -351,9 +355,15 @@ def _relocated_sections(
 
 
 def _patched(section: _SectionBytes, patches: Mapping[Address, bytes], pointer_size: int) -> bytes:
+	r"""The section's bytes with each relocated slot that fits inside it written.
+
+	>>> section = _SectionBytes(address=0x100, size=6, data=bytes(6), flags=0)
+	>>> _patched(section, {Address(0x100): b"ABCD", Address(0x104): b"EFGH"}, 4)
+	b'ABCD\x00\x00'
+	"""
 	data = bytearray(section.data)
 	for slot, target in patches.items():
-		if section.address <= slot < section.address + section.size:
+		if section.address <= slot and slot + pointer_size <= section.address + section.size:
 			offset = slot - section.address
 			data[offset : offset + pointer_size] = target
 	return bytes(data)
@@ -702,7 +712,12 @@ def _named_type(die: DIE | None, anonymous: Callable[[DIE], str]) -> str:
 	match die.tag:
 		case "DW_TAG_base_type" | "DW_TAG_enumeration_type":
 			return _die_name(die)
-		case "DW_TAG_const_type" | "DW_TAG_volatile_type":
+		case (
+			"DW_TAG_const_type"
+			| "DW_TAG_volatile_type"
+			| "DW_TAG_restrict_type"
+			| "DW_TAG_atomic_type"
+		):
 			return _named_type(_type_die(die), anonymous)
 		case "DW_TAG_pointer_type":
 			pointee = _strip_qualifiers(_type_die(die))
@@ -750,6 +765,8 @@ def _strip_qualifiers(die: DIE | None) -> DIE | None:
 	if die is None or die.tag not in (
 		"DW_TAG_const_type",
 		"DW_TAG_volatile_type",
+		"DW_TAG_restrict_type",
+		"DW_TAG_atomic_type",
 		"DW_TAG_typedef",
 	):
 		return die
@@ -973,9 +990,29 @@ def _member_offset(member_die: DIE) -> int | None:
 	location = member_die.attributes.get("DW_AT_data_member_location")
 	if location is None:
 		return 0
-	if location.form not in _CONSTANT_FORMS:
-		return None  # pragma: no cover
-	return _int_value(location)
+	if location.form in _CONSTANT_FORMS:
+		return _int_value(location)
+	return _plus_uconst(_exprloc(location)) if location.form in _BLOCK_FORMS else None
+
+
+def _plus_uconst(expression: list[int]) -> int | None:
+	"""The offset a DWARF 2 member location adds to its struct's address.
+
+	>>> _plus_uconst([0x23, 0x08]), _plus_uconst([0x23, 0x90, 0x01]), _plus_uconst([0x10, 0x08])
+	(8, 144, None)
+	"""
+	return _uleb128(expression[1:]) if expression[:1] == [_DW_OP_PLUS_UCONST] else None
+
+
+def _uleb128(data: list[int]) -> int:
+	return sum(
+		(byte & 0x7F) << (7 * index)
+		for index, byte in enumerate(
+			data[
+				: next((index for index, byte in enumerate(data) if not byte & 0x80), len(data)) + 1
+			]
+		)
+	)
 
 
 def _objects_from_symtab(symtab: SymbolTableSection | None) -> dict[Address, DataObject]:
@@ -1042,12 +1079,7 @@ def _location_address(die: DIE, pointer_size: int, byte_order: ByteOrder) -> Add
 	location = die.attributes.get("DW_AT_location")
 	if location is None:
 		return None
-	if location.form not in (
-		"DW_FORM_exprloc",
-		"DW_FORM_block1",
-		"DW_FORM_block2",
-		"DW_FORM_block4",
-	):
+	if location.form not in _BLOCK_FORMS:
 		return None  # pragma: no cover
 	operations = _exprloc(location)
 	if not operations or operations[0] != _DW_OP_ADDR:
