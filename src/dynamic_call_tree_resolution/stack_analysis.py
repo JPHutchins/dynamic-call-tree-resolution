@@ -193,6 +193,7 @@ class _Forward(Struct):
 _MAX_CYCLE_SIZE: Final = 16
 
 INDIRECT_CALLEE: Final = "__indirect_call"
+NULL_CALLEE: Final = "__null_call"
 
 _NOTED: Final = frozenset(
 	{
@@ -229,7 +230,9 @@ def expand_indirect_calls(
 				graph_targets,
 				exact=exact,
 			)
-			or [(INDIRECT_CALLEE, edge.kind)]
+			or _unexpanded(
+				targets_by_caller.get(frame_key(edge.caller), frozenset[str]()), edge.kind
+			)
 			if edge.callee == INDIRECT_CALLEE
 			else ((edge.callee, edge.kind),)
 		)
@@ -247,21 +250,24 @@ def _expansion(
 	candidates = targets - {INDIRECT_CALLEE}
 	return sorted(
 		(graph_target, _indirect_kind(target, candidates, narrowed))
-		for target in candidates
+		for target in (candidates - {NULL_CALLEE})
 		| (
 			fallback
-			if INDIRECT_CALLEE in targets
-			or (not exact and not _external_only(candidates, narrowed))
+			if INDIRECT_CALLEE in targets or (not exact and not _nothing_live(candidates, narrowed))
 			else frozenset[str]()
 		)
 		for graph_target in graph_targets(target)
 	)
 
 
-def _external_only(candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]) -> bool:
+def _nothing_live(candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]) -> bool:
 	return bool(candidates) and all(
-		narrowed.get(target) is EdgeKind.EXTERNAL for target in candidates
+		target == NULL_CALLEE or narrowed.get(target) is EdgeKind.EXTERNAL for target in candidates
 	)
+
+
+def _unexpanded(targets: frozenset[str], kind: EdgeKind) -> list[tuple[str, EdgeKind]]:
+	return [] if targets == frozenset({NULL_CALLEE}) else [(INDIRECT_CALLEE, kind)]
 
 
 def _indirect_kind(
@@ -343,7 +349,7 @@ def own_thread_edges(
 								own.narrowed_by_caller.get(frame_key(edge.caller), {}),
 							),
 						)
-						for target in own.targets_by_caller[frame_key(edge.caller)]
+						for target in own.targets_by_caller[frame_key(edge.caller)] - {NULL_CALLEE}
 						for graph_target in graph_targets(target)
 					)
 					if frame_key(edge.caller) in complete
@@ -354,7 +360,9 @@ def own_thread_edges(
 						graph_targets,
 						exact=False,
 					)
-					or [(INDIRECT_CALLEE, edge.kind)]
+					or _unexpanded(
+						targets_by_caller.get(frame_key(edge.caller), frozenset[str]()), edge.kind
+					)
 				)
 				if edge.callee == INDIRECT_CALLEE
 				else ((node(edge.callee), edge.kind),)
