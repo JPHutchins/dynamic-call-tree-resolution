@@ -54,6 +54,22 @@ def test_parse_stack_usage_rejects_unknown_qualifiers(tmp_path: Path) -> None:
 		parse_stack_usage(stack_file)
 
 
+def test_parse_stack_usage_reads_clang_records_without_a_column(tmp_path: Path) -> None:
+	stack_file = tmp_path / "vla.c.su"
+	stack_file.write_text("vla.c:1:big\t64\tstatic\nvla.c:7:small\t8\tstatic\n")
+	assert parse_stack_usage(stack_file) == (
+		StackUsage(function="big", bytes=64, bounded=True),
+		StackUsage(function="small", bytes=8, bounded=True),
+	)
+
+
+def test_parse_stack_usage_rejects_a_location_without_a_line(tmp_path: Path) -> None:
+	stack_file = tmp_path / "bad.su"
+	stack_file.write_text("big\t64\tstatic\n")
+	with pytest.raises(ValueError, match=r"malformed \.su location 'big'"):
+		parse_stack_usage(stack_file)
+
+
 def test_load_stack_usages_collects_all_su_files(tmp_path: Path) -> None:
 	build_directory = tmp_path / "build"
 	nested = build_directory / "zephyr" / "CMakeFiles" / "zephyr.dir"

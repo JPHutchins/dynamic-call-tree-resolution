@@ -1,12 +1,13 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Parsing GCC ``-fstack-usage`` (``.su``) records."""
+"""Parsing ``-fstack-usage`` (``.su``) records, from GCC or clang."""
 
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
@@ -68,16 +69,52 @@ def _record_location(line: str) -> tuple[str, SourceLocation]:
 	>>> _record_location("/src/kernel/sched.c:403:13:reschedule" + chr(9) + "0" + chr(9) + "static")
 	('reschedule', SourceLocation(file='sched.c', line=403, column=13))
 	"""
-	path, line_number, column, function = line.split("\t", maxsplit=1)[0].split(":", 3)
-	return function, SourceLocation(
-		file=PurePosixPath(path).name, line=int(line_number), column=int(column)
+	location = _location(line.split("\t", maxsplit=1)[0])
+	return location.function, SourceLocation(
+		file=PurePosixPath(location.path).name, line=location.line, column=location.column
 	)
+
+
+_LOCATION: Final = re.compile(r"(?P<path>.*?):(?P<line>\d+):(?:(?P<column>\d+):)?(?P<function>.+)")
+
+
+class _Location(Struct):
+	path: str
+	line: int
+	column: int
+	"""0 when the record has none, as clang's don't."""
+	function: str
+
+
+def _location(text: str) -> _Location:
+	"""The parts of a ``.su`` record's location.
+
+	>>> _location("vla.c:1:big")
+	_Location(path='vla.c', line=1, column=0, function='big')
+	>>> _location("a.cc:3:6:void Foo::bar()")
+	_Location(path='a.cc', line=3, column=6, function='void Foo::bar()')
+
+	Raises:
+		ValueError: for a location without a line number.
+	"""
+	match _LOCATION.fullmatch(text):
+		case None:
+			raise ValueError(f"malformed .su location {text!r}")
+		case re.Match() as found:
+			return _Location(
+				path=found["path"],
+				line=int(found["line"]),
+				column=int(found["column"] or 0),
+				function=found["function"],
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _parse_record(line: str) -> StackUsage:
 	location, byte_count, qualifier = line.split("\t")
 	return StackUsage(
-		function=location.split(":", 3)[3],
+		function=_location(location).function,
 		bytes=int(byte_count),
 		bounded=_bounded(qualifier),
 	)
