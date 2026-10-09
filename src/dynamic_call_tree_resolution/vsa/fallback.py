@@ -27,8 +27,10 @@ from dynamic_call_tree_resolution.model import (
 )
 from dynamic_call_tree_resolution.points_to import instruction_runs, instruction_set_at
 from dynamic_call_tree_resolution.vsa.abi import (
-	arm_mnemonic,
+	ARM_ADDITION_SIGNS,
+	ARM_MOVES,
 	disassemblers,
+	is_data,
 	program_counter,
 )
 from dynamic_call_tree_resolution.vsa.links import (
@@ -151,7 +153,8 @@ def _non_branch_instructions(program: Program) -> Iterator[tuple[CsInsn, ...]]:
 				program, start, function_extent(program, functions, start)
 			)
 			for instruction in decoders[instruction_set_at(program, address)].disasm(code, address)
-			if instruction.id != 0 and not any(instruction.group(group) for group in _BRANCH_GROUPS)
+			if not is_data(instruction)
+			and not any(instruction.group(group) for group in _BRANCH_GROUPS)
 		)
 		for start in functions
 	)
@@ -177,14 +180,14 @@ def _arm_addresses(
 ) -> Iterator[int]:
 	operands = instruction.operands
 	yield from (operand.imm for operand in operands if operand.type == arm_const.ARM_OP_IMM)
-	match arm_mnemonic(instruction), operands:
-		case "adr", [_, offset]:
+	match instruction.id, operands:
+		case arm_const.ARM_INS_ADR, [_, offset]:
 			yield _pc_relative(program, instruction, offset.imm)
-		case (("add" | "addw"), [_, base, offset]) if base.reg == arm_const.ARM_REG_PC:
-			yield _pc_relative(program, instruction, offset.imm)
-		case (("sub" | "subw"), [_, base, offset]) if base.reg == arm_const.ARM_REG_PC:
-			yield _pc_relative(program, instruction, -offset.imm)
-		case "movt", [destination, high]:
+		case addition, [_, base, offset] if (
+			addition in ARM_ADDITION_SIGNS and base.reg == arm_const.ARM_REG_PC
+		):
+			yield _pc_relative(program, instruction, ARM_ADDITION_SIGNS[addition] * offset.imm)
+		case arm_const.ARM_INS_MOVT, [destination, high]:
 			yield from _movt_addresses(high.imm, destination.reg, preceding)
 		case _:
 			pass
@@ -205,7 +208,9 @@ def _movt_addresses(high: int, register: int, preceding: tuple[CsInsn, ...]) -> 
 		(
 			earlier.operands[1].imm
 			for earlier in reversed(preceding)
-			if arm_mnemonic(earlier) == "movw" and earlier.operands[0].reg == register
+			if earlier.id in ARM_MOVES
+			and earlier.operands[0].reg == register
+			and earlier.operands[1].type == arm_const.ARM_OP_IMM
 		),
 		None,
 	)

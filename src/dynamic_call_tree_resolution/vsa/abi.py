@@ -74,33 +74,24 @@ X86_TRANSFERS: Final = (
 	"ud2",
 	"hlt",
 )
-ARM_TRANSFERS: Final = ("bl", "blx", "bx", "b", "pop", "svc", "bkpt", "udf", "tbb", "tbh")
-X86_CALLS: Final = ("call",)
-X86_RETURNING_TRAPS: Final = ("syscall", "int", "int3", "hlt")
-ARM_RETURNING_TRAPS: Final = ("svc", "bkpt")
-ARM_CALLS: Final = ("bl", "blx")
-ARM_CONDITIONAL: Final = frozenset(
+ARM_TRANSFERS: Final = frozenset(
 	{
-		"beq",
-		"bne",
-		"bcs",
-		"bcc",
-		"bmi",
-		"bpl",
-		"bvs",
-		"bvc",
-		"bhi",
-		"bls",
-		"bge",
-		"blt",
-		"bgt",
-		"ble",
-		"bhs",
-		"blo",
-		"cbz",
-		"cbnz",
+		arm_const.ARM_INS_BL,
+		arm_const.ARM_INS_BLX,
+		arm_const.ARM_INS_BX,
+		arm_const.ARM_INS_B,
+		arm_const.ARM_INS_POP,
+		arm_const.ARM_INS_SVC,
+		arm_const.ARM_INS_BKPT,
+		arm_const.ARM_INS_UDF,
+		arm_const.ARM_INS_TBB,
+		arm_const.ARM_INS_TBH,
 	}
 )
+X86_CALLS: Final = ("call",)
+X86_RETURNING_TRAPS: Final = ("syscall", "int", "int3", "hlt")
+ARM_RETURNING_TRAPS: Final = frozenset({arm_const.ARM_INS_SVC, arm_const.ARM_INS_BKPT})
+ARM_CALLS: Final = frozenset({arm_const.ARM_INS_BL, arm_const.ARM_INS_BLX})
 
 
 class X86Register(Struct):
@@ -235,52 +226,116 @@ X86_UNBOUNDED_STORES: Final = frozenset(
 		"xsaves64",
 	}
 )
-ARM_MOVES: Final = ("mov", "movs")
-ARM_ZERO_EXTEND_MASKS: Final[Mapping[str, int]] = {"uxtb": 0xFF, "uxth": 0xFFFF}
-ARM_CONDITION_SUFFIXES: Final[Mapping[int, str]] = {
-	arm_const.ARM_CC_EQ: "eq",
-	arm_const.ARM_CC_NE: "ne",
-	arm_const.ARM_CC_HS: "hs",
-	arm_const.ARM_CC_LO: "lo",
-	arm_const.ARM_CC_MI: "mi",
-	arm_const.ARM_CC_PL: "pl",
-	arm_const.ARM_CC_VS: "vs",
-	arm_const.ARM_CC_VC: "vc",
-	arm_const.ARM_CC_HI: "hi",
-	arm_const.ARM_CC_LS: "ls",
-	arm_const.ARM_CC_GE: "ge",
-	arm_const.ARM_CC_LT: "lt",
-	arm_const.ARM_CC_GT: "gt",
-	arm_const.ARM_CC_LE: "le",
-}
-ARM_STORE_WIDTHS: Final[Mapping[str, int]] = {
-	"str": 4,
-	"strb": 1,
-	"strh": 2,
-	"strd": 8,
-	"strt": 4,
-	"strbt": 1,
-	"strht": 2,
-	"stl": 4,
-	"stlb": 1,
-	"stlh": 2,
-	"strex": 4,
-	"strexb": 1,
-	"strexh": 2,
-	"stlex": 4,
-	"stlexb": 1,
-	"stlexh": 2,
-	"vstr": 8,
-}
-ARM_STORED_REGISTERS: Final[Mapping[str, int]] = {"str": 1, "strd": 2}
-ARM_EXCLUSIVE_STORES: Final = frozenset({"strex", "strexb", "strexh", "stlex", "stlexb", "stlexh"})
-ARM_MULTIPLE_STORES: Final = frozenset(
-	{"push", "stm", "stmia", "stmea", "stmdb", "stmfd", "vpush", "vstm", "vstmia", "vstmdb"}
+ARM_MOVES: Final = frozenset(
+	{arm_const.ARM_INS_MOV, arm_const.ARM_INS_MOVS, arm_const.ARM_INS_MOVW}
 )
-ARM_DESCENDING_STORES: Final = frozenset({"push", "stmdb", "stmfd", "vpush", "vstmdb"})
+ARM_ADDITION_SIGNS: Final[Mapping[int, int]] = {
+	arm_const.ARM_INS_ADD: 1,
+	arm_const.ARM_INS_ADDW: 1,
+	arm_const.ARM_INS_SUB: -1,
+	arm_const.ARM_INS_SUBS: -1,
+	arm_const.ARM_INS_SUBW: -1,
+}
+ARM_ZERO_EXTEND_MASKS: Final[Mapping[int, int]] = {
+	arm_const.ARM_INS_UXTB: 0xFF,
+	arm_const.ARM_INS_UXTH: 0xFFFF,
+}
+ARM_CONDITIONS: Final = frozenset(
+	{
+		arm_const.ARM_CC_EQ,
+		arm_const.ARM_CC_NE,
+		arm_const.ARM_CC_HS,
+		arm_const.ARM_CC_LO,
+		arm_const.ARM_CC_MI,
+		arm_const.ARM_CC_PL,
+		arm_const.ARM_CC_VS,
+		arm_const.ARM_CC_VC,
+		arm_const.ARM_CC_HI,
+		arm_const.ARM_CC_LS,
+		arm_const.ARM_CC_GE,
+		arm_const.ARM_CC_LT,
+		arm_const.ARM_CC_GT,
+		arm_const.ARM_CC_LE,
+	}
+)
+ARM_STORE_WIDTHS: Final[Mapping[int, int]] = {
+	arm_const.ARM_INS_STR: 4,
+	arm_const.ARM_INS_STRB: 1,
+	arm_const.ARM_INS_STRH: 2,
+	arm_const.ARM_INS_STRD: 8,
+	arm_const.ARM_INS_STRT: 4,
+	arm_const.ARM_INS_STRBT: 1,
+	arm_const.ARM_INS_STRHT: 2,
+	arm_const.ARM_INS_STL: 4,
+	arm_const.ARM_INS_STLB: 1,
+	arm_const.ARM_INS_STLH: 2,
+	arm_const.ARM_INS_STREX: 4,
+	arm_const.ARM_INS_STREXB: 1,
+	arm_const.ARM_INS_STREXH: 2,
+	arm_const.ARM_INS_STLEX: 4,
+	arm_const.ARM_INS_STLEXB: 1,
+	arm_const.ARM_INS_STLEXH: 2,
+	arm_const.ARM_INS_VSTR: 8,
+}
+ARM_STORED_REGISTERS: Final[Mapping[int, int]] = {
+	arm_const.ARM_INS_STR: 1,
+	arm_const.ARM_INS_STRD: 2,
+}
+ARM_EXCLUSIVE_STORES: Final = frozenset(
+	{
+		arm_const.ARM_INS_STREX,
+		arm_const.ARM_INS_STREXB,
+		arm_const.ARM_INS_STREXH,
+		arm_const.ARM_INS_STLEX,
+		arm_const.ARM_INS_STLEXB,
+		arm_const.ARM_INS_STLEXH,
+	}
+)
+ARM_FLOATING_POINT_MULTIPLE_STORES: Final = frozenset(
+	{arm_const.ARM_INS_VPUSH, arm_const.ARM_INS_VSTMIA, arm_const.ARM_INS_VSTMDB}
+)
+ARM_MULTIPLE_STORES: Final = frozenset(
+	{
+		arm_const.ARM_INS_PUSH,
+		arm_const.ARM_INS_STM,
+		arm_const.ARM_INS_STMDB,
+		*ARM_FLOATING_POINT_MULTIPLE_STORES,
+	}
+)
+ARM_DESCENDING_STORES: Final = frozenset(
+	{
+		arm_const.ARM_INS_PUSH,
+		arm_const.ARM_INS_STMDB,
+		arm_const.ARM_INS_VPUSH,
+		arm_const.ARM_INS_VSTMDB,
+	}
+)
+ARM_UNTRACKED_STORES: Final = frozenset(
+	{
+		arm_const.ARM_INS_STC,
+		arm_const.ARM_INS_STC2,
+		arm_const.ARM_INS_STC2L,
+		arm_const.ARM_INS_STCL,
+		arm_const.ARM_INS_STLEXD,
+		arm_const.ARM_INS_STMDA,
+		arm_const.ARM_INS_STMIB,
+		arm_const.ARM_INS_STREXD,
+		arm_const.ARM_INS_VST1,
+		arm_const.ARM_INS_VST2,
+		arm_const.ARM_INS_VST3,
+		arm_const.ARM_INS_VST4,
+	}
+)
 ARM_REGISTER_BYTES: Final[Mapping[str, int]] = {"s": 4, "d": 8, "q": 16}
-ARM_LOAD_WIDTHS: Final[Mapping[str, int]] = {"ldr": 4, "ldrh": 2, "ldrb": 1}
-ARM_TRACKED_LOAD_WIDTHS: Final[Mapping[str, int]] = {"ldr": 4, "ldrh": 2}
+ARM_LOAD_WIDTHS: Final[Mapping[int, int]] = {
+	arm_const.ARM_INS_LDR: 4,
+	arm_const.ARM_INS_LDRH: 2,
+	arm_const.ARM_INS_LDRB: 1,
+}
+ARM_TRACKED_LOAD_WIDTHS: Final[Mapping[int, int]] = {
+	arm_const.ARM_INS_LDR: 4,
+	arm_const.ARM_INS_LDRH: 2,
+}
 X86_64_ARGUMENT_REGISTERS: Final = (
 	x86_const.X86_REG_RDI,
 	x86_const.X86_REG_RSI,
@@ -329,15 +384,16 @@ FLAG_REGISTER_NAMES: Final = frozenset(
 )
 
 
-def arm_mnemonic(instruction: CsInsn) -> str:
-	unqualified = instruction.mnemonic.split(".")[0]
-	if instruction.mnemonic == ".byte":
-		return unqualified
-	return unqualified.removesuffix(ARM_CONDITION_SUFFIXES.get(instruction.cc, ""))
+def is_data(instruction: CsInsn) -> bool:
+	"""Whether the disassembler skipped these bytes as data rather than decoding an instruction."""
+	return instruction.id == 0
 
 
 def arm_predicated(instruction: CsInsn) -> bool:
-	return arm_mnemonic(instruction) != instruction.mnemonic.split(".")[0]
+	return (
+		instruction.id not in (arm_const.ARM_INS_INVALID, arm_const.ARM_INS_IT)
+		and instruction.cc in ARM_CONDITIONS
+	)
 
 
 def normalized(address: Address, machine: Machine) -> Address:

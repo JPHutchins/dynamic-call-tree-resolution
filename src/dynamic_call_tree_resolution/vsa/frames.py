@@ -15,7 +15,6 @@ from dynamic_call_tree_resolution.model import Address, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
 	SP_REGISTERS,
-	arm_mnemonic,
 	disassemblers,
 	normalized,
 )
@@ -267,7 +266,7 @@ def _exit(
 	starts: AbstractSet[Address],
 ) -> _Exit:
 	if indirect_operand(instruction, program.machine) is not None:
-		return _RegisterCall() if arm_mnemonic(instruction) in ARM_CALLS else _Lost()
+		return _RegisterCall() if instruction.id in ARM_CALLS else _Lost()
 	branch = branch_target(instruction, program.machine)
 	called = call_target(instruction, program.machine)
 	match (

@@ -21,16 +21,15 @@ from dynamic_call_tree_resolution.points_to import (
 )
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
-	ARM_CONDITIONAL,
 	ARM_LOAD_WIDTHS,
 	ARM_RETURNING_TRAPS,
 	ARM_TRANSFERS,
 	X86_CALLS,
 	X86_RETURNING_TRAPS,
 	X86_TRANSFERS,
-	arm_mnemonic,
 	arm_predicated,
 	disassemblers,
+	is_data,
 	normalized,
 	program_counter,
 )
@@ -237,7 +236,7 @@ def _left_into(program: Program, instructions: tuple[CsInsn, ...]) -> Address | 
 def _literal_jump(program: Program, instructions: tuple[CsInsn, ...]) -> Address | None:
 	match program.machine.family, indirect_operand(instructions[-1], program.machine):
 		case InstructionFamily.ARM, RegisterSite(operand=operand) if (
-			arm_mnemonic(instructions[-1]) not in ARM_CALLS
+			instructions[-1].id not in ARM_CALLS
 		):
 			target = next(
 				(
@@ -260,7 +259,7 @@ def _literal(program: Program, instruction: CsInsn) -> int | None:
 			(_pc_relative(program, instruction) + operands[1].mem.disp) & _WORD_MASK,
 			program.pointer_size,
 		)
-		if arm_mnemonic(instruction) == "ldr"
+		if instruction.id == arm_const.ARM_INS_LDR
 		and len(operands) == 2
 		and operands[1].type == arm_const.ARM_OP_MEM
 		and operands[1].mem.base == arm_const.ARM_REG_PC
@@ -375,12 +374,12 @@ def _dispatches(instruction: CsInsn, machine: Machine) -> bool:
 
 
 def _arm_dispatches(instruction: CsInsn) -> bool:
-	match arm_mnemonic(instruction):
-		case "tbb" | "tbh":
+	match instruction.id:
+		case arm_const.ARM_INS_TBB | arm_const.ARM_INS_TBH:
 			return True
-		case "ldr":
+		case arm_const.ARM_INS_LDR:
 			return _writes_pc(instruction) and instruction.operands[1].mem.index != 0
-		case "add":
+		case arm_const.ARM_INS_ADD:
 			return _writes_pc(instruction)
 		case _:
 			return False
@@ -429,10 +428,10 @@ def _window_start(instructions: list[CsInsn], end: int) -> int:
 
 def _bounds(compare: CsInsn, branch: CsInsn) -> bool:
 	return (
-		arm_mnemonic(compare) == "cmp"
+		compare.id == arm_const.ARM_INS_CMP
 		and not arm_predicated(compare)
 		and compare.operands[1].type == arm_const.ARM_OP_IMM
-		and arm_mnemonic(branch) == "b"
+		and branch.id == arm_const.ARM_INS_B
 		and branch.cc == arm_const.ARM_CC_HI
 	)
 
@@ -488,22 +487,26 @@ def _is_case(case: _Case | None) -> bool:
 
 
 def _case(program: Program, dispatch: CsInsn, registers: Mapping[int, int]) -> _Case | None:
-	match arm_mnemonic(dispatch), _arm_operands(dispatch):
-		case ("tbb" | "tbh") as mnemonic, [table]:
+	match dispatch.id, _arm_operands(dispatch):
+		case (arm_const.ARM_INS_TBB | arm_const.ARM_INS_TBH) as table_branch, [table]:
 			return _read_case(
 				program,
 				_address(registers, table, dispatch.address + 4),
-				ARM_LOAD_WIDTHS["ldrb" if mnemonic == "tbb" else "ldrh"],
+				ARM_LOAD_WIDTHS[
+					arm_const.ARM_INS_LDRB
+					if table_branch == arm_const.ARM_INS_TBB
+					else arm_const.ARM_INS_LDRH
+				],
 				partial(_halfwords_past, dispatch.address + 4),
 			)
-		case "ldr", [_, table]:
+		case arm_const.ARM_INS_LDR, [_, table]:
 			return _read_case(
 				program,
 				_address(registers, table, _base(program, dispatch, registers, table)),
-				ARM_LOAD_WIDTHS["ldr"],
+				ARM_LOAD_WIDTHS[arm_const.ARM_INS_LDR],
 				_absolute_target,
 			)
-		case "add", [_, base, offset] if (
+		case arm_const.ARM_INS_ADD, [_, base, offset] if (
 			base.reg == arm_const.ARM_REG_PC
 			and (value := _operand_value(registers, offset)) is not None
 		):
@@ -546,21 +549,34 @@ def _step(program: Program, registers: Mapping[int, int], instruction: CsInsn) -
 
 
 def _computed(program: Program, registers: Mapping[int, int], instruction: CsInsn) -> int | None:
-	match arm_mnemonic(instruction), _arm_operands(instruction):
-		case ("ldr" | "ldrb" | "ldrh") as mnemonic, [_, source]:
+	match instruction.id, _arm_operands(instruction):
+		case (arm_const.ARM_INS_LDR | arm_const.ARM_INS_LDRB | arm_const.ARM_INS_LDRH) as load, [
+			_,
+			source,
+		]:
 			address = _address(registers, source, _base(program, instruction, registers, source))
-			return None if address is None else _read(program, address, ARM_LOAD_WIDTHS[mnemonic])
-		case "adr", [_, offset]:
+			return None if address is None else _read(program, address, ARM_LOAD_WIDTHS[load])
+		case arm_const.ARM_INS_ADR, [_, offset]:
 			return _pc_relative(program, instruction) + offset.imm
-		case (("add" | "adds" | "addw"), [_, base, offset]) if (
+		case ((arm_const.ARM_INS_ADD | arm_const.ARM_INS_ADDW), [_, base, offset]) if (
 			base.reg == arm_const.ARM_REG_PC and offset.type == arm_const.ARM_OP_IMM
 		):
 			return _pc_relative(program, instruction) + offset.imm
-		case (("add" | "adds" | "addw"), [_, augend, addend]):
+		case ((arm_const.ARM_INS_ADD | arm_const.ARM_INS_ADDW), [_, augend, addend]):
 			return _sum(registers, augend, addend)
-		case (("mov" | "movs" | "movw" | "lsl" | "lsls"), [_, source]):
+		case (
+			(
+				arm_const.ARM_INS_MOV
+				| arm_const.ARM_INS_MOVS
+				| arm_const.ARM_INS_MOVW
+				| arm_const.ARM_INS_LSL
+			),
+			[_, source],
+		):
 			return _operand_value(registers, source)
-		case "movt", [destination, high] if (low := registers.get(destination.reg)) is not None:
+		case arm_const.ARM_INS_MOVT, [destination, high] if (
+			low := registers.get(destination.reg)
+		) is not None:
 			return (high.imm << 16) | (low & 0xFFFF)
 		case _:
 			return None
@@ -663,14 +679,18 @@ def _x86_branch_target(instruction: CsInsn) -> _BranchTarget | None:
 
 
 def _arm_branch_target(instruction: CsInsn) -> _BranchTarget | None:
-	base = instruction.mnemonic.split(".")[0]
-	if base == "b":
-		conditional = False
-	elif base in ARM_CONDITIONAL:
-		conditional = True
-	else:
-		return None
-	operand = instruction.operands[1 if base in ("cbz", "cbnz") else 0]
+	match instruction.id:
+		case arm_const.ARM_INS_B:
+			return _immediate_target(
+				instruction.operands[0], conditional=arm_predicated(instruction)
+			)
+		case arm_const.ARM_INS_CBZ | arm_const.ARM_INS_CBNZ:
+			return _immediate_target(instruction.operands[1], conditional=True)
+		case _:
+			return None
+
+
+def _immediate_target(operand: CsOperand, *, conditional: bool) -> _BranchTarget | None:
 	if operand.type != arm_const.ARM_OP_IMM:
 		return None  # pragma: no cover
 	return _BranchTarget(target=operand.imm, conditional=conditional)
@@ -727,7 +747,7 @@ def _x86_call_target(instruction: CsInsn) -> int | None:
 
 
 def _arm_call_target(instruction: CsInsn) -> int | None:
-	if arm_mnemonic(instruction) not in ARM_CALLS:
+	if instruction.id not in ARM_CALLS:
 		return None
 	operand = instruction.operands[0]
 	if operand.type != arm_const.ARM_OP_IMM:
@@ -740,8 +760,10 @@ def _is_control_transfer(instruction: CsInsn, machine: Machine) -> bool:
 		case InstructionFamily.X86:
 			return instruction.mnemonic in X86_TRANSFERS
 		case InstructionFamily.ARM:
-			return arm_mnemonic(instruction) in ARM_TRANSFERS or (
-				arm_mnemonic(instruction) in ("ldr", "mov", "add") and _writes_pc(instruction)
+			return instruction.id in ARM_TRANSFERS or (
+				instruction.id
+				in (arm_const.ARM_INS_LDR, arm_const.ARM_INS_MOV, arm_const.ARM_INS_ADD)
+				and _writes_pc(instruction)
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -760,7 +782,7 @@ class MemorySite(Struct):
 
 
 def indirect_operand(instruction: CsInsn, machine: Machine) -> RegisterSite | MemorySite | None:
-	if instruction.mnemonic == ".byte":
+	if is_data(instruction):
 		return None
 	if not instruction.operands:
 		return None
@@ -785,21 +807,26 @@ def _x86_indirect_operand(instruction: CsInsn) -> RegisterSite | MemorySite | No
 
 def _arm_indirect_operand(instruction: CsInsn) -> RegisterSite | MemorySite | None:
 	operand = instruction.operands[0]
-	base_mnemonic = arm_mnemonic(instruction)
-	if base_mnemonic == "blx" and operand.type == arm_const.ARM_OP_REG:
-		return RegisterSite(operand=operand)
-	if base_mnemonic == "bx" and operand.reg not in (arm_const.ARM_REG_LR, arm_const.ARM_REG_PC):
-		return RegisterSite(operand=operand)
-	if base_mnemonic == "mov" and _writes_pc(instruction):
-		source = instruction.operands[1]
-		if source.type == arm_const.ARM_OP_REG and source.reg != arm_const.ARM_REG_LR:
-			return RegisterSite(operand=source)
-		return None
-	if base_mnemonic == "ldr" and _writes_pc(instruction):
-		memory = instruction.operands[1]
-		if memory.mem.base != arm_const.ARM_REG_SP and memory.mem.index == 0:
-			return MemorySite(operand=memory)
-	return None
+	match instruction.id:
+		case arm_const.ARM_INS_BLX if operand.type == arm_const.ARM_OP_REG:
+			return RegisterSite(operand=operand)
+		case arm_const.ARM_INS_BX if operand.reg not in (
+			arm_const.ARM_REG_LR,
+			arm_const.ARM_REG_PC,
+		):
+			return RegisterSite(operand=operand)
+		case arm_const.ARM_INS_MOV if _writes_pc(instruction):
+			source = instruction.operands[1]
+			if source.type == arm_const.ARM_OP_REG and source.reg != arm_const.ARM_REG_LR:
+				return RegisterSite(operand=source)
+			return None
+		case arm_const.ARM_INS_LDR if _writes_pc(instruction):
+			memory = instruction.operands[1]
+			if memory.mem.base != arm_const.ARM_REG_SP and memory.mem.index == 0:
+				return MemorySite(operand=memory)
+			return None
+		case _:
+			return None
 
 
 def _block_end_successors(
@@ -812,7 +839,7 @@ def _block_end_successors(
 			*((Address(branch.target),) if branch.target in by_address else ()),
 		)
 	fallthrough = (Address(next_address),) if next_address is not None else ()
-	if instruction.mnemonic == ".byte":
+	if is_data(instruction):
 		return fallthrough
 	return fallthrough if _transfer_returns(instruction, machine) else ()
 
@@ -829,9 +856,9 @@ def _transfer_returns(instruction: CsInsn, machine: Machine) -> bool:
 
 def _arm_falls_through(instruction: CsInsn, machine: Machine) -> bool:
 	return (
-		arm_mnemonic(instruction) in ARM_CALLS
+		instruction.id in ARM_CALLS
 		or (
-			arm_mnemonic(instruction) == "pop"
+			instruction.id == arm_const.ARM_INS_POP
 			and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
 		)
 		or is_returning_trap(instruction, machine)
@@ -843,7 +870,7 @@ def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
 		case InstructionFamily.X86:
 			return instruction.mnemonic in X86_RETURNING_TRAPS
 		case InstructionFamily.ARM:
-			return arm_mnemonic(instruction) in ARM_RETURNING_TRAPS
+			return instruction.id in ARM_RETURNING_TRAPS
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -906,7 +933,7 @@ def reachable_blocks(
 
 def _block_ends(instruction: CsInsn, machine: Machine) -> bool:
 	return (
-		instruction.mnemonic == ".byte"
+		is_data(instruction)
 		or branch_target(instruction, machine) is not None
 		or _is_control_transfer(instruction, machine)
 	)

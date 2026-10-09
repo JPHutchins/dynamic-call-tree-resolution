@@ -5,13 +5,12 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import IntEnum
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from capstone import arm_const
 from salix import Struct
 
-from dynamic_call_tree_resolution.vsa.abi import arm_mnemonic
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, lookup
 
 if TYPE_CHECKING:
@@ -25,11 +24,11 @@ _WORD_MASK: Final = 0xFFFF_FFFF
 _SIGN_SHIFT: Final = 31
 
 
-class Comparison(StrEnum):
-	"""A flag-setting compare, by its mnemonic."""
+class Comparison(IntEnum):
+	"""A flag-setting compare, by its capstone instruction id."""
 
-	SUBTRACT = "cmp"
-	ADD = "cmn"
+	SUBTRACT = arm_const.ARM_INS_CMP
+	ADD = arm_const.ARM_INS_CMN
 
 
 class InRegister(Struct):
@@ -101,15 +100,17 @@ _CONDITIONS: Final[Mapping[int, Callable[[_Flags], bool]]] = {
 def arm_branch_test(instructions: tuple[CsInsn, ...]) -> BranchTest | None:
 	"""What a block's final conditional transfer tests, when its own block shows it."""
 	branch = instructions[-1]
-	match arm_mnemonic(branch):
-		case "cbz" | "cbnz" as mnemonic:
-			return ZeroTested(register=branch.operands[0].reg, taken_when_zero=mnemonic == "cbz")
+	match branch.id:
+		case arm_const.ARM_INS_CBZ | arm_const.ARM_INS_CBNZ as zero_test:
+			return ZeroTested(
+				register=branch.operands[0].reg, taken_when_zero=zero_test == arm_const.ARM_INS_CBZ
+			)
 		case _:
 			return _compared(instructions[:-1], branch.cc)
 
 
 def _sets_flags(instruction: CsInsn) -> bool:
-	return instruction.update_flags or arm_mnemonic(instruction) == "msr"
+	return instruction.update_flags or instruction.id == arm_const.ARM_INS_MSR
 
 
 def _compared(preceding: tuple[CsInsn, ...], condition: int) -> Compared | None:
@@ -136,14 +137,14 @@ def _compare(setter: CsInsn, written_after: frozenset[int], condition: int) -> C
 	operands = tuple(cast("ArmCsOperand", operand) for operand in setter.operands)
 	return (
 		Compared(
-			comparison=Comparison(arm_mnemonic(setter)),
+			comparison=Comparison(setter.id),
 			left=operands[0].reg,
 			right=InRegister(register=operands[1].reg)
 			if operands[1].type == arm_const.ARM_OP_REG
 			else Immediate(value=operands[1].imm),
 			condition=condition,
 		)
-		if arm_mnemonic(setter) in Comparison
+		if setter.id in Comparison
 		and condition in _CONDITIONS
 		and setter.cc == arm_const.ARM_CC_AL
 		and all(operand.shift.type == arm_const.ARM_SFT_INVALID for operand in operands)

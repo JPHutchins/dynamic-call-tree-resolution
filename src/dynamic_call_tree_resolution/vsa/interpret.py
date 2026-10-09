@@ -29,7 +29,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	X86_CALLER_SAVED_32,
 	X86_CALLER_SAVED_64,
 	X86_CALLS,
-	arm_mnemonic,
+	is_data,
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.arm import apply_arm
@@ -111,7 +111,7 @@ def _called(state: State, machine: Machine) -> State:
 
 
 def transfer(context: Context, instruction: CsInsn, state: State) -> State:
-	if instruction.mnemonic == ".byte":
+	if is_data(instruction):
 		return state
 	if _calls(instruction, context.program.machine) or is_returning_trap(
 		instruction, context.program.machine
@@ -133,7 +133,7 @@ def _calls(instruction: CsInsn, machine: Machine) -> bool:
 		case InstructionFamily.X86:
 			return instruction.mnemonic in X86_CALLS
 		case InstructionFamily.ARM:
-			return arm_mnemonic(instruction) in ARM_CALLS
+			return instruction.id in ARM_CALLS
 		case _ as unreachable:
 			assert_never(unreachable)
 
