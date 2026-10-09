@@ -27,6 +27,7 @@ from dynamic_call_tree_resolution import (
 	extract_call_sites,
 	load,
 	matching_targets,
+	null_slots,
 	per_caller_candidates,
 	resolve,
 	signature_narrowings,
@@ -3161,7 +3162,12 @@ def test_ram_initializer_holds_what_the_program_stores_to_its_slot(
 		if candidates is not None
 		else {}
 	)
-	assert slot_counts(resolved, unresolved_slots(program, resolved)).total_slots == 1
+	assert (
+		slot_counts(
+			resolved, unresolved_slots(program, resolved), null_slots(program, resolved)
+		).total_slots
+		== 1
+	)
 
 
 @pytest.mark.parametrize(
@@ -3179,7 +3185,12 @@ def test_unknown_store_unresolves_only_writable_slots(writable: bool, candidates
 	assert {candidate for assignment in resolved for candidate in assignment.candidates} == {
 		Address(address) for address in candidates
 	}
-	assert slot_counts(resolved, unresolved_slots(program, resolved)).total_slots == 1
+	assert (
+		slot_counts(
+			resolved, unresolved_slots(program, resolved), null_slots(program, resolved)
+		).total_slots
+		== 1
+	)
 
 
 @pytest.mark.parametrize(

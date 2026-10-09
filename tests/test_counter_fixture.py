@@ -36,9 +36,9 @@ def test_summary_pins_the_published_numbers(artifacts: Path, executable: Path) -
 		dctr("summary", str(artifacts), str(executable)), type=AnalysisSummary
 	)
 	assert summary == AnalysisSummary(
-		resolved_slots=106,
+		resolved_slots=146,
 		total_slots=250,
-		unresolved_slots=144,
+		unresolved_slots=104,
 		resolved_targets=200,
 		indirect_call_sites=83,
 		total_functions=729,

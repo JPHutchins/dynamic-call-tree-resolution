@@ -76,6 +76,9 @@ from dynamic_call_tree_resolution.model import (
 	NotEnumerated as NotEnumerated,
 )
 from dynamic_call_tree_resolution.model import (
+	NullSlot as NullSlot,
+)
+from dynamic_call_tree_resolution.model import (
 	Program as Program,
 )
 from dynamic_call_tree_resolution.model import (
@@ -133,6 +136,9 @@ from dynamic_call_tree_resolution.points_to import (
 	not_enumerated as not_enumerated,
 )
 from dynamic_call_tree_resolution.points_to import (
+	null_slots as null_slots,
+)
+from dynamic_call_tree_resolution.points_to import (
 	unresolved_slots as unresolved_slots,
 )
 from dynamic_call_tree_resolution.report import (
@@ -161,6 +167,9 @@ from dynamic_call_tree_resolution.report import (
 )
 from dynamic_call_tree_resolution.report import (
 	NotEnumeratedReport as NotEnumeratedReport,
+)
+from dynamic_call_tree_resolution.report import (
+	NullSlotReport as NullSlotReport,
 )
 from dynamic_call_tree_resolution.report import (
 	PathStepReport as PathStepReport,

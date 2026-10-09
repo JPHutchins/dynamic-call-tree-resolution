@@ -51,7 +51,7 @@ from dynamic_call_tree_resolution.loader import (
 )
 from dynamic_call_tree_resolution.model import Address, Dead, Machine, Residue, Unreached
 from dynamic_call_tree_resolution.pexplorer import PexplorerReport, load_pexplorer
-from dynamic_call_tree_resolution.points_to import unresolved_slots
+from dynamic_call_tree_resolution.points_to import null_slots, unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	AnalysisSummary,
 	CallSiteReport,
@@ -330,8 +330,6 @@ def _signature_text(signature: SignatureReport) -> str:
 
 def _residue_label(residue: Residue) -> str:
 	match residue:
-		case Residue.ROM_NULL:
-			return "<null>"
 		case Residue.ROM_NON_FUNCTION:
 			return "<not a function>"
 		case Residue.RAM_NULL | Residue.RAM_UNINITIALIZED | Residue.RAM_INITIALIZED:
@@ -414,6 +412,8 @@ def analyze(
 	for assignment in report.assignments:
 		label = assignment.member_path or hex(assignment.slot_address)
 		print(f"{label}: {', '.join(candidate.name for candidate in assignment.candidates)}")
+	for null_slot in report.null_slots:
+		print(f"{null_slot.member_path}: <null>")
 	for slot in report.unresolved_slots:
 		print(f"{slot.member_path}: {_residue_label(slot.residue)}")
 	for item in report.not_enumerated:
@@ -812,7 +812,9 @@ def _expand_from_elf(
 		program=image.program,
 		rtos=model,
 		resolution=resolution,
-		counts=slot_counts(resolution.assignments, unresolved),
+		counts=slot_counts(
+			resolution.assignments, unresolved, null_slots(image.program, resolution.assignments)
+		),
 		unresolved=unresolved,
 		image_functions=image_functions,
 		membership=artifacts.membership,

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import msgspec
+import pytest
 
 from dynamic_call_tree_resolution import (
 	AnalysisReport,
@@ -55,8 +56,8 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 		resolved_slots=11,
 		unresolved_slots=2,
 		call_sites=10,
-		resolved_call_sites=5,
-		exact_call_sites=5,
+		resolved_call_sites=7,
+		exact_call_sites=7,
 		candidate_size_counts=((0, 5), (1, 5)),
 		pexplorer_dynamic_sites=None,
 		function_comparisons=(
@@ -69,7 +70,15 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 					dctr_resolved_sites=0,
 					dctr_exact_sites=0,
 				)
-				for caller in ("_init", "_start", "deregister_tm_clones")
+				for caller in ("_init", "_start")
+			),
+			FunctionComparison(
+				address=addresses["deregister_tm_clones"] & ~1,
+				caller="deregister_tm_clones",
+				pexplorer_dynamic_sites=0,
+				dctr_call_sites=1,
+				dctr_resolved_sites=1,
+				dctr_exact_sites=1,
 			),
 			FunctionComparison(
 				address=addresses["main"] & ~1,
@@ -84,12 +93,46 @@ def test_comparison_rollup_and_json_round_trip(fixture_elfs: dict[str, Path]) ->
 				caller="register_tm_clones",
 				pexplorer_dynamic_sites=0,
 				dctr_call_sites=1,
-				dctr_resolved_sites=0,
-				dctr_exact_sites=0,
+				dctr_resolved_sites=1,
+				dctr_exact_sites=1,
 			),
 		),
 	)
 	assert msgspec.json.decode(msgspec.json.encode(comparison), type=ComparisonReport) == comparison
+
+
+def test_a_read_only_null_slot_counts_as_resolved_to_nothing(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["residue"])
+	report = build_report(program, assignments(program), extract_call_sites(program))
+	assert (
+		tuple(slot.member_path for slot in report.null_slots),
+		tuple(slot.member_path for slot in report.unresolved_slots),
+		report.resolved_slots,
+		report.total_slots,
+	) == (
+		("rom_ops.stop",),
+		("rom_arm.run", "ram_ops.stop", "bss_ops.run", "bss_ops.stop"),
+		4,
+		8,
+	)
+
+
+@pytest.mark.image
+def test_a_dead_site_counts_as_resolved_and_exact(zephyr_fixtures: Path) -> None:
+	rows = {
+		row.caller: row
+		for row in build_comparison(
+			"hello", load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf")
+		).function_comparisons
+	}
+	assert tuple(
+		(
+			rows[caller].dctr_call_sites,
+			rows[caller].dctr_resolved_sites,
+			rows[caller].dctr_exact_sites,
+		)
+		for caller in ("bg_thread_main", "z_cstart")
+	) == ((1, 1, 1), (1, 1, 1))
 
 
 def test_a_bounded_stack_serializes_its_bytes_and_its_measured_frames_sorted() -> None:

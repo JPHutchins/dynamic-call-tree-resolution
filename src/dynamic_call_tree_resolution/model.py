@@ -432,7 +432,6 @@ class CallSite(Struct):
 class Residue(StrEnum):
 	"""What an unresolved slot holds in the image, and whether that can change."""
 
-	ROM_NULL = "rom_null"
 	ROM_NON_FUNCTION = "rom_non_function"
 	RAM_NULL = "ram_null"
 	RAM_UNINITIALIZED = "ram_uninitialized"
@@ -446,6 +445,14 @@ class UnresolvedSlot(Struct):
 	path: tuple[str | None, ...]
 	signature: FunctionSignature | None
 	residue: Residue
+
+
+class NullSlot(Struct):
+	"""A read-only stored function pointer that holds NULL, so a call through it calls nothing."""
+
+	slot: Address
+	path: tuple[str | None, ...]
+	signature: FunctionSignature | None
 
 
 class NotEnumerated(Struct):

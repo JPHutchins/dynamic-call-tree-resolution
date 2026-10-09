@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution import (
 	assignments,
 	load,
 	not_enumerated,
+	null_slots,
 	render_path,
 	unresolved_slots,
 )
@@ -299,16 +300,19 @@ def test_unresolved_slots_say_what_the_image_holds(fixture_elfs: dict[str, Path]
 		for assignment in assignments(program)
 		if render_path(assignment.path) != "written"
 	)
-	assert {
-		render_path(slot.path): slot.residue for slot in unresolved_slots(program, resolved)
-	} == {
-		"rom_ops.stop": Residue.ROM_NULL,
-		"rom_arm.run": Residue.ROM_NON_FUNCTION,
-		"ram_ops.stop": Residue.RAM_NULL,
-		"bss_ops.run": Residue.RAM_UNINITIALIZED,
-		"bss_ops.stop": Residue.RAM_UNINITIALIZED,
-		"written": Residue.RAM_INITIALIZED,
-	}
+	assert (
+		{render_path(slot.path): slot.residue for slot in unresolved_slots(program, resolved)},
+		tuple(render_path(slot.path) for slot in null_slots(program, resolved)),
+	) == (
+		{
+			"rom_arm.run": Residue.ROM_NON_FUNCTION,
+			"ram_ops.stop": Residue.RAM_NULL,
+			"bss_ops.run": Residue.RAM_UNINITIALIZED,
+			"bss_ops.stop": Residue.RAM_UNINITIALIZED,
+			"written": Residue.RAM_INITIALIZED,
+		},
+		("rom_ops.stop",),
+	)
 
 
 def test_array_globals_report_unresolved_elements(fixture_elfs: dict[str, Path]) -> None:
