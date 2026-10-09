@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Annotated, Final, assert_never
 import msgspec
 from cyclopts import App, Parameter
 from elftools.common.exceptions import ELFError
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.call_sites import (
 	calls_nothing,
@@ -76,6 +76,7 @@ from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 from dynamic_call_tree_resolution.rtos.zephyr import NO_KCONFIG, Kconfig, kconfig, priority_levels
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
+	AssumedFrame,
 	Bounded,
 	Frame,
 	Handled,
@@ -157,6 +158,11 @@ _ASSUME_UNWRITTEN: Final = Parameter(
 	"for each object. Nothing checks it, and the rows that rest on it say so"
 )
 
+_ASSUME_FRAME: Final = Parameter(
+	help="assume FUNCTION=BYTES is the frame of a function nothing measures; repeat it for "
+	"each function. Nothing checks it, and the rows that rest on it say so"
+)
+
 _RTOS: Final = Parameter(
 	help="the RTOS whose threads start their entries with known arguments: auto detects "
 	"it, and none models no RTOS"
@@ -185,6 +191,7 @@ def _render(report: StackReport) -> str:
 					("narrowed by field", bound.narrowed_by_field),
 					("narrowed by signature", bound.narrowed_by_signature),
 					("assumed unwritten", bound.assumed_unwritten),
+					("assumed frame", bound.assumed_frames),
 				),
 				_thread_stack_additions(bound),
 				(*_nesting_notes(report.nesting), *_stack_notes(report)),
@@ -200,6 +207,7 @@ def _render(report: StackReport) -> str:
 					("narrowed by field", bound.narrowed_by_field),
 					("narrowed by signature", bound.narrowed_by_signature),
 					("assumed unwritten", bound.assumed_unwritten),
+					("assumed frame", bound.assumed_frames),
 					("dynamic", bound.dynamic),
 					("unresolved", bound.unresolved),
 				),
@@ -1195,6 +1203,7 @@ def stack(
 	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	assume_no_recursion: Annotated[tuple[str, ...], _ASSUME_NO_RECURSION] = (),
 	assume_unwritten: Annotated[tuple[str, ...], _ASSUME_UNWRITTEN] = (),
+	assume_frame: Annotated[tuple[str, ...], _ASSUME_FRAME] = (),
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 	path: Annotated[
 		str | None,
@@ -1208,20 +1217,28 @@ def stack(
 	image = _image(elf)
 	artifacts = _artifacts(build_directory, image)
 	expansion = (
-		_expand_from_elf(
-			artifacts,
-			image,
-			narrow_by_signature=narrow_by_signature,
-			narrow_by_field=narrow_by_field,
-			rtos=rtos,
-			assume_unwritten=assume_unwritten,
+		_framed(
+			_expand_from_elf(
+				artifacts,
+				image,
+				narrow_by_signature=narrow_by_signature,
+				narrow_by_field=narrow_by_field,
+				rtos=rtos,
+				assume_unwritten=assume_unwritten,
+			),
+			assume_frame,
 		)
 		if image is not None
 		else None
 	)
 	graph = stack_graph(
 		expansion.expanded if expansion is not None else artifacts.edges,
-		expansion.frames if expansion is not None else artifacts.frames,
+		expansion.frames
+		if expansion is not None
+		else (
+			*artifacts.frames,
+			*_assumed_frames(artifacts.edges, artifacts.frames, assume_frame),
+		),
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
 		assumed_no_recursion=frozenset(assume_no_recursion),
 		assumed_unwritten=expansion.assumed_unwritten.callers
@@ -1251,6 +1268,7 @@ def stack(
 			f"{' | narrowed by field' if narrow_by_field else ''}"
 			f"{f' | assumed no recursion: {", ".join(sorted(assume_no_recursion))}' if assume_no_recursion else ''}"
 			f"{f' | assumed unwritten: {", ".join(sorted(assume_unwritten))}' if assume_unwritten else ''}"
+			f"{f' | assumed frames: {", ".join(sorted(assume_frame))}' if assume_frame else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
 	for report in shown:
@@ -1275,6 +1293,37 @@ def _not_in_image(names_dropped: int, expansion: Expansion) -> str:
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _framed(expansion: Expansion, stated: tuple[str, ...]) -> Expansion:
+	return replace(
+		expansion,
+		frames=(
+			*expansion.frames,
+			*_assumed_frames(expansion.expanded, expansion.frames, stated),
+		),
+	)
+
+
+def _assumed_frames(
+	edges: tuple[CallEdge, ...], frames: tuple[Frame, ...], stated: tuple[str, ...]
+) -> tuple[AssumedFrame, ...]:
+	return tuple(_assumed_frame(edges, frames, statement) for statement in stated)
+
+
+def _assumed_frame(
+	edges: tuple[CallEdge, ...], frames: tuple[Frame, ...], statement: str
+) -> AssumedFrame:
+	name, separator, size = statement.partition("=")
+	if not separator or not size.isdigit():
+		raise ValueError(f"--assume-frame: {statement} is not FUNCTION=BYTES")
+	if any(frame_key(frame.function) == frame_key(name) for frame in frames):
+		raise ValueError(f"--assume-frame: {name} already has a frame")
+	if not any(
+		frame_key(node) == frame_key(name) for edge in edges for node in (edge.caller, edge.callee)
+	):
+		raise ValueError(f"--assume-frame: no function named {name} is in the call graph")
+	return AssumedFrame(function=name, bytes=int(size))
 
 
 def _own_graphs(
@@ -1338,16 +1387,20 @@ def summary(
 	narrow_by_field: Annotated[bool, _NARROW_BY_FIELD] = False,
 	assume_no_recursion: Annotated[tuple[str, ...], _ASSUME_NO_RECURSION] = (),
 	assume_unwritten: Annotated[tuple[str, ...], _ASSUME_UNWRITTEN] = (),
+	assume_frame: Annotated[tuple[str, ...], _ASSUME_FRAME] = (),
 	rtos: Annotated[RtosChoice, _RTOS] = RtosChoice.AUTO,
 ) -> None:
 	"""Print a JSON summary combining resolution rates and worst-case stack depth."""
-	expansion = elf_expansion(
-		build_directory,
-		elf,
-		narrow_by_signature=narrow_by_signature,
-		narrow_by_field=narrow_by_field,
-		rtos=rtos,
-		assume_unwritten=assume_unwritten,
+	expansion = _framed(
+		elf_expansion(
+			build_directory,
+			elf,
+			narrow_by_signature=narrow_by_signature,
+			narrow_by_field=narrow_by_field,
+			rtos=rtos,
+			assume_unwritten=assume_unwritten,
+		),
+		assume_frame,
 	)
 	reports = _with_interrupt_stack(
 		expansion,

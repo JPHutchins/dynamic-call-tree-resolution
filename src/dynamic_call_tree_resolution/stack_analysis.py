@@ -43,6 +43,8 @@ class Bounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_frames: frozenset[str] = frozenset()
+	"""Reachable functions whose frames ``--assume-frame`` states."""
 
 
 class Unbounded(Struct):
@@ -72,6 +74,8 @@ class Unbounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_frames: frozenset[str] = frozenset()
+	"""Reachable functions whose frames ``--assume-frame`` states."""
 
 
 class LevelSource(StrEnum):
@@ -137,6 +141,7 @@ class Reason(StrEnum):
 	NARROWED_BY_FIELD = "narrowed by field"
 	NARROWED_BY_SIGNATURE = "narrowed by signature"
 	ASSUMED_UNWRITTEN = "assumed unwritten"
+	ASSUMED_FRAME = "assumed frame"
 
 
 type _Reasons = frozenset[tuple[Reason, str]]
@@ -156,7 +161,14 @@ class OwnFrame(Struct):
 	bytes: int
 
 
-type Frame = StackUsage | MeasuredFrame | OwnFrame
+class AssumedFrame(Struct):
+	"""A frame ``--assume-frame`` states for a function nothing measures."""
+
+	function: str
+	bytes: int
+
+
+type Frame = StackUsage | MeasuredFrame | OwnFrame | AssumedFrame
 
 
 class StackGraph(Struct):
@@ -208,6 +220,7 @@ _NOTED: Final = frozenset(
 		Reason.NARROWED_BY_FIELD,
 		Reason.NARROWED_BY_SIGNATURE,
 		Reason.ASSUMED_UNWRITTEN,
+		Reason.ASSUMED_FRAME,
 	}
 )
 _NARROWED: Final = {
@@ -670,6 +683,7 @@ def _noted_sets(bound: Bounded | Unbounded) -> tuple[tuple[Reason, frozenset[str
 		(Reason.NARROWED_BY_FIELD, bound.narrowed_by_field),
 		(Reason.NARROWED_BY_SIGNATURE, bound.narrowed_by_signature),
 		(Reason.ASSUMED_UNWRITTEN, bound.assumed_unwritten),
+		(Reason.ASSUMED_FRAME, bound.assumed_frames),
 	)
 
 
@@ -871,6 +885,7 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
 			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
 			assumed_unwritten=_names(reasons, Reason.ASSUMED_UNWRITTEN),
+			assumed_frames=_names(reasons, Reason.ASSUMED_FRAME),
 		)
 		if any(reason not in _NOTED for reason, _ in reasons)
 		else Bounded(
@@ -880,6 +895,7 @@ def _bound(depth: int, reasons: _Reasons) -> Bounded | Unbounded:
 			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
 			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
 			assumed_unwritten=_names(reasons, Reason.ASSUMED_UNWRITTEN),
+			assumed_frames=_names(reasons, Reason.ASSUMED_FRAME),
 		)
 	)
 
@@ -932,6 +948,8 @@ def _frame_reasons(frame: Frame | None, node: str) -> tuple[Reason, ...]:
 			return tuple[Reason, ...]() if bounded else (Reason.DYNAMIC,)
 		case MeasuredFrame() | OwnFrame():
 			return (Reason.MEASURED,)
+		case AssumedFrame():
+			return (Reason.ASSUMED_FRAME,)
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -1093,7 +1111,7 @@ def _record(frame: Frame) -> StackUsage | None:
 	match frame:
 		case StackUsage():
 			return frame
-		case MeasuredFrame() | OwnFrame():
+		case MeasuredFrame() | OwnFrame() | AssumedFrame():
 			return None
 		case _ as unreachable:
 			assert_never(unreachable)
