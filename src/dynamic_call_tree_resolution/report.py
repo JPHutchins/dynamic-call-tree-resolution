@@ -625,16 +625,19 @@ def build_comparison(
 	outcomes = tuple(
 		_SiteOutcome(
 			caller=_site_address(site),
-			candidates=len(
+			candidates=0
+			if nothing
+			else len(
 				narrowed(
 					call_site_candidates(program, site, resolved_map, narrowings),
 					narrowed_by_field,
 					site.site_address,
 				)
 			),
-			calls_nothing=calls_nothing(program, site),
+			calls_nothing=nothing,
 		)
 		for site in resolution.sites
+		for nothing in (calls_nothing(program, site),)
 	)
 	candidate_sizes = sorted(outcome.candidates for outcome in outcomes)
 	dynamic_by_caller: Mapping[Address, DynamicSites] = (
@@ -717,7 +720,7 @@ def _resolved(outcome: _SiteOutcome) -> bool:
 
 
 def _exact(outcome: _SiteOutcome) -> bool:
-	return outcome.candidates == 1 or (outcome.candidates == 0 and outcome.calls_nothing)
+	return outcome.candidates == 1 or outcome.calls_nothing
 
 
 def _caller_name(program: Program, caller_address: Address) -> str:
