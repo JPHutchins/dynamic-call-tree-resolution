@@ -13,12 +13,12 @@ from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_DESCENDING_STORES,
 	ARM_EXCLUSIVE_STORES,
-	ARM_LOADS,
 	ARM_MOVES,
 	ARM_MULTIPLE_STORES,
 	ARM_REGISTER_BYTES,
 	ARM_STORE_WIDTHS,
 	ARM_STORED_REGISTERS,
+	ARM_TRACKED_LOAD_WIDTHS,
 	ARM_ZERO_EXTEND_MASKS,
 	arm_mnemonic,
 	arm_predicated,
@@ -92,9 +92,11 @@ def _apply_unconditional(
 				lambda low: Address((source.imm << 16) | (low & 0xFFFF)),
 			),
 		)
-	if base_mnemonic in ARM_LOADS:
+	if base_mnemonic in ARM_TRACKED_LOAD_WIDTHS:
 		load_destination, load_source = _arm_operands(instruction)[0], instruction.operands[1]
-		value, origin = loaded(context, state, instruction, load_source)
+		value, origin = loaded(
+			context, state, instruction, load_source, ARM_TRACKED_LOAD_WIDTHS[base_mnemonic]
+		)
 		if len(instruction.operands) == 3:
 			offset = instruction.operands[2]
 			updated = _advance(state, load_source.mem.base, offset.imm)

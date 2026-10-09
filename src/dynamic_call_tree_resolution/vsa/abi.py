@@ -235,7 +235,6 @@ X86_UNBOUNDED_STORES: Final = frozenset(
 		"xsaves64",
 	}
 )
-ARM_LOADS: Final = ("ldr",)
 ARM_MOVES: Final = ("mov", "movs")
 ARM_ZERO_EXTEND_MASKS: Final[Mapping[str, int]] = {"uxtb": 0xFF, "uxth": 0xFFFF}
 ARM_CONDITION_SUFFIXES: Final[Mapping[int, str]] = {
@@ -281,6 +280,7 @@ ARM_MULTIPLE_STORES: Final = frozenset(
 ARM_DESCENDING_STORES: Final = frozenset({"push", "stmdb", "stmfd", "vpush", "vstmdb"})
 ARM_REGISTER_BYTES: Final[Mapping[str, int]] = {"s": 4, "d": 8, "q": 16}
 ARM_LOAD_WIDTHS: Final[Mapping[str, int]] = {"ldr": 4, "ldrh": 2, "ldrb": 1}
+ARM_TRACKED_LOAD_WIDTHS: Final[Mapping[str, int]] = {"ldr": 4, "ldrh": 2}
 X86_64_ARGUMENT_REGISTERS: Final = (
 	x86_const.X86_REG_RDI,
 	x86_const.X86_REG_RSI,
