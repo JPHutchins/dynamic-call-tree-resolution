@@ -422,6 +422,8 @@ def _no_candidates(site: CallSiteReport) -> str:
 		if site.external is not None
 		else "<null>"
 		if site.null
+		else "<dead>"
+		if site.dead
 		else "<unresolved>"
 	)
 

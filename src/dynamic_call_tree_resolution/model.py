@@ -402,6 +402,10 @@ class Unreached(Struct):
 	"""A site in a block that the function's control flow never reaches."""
 
 
+class Dead(Struct):
+	"""A site that only branches the analysis's values decide against lead to."""
+
+
 class CallSite(Struct):
 	"""An indirect call or tail-branch instruction in one function's code."""
 
@@ -413,7 +417,7 @@ class CallSite(Struct):
 	For a register operand this is the target itself; for an x86 memory operand
 	it is the address the target is loaded from.
 	"""
-	target: Unreached | ValueSet
+	target: Unreached | Dead | ValueSet
 	"""What the value-set analysis tracked into the operand, before chasing."""
 	loaded_from: Address | None = None
 	"""The one image address the target was loaded from."""

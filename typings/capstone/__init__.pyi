@@ -48,6 +48,7 @@ class CsInsn:
 	operands: list[CsOperand]
 	cc: int
 	writeback: bool
+	update_flags: bool
 
 	def regs_access(self) -> tuple[list[int], list[int]]: ...
 	def reg_name(self, reg_id: int) -> str: ...

@@ -35,6 +35,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.callgraph import CallEdge
 from dynamic_call_tree_resolution.model import (
 	FUNCTION_POINTER,
+	Dead,
 	Dispatch,
 	InstructionSet,
 	RtosModel,
@@ -98,7 +99,122 @@ def test_x86_memory_operand_site_resolves_through_the_slot() -> None:
 
 def test_a_site_in_a_block_control_flow_never_reaches_is_unreached() -> None:
 	(site,) = extract_call_sites(_x86(bytes.fromhex("c3 ff d0")))
-	assert (site.site_address, site.target) == (0x1001, Unreached())
+	assert (site.site_address, type(site.target)) == (0x1001, Unreached)
+
+
+@pytest.mark.parametrize(
+	("machine", "code", "callees"),
+	[
+		pytest.param(Machine.EM_ARM, "0524 0525 ac42 00d3 7047 9847 7047", (), id="cmp equal, bcc"),
+		pytest.param(
+			Machine.EM_ARM,
+			"0524 0625 ac42 00d3 7047 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="cmp lower, bcc",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			"0524 8442 00d3 7047 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="cmp an unknown argument",
+		),
+		pytest.param(
+			Machine.EM_ARM, "0524 052c 00d1 7047 9847 7047", (), id="cmp an equal immediate, bne"
+		),
+		pytest.param(Machine.EM_ARM, "0124 e442 00d0 7047 9847 7047", (), id="cmn 1 + 1, beq"),
+		pytest.param(
+			Machine.EM_ARM, "0024 013c 0125 ac42 00da 7047 9847 7047", (), id="cmp -1 with 1, bge"
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			"0024 013c 0125 ac42 00d8 7047 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="cmp 0xffffffff with 1, bhi",
+		),
+		pytest.param(Machine.EM_ARM, "0024 04b9 7047 9847 7047", (), id="cbnz 0"),
+		pytest.param(Machine.EM_ARM, "0024 04b1 9847 7047", (), id="cbz 0 over the site"),
+		pytest.param(
+			Machine.EM_ARM,
+			"0524 0525 ac42 0136 00d3 7047 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="adds sets the flags after the cmp",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			"0524 0525 ac42 0446 00d3 7047 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="an operand rewritten after the cmp",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			"0524 0525 ac42 80f3 0088 00d3 7047 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="msr writes the flags after the cmp",
+		),
+		pytest.param(
+			Machine.EM_X86_64,
+			"b8 05 00 00 00 bb 05 00 00 00 39 d8 72 01 c3 ff d1 c3",
+			(INDIRECT_CALLEE,),
+			id="x86-64 cmp equal, jb",
+		),
+		pytest.param(Machine.EM_ARM, "0024 002c 08bf 7047 9847 7047", (), id="it eq; bxeq lr on 0"),
+		pytest.param(
+			Machine.EM_ARM,
+			"0124 002c 08bf 7047 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="it eq; bxeq lr on 1",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			"0024 002c 08bf 20bc 9847 7047",
+			(INDIRECT_CALLEE,),
+			id="it eq; popeq without pc falls through",
+		),
+	],
+)
+def test_a_site_only_branches_the_values_decide_against_lead_to_calls_nothing(
+	machine: Machine, code: str, callees: tuple[str, ...]
+) -> None:
+	program = build_program(
+		machine,
+		(("caller", 0x1000, len(bytes.fromhex(code))),),
+		sections={0x1000: bytes.fromhex(code)},
+		pointer_size=8 if machine is Machine.EM_X86_64 else 4,
+	)
+	assert (
+		tuple(
+			edge.callee
+			for edge in expand_indirect_calls(
+				(CallEdge(caller="caller", callee=INDIRECT_CALLEE),),
+				*per_caller_candidates(program, extract_call_sites(program), ()),
+			)
+		)
+		== callees
+	)
+
+
+def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:
+	program = build_program(
+		Machine.EM_ARM,
+		(("caller", 0x1000, 8),),
+		sections={0x1000: bytes.fromhex("0024 14b1 9847 7047 00bf 7047")},
+	)
+	assert tuple(
+		(site.site_address, type(site.target)) for site in extract_call_sites(program)
+	) == ((0x1004, Dead),)
+
+
+def test_a_site_only_a_decided_branch_leads_to_is_dead_and_one_no_branch_leads_to_unreached() -> (
+	None
+):
+	program = build_program(
+		Machine.EM_ARM,
+		(("caller", 0x1000, 16),),
+		sections={0x1000: bytes.fromhex("0524 0525 ac42 00d3 7047 9847 7047 9847")},
+	)
+	assert tuple(
+		(site.site_address, type(site.target)) for site in extract_call_sites(program)
+	) == ((0x100A, Dead), (0x100E, Unreached))
 
 
 @pytest.mark.parametrize(
@@ -262,7 +378,7 @@ def test_an_x86_64_32_bit_copy_of_a_frame_address_escapes_the_frame() -> None:
 			sections={0x1000: code, 0x3000: b"\xc3"},
 		)
 	)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_an_x86_8_bit_write_drops_the_slot_its_register_was_loaded_from() -> None:
@@ -720,7 +836,7 @@ def test_arm_cbz_to_the_site_joins_the_taken_state() -> None:
 
 
 def test_arm_conditional_branch_past_the_site_keeps_fallthrough_state() -> None:
-	body = bytes.fromhex("02 4ca4 4201 d0a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
+	body = bytes.fromhex("02 4c84 4201 d0a0 47") + b"\x00\xbf" * 2 + _pointer(0x3000, 4)
 	program = _program(
 		Machine.EM_ARM,
 		body,
@@ -759,7 +875,7 @@ def test_arm_movt_without_movw_is_unresolved() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1004
 	assert site.slot is None
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_arm_cbz_past_the_site_keeps_fallthrough_state() -> None:
@@ -974,7 +1090,7 @@ def test_x86_loop_carried_union_overflows_k_to_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x101A
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_top_index_over_baked_object_enumerates_its_slots() -> None:
@@ -999,7 +1115,7 @@ def test_x86_top_index_without_an_enclosing_object_is_unresolved() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100B
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
@@ -1028,7 +1144,7 @@ def test_x86_top_index_over_a_too_small_object_is_unresolved() -> None:
 		},
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def _two_entry_table(objects: Mapping[Address, DataObject]) -> Program:
@@ -1072,7 +1188,7 @@ def test_x86_top_index_ranges_over_the_enclosing_section() -> None:
 
 def test_x86_top_index_into_a_section_without_an_enclosing_object_is_unresolved() -> None:
 	(site,) = extract_call_sites(_two_entry_table({}))
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_bss_slot_read_is_unknown() -> None:
@@ -1101,7 +1217,7 @@ def test_x86_bss_slot_read_is_unknown() -> None:
 		},
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_read_of_unmapped_memory_drops_the_value() -> None:
@@ -1116,27 +1232,27 @@ def test_x86_read_of_unmapped_memory_drops_the_value() -> None:
 
 
 def test_x86_join_with_one_path_missing_the_register_is_top() -> None:
-	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00eb 02ff d3")
+	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c074 0748 c7 c3 00 40 00 00ff d3")
 	program = _program(
 		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.site_address == 0x1015
-	assert site.target == Top()
+	assert site.site_address == 0x1013
+	assert isinstance(site.target, Top)
 
 
 def test_x86_join_with_the_other_path_missing_the_register_is_top() -> None:
-	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c075 0748 c7 c3 00 40 00 00eb 02ff d3")
+	code = bytes.fromhex("48 c7 c0 00 30 00 0048 85 c075 0748 c7 c3 00 40 00 00ff d3")
 	program = _program(
 		Machine.EM_X86_64,
 		code,
 		functions=(("caller", 0x1000, len(code)),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.site_address == 0x1015
-	assert site.target == Top()
+	assert site.site_address == 0x1013
+	assert isinstance(site.target, Top)
 
 
 def test_x86_loop_instruction_top_out_the_counter_and_keep_values() -> None:
@@ -1233,7 +1349,7 @@ def test_x86_indexed_stack_read_with_a_top_index_is_unresolved() -> None:
 		functions=(("caller", 0x1000, len(code)), ("first", 0x3000, 1), ("second", 0x4000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
@@ -1244,7 +1360,7 @@ def test_x86_store_at_a_top_stack_index_clears_the_frame() -> None:
 		functions=(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 @pytest.mark.parametrize(
@@ -1281,7 +1397,7 @@ def test_x86_store_clobbers_the_frame_slots_it_may_cover(code: str) -> None:
 		functions=(("caller", 0x1000, len(body)), ("target", 0x3000, 1)),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 @pytest.mark.parametrize(
@@ -1405,7 +1521,7 @@ def test_x86_32_frame_relative_memory_site_has_no_slot_address() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1000
 	assert site.slot is None
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_arm_post_indexed_load_advances_the_base() -> None:
@@ -1482,7 +1598,7 @@ def test_arm_non_lsl_shifted_add_tops_the_destination() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_arm_three_operand_immediate_add_shifts_the_value() -> None:
@@ -1520,7 +1636,7 @@ def test_x86_store_of_an_unknown_value_tops_the_slot() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100C
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_push_of_a_memory_operand_resolves() -> None:
@@ -1545,7 +1661,7 @@ def test_x86_add_to_a_memory_operand_writes_no_registers() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_inc_of_a_memory_operand_writes_no_registers() -> None:
@@ -1557,7 +1673,7 @@ def test_x86_inc_of_a_memory_operand_writes_no_registers() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1003
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_arm_str_then_reload_from_the_frame_resolves() -> None:
@@ -1622,7 +1738,7 @@ def test_x86_known_index_with_a_top_base_is_unresolved() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100B
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
@@ -1640,7 +1756,7 @@ def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1026
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_global_store_is_a_no_op_in_this_pass() -> None:
@@ -1664,7 +1780,7 @@ def test_x86_xor_of_distinct_registers_tops_the_destination() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x100A
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_arm_pointer_store_is_a_no_op_in_this_pass() -> None:
@@ -1887,7 +2003,7 @@ def test_global_write_union_overflow_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1200
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_recursive_seeding_converges() -> None:
@@ -1899,7 +2015,7 @@ def test_recursive_seeding_converges() -> None:
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x1000
 	assert site.site_address == 0x1005
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_call_arguments_with_a_top_stack_pointer_are_top() -> None:
@@ -1911,7 +2027,7 @@ def test_x86_call_arguments_with_a_top_stack_pointer_are_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1008
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_32_callee_seed_joins_across_callers() -> None:
@@ -1955,7 +2071,7 @@ def test_x86_64_callee_seed_overflow_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_x86_32_callee_seed_overflow_is_top() -> None:
@@ -1978,7 +2094,7 @@ def test_x86_32_callee_seed_overflow_is_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.caller_address == 0x2000
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def test_a_global_write_feeding_a_call_argument_grows_the_seed_late() -> None:
@@ -2202,7 +2318,7 @@ def test_unreadable_memory_site_narrows_to_its_slot_signature() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.slot == 0x2000
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 	narrowings = signature_narrowings(
 		program, {Address(0x2000): FunctionSignature(return_type="void", parameters=("int",))}
 	)
@@ -2627,7 +2743,7 @@ def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
 		{0x1000: bytes.fromhex("2c60 44f20001 43f20002 0128 c8bf 0a60 0b68 9847")}
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 @pytest.mark.parametrize(
@@ -2772,7 +2888,7 @@ def test_x86_call_clears_the_frame_after_its_address_escapes(code: str, callee: 
 		),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 def _hook_program(machine: Machine, code: bytes, *, writable: bool, pointer_size: int) -> Program:
@@ -3165,7 +3281,7 @@ def test_a32_pc_relative_load_with_an_index_is_unknown() -> None:
 		arm_code=((0x1000, 0x1008),),
 	)
 	(site,) = extract_call_sites(program)
-	assert site.target == Top()
+	assert isinstance(site.target, Top)
 
 
 @pytest.mark.parametrize(

@@ -34,6 +34,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 	program_counter,
 )
+from dynamic_call_tree_resolution.vsa.conditions import Conditional, arm_branch_test
 from dynamic_call_tree_resolution.vsa.links import function_extent, functions_by_start
 
 if TYPE_CHECKING:
@@ -56,6 +57,7 @@ class Block(Struct):
 	start: Address
 	instructions: tuple[CsInsn, ...]
 	successors: tuple[Address, ...]
+	condition: Conditional | None
 
 
 def _function_address(function: Function) -> Address:
@@ -633,17 +635,20 @@ def _transfer_returns(instruction: CsInsn, machine: Machine) -> bool:
 		case InstructionFamily.X86:
 			return instruction.mnemonic in X86_CALLS or is_returning_trap(instruction, machine)
 		case InstructionFamily.ARM:
-			return (
-				arm_mnemonic(instruction) in ARM_CALLS
-				or (
-					arm_mnemonic(instruction) == "pop"
-					and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
-				)
-				or is_returning_trap(instruction, machine)
-				or arm_predicated(instruction)
-			)
+			return _arm_falls_through(instruction, machine) or arm_predicated(instruction)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _arm_falls_through(instruction: CsInsn, machine: Machine) -> bool:
+	return (
+		arm_mnemonic(instruction) in ARM_CALLS
+		or (
+			arm_mnemonic(instruction) == "pop"
+			and arm_const.ARM_REG_PC not in instruction.regs_access()[1]
+		)
+		or is_returning_trap(instruction, machine)
+	)
 
 
 def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
@@ -654,6 +659,59 @@ def is_returning_trap(instruction: CsInsn, machine: Machine) -> bool:
 			return arm_mnemonic(instruction) in ARM_RETURNING_TRAPS
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _condition(
+	instructions: tuple[CsInsn, ...],
+	machine: Machine,
+	by_address: Mapping[int, int],
+	next_address: int | None,
+) -> Conditional | None:
+	branch = branch_target(instructions[-1], machine)
+	test = (
+		arm_branch_test(instructions)
+		if _conditional_exit(instructions[-1], machine, branch)
+		else None
+	)
+	return (
+		None
+		if test is None
+		else Conditional(
+			test=test,
+			taken=(Address(branch.target),)
+			if branch is not None and branch.target in by_address
+			else (),
+			fallthrough=(Address(next_address),) if next_address is not None else (),
+		)
+	)
+
+
+def _conditional_exit(instruction: CsInsn, machine: Machine, branch: _BranchTarget | None) -> bool:
+	match machine.family:
+		case InstructionFamily.X86:
+			return False
+		case InstructionFamily.ARM:
+			return (
+				branch.conditional
+				if branch is not None
+				else arm_predicated(instruction)
+				and _is_control_transfer(instruction, machine)
+				and not _arm_falls_through(instruction, machine)
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def reachable_blocks(blocks: tuple[Block, ...]) -> frozenset[Address]:
+	by_start = {block.start: block for block in blocks}
+	seen = {blocks[0].start}
+	stack = [blocks[0].start]
+	while stack:
+		for successor in by_start[stack.pop()].successors:
+			if successor not in seen:
+				seen.add(successor)
+				stack.append(successor)
+	return frozenset(seen)
 
 
 def _block_ends(instruction: CsInsn, machine: Machine) -> bool:
@@ -704,6 +762,7 @@ def _build_blocks(
 					start=Address(current[0].address),
 					instructions=tuple(current),
 					successors=(Address(instruction.address),),
+					condition=None,
 				)
 			)
 			current = []
@@ -721,16 +780,24 @@ def _build_blocks(
 					else ()
 					if instruction.address in dispatches
 					else _block_end_successors(instruction, machine, by_address, next_address),
+					condition=None
+					if instruction.address in cases or instruction.address in dispatches
+					else _condition(tuple(current), machine, by_address, next_address),
 				)
 			)
 			current = []
 	if current:
 		blocks.append(
-			Block(start=Address(current[0].address), instructions=tuple(current), successors=())
+			Block(
+				start=Address(current[0].address),
+				instructions=tuple(current),
+				successors=(),
+				condition=None,
+			)
 		)
 	every_start = tuple(block.start for block in blocks)
 	return tuple(
-		Block(start=block.start, instructions=block.instructions, successors=every_start)
+		replace(block, successors=every_start)
 		if block.instructions[-1].address in dispatches
 		and block.instructions[-1].address not in cases
 		else block

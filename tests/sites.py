@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
-from dynamic_call_tree_resolution.model import Unreached
+from dynamic_call_tree_resolution.model import Dead, Unreached
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ def tracked_values(site: CallSite) -> frozenset[Address]:
 	match site.target:
 		case Known(values=values):
 			return values
-		case Top() | Unreached():
+		case Top() | Unreached() | Dead():
 			return frozenset()
 		case _ as unreachable:
 			assert_never(unreachable)

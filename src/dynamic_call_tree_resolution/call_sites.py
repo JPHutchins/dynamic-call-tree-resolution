@@ -18,6 +18,7 @@ from dynamic_call_tree_resolution.identity import stack_name
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
 	Address,
+	Dead,
 	FunctionSignature,
 	Provenance,
 	SlotAssignment,
@@ -32,7 +33,7 @@ from dynamic_call_tree_resolution.points_to import (
 )
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
-	NULL_CALLEE,
+	NO_CALLEE,
 	ThreadTargets,
 	frame_key,
 )
@@ -177,7 +178,7 @@ class Dispatched(Struct):
 	targets: frozenset[Address]
 
 
-type SiteTargets = Chased | SignatureNarrowed | External | Null | Dispatched
+type SiteTargets = Chased | SignatureNarrowed | External | Null | Dispatched | Dead
 
 
 def target_addresses(found: SiteTargets) -> frozenset[Address]:
@@ -188,7 +189,7 @@ def target_addresses(found: SiteTargets) -> frozenset[Address]:
 			| Dispatched(targets=targets)
 		):
 			return targets
-		case External() | Null():
+		case External() | Null() | Dead():
 			return frozenset()
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -223,6 +224,8 @@ def site_targets(
 	narrowings: Mapping[Address, SignatureNarrowed] | None = None,
 ) -> tuple[SiteTargets, ...]:
 	"""What a site can call, each set with where it came from."""
+	if isinstance(site.target, Dead):
+		return (Dead(),)
 	if site.external is not None:
 		return (External(symbol=site.external),)
 	if calls_nothing(program, site):
@@ -245,8 +248,9 @@ def site_targets(
 
 
 def calls_nothing(program: Program, site: CallSite) -> bool:
-	return site.target == Known(values=frozenset({Address(0)})) and (
-		site.loaded_from is None or not in_writable_memory(program, site.loaded_from)
+	return isinstance(site.target, Dead) or (
+		site.target == Known(values=frozenset({Address(0)}))
+		and (site.loaded_from is None or not in_writable_memory(program, site.loaded_from))
 	)
 
 
@@ -264,7 +268,7 @@ def narrowing_signature(findings: tuple[SiteTargets, ...]) -> FunctionSignature 
 
 def _signature(found: SiteTargets) -> FunctionSignature | None:
 	match found:
-		case Chased() | External() | Null() | Dispatched():
+		case Chased() | External() | Null() | Dispatched() | Dead():
 			return None
 		case SignatureNarrowed(signature=signature):
 			return signature
@@ -284,7 +288,7 @@ def _chased(
 				_chase_target(program, candidate, resolved_by_slot, narrowings, frozenset())
 				for candidate in sorted(values)
 			)
-		case Top() | Unreached():
+		case Top() | Unreached() | Dead():
 			return ()
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -446,8 +450,8 @@ def _names(found: SiteTargets, name: Callable[[Address], str]) -> frozenset[str]
 			return frozenset(map(name, targets))
 		case External(symbol=symbol):
 			return frozenset({symbol})
-		case Null():
-			return frozenset({NULL_CALLEE})
+		case Null() | Dead():
+			return frozenset({NO_CALLEE})
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -460,7 +464,7 @@ def _kind(found: SiteTargets) -> EdgeKind:
 			return EdgeKind.SIGNATURE
 		case External():
 			return EdgeKind.EXTERNAL
-		case Null():
+		case Null() | Dead():
 			return EdgeKind.CANDIDATE
 		case Dispatched():
 			return EdgeKind.DISPATCH

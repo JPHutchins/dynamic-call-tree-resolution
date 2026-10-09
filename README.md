@@ -45,7 +45,8 @@ instruction computes, or an address relocation kept by `--emit-relocs` names. Th
 are a site inside a thread's tree that the thread's own analysis resolved, and a call through
 a slot the dynamic loader fills with an undefined symbol's address: that call goes to the
 symbol, an external function the graph counts as unmeasured. A call whose target can only
-be address 0 calls nothing. On an M-profile image, the
+be address 0 calls nothing, and so does an Arm call that only branches the known values
+decide against lead to. On an M-profile image, the
 fallback also leaves out a handler whose address only the vector table holds: only the
 hardware calls it, so it is an entry of its own.
 
@@ -80,6 +81,7 @@ z_impl_zephyr_fputc@0x8a6: <unresolved>
 console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
 z_sys_init_run_level@0xcd0: boot_banner, malloc_prepare, uart_stellaris_init, uart_console_init, sys_clock_driver_init (dispatch, from the RTOS model)
+bg_thread_main@0xd28: <dead>
 ...
 do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
 ```
@@ -103,6 +105,9 @@ do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
   a union arm that overlaps a member that is not a function pointer.
 - All three are listed with member paths for manual review, and all three count as
   unresolved in `compare` and `summary`.
+- `<dead>` marks a site that only branches the known values decide against lead to, so
+  it calls nothing. `bg_thread_main` walks the `k_kernel_init_post_entry` section, which
+  is empty here, and the walk's test never enters the loop that holds the call ([#202]).
 - `<not enumerated: reason>` marks an object or member that may hold or lead to a
   function pointer, but whose slots are not listed:
   - a pointer to a pointer, or to an array, whose target can hold a pointer;
@@ -361,9 +366,9 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
-motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
-thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
+motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 ...
 ```
 
@@ -373,24 +378,24 @@ by its exception number:
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_interrupt_stacks
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-z_interrupt_stacks: unbounded, at least 10592 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
-(exception 1) __start +1016 = 1016 bytes
-(exception 4) z_arm_hard_fault +36 +1048 = 2100 bytes
-(exception 5) z_arm_hard_fault +36 +1048 = 3184 bytes
-(exception 6) z_arm_hard_fault +36 +1048 = 4268 bytes
-(exception 12) z_arm_hard_fault +36 +1048 = 5352 bytes
-(exception 15) sys_clock_isr +36 +1040 = 6428 bytes
-(exception 16) _isr_wrapper +36 +976 = 7440 bytes
-(exception 17) _isr_wrapper +36 +976 = 8452 bytes
-(exception 18) _isr_wrapper +36 +976 = 9464 bytes
-(exception 3) z_arm_hard_fault +36 +1048 = 10548 bytes
-(exception 2) z_arm_nmi +36 +8 = 10592 bytes
+z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
+(exception 1) __start +1036 = 1036 bytes
+(exception 4) z_arm_hard_fault +36 +1072 = 2144 bytes
+(exception 5) z_arm_hard_fault +36 +1072 = 3252 bytes
+(exception 6) z_arm_hard_fault +36 +1072 = 4360 bytes
+(exception 12) z_arm_hard_fault +36 +1072 = 5468 bytes
+(exception 15) sys_clock_isr +36 +1064 = 6568 bytes
+(exception 16) _isr_wrapper +36 +1000 = 7604 bytes
+(exception 17) _isr_wrapper +36 +1000 = 8640 bytes
+(exception 18) _isr_wrapper +36 +1000 = 9676 bytes
+(exception 3) z_arm_hard_fault +36 +1072 = 10784 bytes
+(exception 2) z_arm_nmi +36 +8 = 10828 bytes
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1156 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
@@ -403,7 +408,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 127 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1168 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -579,6 +584,16 @@ contradicts does not hold.
   symbol the linker resolved to 0) or a read-only slot holds it. A 0 read from writable
   memory still expands to the fallback, since a store the analysis misses could change
   it ([#228]).
+- On Arm, a conditional branch that the known values decide keeps only the side it
+  takes. That is a `cbz` or `cbnz`, or a `b<cond>` or a predicated return (A32
+  `popls {r4, pc}`, Thumb `it eq; bxeq lr`) on the flags of a `cmp` or `cmn` in its own
+  block, when every value its operands can hold gives the same answer. A site that only
+  a dropped side leads to is dead: it calls nothing, `analyze` prints `<dead>` for it,
+  and it adds no edge, even under `--narrow-by-field`. Zephyr's walk of the
+  `k_kernel_init_post_entry` section in `bg_thread_main` is one, since the section is
+  empty in these builds. A direct call in dead code keeps its edge; inside a thread's tree
+  it leads to the callee's whole-image analysis rather than the thread's own. Code placed
+  after a call that never returns still counts as reached ([#202], [#242]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - A store whose address the analysis cannot compute makes every writable address
@@ -776,3 +791,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#214]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/214
 [#219]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/219
 [#228]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/228
+[#242]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/242

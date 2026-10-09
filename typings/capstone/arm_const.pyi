@@ -1,3 +1,4 @@
+ARM_CC_AL: int
 ARM_CC_EQ: int
 ARM_CC_GE: int
 ARM_CC_GT: int

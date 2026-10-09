@@ -13,6 +13,7 @@ from dynamic_call_tree_resolution.call_sites import (
 	Dispatched,
 	Null,
 	call_site_candidates,
+	calls_nothing,
 	narrowing_signature,
 	resolve,
 	signature_narrowings,
@@ -25,6 +26,7 @@ from dynamic_call_tree_resolution.linker import Membership
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
 	Address,
+	Dead,
 	FunctionSignature,
 	Machine,
 	Provenance,
@@ -106,6 +108,9 @@ class CallSiteReport(Struct):
 	"""The target can only be address 0, so the site calls nothing."""
 	dispatch: bool = False
 	"""The candidates are the entries the RTOS model says the site's dispatch loop calls."""
+	dead: bool = False
+	"""Only branches the analysis's values decide against lead to the site, so it calls
+	nothing."""
 
 
 class UnresolvedSlotReport(Struct):
@@ -511,7 +516,7 @@ def build_report(
 					None,
 				),
 				candidates=_candidates(
-					program, narrowed(chased, narrowed_by_field, site.site_address)
+					program, narrowing.targets if narrowing is not None else chased
 				),
 				field=(
 					f"{narrowing.field.record}.{narrowing.field.member}"
@@ -522,6 +527,7 @@ def build_report(
 				external=site.external,
 				null=any(isinstance(found, Null) for found in findings),
 				dispatch=any(isinstance(found, Dispatched) for found in findings),
+				dead=any(isinstance(found, Dead) for found in findings),
 			)
 			for site in call_sites
 			for findings in (site_targets(program, site, resolved_map, narrowings),)
@@ -529,7 +535,9 @@ def build_report(
 				frozenset(target for found in findings for target in target_addresses(found)),
 			)
 			for narrowing in (
-				None if chased else narrowing_at(narrowed_by_field, site.site_address),
+				None
+				if chased or calls_nothing(program, site)
+				else narrowing_at(narrowed_by_field, site.site_address),
 			)
 		),
 		unresolved_slots=tuple(
