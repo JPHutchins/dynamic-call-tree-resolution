@@ -219,11 +219,6 @@ def test_analyze_narrows_the_device_api_calls_to_what_their_fields_hold(
 			"(narrowed by field struct bmi160_bus_io.ready, unsound under casts)"
 		),
 		(
-			"z_sys_init_run_level@0x1ee4: boot_banner, malloc_prepare, uart_stellaris_init, "
-			"uart_console_init, sys_clock_driver_init "
-			"(narrowed by field struct init_entry.init_fn, unsound under casts)"
-		),
-		(
 			"emul_init_for_bus@0x3154: adt7420_emul_init, emul_bosch_bmi160_init "
 			"(narrowed by field struct emul.init, unsound under casts)"
 		),
@@ -262,10 +257,6 @@ def test_analyze_narrows_the_device_api_calls_to_what_their_fields_hold(
 		(
 			"bmi160_write@0x3830: bmi160_write_i2c "
 			"(narrowed by field struct bmi160_bus_io.write, unsound under casts)"
-		),
-		(
-			"do_device_init@0x3ad4: i2c_emul_init, bmi160_init, adt7420_init, uart_stellaris_init "
-			"(narrowed by field struct device_ops.init, unsound under casts)"
 		),
 	]
 

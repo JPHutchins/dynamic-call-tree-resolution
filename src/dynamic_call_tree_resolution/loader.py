@@ -205,6 +205,7 @@ def _load(stream: BinaryIO) -> Program:
 		inlined=_inlined(dwarf),
 		declarations=_declarations(dwarf),
 		symbol_addresses=_symbol_addresses(symtab, machine),
+		labels=_labels(symtab),
 		arm_core=_arm_core(elf),
 		tls_size=_aligned_total(
 			(section.header.sh_size, section.header.sh_addralign)
@@ -505,6 +506,25 @@ def _symbol_addresses(
 	return {
 		name: frozenset(address for _, address in group)
 		for name, group in groupby(named, key=_symbol_name)
+	}
+
+
+def _labels(symtab: SymbolTableSection | None) -> dict[str, Address]:
+	return {
+		name: next(iter(addresses))
+		for name, group in groupby(
+			sorted(
+				(symbol.name, Address(symbol["st_value"]))
+				for symbol in (symtab.iter_symbols() if symtab is not None else ())
+				if symbol["st_info"]["type"] == "STT_NOTYPE"
+				and symbol["st_shndx"] != "SHN_UNDEF"
+				and symbol.name
+				and not symbol.name.startswith("$")
+			),
+			key=_symbol_name,
+		)
+		for addresses in ({address for _, address in group},)
+		if len(addresses) == 1
 	}
 
 

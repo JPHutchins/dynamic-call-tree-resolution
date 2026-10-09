@@ -24,6 +24,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.cli import analyze, stack
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
+	Dispatch,
 	InterruptStack,
 	RtosModel,
 	SystemThread,
@@ -179,7 +180,77 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 			SystemThread(name="z_idle_threads", entry=Address(0x1E05)),
 		),
 		interrupt_stack=InterruptStack(name="z_interrupt_stacks"),
+		dispatches=(
+			Dispatch(
+				function="z_sys_init_run_level",
+				targets=frozenset(
+					{Address(0x105), Address(0x8C9), Address(0x8ED), Address(0x91D), Address(0xAA1)}
+				),
+			),
+			Dispatch(function="do_device_init", targets=frozenset({Address(0x1D4F)})),
+		),
 	)
+
+
+@pytest.mark.parametrize(
+	("name", "sys_init", "device_init"),
+	[
+		(
+			"hello",
+			{
+				"boot_banner",
+				"malloc_prepare",
+				"sys_clock_driver_init",
+				"uart_console_init",
+				"uart_stellaris_init",
+			},
+			{"uart_stellaris_init"},
+		),
+		(
+			"sensor-threads",
+			{
+				"boot_banner",
+				"malloc_prepare",
+				"sys_clock_driver_init",
+				"uart_console_init",
+				"uart_stellaris_init",
+			},
+			{
+				"adt7420_init",
+				"bmi160_init",
+				"i2c_emul_init",
+				"spi_emul_init",
+				"uart_stellaris_init",
+			},
+		),
+	],
+)
+@pytest.mark.image
+def test_zephyrs_init_dispatch_goes_to_the_entries_its_linker_sections_hold(
+	zephyr_fixtures: Path, name: str, sys_init: set[str], device_init: set[str]
+) -> None:
+	program = load(zephyr_fixtures / name / "zephyr" / "zephyr.elf")
+	assert {
+		dispatch.function: {program.functions[target].name for target in dispatch.targets}
+		for dispatch in rtos_model(program, RtosChoice.AUTO).dispatches
+	} == {"z_sys_init_run_level": sys_init, "do_device_init": device_init}
+
+
+@pytest.mark.image
+def test_an_init_entry_outside_its_section_bounds_leaves_its_dispatch_unmodeled(
+	zephyr_fixtures: Path,
+) -> None:
+	program = load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf")
+	assert [
+		dispatch.function
+		for dispatch in rtos_model(
+			replace(
+				program,
+				labels={**program.labels, "__init_end": program.labels["__init_start"]},
+			),
+			RtosChoice.AUTO,
+		).dispatches
+	] == ["do_device_init"]
 
 
 @pytest.mark.image
@@ -209,7 +280,7 @@ def test_a_system_thread_takes_the_trampolines_frame_and_calls_from_its_code_wit
 	stack(build_directory, build_directory / "zephyr" / "zephyr.elf", path="z_idle_threads")
 	assert (main_thread, capsys.readouterr().out.splitlines()[1:]) == (
 		[
-			"z_main_thread: unbounded, at least 492 bytes (recursion: 19, unmeasured: 1, measured: 45, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
+			"z_main_thread: unbounded, at least 492 bytes (recursion: 18, unmeasured: 1, measured: 45, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"z_main_thread +8 = 8 bytes (measured)",
 			"bg_thread_main +40 = 48 bytes via system thread (measured, recursion)",
 		],

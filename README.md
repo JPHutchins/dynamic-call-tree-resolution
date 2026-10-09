@@ -27,7 +27,7 @@ with no target.
 2. **Init-system enumeration.** Zephyr `SYS_INIT`/`DEVICE_DEFINE` entries are static
    data that the linker places in dedicated sections, so their slots are enumerated
    from the image. The dispatch sites that call through them (`z_sys_init_run_level`,
-   `do_device_init`) are not resolved.
+   `do_device_init`) go to those entries, as the Zephyr model assumes.
 3. **Candidate narrowing.** Indirect call sites are narrowed by a value-set analysis
    over every function's machine code, seeded from observed direct calls. The narrowed
    sets are refinements, not over-approximations. With `--narrow-by-signature`, a site
@@ -79,9 +79,9 @@ z_impl_zephyr_fputc@0x8a6: <unresolved>
 ...
 console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
-z_sys_init_run_level@0xcd0: <unresolved>
+z_sys_init_run_level@0xcd0: boot_banner, malloc_prepare, uart_stellaris_init, uart_console_init, sys_clock_driver_init (dispatch, from the RTOS model)
 ...
-do_device_init@0x1dca: <unresolved>
+do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
 ```
 
 - `rtos:` names the RTOS model and what identified it in the image. `--rtos auto`, the
@@ -131,7 +131,7 @@ The Zephyr CAN counter sample for `native_sim` (an x86 host executable), with it
 ```console
 $ dctr compare $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 elf                                            machine    functions slots r/u/t  sites r/e/t
-zephyr.exe                                     EM_386           729 106/144/250      8/7/100
+zephyr.exe                                     EM_386           729 106/144/250     10/7/100
 ```
 
 ```console
@@ -154,9 +154,9 @@ poll_state_thread: unbounded, at least 428 bytes (unmeasured: 6, unresolved: 1)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-cmd_prompt_off: unbounded, at least 6264 bytes (recursion: 236, unmeasured: 149)
+cmd_prompt_off: unbounded, at least 6160 bytes (recursion: 234, unmeasured: 149)
 ...
-poll_state_thread: unbounded, at least 6056 bytes (recursion: 236, unmeasured: 149)
+poll_state_thread: unbounded, at least 5952 bytes (recursion: 234, unmeasured: 149)
 ...
 ```
 
@@ -179,14 +179,14 @@ hwtimer_set_tick_one_shot +0 = 428 bytes via static (unmeasured)
 ```console
 $ dctr stack $DCTR_FIXTURES/counter-su --elf $DCTR_FIXTURES/counter-su/zephyr/zephyr.exe --path poll_state_thread
 resolved slots: 106 | indirect call sites: 83 | not in the image: 286 | membership: names | rtos: zephyr
-poll_state_thread: unbounded, at least 6056 bytes (recursion: 236, unmeasured: 149)
+poll_state_thread: unbounded, at least 5952 bytes (recursion: 234, unmeasured: 149)
 poll_state_thread +80 = 80 bytes (recursion)
 _init +0 = 80 bytes via indirect: fallback (recursion, unmeasured)
 bg_thread_main +80 = 160 bytes via indirect: fallback (recursion)
 boot_banner +32 = 192 bytes via indirect: fallback (recursion)
 ...
-timer_core_arm +48 = 6056 bytes via static
-hwtimer_set_tick_one_shot +0 = 6056 bytes via static (unmeasured)
+timer_core_arm +48 = 5952 bytes via static
+hwtimer_set_tick_one_shot +0 = 5952 bytes via static (unmeasured)
 ```
 
 ```console
@@ -538,6 +538,14 @@ contradicts does not hold.
   exactly its records' entries ([#185]), and holds only while `arch_new_thread` and
   `arch_switch_to_main_thread` alone hold `z_thread_entry`'s address. Otherwise, or
   when a creation's entry is unknown, the call is unresolved.
+- The call in `z_sys_init_run_level` goes to the `init_fn` of every `struct init_entry`
+  in the init sections, and the call in `do_device_init` to the `ops.init` of every
+  `struct device` in the device list, with no fallback; `analyze` marks both
+  `(dispatch, from the RTOS model)`. This assumes that each walks only its linker-built
+  table ([#185] would prove it), and holds only while every such object lies between its
+  section's bounds in read-only memory and the function makes one indirect call.
+  Otherwise the call expands to the fallback, and so does an inlined copy of either
+  loop ([#151]).
 
 ### Call targets
 

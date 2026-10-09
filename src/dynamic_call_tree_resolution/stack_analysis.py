@@ -194,6 +194,7 @@ _MAX_CYCLE_SIZE: Final = 16
 
 INDIRECT_CALLEE: Final = "__indirect_call"
 NULL_CALLEE: Final = "__null_call"
+_TRUSTED: Final = frozenset({EdgeKind.EXTERNAL, EdgeKind.DISPATCH})
 
 _NOTED: Final = frozenset(
 	{
@@ -253,16 +254,16 @@ def _expansion(
 		for target in (candidates - {NULL_CALLEE})
 		| (
 			fallback
-			if INDIRECT_CALLEE in targets or (not exact and not _nothing_live(candidates, narrowed))
+			if INDIRECT_CALLEE in targets or (not exact and not _complete(candidates, narrowed))
 			else frozenset[str]()
 		)
 		for graph_target in graph_targets(target)
 	)
 
 
-def _nothing_live(candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]) -> bool:
+def _complete(candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]) -> bool:
 	return bool(candidates) and all(
-		target == NULL_CALLEE or narrowed.get(target) is EdgeKind.EXTERNAL for target in candidates
+		target == NULL_CALLEE or narrowed.get(target) in _TRUSTED for target in candidates
 	)
 
 
