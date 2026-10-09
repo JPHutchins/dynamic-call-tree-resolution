@@ -62,6 +62,8 @@ class ProgramResolution(Struct):
 	seeded: frozenset[str]
 	threads: Mapping[str, ThreadSites]
 	fallback: frozenset[Address]
+	written: frozenset[Address] = frozenset()
+	"""Where in the image a tracked store writes a word."""
 
 
 def resolve(
@@ -84,6 +86,7 @@ def resolve(
 			for assignment in assignments(program)
 			if (runtime := _at_runtime(program, analysis, assignment)) is not None
 		),
+		written=frozenset(analysis.context.global_writes.values),
 	)
 
 

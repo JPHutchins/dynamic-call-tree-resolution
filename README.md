@@ -658,7 +658,8 @@ contradicts does not hold.
   changed ([#202]). It is per object on purpose. Assuming instead that every store with
   an unknown address misses everything the analysis reads would make the emulator list
   that Zephyr's init code builds in RAM look empty, and drop the emulator call that
-  `thermal_tid` really makes.
+  `thermal_tid` really makes. When a store the analysis does track writes a named object
+  anyway, the header says so (`yet tracked stores write: _stdout_hook`).
 - `--assume-frame FUNCTION=BYTES`, repeated for each function, states the frame of a
   function nothing measures: one with neither a `.su` record nor code the analysis can
   measure, such as host code in a native_sim image (`nsi_vprint_error_and_exit` on

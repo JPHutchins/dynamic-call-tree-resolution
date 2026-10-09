@@ -114,6 +114,21 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 	}
 
 
+def test_the_header_names_an_object_assumed_unwritten_that_a_tracked_store_writes(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(
+		artifacts,
+		artifacts / "zephyr" / "zephyr.elf",
+		assume_unwritten=("_stdout_hook", "i2c_emul_cfg_0"),
+	)
+	assert (
+		" | assumed unwritten: _stdout_hook, i2c_emul_cfg_0"
+		" | yet tracked stores write: _stdout_hook | "
+	) in capsys.readouterr().out.splitlines()[0]
+
+
 @pytest.mark.parametrize(
 	("fixture", "name", "message"),
 	[

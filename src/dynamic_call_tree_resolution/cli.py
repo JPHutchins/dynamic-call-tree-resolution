@@ -572,6 +572,8 @@ class AssumedUnwritten(Struct):
 	"""What ``--assume-unwritten`` changed."""
 
 	objects: tuple[str, ...]
+	contradicted: tuple[str, ...]
+	"""The objects a tracked store writes after all."""
 	callers: frozenset[str]
 	"""The callers whose indirect calls it changed, by frame key."""
 	thread_callers: Mapping[str, frozenset[str]]
@@ -841,10 +843,16 @@ def _assumed_unwritten(
 	image: _Image, model: RtosModel, resolution: ProgramResolution, names: tuple[str, ...]
 ) -> AssumedUnwritten:
 	if not names:
-		return AssumedUnwritten(objects=(), callers=frozenset(), thread_callers={})
+		return AssumedUnwritten(objects=(), contradicted=(), callers=frozenset(), thread_callers={})
 	baseline = resolve(image.program, model)
 	return AssumedUnwritten(
 		objects=names,
+		contradicted=tuple(
+			name
+			for name in names
+			for start, end in (_unwritten_span(image.program, name),)
+			if any(start - image.program.pointer_size < key < end for key in resolution.written)
+		),
 		callers=_changed_callers(image, baseline.sites, resolution.sites),
 		thread_callers={
 			thread: _changed_callers(image, baseline.threads[thread].sites, own.sites)
@@ -1268,6 +1276,7 @@ def stack(
 			f"{' | narrowed by field' if narrow_by_field else ''}"
 			f"{f' | assumed no recursion: {", ".join(sorted(assume_no_recursion))}' if assume_no_recursion else ''}"
 			f"{f' | assumed unwritten: {", ".join(sorted(assume_unwritten))}' if assume_unwritten else ''}"
+			f"{f' | yet tracked stores write: {", ".join(expansion.assumed_unwritten.contradicted)}' if expansion.assumed_unwritten.contradicted else ''}"
 			f"{f' | assumed frames: {", ".join(sorted(assume_frame))}' if assume_frame else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
