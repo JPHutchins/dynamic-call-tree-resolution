@@ -305,7 +305,7 @@ def _relro(spans: tuple[tuple[int, int], ...], section: _SectionBytes) -> bool:
 
 
 def _byte_order(elf: ELFFile) -> ByteOrder:
-	return "little" if elf.little_endian else "big"  # pragma: no branch
+	return "little" if elf.little_endian else "big"
 
 
 def _symbol_table(elf: ELFFile) -> SymbolTableSection | None:
@@ -423,7 +423,7 @@ def _symbol_size(symbol: Symbol) -> int:
 
 def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 	if dwarf is None:
-		return {}  # pragma: no cover
+		return {}
 	return {
 		address: Function(
 			name=_die_name(die),
@@ -441,7 +441,7 @@ def _functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 
 def _never_returns(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Address]:
 	if dwarf is None:
-		return frozenset()  # pragma: no cover
+		return frozenset()
 	return frozenset(
 		_code_start(Address(_int_value(low_pc)), machine)
 		for compilation_unit in dwarf.iter_CUs()
@@ -460,7 +460,7 @@ def _noreturn(die: DIE) -> bool:
 
 def _declarations(dwarf: DWARFInfo | None) -> dict[Address, Declaration]:
 	if dwarf is None:
-		return {}  # pragma: no cover
+		return {}
 	units = tuple(dwarf.iter_CUs())
 	files = {unit.cu_offset: _file_names(dwarf, unit) for unit in units}
 	return {
@@ -564,7 +564,7 @@ def _code_start(address: Address, machine: Machine) -> Address:
 
 def _inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[tuple[Address, Address], ...]]:
 	if dwarf is None:
-		return {}  # pragma: no cover
+		return {}
 	dies = tuple(
 		(unit, die)
 		for unit in dwarf.iter_CUs()
@@ -659,8 +659,8 @@ def _subprogram_size(die: DIE) -> int:
 	high_pc = die.attributes.get("DW_AT_high_pc")
 	if high_pc is None:
 		return 0  # pragma: no cover
-	if high_pc.form == "DW_FORM_addr":  # pragma: no branch
-		return _int_value(high_pc) - low_pc  # pragma: no cover
+	if high_pc.form == "DW_FORM_addr":
+		return _int_value(high_pc) - low_pc
 	return _int_value(high_pc)
 
 
@@ -908,7 +908,7 @@ def _array_member(array: _Array, name: str | None, offset: int) -> ArrayMember:
 
 def _layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 	if dwarf is None:
-		return {}  # pragma: no cover
+		return {}
 	layouts: dict[str, StructureLayout] = {}
 	for compilation_unit in dwarf.iter_CUs():
 		for die in _iter_dies(compilation_unit.get_top_DIE()):
@@ -1007,7 +1007,7 @@ def _objects_from_dwarf(
 	byte_order: ByteOrder,
 ) -> dict[Address, DataObject]:
 	if dwarf is None:
-		return {}  # pragma: no cover
+		return {}
 	return {
 		address: DataObject(
 			name=_string_value(name_attribute),
@@ -1065,7 +1065,7 @@ def _byte_size_of(die: DIE) -> int:
 
 def _declaration_types(dwarf: DWARFInfo | None) -> dict[str, str]:
 	if dwarf is None:
-		return {}  # pragma: no cover
+		return {}
 	return {
 		_string_value(name_attribute): _layout_name(_type_die(die))
 		for compilation_unit in dwarf.iter_CUs()

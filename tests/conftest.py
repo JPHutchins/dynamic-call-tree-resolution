@@ -22,6 +22,7 @@ FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 	"nodebug": ("device_model.c", ("-O0", "-no-pie")),
 	"o2": ("device_model.c", ("-g", "-O2", "-no-pie")),
 	"dwarf4": ("device_model.c", ("-g", "-gdwarf-4", "-O0", "-no-pie")),
+	"dwarf3": ("device_model.c", ("-g", "-gdwarf-3", "-O0", "-no-pie")),
 	"minimal.pie": ("minimal.c", ("-g", "-O0")),
 	"null": (
 		"null_fn.c",
