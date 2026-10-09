@@ -30,6 +30,7 @@ from dynamic_call_tree_resolution import (
 	SkippedMember,
 	SkipReason,
 	StructPointerMember,
+	assignments,
 	load,
 )
 from dynamic_call_tree_resolution.loader import (
@@ -38,7 +39,13 @@ from dynamic_call_tree_resolution.loader import (
 	X64Relocation,
 	defined_function_names,
 )
-from dynamic_call_tree_resolution.model import ArmCore, ArmProfile, InstructionSet, aligned
+from dynamic_call_tree_resolution.model import (
+	ArmCore,
+	ArmProfile,
+	InstructionSet,
+	aligned,
+	render_path,
+)
 from dynamic_call_tree_resolution.points_to import instruction_set_at, pointer_at, read_pointer
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
 from tests.toolchains import FIXTURES, build_cortex_a15, build_cortex_m3, host_cc
@@ -122,6 +129,30 @@ def test_a_big_endian_arm_image_reads_its_pointers_big_endian(tmp_path: Path) ->
 	(slot,) = (data for data in program.objects.values() if data.name == "ping_cb")
 	(ping,) = (function for function in program.functions.values() if function.name == "ping")
 	assert (program.byte_order, pointer_at(program, slot.address)) == ("big", ping.address)
+
+
+def test_a_dwarf_2_image_places_its_struct_members_as_dwarf_4_does(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	assert {
+		name: layout.offsets
+		for name, layout in load(fixture_elfs["dwarf2"]).layouts.items()
+		if "<anonymous>@" not in name
+	} == {
+		name: layout.offsets
+		for name, layout in load(fixture_elfs["dwarf4"]).layouts.items()
+		if "<anonymous>@" not in name
+	}
+
+
+def test_an_atomic_function_pointer_member_is_a_slot(fixture_elfs: dict[str, Path]) -> None:
+	program = load(fixture_elfs["atomic"])
+	(target,) = (
+		function.address for function in program.functions.values() if function.name == "target"
+	)
+	assert [
+		(render_path(assignment.path), assignment.candidates) for assignment in assignments(program)
+	] == [("atomic_ops.run", frozenset({target}))]
 
 
 def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
