@@ -659,6 +659,12 @@ contradicts does not hold.
   an unknown address misses everything the analysis reads would make the emulator list
   that Zephyr's init code builds in RAM look empty, and drop the emulator call that
   `thermal_tid` really makes.
+- `--assume-frame FUNCTION=BYTES`, repeated for each function, states the frame of a
+  function nothing measures: one with neither a `.su` record nor code the analysis can
+  measure, such as host code in a native_sim image (`nsi_vprint_error_and_exit` on
+  counter-su). A row whose only gap was that frame becomes bounded. Nothing checks the
+  assumption; the header names each one, and so does every row that reaches it. Stating a
+  frame for a function that already has one is an error ([#93]).
 - `--narrow-by-field` assumes that every function stored into a field is stored as that
   field. A cast, a `memcpy` or a union member can store one it never sees
   (`tests/fixtures/reproducers/field_cast.c`), so it is off by default. It reads the
@@ -809,6 +815,7 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
 [#75]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/75
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
+[#93]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/93
 [#96]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/96
 [#113]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/113
 [#131]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/131

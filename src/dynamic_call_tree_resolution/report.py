@@ -211,6 +211,8 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: tuple[str, ...] = ()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_frames: tuple[str, ...] = ()
+	"""Reachable functions whose frames ``--assume-frame`` states."""
 
 
 class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
@@ -237,6 +239,8 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: tuple[str, ...] = ()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_frames: tuple[str, ...] = ()
+	"""Reachable functions whose frames ``--assume-frame`` states."""
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
@@ -251,6 +255,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
 				assumed_unwritten=tuple(sorted(bound.assumed_unwritten)),
+				assumed_frames=tuple(sorted(bound.assumed_frames)),
 			)
 		case Unbounded():
 			return UnboundedStack(
@@ -266,6 +271,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
 				assumed_unwritten=tuple(sorted(bound.assumed_unwritten)),
+				assumed_frames=tuple(sorted(bound.assumed_frames)),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
