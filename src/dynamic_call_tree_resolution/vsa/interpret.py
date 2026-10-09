@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	ARM_CALLER_SAVED,
 	ARM_CALLS,
+	ARM_STACK_ARGUMENTS,
 	EM_386_STACK_ARGUMENTS,
 	REGISTER_ARGUMENTS,
 	SP_REGISTERS,
@@ -313,8 +314,20 @@ def _call_arguments(
 			}
 		case Machine.EM_ARM:
 			return {
-				position: lookup(state.registers, register)
-				for position, register in enumerate(ARM_ARGUMENT_REGISTERS)
+				**{
+					position: lookup(state.registers, register)
+					for position, register in enumerate(ARM_ARGUMENT_REGISTERS)
+				},
+				**{
+					len(ARM_ARGUMENT_REGISTERS) + slot: stack_read(
+						state.stack,
+						shift_offsets(
+							lookup(state.sp_offsets, SP_REGISTERS[Machine.EM_ARM][0]),
+							context.program.pointer_size * slot,
+						),
+					)
+					for slot in range(ARM_STACK_ARGUMENTS)
+				},
 			}
 		case _ as unreachable:
 			assert_never(unreachable)

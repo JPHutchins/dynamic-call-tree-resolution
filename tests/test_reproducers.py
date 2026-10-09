@@ -176,6 +176,8 @@ ARM_CASES: tuple[tuple[str, str], ...] = (
 	("cast_handler.c", "main"),
 	("assembly_call.c", "run"),
 	("noreturn_call.c", "run"),
+	("stack_argument.c", "run"),
+	("stack_argument.c", "taken"),
 )
 
 
@@ -640,6 +642,21 @@ def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
 		seeded.seeded,
 		_worker_targets(program, seeded, seeded.sites),
 	) == (frozenset(), frozenset({"record"}), outcomes[image].observations["worker"])
+
+
+@pytest.mark.parametrize(
+	"image",
+	[
+		pytest.param(case.image, id=_image_id(case.image))
+		for case, _ in CANDIDATES
+		if case.image.source == "stack_argument.c" and case.caller == "run"
+	],
+)
+def test_a_stack_passed_argument_resolves_to_what_every_caller_passes(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	sites = dict(outcomes[image].sites)
+	assert (sites["run"], sites["taken"]) == (outcomes[image].observations["run"], frozenset())
 
 
 @pytest.mark.parametrize(
