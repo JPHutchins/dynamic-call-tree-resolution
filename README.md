@@ -564,7 +564,7 @@ contradicts does not hold.
   `_start`, goes to that symbol as an external function, and so does a call through a
   register loaded from such a slot, such as the `__gmon_start__` call in x86-64 `_init`.
   On i386, `_init` finds the slot through `__x86.get_pc_thunk.bx`, which the analysis
-  doesn't follow, so that call stays unresolved and expands to the fallback ([#228]).
+  doesn't follow, so that call stays unresolved and expands to the fallback ([#113]).
 - A site whose target can only be address 0 calls nothing: no function starts there,
   and calling it faults. `analyze` prints `<null>` for it, and it adds no edge. This
   holds when the code sets the 0 (glibc's `register_tm_clones` loads a weak undefined
