@@ -13,6 +13,7 @@ from salix import Struct
 from dynamic_call_tree_resolution.model import (
 	Address,
 	CallSite,
+	Dead,
 	InstructionFamily,
 	Machine,
 	Unreached,
@@ -41,7 +42,9 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 	direct_transfer,
 	indirect_operand,
 	is_returning_trap,
+	reachable_blocks,
 )
+from dynamic_call_tree_resolution.vsa.conditions import Conditional, branch_taken
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet, lookup, shift_offsets
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
@@ -163,11 +166,12 @@ def block_states(
 	while worklist:
 		block = by_start[worklist.pop()]
 		incoming = in_states[block.start]
-		outgoing = incoming
-		for instruction in block.instructions:
-			outgoing = transfer(context, instruction, outgoing)
+		before_last = incoming
+		for instruction in block.instructions[:-1]:
+			before_last = transfer(context, instruction, before_last)
+		outgoing = transfer(context, block.instructions[-1], before_last)
 		writes = accumulate_writes(writes, [outgoing.globals])
-		for successor in block.successors:
+		for successor in _live_successors(block, before_last):
 			existing = in_states.get(successor)
 			joined = join_states(existing, outgoing)
 			if joined != existing:
@@ -176,14 +180,37 @@ def block_states(
 	return in_states, writes
 
 
+def _live_successors(block: Block, state: State) -> tuple[Address, ...]:
+	match block.condition:
+		case None:
+			return block.successors
+		case Conditional(test=test, taken=taken, fallthrough=fallthrough):
+			match branch_taken(test, state.registers):
+				case None:
+					return block.successors
+				case True:
+					return taken
+				case False:
+					return fallthrough
+				case _ as unreachable:
+					assert_never(unreachable)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 def analyze_function(
 	context: Context, function: Function, blocks: tuple[Block, ...], seed: State
 ) -> FunctionResult:
 	in_states, writes = block_states(context, blocks, seed)
+	reachable = reachable_blocks(blocks) if len(in_states) < len(blocks) else frozenset[Address]()
 	sites = tuple(
 		(block, site)
 		for block in blocks
-		if (site := _site_resolution(context, block, function.address, in_states.get(block.start)))
+		if (
+			site := _site_resolution(
+				context, block, function.address, in_states.get(block.start), reachable
+			)
+		)
 		is not None
 	)
 	return FunctionResult(
@@ -253,7 +280,7 @@ def _indirect_observations(
 					& context.function_starts
 				)
 			)
-		case Top() | Unreached():
+		case Top() | Unreached() | Dead():
 			return ()
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -319,7 +346,11 @@ def _site_operand_addresses(
 
 
 def _site_resolution(
-	context: Context, block: Block, caller_address: Address, state: State | None
+	context: Context,
+	block: Block,
+	caller_address: Address,
+	state: State | None,
+	reachable: frozenset[Address],
 ) -> CallSite | None:
 	instruction = block.instructions[-1]
 	site_operand = indirect_operand(instruction, context.program.machine)
@@ -330,7 +361,7 @@ def _site_resolution(
 			caller_address=caller_address,
 			site_address=Address(instruction.address),
 			slot=None,
-			target=Unreached(),
+			target=Dead() if block.start in reachable else Unreached(),
 		)
 	match site_operand:
 		case RegisterSite(operand=operand):

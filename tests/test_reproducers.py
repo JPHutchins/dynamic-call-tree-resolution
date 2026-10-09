@@ -27,6 +27,7 @@ from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.model import (
 	Address,
+	Dead,
 	ReferenceKind,
 	RtosModel,
 	ThreadRoot,
@@ -184,11 +185,23 @@ def _host(
 	), issues
 
 
+CONFIG_LOOP_IMAGES = tuple(
+	Image(source="config_loop.c", platform=platform, flags=(level, *variant))
+	for platform in (Platform.CORTEX_M3, Platform.CORTEX_A15)
+	for variant in ((), ("-DHOOKED",))
+	for level in ARM_LEVELS
+)
+
 CANDIDATES = (
 	*(
 		cell
 		for source, caller in (*ARM_CASES, ("predicated_call.c", "predicated_call_case"))
 		for cell in _arm(Platform.CORTEX_M3, source, caller, {})
+	),
+	*(
+		(Case(image=image, caller="run"), ())
+		for image in CONFIG_LOOP_IMAGES
+		if "-DHOOKED" in image.flags
 	),
 	*(
 		cell
@@ -270,6 +283,7 @@ IMAGES = tuple(
 				*THREAD_RECORD_IMAGES,
 				*ESCAPED_RECORD_IMAGES,
 				*SHARED_ENTRY_IMAGES,
+				*CONFIG_LOOP_IMAGES,
 			)
 		),
 		key=_image_id,
@@ -498,6 +512,24 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 		for address in tracked_values(site)
 		if address in program.functions and address not in taken
 	] == []
+
+
+@pytest.mark.parametrize(
+	"image", [pytest.param(image, id=_image_id(image)) for image in CONFIG_LOOP_IMAGES]
+)
+def test_a_loop_a_read_only_count_of_0_skips_is_dead_and_never_runs(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	outcome = outcomes[image]
+	program = load(outcome.elf)
+	assert (
+		bool(outcome.observations["run"]),
+		{
+			isinstance(site.target, Dead)
+			for site in resolve(program).sites
+			if program.functions[site.caller_address].name == "run"
+		},
+	) == ((True, {False}) if "-DHOOKED" in image.flags else (False, {True}))
 
 
 @pytest.mark.parametrize(

@@ -26,7 +26,12 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	X86_64_ARGUMENT_REGISTERS,
 	normalized,
 )
-from dynamic_call_tree_resolution.vsa.cfg import Block, control_flow_graphs, direct_transfer
+from dynamic_call_tree_resolution.vsa.cfg import (
+	Block,
+	control_flow_graphs,
+	direct_transfer,
+	reachable_blocks,
+)
 from dynamic_call_tree_resolution.vsa.fallback import address_taken, referenced_only_at, referrers
 from dynamic_call_tree_resolution.vsa.interpret import (
 	CallObservation,
@@ -375,7 +380,7 @@ def _roots(
 	machine = program.machine
 	starts = frozenset(normalized(function.address, machine) for function, _ in functions)
 	reachable = {
-		normalized(function.address, machine): _reachable_blocks(blocks)
+		normalized(function.address, machine): reachable_blocks(blocks)
 		for function, blocks in functions
 	}
 	transferred = frozenset[Address]().union(
@@ -429,18 +434,6 @@ def _callees(
 		if (transfer := direct_transfer(block.instructions[-1], machine, own_start, starts))
 		is not None
 	)
-
-
-def _reachable_blocks(blocks: tuple[Block, ...]) -> frozenset[Address]:
-	by_start = {block.start: block for block in blocks}
-	seen = {blocks[0].start}
-	stack = [blocks[0].start]
-	while stack:
-		for successor in by_start[stack.pop()].successors:
-			if successor not in seen:
-				seen.add(successor)
-				stack.append(successor)
-	return frozenset(seen)
 
 
 def _call_closure(
@@ -551,7 +544,10 @@ def _final_sites(
 ) -> tuple[CallSite, ...]:
 	function, blocks = function_blocks
 	return analyze_function(
-		context, function, blocks, seeds[normalized(function.address, program.machine)]
+		context,
+		function,
+		blocks,
+		seeds.get(normalized(function.address, program.machine), top_seed(program.machine)),
 	).sites
 
 

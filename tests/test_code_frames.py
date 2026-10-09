@@ -184,7 +184,7 @@ def test_library_code_without_su_adds_its_own_frame_and_its_register_calls_to_a_
 	artifacts = zephyr_fixtures / "sensor-threads"
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="boot_banner")
 	assert capsys.readouterr().out.splitlines()[1:8] == [
-		"boot_banner: unbounded, at least 960 bytes (recursion: 50, measured: 8)",
+		"boot_banner: unbounded, at least 984 bytes (recursion: 50, measured: 8)",
 		"boot_banner +8 = 8 bytes (recursion)",
 		"printk +16 = 24 bytes via static (recursion)",
 		"vprintk +0 = 24 bytes via static (recursion)",

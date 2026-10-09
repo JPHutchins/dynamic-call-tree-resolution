@@ -22,7 +22,7 @@ from dynamic_call_tree_resolution.loader import line_spans
 from dynamic_call_tree_resolution.rtos import RtosChoice
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
-	NULL_CALLEE,
+	NO_CALLEE,
 	expand_indirect_calls,
 	frame_key,
 	worst_case_depths,
@@ -169,7 +169,7 @@ def test_every_target_a_resolution_names_is_in_the_fallback_so_removing_it_never
 			),
 		)
 		for caller, targets in by_caller.items()
-		for target in targets - {INDIRECT_CALLEE, NULL_CALLEE}
+		for target in targets - {INDIRECT_CALLEE, NO_CALLEE}
 	]
 	assert (
 		bool(named),

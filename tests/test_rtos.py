@@ -280,7 +280,7 @@ def test_a_system_thread_takes_the_trampolines_frame_and_calls_from_its_code_wit
 	stack(build_directory, build_directory / "zephyr" / "zephyr.elf", path="z_idle_threads")
 	assert (main_thread, capsys.readouterr().out.splitlines()[1:]) == (
 		[
-			"z_main_thread: unbounded, at least 492 bytes (recursion: 18, unmeasured: 1, measured: 45, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
+			"z_main_thread: unbounded, at least 460 bytes (recursion: 18, unmeasured: 1, measured: 45, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"z_main_thread +8 = 8 bytes (measured)",
 			"bg_thread_main +40 = 48 bytes via system thread (measured, recursion)",
 		],

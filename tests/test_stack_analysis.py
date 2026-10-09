@@ -34,7 +34,7 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.model import Address, RtosModel, SystemThread
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
-	NULL_CALLEE,
+	NO_CALLEE,
 	Handled,
 	LevelSource,
 	Nested,
@@ -904,7 +904,7 @@ def test_depth_through_cyclic_nodes_matches_all_paths() -> None:
 	)
 
 
-@pytest.mark.parametrize(("target", "calls"), [(NULL_CALLEE, False), (INDIRECT_CALLEE, True)])
+@pytest.mark.parametrize(("target", "calls"), [(NO_CALLEE, False), (INDIRECT_CALLEE, True)])
 def test_a_caller_whose_only_target_can_only_be_0_calls_nothing_in_either_expansion(
 	target: str, calls: bool
 ) -> None:

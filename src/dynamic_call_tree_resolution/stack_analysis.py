@@ -193,7 +193,7 @@ class _Forward(Struct):
 _MAX_CYCLE_SIZE: Final = 16
 
 INDIRECT_CALLEE: Final = "__indirect_call"
-NULL_CALLEE: Final = "__null_call"
+NO_CALLEE: Final = "__no_call"
 _TRUSTED: Final = frozenset({EdgeKind.EXTERNAL, EdgeKind.DISPATCH})
 
 _NOTED: Final = frozenset(
@@ -251,7 +251,7 @@ def _expansion(
 	candidates = targets - {INDIRECT_CALLEE}
 	return sorted(
 		(graph_target, _indirect_kind(target, candidates, narrowed))
-		for target in (candidates - {NULL_CALLEE})
+		for target in (candidates - {NO_CALLEE})
 		| (
 			fallback
 			if INDIRECT_CALLEE in targets or (not exact and not _complete(candidates, narrowed))
@@ -263,12 +263,12 @@ def _expansion(
 
 def _complete(candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]) -> bool:
 	return bool(candidates) and all(
-		target == NULL_CALLEE or narrowed.get(target) in _TRUSTED for target in candidates
+		target == NO_CALLEE or narrowed.get(target) in _TRUSTED for target in candidates
 	)
 
 
 def _unexpanded(targets: frozenset[str], kind: EdgeKind) -> list[tuple[str, EdgeKind]]:
-	return [] if targets == frozenset({NULL_CALLEE}) else [(INDIRECT_CALLEE, kind)]
+	return [] if targets == frozenset({NO_CALLEE}) else [(INDIRECT_CALLEE, kind)]
 
 
 def _indirect_kind(
@@ -350,7 +350,7 @@ def own_thread_edges(
 								own.narrowed_by_caller.get(frame_key(edge.caller), {}),
 							),
 						)
-						for target in own.targets_by_caller[frame_key(edge.caller)] - {NULL_CALLEE}
+						for target in own.targets_by_caller[frame_key(edge.caller)] - {NO_CALLEE}
 						for graph_target in graph_targets(target)
 					)
 					if frame_key(edge.caller) in complete
