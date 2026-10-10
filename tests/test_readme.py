@@ -9,17 +9,22 @@ from pathlib import Path
 import pytest
 
 from tests.dctr import dctr
+from tests.puncover_comparison import comparison
 
 pytestmark = pytest.mark.image
 
 REPOSITORY_ROOT = Path(__file__).parent.parent
 
 
-def _transcripts(readme: Path) -> list[list[str]]:
+def _console_blocks(readme: Path) -> list[list[str]]:
 	return [
 		str(block[1]).splitlines()
 		for block in re.finditer(r"```console\n(.*?)```", readme.read_text(), re.DOTALL)
 	]
+
+
+def _transcripts(readme: Path) -> list[list[str]]:
+	return [block for block in _console_blocks(readme) if block[0].startswith("$ dctr ")]
 
 
 @pytest.mark.parametrize(
@@ -68,3 +73,20 @@ def test_readme_prose_quotes_only_sites_its_transcripts_print() -> None:
 		for match in re.finditer(r"\w+@0x[0-9a-f]+", _prose(REPOSITORY_ROOT / "README.md"))
 		if match[0] not in printed
 	] == []
+
+
+def test_readme_puncover_comparison_is_the_generators_output(zephyr_fixtures: Path) -> None:
+	(published,) = (
+		block[1:]
+		for block in _console_blocks(REPOSITORY_ROOT / "README.md")
+		if block[0] == "$ uv run python -m tests.puncover_comparison"
+	)
+	assert published == comparison(zephyr_fixtures).splitlines()
+
+
+def test_the_puncover_comparison_needs_the_arm_toolchain_on_path(
+	tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+	monkeypatch.setenv("PATH", str(tmp_path))
+	with pytest.raises(RuntimeError, match="nix develop"):
+		comparison(tmp_path)
