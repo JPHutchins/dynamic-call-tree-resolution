@@ -143,22 +143,28 @@ def _known(value: ValueSet) -> frozenset[Address] | None:
 def _agrees(value: int, candidates: frozenset[Address], starts: frozenset[Address]) -> bool:
 	"""Whether a DWARF value is one of the candidates, as GCC writes it.
 
-	GCC types a value by its parameter, so a ``uint8_t`` 0x80 can read ``DW_OP_const1s -128``,
-	and a code address may carry the Thumb bit on either side.
+	GCC types a value by its parameter, so a ``uint8_t`` 0x80 can read ``DW_OP_const1s -128``:
+	a negative value also matches its low byte or halfword. A code address may carry the Thumb
+	bit on either side.
 
 	>>> _agrees(-128, frozenset({0x80}), frozenset())
 	True
+	>>> _agrees(-128, frozenset({0xFFFF_FF80}), frozenset())
+	True
 	>>> _agrees(-128, frozenset({0x180}), frozenset())
 	False
+	>>> _agrees(0x180, frozenset({0x80}), frozenset())
+	False
+	>>> _agrees(-0x5EFD_F3FF, frozenset({0xA102_0C01}), frozenset())
+	True
 	>>> _agrees(0x101, frozenset({0x100}), frozenset({0x100}))
 	True
 	>>> _agrees(3, frozenset({2}), frozenset())
 	False
 	"""
 	return any(
-		(value - candidate) % (1 << bits) == 0
-		and (bits == _WORD_BITS or candidate >> bits in (0, (1 << (_WORD_BITS - bits)) - 1))
-		for bits in (8, 16, _WORD_BITS)
+		candidate == value % (1 << _WORD_BITS)
+		or (value < 0 and candidate in (value % (1 << 8), value % (1 << 16)))
 		for candidate in candidates
 	) or (
 		aligned(Address(value)) in starts
