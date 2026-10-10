@@ -29,6 +29,7 @@ from dynamic_call_tree_resolution.model import (
 	Dead,
 	FunctionSignature,
 	Machine,
+	NullSlot,
 	Provenance,
 	Residue,
 	SkipReason,
@@ -44,6 +45,7 @@ from dynamic_call_tree_resolution.pexplorer import (
 )
 from dynamic_call_tree_resolution.points_to import (
 	not_enumerated,
+	null_slots,
 	signatures_by_slot,
 	unresolved_slots,
 )
@@ -122,6 +124,14 @@ class UnresolvedSlotReport(Struct):
 	residue: Residue
 
 
+class NullSlotReport(Struct):
+	"""A read-only function-pointer slot that holds NULL: resolved, to nothing."""
+
+	slot_address: int
+	member_path: str
+	signature: SignatureReport | None
+
+
 class NotEnumeratedReport(Struct):
 	"""An object or member whose slots the analysis does not enumerate."""
 
@@ -156,6 +166,7 @@ class AnalysisReport(Struct):
 	assignments: tuple[SlotAssignmentReport, ...]
 	call_sites: tuple[CallSiteReport, ...]
 	unresolved_slots: tuple[UnresolvedSlotReport, ...]
+	null_slots: tuple[NullSlotReport, ...]
 	not_enumerated: tuple[NotEnumeratedReport, ...]
 	total_slots: int
 	resolved_slots: int
@@ -440,9 +451,11 @@ class SlotCounts(SalixStruct):
 
 
 def slot_counts(
-	resolved: tuple[SlotAssignment, ...], unresolved: tuple[UnresolvedSlot, ...]
+	resolved: tuple[SlotAssignment, ...],
+	unresolved: tuple[UnresolvedSlot, ...],
+	nulls: tuple[NullSlot, ...],
 ) -> SlotCounts:
-	slots = frozenset(assignment.slot for assignment in resolved)
+	slots = frozenset(assignment.slot for assignment in resolved) | {slot.slot for slot in nulls}
 	return SlotCounts(
 		resolved_slots=len(slots),
 		total_slots=len(slots | {slot.slot for slot in unresolved}),
@@ -492,9 +505,11 @@ def build_report(
 	fallback: frozenset[Address] | None = None,
 ) -> AnalysisReport:
 	unresolved = unresolved_slots(program, resolved)
+	nulls = null_slots(program, resolved)
 	resolved_map = resolved_by_slot(resolved)
 	slot_paths = {
 		**{slot.slot: slot.path for slot in unresolved},
+		**{slot.slot: slot.path for slot in nulls},
 		**{slot: assignment.path for slot, assignment in resolved_map.items()},
 	}
 	narrowings = (
@@ -502,7 +517,7 @@ def build_report(
 		if narrow_by_signature
 		else None
 	)
-	counts = slot_counts(resolved, unresolved)
+	counts = slot_counts(resolved, unresolved, nulls)
 	return AnalysisReport(
 		assignments=tuple(
 			SlotAssignmentReport(
@@ -561,6 +576,14 @@ def build_report(
 			)
 			for slot in unresolved
 		),
+		null_slots=tuple(
+			NullSlotReport(
+				slot_address=slot.slot,
+				member_path=render_path(slot.path),
+				signature=_render_signature(slot.signature),
+			)
+			for slot in nulls
+		),
 		not_enumerated=tuple(
 			NotEnumeratedReport(member_path=render_path(item.path), reason=item.reason)
 			for item in not_enumerated(program)
@@ -598,31 +621,33 @@ def build_comparison(
 		if narrow_by_signature
 		else None
 	)
-	counts = slot_counts(resolved, unresolved)
-	sites = resolution.sites
-	candidate_sizes = sorted(
-		len(
-			narrowed(
-				call_site_candidates(program, site, resolved_map, narrowings),
-				narrowed_by_field,
-				site.site_address,
-			)
+	counts = slot_counts(resolved, unresolved, null_slots(program, resolved))
+	outcomes = tuple(
+		_SiteOutcome(
+			caller=_site_address(site),
+			candidates=0
+			if nothing
+			else len(
+				narrowed(
+					call_site_candidates(program, site, resolved_map, narrowings),
+					narrowed_by_field,
+					site.site_address,
+				)
+			),
+			calls_nothing=nothing,
 		)
-		for site in sites
+		for site in resolution.sites
+		for nothing in (calls_nothing(program, site),)
 	)
+	candidate_sizes = sorted(outcome.candidates for outcome in outcomes)
 	dynamic_by_caller: Mapping[Address, DynamicSites] = (
 		dynamic_sites_by_caller(pexplorer) if pexplorer is not None else {}
 	)
 	sites_by_caller = {
-		caller_address: [
-			narrowed(
-				call_site_candidates(program, site, resolved_map, narrowings),
-				narrowed_by_field,
-				site.site_address,
-			)
-			for site in group
-		]
-		for caller_address, group in groupby(sorted(sites, key=_site_address), key=_site_address)
+		caller_address: tuple(group)
+		for caller_address, group in groupby(
+			sorted(outcomes, key=_outcome_caller), key=_outcome_caller
+		)
 	}
 	rows = (
 		*(
@@ -632,11 +657,11 @@ def build_comparison(
 				pexplorer_dynamic_sites=dynamic_by_caller[caller_address].total
 				if caller_address in dynamic_by_caller
 				else 0,
-				dctr_call_sites=len(candidates),
-				dctr_resolved_sites=sum(bool(candidate_set) for candidate_set in candidates),
-				dctr_exact_sites=sum(len(candidate_set) == 1 for candidate_set in candidates),
+				dctr_call_sites=len(group),
+				dctr_resolved_sites=sum(map(_resolved, group)),
+				dctr_exact_sites=sum(map(_exact, group)),
 			)
-			for caller_address, candidates in sites_by_caller.items()
+			for caller_address, group in sites_by_caller.items()
 		),
 		*(
 			FunctionComparison(
@@ -659,8 +684,8 @@ def build_comparison(
 		resolved_slots=counts.resolved_slots,
 		unresolved_slots=len(unresolved),
 		call_sites=len(candidate_sizes),
-		resolved_call_sites=sum(size > 0 for size in candidate_sizes),
-		exact_call_sites=sum(size == 1 for size in candidate_sizes),
+		resolved_call_sites=sum(map(_resolved, outcomes)),
+		exact_call_sites=sum(map(_exact, outcomes)),
 		candidate_size_counts=tuple(
 			(size, candidate_sizes.count(size)) for size in dict.fromkeys(candidate_sizes, 0)
 		),
@@ -676,6 +701,26 @@ def build_comparison(
 
 def _row_caller(row: FunctionComparison) -> str:
 	return row.caller
+
+
+class _SiteOutcome(Struct):
+	"""What a comparison counts of one call site."""
+
+	caller: Address
+	candidates: int
+	calls_nothing: bool
+
+
+def _outcome_caller(outcome: _SiteOutcome) -> Address:
+	return outcome.caller
+
+
+def _resolved(outcome: _SiteOutcome) -> bool:
+	return outcome.candidates > 0 or outcome.calls_nothing
+
+
+def _exact(outcome: _SiteOutcome) -> bool:
+	return outcome.candidates == 1 or outcome.calls_nothing
 
 
 def _caller_name(program: Program, caller_address: Address) -> str:

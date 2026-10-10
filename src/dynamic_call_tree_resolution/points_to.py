@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.model import (
 	InstructionSet,
 	Machine,
 	NotEnumerated,
+	NullSlot,
 	Program,
 	Provenance,
 	Residue,
@@ -248,7 +249,7 @@ def _assignment_slot(assignment: SlotAssignment) -> Address:
 	return assignment.slot
 
 
-def _slot_address(slot: UnresolvedSlot) -> Address:
+def _slot_address(slot: UnresolvedSlot | NullSlot) -> Address:
 	return slot.slot
 
 
@@ -266,11 +267,29 @@ def unresolved_slots(
 					residue=_residue(program, slot),
 				)
 				for slot, entry in dict(reversed(tuple(_slot_universe(program)))).items()
-				if slot not in resolved_by_slot
+				if slot not in resolved_by_slot and not _holds_null_in_rom(program, slot)
 			),
 			key=_slot_address,
 		)
 	)
+
+
+def null_slots(program: Program, resolved: tuple[SlotAssignment, ...]) -> tuple[NullSlot, ...]:
+	resolved_by_slot = {assignment.slot for assignment in resolved}
+	return tuple(
+		sorted(
+			(
+				NullSlot(slot=slot, path=entry.path, signature=entry.signature)
+				for slot, entry in dict(reversed(tuple(_slot_universe(program)))).items()
+				if slot not in resolved_by_slot and _holds_null_in_rom(program, slot)
+			),
+			key=_slot_address,
+		)
+	)
+
+
+def _holds_null_in_rom(program: Program, slot: Address) -> bool:
+	return not in_writable_memory(program, slot) and pointer_at(program, slot) == 0
 
 
 def field_slots(program: Program) -> Mapping[tuple[str, str], frozenset[Address]]:
@@ -321,7 +340,7 @@ def _slot_universe(program: Program) -> Iterable[tuple[Address, _SlotUniverseEnt
 def _residue(program: Program, slot: Address) -> Residue:
 	value = pointer_at(program, slot)
 	if not in_writable_memory(program, slot):
-		return Residue.ROM_NULL if value == 0 else Residue.ROM_NON_FUNCTION
+		return Residue.ROM_NON_FUNCTION
 	return (
 		Residue.RAM_UNINITIALIZED
 		if value is None

@@ -120,7 +120,7 @@ def test_cli_compare_plain_text_and_directories(
 	output = capsys.readouterr().out
 	assert output.count("EM_X86_64") == 2
 	assert "11/2/13" in output
-	assert "5/5/10" in output
+	assert "7/7/10" in output
 
 
 def test_cli_main_entry(
