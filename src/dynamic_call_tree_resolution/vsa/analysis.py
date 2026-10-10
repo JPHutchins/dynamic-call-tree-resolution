@@ -79,6 +79,8 @@ class Analysis(Struct):
 	"""The threads whose entry started from its record's arguments rather than unknown ones."""
 	threads: Mapping[str, ThreadSites]
 	address_taken: frozenset[Address]
+	observations: tuple[CallObservation, ...]
+	"""Every call the final pass saw reach a known function, with the arguments it passes."""
 
 
 def analyze(
@@ -141,14 +143,11 @@ def analyze(
 			1,
 		)
 		final_context = context_for(program, final.writes, assumed_unwritten=assumed_unwritten)
+		results = tuple(
+			executor.map(partial(_final_result, program, final_context, final.seeds), functions)
+		)
 		return Analysis(
-			sites=tuple(
-				site
-				for sites in executor.map(
-					partial(_final_sites, program, final_context, final.seeds), functions
-				)
-				for site in sites
-			),
+			sites=tuple(site for result in results for site in result.sites),
 			context=final_context,
 			seeded=frozenset(
 				thread.name for entry in seeded_entries for thread in threads_by_entry[entry]
@@ -161,6 +160,11 @@ def analyze(
 				for thread in rtos.threads
 			},
 			address_taken=taken,
+			observations=tuple(
+				observation
+				for result in results
+				for observation in (*result.observations, *result.indirect_observations)
+			),
 		)
 
 
@@ -546,19 +550,19 @@ def _round_analysis(
 	)
 
 
-def _final_sites(
+def _final_result(
 	program: Program,
 	context: Context,
 	seeds: Mapping[Address, State],
 	function_blocks: tuple[Function, tuple[Block, ...]],
-) -> tuple[CallSite, ...]:
+) -> FunctionResult:
 	function, blocks = function_blocks
 	return analyze_function(
 		context,
 		function,
 		blocks,
 		seeds.get(normalized(function.address, program.machine), top_seed(program.machine)),
-	).sites
+	)
 
 
 def _prewarm_instructions(
@@ -614,8 +618,8 @@ def _thread_sites(
 		reached=frozenset(function.address for function, _ in reached),
 		sites=tuple(
 			site
-			for sites in executor.map(partial(_final_sites, program, context, seeds), reached)
-			for site in sites
+			for result in executor.map(partial(_final_result, program, context, seeds), reached)
+			for site in result.sites
 		),
 	)
 
