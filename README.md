@@ -533,10 +533,29 @@ z_thread_entry@0x244: thread_a_entry_point, thread_b_entry_point, bg_thread_main
 ## Related tools
 
 - [puncover](https://github.com/HBehrens/puncover) 0.8.0 reads `-fstack-usage` but not
-  `-fcallgraph-info`; it recovers calls and indirect calls from disassembly with
-  ARM-only regexes (`BLX\s+(\w+)$` in `gcc_tools.py`), so on an x86 build such as the
-  counter it sees no calls at all. A like-for-like comparison on an ARM build is
-  tracked in [#131].
+  `-fcallgraph-info`. It recovers calls from disassembly with the regexes in
+  [`gcc_tools.py`](https://github.com/HBehrens/puncover/blob/0.8.0/puncover/gcc_tools.py#L15-L37),
+  Arm ones unless the tool prefix names `riscv`, so on an x86 build such as the counter
+  it sees no calls at all. On Arm it follows a `b` or `bl` to a direct address, and only
+  flags a `blx` through a register
+  ([`collector.py`](https://github.com/HBehrens/puncover/blob/0.8.0/puncover/collector.py#L457-L466)),
+  so an entry that dispatches through a function pointer stops at its own frame. On the
+  sensor build `_isr_wrapper` dispatches through `_sw_isr_table`, and the sensor threads
+  through `device->api` ([#131]). Where a tree makes no call through a pointer, as under
+  `sys_clock_driver_init`, the two agree. A thread's dctr entry is its thread object,
+  whose bound adds the RTOS model's stack reservation and exception frame:
+
+```console
+$ uv run python -m tests.puncover_comparison
+puncover entry         puncover 0.8.0  dctr entry             dctr stack
+sys_clock_isr          224 bytes       sys_clock_isr          unbounded, at least 1016 bytes
+_isr_wrapper           8 bytes         _isr_wrapper           unbounded, at least 952 bytes
+motion_thread          8 bytes         motion_tid             unbounded, at least 1120 bytes
+thermal_thread         8 bytes         thermal_tid            unbounded, at least 1108 bytes
+main                   40 bytes        z_main_thread          unbounded, at least 996 bytes
+sys_clock_driver_init  56 bytes        sys_clock_driver_init  56 bytes
+```
+
 - [pexplorer](https://paulwuertz.github.io/pexplorer/) detects dynamic edges and
   defers their resolution to a hand-maintained config file. `dctr compare --pexplorer`
   joins its report per function, comparing pexplorer's dynamic-call count with dctr's
