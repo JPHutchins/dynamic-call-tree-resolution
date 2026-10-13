@@ -46,6 +46,7 @@ from dynamic_call_tree_resolution.vsa.memory import (
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
+	after_unknown_store,
 	copy_register,
 	escaping,
 	frame_based,
@@ -54,7 +55,6 @@ from dynamic_call_tree_resolution.vsa.state import (
 	set_register,
 	stack_read,
 	top_written,
-	unknown_memory,
 	without_loaded,
 )
 
@@ -113,7 +113,7 @@ def _apply_unconditional(
 		return top_written(
 			instruction,
 			escaping(
-				unknown_memory(state),
+				after_unknown_store(state),
 				tuple(
 					operand.reg
 					for operand in _arm_operands(instruction)

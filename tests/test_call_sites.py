@@ -332,7 +332,9 @@ def test_an_unaligned_load_sees_a_store_another_function_makes_over_part_of_it(
 			set[int](),
 			id="ldrb inside a stored word",
 		),
-		pytest.param("42f20000 0388", True, "0021 1160 7047", set[int](), id="ldrh when wild"),
+		pytest.param(
+			"42f20000 0388", True, "0021 1160 7047", set[int](), id="ldrh after an unknown store"
+		),
 		pytest.param(
 			"42f20000 09b1 42f20400 0388", False, "7047", set[int](), id="ldrh of two addresses"
 		),
@@ -1618,7 +1620,7 @@ def test_x86_store_clobbers_the_frame_slots_it_may_cover(code: str) -> None:
 			"488916 4885ff 7409 48c7c300400000 eb07 48c7c308400000 48c7c100500000 48890b"
 			"488b042508400000 ffd0",
 			set[int](),
-			id="one-of-two-addresses-after-a-wild-store",
+			id="one-of-two-addresses-after-an-unknown-store",
 		),
 		pytest.param("c604250140000000 488b042500400000 ffd0", set[int](), id="a-byte-in-the-slot"),
 		pytest.param("48c7c300400000 8f03 488b03 ffd0", set[int](), id="pop-to-memory"),
@@ -2949,7 +2951,7 @@ def test_thumb_predicated_store_reaches_other_readers() -> None:
 	assert site.target == Known(values=frozenset({Address(0x2000), Address(0x3000)}))
 
 
-def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
+def test_thumb_predicated_store_after_an_unknown_store_is_unknown() -> None:
 	program = _thumb_slot_program(
 		{0x1000: bytes.fromhex("2c60 44f20001 43f20002 0128 c8bf 0a60 0b68 9847")}
 	)
@@ -3010,12 +3012,14 @@ def test_thumb_predicated_store_after_a_wild_store_is_unknown() -> None:
 			"6c46 44f00100 42f20003 0193 2a60 019b 9847",
 			0x12,
 			set[int](),
-			id="wild-store-after-an-escape",
+			id="unknown-store-after-an-escape",
 		),
-		pytest.param("42f20003 0193 2a60 019b 9847", 0xC, {0x2000}, id="wild-store-without-escape"),
+		pytest.param(
+			"42f20003 0193 2a60 019b 9847", 0xC, {0x2000}, id="unknown-store-without-escape"
+		),
 	],
 )
-def test_thumb_frame_survives_calls_and_wild_stores_until_its_address_escapes(
+def test_thumb_frame_survives_calls_and_unknown_stores_until_its_address_escapes(
 	code: str, callee: int, candidates: set[int]
 ) -> None:
 	body = bytes.fromhex(code)

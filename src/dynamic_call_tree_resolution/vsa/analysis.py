@@ -534,7 +534,7 @@ def _widened_writes(previous: Writes, current: Writes) -> Writes:
 			else Top()
 			for address, value in current.values.items()
 		},
-		wild=current.wild,
+		unknown_store=current.unknown_store,
 	)
 
 

@@ -41,11 +41,11 @@ class Writes(Struct):
 
 	values: Mapping[Address, ValueSet]
 	"""By address; an address no store wrote is absent."""
-	wild: bool
-	"""Some store's address was unknown, so any writable address may hold anything."""
+	unknown_store: bool
+	"""An unknown store happened, so any writable address may hold anything."""
 
 
-NO_WRITES: Final = Writes(values={}, wild=False)
+NO_WRITES: Final = Writes(values={}, unknown_store=False)
 
 
 class State(Struct):
@@ -118,7 +118,7 @@ def _join_writes(current: Writes, incoming: Writes) -> Writes:
 			address: join(current.values[address], incoming.values[address])
 			for address in current.values.keys() & incoming.values.keys()
 		},
-		wild=current.wild or incoming.wild,
+		unknown_store=current.unknown_store or incoming.unknown_store,
 	)
 
 
@@ -196,12 +196,12 @@ def frame_based(state: State, machine: Machine, register: int) -> bool:
 	return register == SP_REGISTERS[machine][0] or register in state.sp_offsets
 
 
-def unknown_memory(state: State) -> State:
+def after_unknown_store(state: State) -> State:
 	return State(
 		registers=state.registers,
 		sp_offsets=state.sp_offsets,
 		stack={},
-		globals=Writes(values={}, wild=True),
+		globals=Writes(values={}, unknown_store=True),
 		escaped=state.escaped,
 		loaded_from=state.loaded_from,
 	)
@@ -297,7 +297,7 @@ def frame_write(
 def image_write(writes: Writes, addresses: ValueSet, store: Store, pointer_size: int) -> Writes:
 	match addresses:
 		case Top():
-			return Writes(values={}, wild=True)
+			return Writes(values={}, unknown_store=True)
 		case Known(values=starts):
 			return Writes(
 				values={
@@ -317,7 +317,7 @@ def image_write(writes: Writes, addresses: ValueSet, store: Store, pointer_size:
 						).items()
 					},
 				},
-				wild=writes.wild,
+				unknown_store=writes.unknown_store,
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
