@@ -22,8 +22,9 @@ with no target.
    value or a relocation against a function symbol. Combined with DWARF structure
    layouts, every such slot is read from the image as linked. A slot in read-only memory
    keeps that value. A slot in writable memory holds its initializer plus every value
-   the value-set analysis sees the program store there, and is unresolved when a store's
-   address or value is unknown.
+   the value-set analysis sees the program store there, and is unresolved after an
+   unknown store, one whose destination address the analysis cannot compute, or a store
+   of an unknown value.
 2. **Init-system enumeration.** Zephyr `SYS_INIT`/`DEVICE_DEFINE` entries are static
    data that the linker places in dedicated sections, so their slots are enumerated
    from the image. The dispatch sites that call through them (`z_sys_init_run_level`,
@@ -121,8 +122,8 @@ do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
 
   Heap and stack slots, and variables whose location is a location list ([#17]), are
   not listed at all.
-- `char_out@0x118` and `z_impl_zephyr_fputc@0x8a6` call through `_char_out`, a function
-  pointer in RAM. The image has stores whose address the analysis cannot compute, so any
+- `char_out@0x118` and `z_impl_zephyr_fputc@0x8a6` call through `_char_out` and
+  `_stdout_hook`, function pointers in RAM. The image has unknown stores, so any
   writable slot may hold anything: `analyze` reports these sites unresolved, and
   `stack --elf` expands them to every address-taken function.
 - `z_thread_entry@0x180` is the call that starts every thread. It goes to the entries
@@ -608,8 +609,8 @@ contradicts does not hold.
   removing a resolution never lowers a bound; and that no entry is deeper with its
   candidates alone than with the fallback too ([#75]).
 - A read-only slot's value is its value in the image as linked. A writable slot's
-  candidates are its initializer and the values stored to it, so a store whose address
-  or value is unknown leaves it unresolved.
+  candidates are its initializer and the values stored to it, so an unknown store, or a
+  store of an unknown value, leaves it unresolved.
 - On a dynamically linked image, a slot that a dynamic relocation fills with an undefined
   symbol reads as unknown, not as the zero the image holds. A call that reads its target
   from such a slot, such as x86 `call *__libc_start_main@GOTPCREL(%rip)` in glibc's
@@ -645,9 +646,8 @@ contradicts does not hold.
   ([#242]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
-- A store whose address the analysis cannot compute makes every writable address
-  unknown, so a site that reads its target from RAM is unresolved unless its own path
-  wrote that target.
+- An unknown store makes every writable address unknown, so a site that reads its
+  target from RAM is unresolved unless its own path wrote that target.
 - Value-set analysis per-site sets are refinements, not over-approximations: its
   control-flow graph misses x86 `notrack` switches, and it does not model a few kinds of
   x86 write ([#113]). An x86 register write reaches its whole family: a 32-bit write on
@@ -674,10 +674,10 @@ contradicts does not hold.
   and every row that rests on it name it ([#169], [#202]).
 - `--assume-unwritten OBJECT`, repeated for each data object, states that the program
   never writes the object after it loads. A load from it then reads its value in the
-  image, even where a store's address is unknown. Nothing checks the assumption; the
+  image, even after an unknown store. Nothing checks the assumption; the
   header names it, and so does every row that reaches a caller whose indirect calls it
-  changed ([#202]). It is per object on purpose. Assuming instead that every store with
-  an unknown address misses everything the analysis reads would make the emulator list
+  changed ([#202]). It is per object on purpose. Assuming instead that every unknown
+  store misses everything the analysis reads would make the emulator list
   that Zephyr's init code builds in RAM look empty, and drop the emulator call that
   `thermal_tid` really makes. When a store the analysis does track writes a named object
   anyway, the header says so (`yet tracked stores write: _stdout_hook`).

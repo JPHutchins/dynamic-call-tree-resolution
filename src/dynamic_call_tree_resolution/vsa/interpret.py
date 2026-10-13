@@ -103,7 +103,7 @@ def _called(state: State, machine: Machine) -> State:
 			registers=passed.registers,
 			sp_offsets=passed.sp_offsets,
 			stack={} if passed.escaped else passed.stack,
-			globals=Writes(values={}, wild=passed.globals.wild),
+			globals=Writes(values={}, unknown_store=passed.globals.unknown_store),
 			escaped=passed.escaped,
 			loaded_from=passed.loaded_from,
 		),

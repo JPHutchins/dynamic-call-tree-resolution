@@ -38,6 +38,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
 	Writes,
+	after_unknown_store,
 	frame_based,
 	frame_copies_lost,
 	frame_write,
@@ -45,7 +46,6 @@ from dynamic_call_tree_resolution.vsa.state import (
 	overlapping_keys,
 	stack_read,
 	top_seed,
-	unknown_memory,
 )
 
 if TYPE_CHECKING:
@@ -79,12 +79,12 @@ class Context(Struct):
 
 def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
 	values = dict(current.values)
-	wild = current.wild
+	unknown_store = current.unknown_store
 	for writes in written:
-		wild = wild or writes.wild
+		unknown_store = unknown_store or writes.unknown_store
 		for address, value in writes.values.items():
 			values[address] = join(values[address], value) if address in values else value
-	return Writes(values=values, wild=wild)
+	return Writes(values=values, unknown_store=unknown_store)
 
 
 def context_for(
@@ -220,7 +220,7 @@ def _image_read(
 				assert_never(unreachable)
 		if (
 			local is None
-			and (state.globals.wild or context.global_writes.wild)
+			and (state.globals.unknown_store or context.global_writes.unknown_store)
 			and not _read_only(context, address)
 		) or address in context.external_symbols:
 			return Top()
@@ -437,7 +437,7 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 				),
 			)
 		case Unknown():
-			return unknown_memory(state)
+			return after_unknown_store(state)
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -472,7 +472,7 @@ def weakened(context: Context, before: State, after: State) -> State:
 				)
 				for address, value in after.globals.values.items()
 			},
-			wild=after.globals.wild,
+			unknown_store=after.globals.unknown_store,
 		),
 		escaped=before.escaped
 		or after.escaped
