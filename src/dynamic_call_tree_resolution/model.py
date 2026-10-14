@@ -233,6 +233,10 @@ class Section(Struct):
 
 	data: bytes
 	writable: bool
+	executable: bool = False
+	load_address: Address | None = None
+	"""Where the image holds the section's bytes for startup code to copy, when that differs from
+	where the section runs."""
 
 
 class Program(Struct):
@@ -258,6 +262,9 @@ class Program(Struct):
 	"""Each function's declaration, by where its code starts; a clone has its origin's."""
 	never_returns: frozenset[Address] = frozenset()
 	"""Where the code of each function DWARF declares never returns starts."""
+	parameterless: frozenset[Address] = frozenset()
+	"""Where the code of each function a DWARF prototype gives no parameters starts: ``(void)``,
+	not an old-style ``()`` and not ``...``."""
 	symbol_addresses: Mapping[str, frozenset[Address]] = {}
 	"""Where each function symbol's code starts, aliases included."""
 	labels: Mapping[str, Address] = {}
@@ -269,6 +276,8 @@ class Program(Struct):
 	to its alignment, as Zephyr's ``z_tls_data_size`` counts it."""
 	entry_point: Address = Address(0)
 	"""Where execution starts, from the ELF header."""
+	nobits: tuple[tuple[Address, Address], ...] = ()
+	"""Sorted spans of allocated sections the image holds no bytes for, such as ``.bss``."""
 
 
 class ArmProfile(StrEnum):

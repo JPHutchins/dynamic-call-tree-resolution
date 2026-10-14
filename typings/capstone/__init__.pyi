@@ -12,6 +12,8 @@ CS_GRP_CALL: int
 CS_GRP_RET: int
 CS_GRP_BRANCH_RELATIVE: int
 CS_OP_REG: int
+CS_AC_READ: int
+CS_AC_WRITE: int
 
 class CsError(Exception): ...
 
@@ -26,6 +28,7 @@ class CsOperand:
 	reg: int
 	imm: int
 	mem: CsMemOperand
+	access: int
 
 class CsShiftOperand:
 	type: int

@@ -199,6 +199,8 @@ def _load(stream: BinaryIO) -> Program:
 			Address(section.address): Section(
 				data=section.data,
 				writable=bool(section.flags & _SHF_WRITE) and not _relro(relro_spans, section),
+				executable=bool(section.flags & _SHF_EXECINSTR),
+				load_address=_load_address(elf, section.address),
 			)
 			for section in sections.values()
 			if section.flags & _SHF_ALLOC
@@ -209,6 +211,7 @@ def _load(stream: BinaryIO) -> Program:
 		inlined=_inlined(dwarf),
 		declarations=_declarations(dwarf),
 		never_returns=_never_returns(dwarf, machine),
+		parameterless=_parameterless(dwarf, machine),
 		symbol_addresses=_symbol_addresses(symtab, machine),
 		labels=_labels(symtab),
 		arm_core=_arm_core(elf),
@@ -218,6 +221,19 @@ def _load(stream: BinaryIO) -> Program:
 			if section.header.sh_flags & _SHF_TLS
 		),
 		entry_point=Address(elf.header["e_entry"]),
+		nobits=tuple(
+			sorted(
+				(
+					Address(section.header.sh_addr),
+					Address(section.header.sh_addr + section.header.sh_size),
+				)
+				for section in elf.iter_sections()
+				if section.header.sh_type == "SHT_NOBITS"
+				and section.header.sh_flags & _SHF_ALLOC
+				and section.header.sh_size > 0
+				and not section.header.sh_flags & _SHF_TLS
+			)
+		),
 	)
 
 
@@ -299,6 +315,18 @@ def _kind_spans(
 			marks, (*(mark[1] for mark in marks[1:]), end), strict=True
 		)
 		if mark_kind == kind and following > address
+	)
+
+
+def _load_address(elf: ELFFile, address: int) -> Address | None:
+	return next(
+		(
+			Address(segment["p_paddr"] + address - segment["p_vaddr"])
+			for segment in elf.iter_segments(type="PT_LOAD")
+			if segment["p_vaddr"] <= address < segment["p_vaddr"] + segment["p_memsz"]
+			and segment["p_paddr"] != segment["p_vaddr"]
+		),
+		None,
 	)
 
 
@@ -466,6 +494,35 @@ def _never_returns(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Addre
 def _noreturn(die: DIE) -> bool:
 	origin = _origin(die)
 	return "DW_AT_noreturn" in die.attributes or (origin is not None and _noreturn(origin))
+
+
+def _parameterless(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Address]:
+	if dwarf is None:
+		return frozenset()
+	return frozenset(
+		_code_start(Address(_int_value(low_pc)), machine)
+		for compilation_unit in dwarf.iter_CUs()
+		for die in _iter_dies(compilation_unit.get_top_DIE())
+		if die.tag == "DW_TAG_subprogram"
+		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
+		if _int_value(low_pc) & ~1
+		if _prototyped(die) and not _declares_parameters(die)
+	)
+
+
+def _prototyped(die: DIE) -> bool:
+	origin = _origin(die)
+	return bool(
+		(prototyped := die.attributes.get("DW_AT_prototyped")) is not None and prototyped.value
+	) or (origin is not None and _prototyped(origin))
+
+
+def _declares_parameters(die: DIE) -> bool:
+	origin = _origin(die)
+	return any(
+		child.tag in ("DW_TAG_formal_parameter", "DW_TAG_unspecified_parameters")
+		for child in die.iter_children()
+	) or (origin is not None and _declares_parameters(origin))
 
 
 def _declarations(dwarf: DWARFInfo | None) -> dict[Address, Declaration]:
