@@ -22,9 +22,10 @@ with no target.
    value or a relocation against a function symbol. Combined with DWARF structure
    layouts, every such slot is read from the image as linked. A slot in read-only memory
    keeps that value. A slot in writable memory holds its initializer plus every value
-   the value-set analysis sees the program store there, and is unresolved after an
-   unknown store, one whose destination address the analysis cannot compute, or a store
-   of an unknown value.
+   the value-set analysis sees the program store there. It is unresolved after a store of
+   an unknown value, or after an unknown store, one whose destination address the
+   analysis cannot compute, that may reach it: its address escapes, or the store's own
+   address was derived from it.
 2. **Init-system enumeration.** Zephyr `SYS_INIT`/`DEVICE_DEFINE` entries are static
    data that the linker places in dedicated sections, so their slots are enumerated
    from the image. The dispatch sites that call through them (`z_sys_init_run_level`,
@@ -78,7 +79,7 @@ char_out@0x118: <unresolved>
 z_thread_entry@0x180: bg_thread_main, idle
 ...
 _isr_wrapper@0x884: z_irq_spurious
-z_impl_zephyr_fputc@0x8a6: <unresolved>
+z_impl_zephyr_fputc@0x8a6: console_out
 ...
 console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
@@ -122,10 +123,13 @@ do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
 
   Heap and stack slots, and variables whose location is a location list ([#17]), are
   not listed at all.
-- `char_out@0x118` and `z_impl_zephyr_fputc@0x8a6` call through `_char_out` and
-  `_stdout_hook`, function pointers in RAM. The image has unknown stores, so any
-  writable slot may hold anything: `analyze` reports these sites unresolved, and
-  `stack --elf` expands them to every address-taken function.
+- `z_impl_zephyr_fputc@0x8a6` calls through `_stdout_hook`, a function pointer in RAM
+  whose address only the code that names it uses. A store the analysis can't place
+  cannot reach it (see [Call targets](#call-targets)), so the site goes to
+  `console_out`, which `uart_console_init` installs ([#260]).
+- `char_out@0x118` calls through `_char_out`, which `.data`'s startup copy writes byte by
+  byte with values the analysis doesn't track ([#259]): `analyze` reports the site
+  unresolved, and `stack --elf` expands it to every address-taken function.
 - `z_thread_entry@0x180` is the call that starts every thread. It goes to the entries
   the image's thread creations pass: `bg_thread_main`, the main thread, and `idle`.
   `hello_world` defines no static thread.
@@ -372,7 +376,7 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
 motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
@@ -384,7 +388,7 @@ by its exception number:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_interrupt_stacks
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
 (exception 1) __start +1036 = 1036 bytes
 (exception 4) z_arm_hard_fault +36 +1072 = 2144 bytes
@@ -401,7 +405,7 @@ z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
@@ -414,7 +418,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
@@ -452,7 +456,7 @@ With `--narrow-by-field`, each thread's tree stays below its own bus emulator:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
 ...
 thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 ...
@@ -474,7 +478,7 @@ Stating that bounds `thermal_tid` too:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-no-recursion i2c_emul_transfer
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
 ...
 motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
 thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
@@ -489,7 +493,7 @@ bounded without assuming anything about recursion:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-unwritten i2c_emul_cfg_0
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed unwritten: i2c_emul_cfg_0 | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed unwritten: i2c_emul_cfg_0 | rtos: zephyr
 ...
 thermal_tid: 236 bytes (measured: 3, narrowed by field: 1, assumed unwritten: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
 ...
@@ -509,7 +513,7 @@ thermal_tid: 236 bytes (measured: 3, narrowed by field: 1, assumed unwritten: 1,
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_idle_threads
-resolved slots: 148 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 z_idle_threads: 236 bytes (measured: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 256 bytes, margin: 20 bytes)
 z_idle_threads +8 = 8 bytes
 z_impl_k_thread_abort +0 = 8 bytes via static
@@ -609,8 +613,8 @@ contradicts does not hold.
   removing a resolution never lowers a bound; and that no entry is deeper with its
   candidates alone than with the fallback too ([#75]).
 - A read-only slot's value is its value in the image as linked. A writable slot's
-  candidates are its initializer and the values stored to it, so an unknown store, or a
-  store of an unknown value, leaves it unresolved.
+  candidates are its initializer and the values stored to it, so a store of an unknown
+  value leaves it unresolved, and so does an unknown store that may reach it.
 - On a dynamically linked image, a slot that a dynamic relocation fills with an undefined
   symbol reads as unknown, not as the zero the image holds. A call that reads its target
   from such a slot, such as x86 `call *__libc_start_main@GOTPCREL(%rip)` in glibc's
@@ -646,8 +650,29 @@ contradicts does not hold.
   ([#242]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
-- An unknown store makes every writable address unknown, so a site that reads its
-  target from RAM is unresolved unless its own path wrote that target.
+- An unknown store writes only what C's pointer provenance lets it reach: an object whose
+  address escapes, and an object the store's own address was derived from ([#260]). An
+  address escapes when the code passes, returns, stores or computes with it other than as
+  the base of its own object's loads and stores, or when a word of data, or a literal no
+  load reads, holds it. Code that reaches one object through another's address, such as a
+  walk past an array's end, breaks this assumption, as it breaks the compiler's own. On
+  Arm:
+  - A startup `memcpy` or `memset` with constant arguments keeps an object when it
+    rewrites the object's image value: a copy from its section's load image, or a zero
+    fill of a section the image holds no bytes for. The zero a `.bss` object starts with
+    is not one of its candidates; only stores are.
+  - When a linker label's address escapes, so does every object in its sections, if no
+    object starts at the label or the section's objects share one type, as Zephyr's
+    iterable sections' do. A label that starts an object in a mixed section is that
+    object.
+  - A function whose DWARF return type is `void` passes no register back, and a call to
+    a function whose DWARF prototype is `(void)` passes none in.
+  - An address a loop moves stays in the object it entered the loop pointing into. In a
+    loop control can enter at two places, or for an address the loop body recomputes,
+    it escapes instead.
+  - Code under no function symbol is not scanned ([#96]).
+
+  On x86, an unknown store still makes every writable address unknown.
 - Value-set analysis per-site sets are refinements, not over-approximations: its
   control-flow graph misses x86 `notrack` switches, and it does not model a few kinds of
   x86 write ([#113]). An x86 register write reaches its whole family: a 32-bit write on
@@ -858,3 +883,5 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#228]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/228
 [#240]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/240
 [#242]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/242
+[#259]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/259
+[#260]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/260
