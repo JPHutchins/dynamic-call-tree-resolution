@@ -313,6 +313,56 @@ def test_an_unaligned_load_sees_a_store_another_function_makes_over_part_of_it(
 
 
 @pytest.mark.parametrize(
+	("writer", "targets"),
+	[
+		pytest.param("41f6ff70 0170 7047", {0x3001}, id="a byte store just below the word"),
+		pytest.param("41f6fe70 0180 7047", {0x3001}, id="a half store just below the word"),
+		pytest.param("41f6ff70 0180 7047", set[int](), id="a half store across the word's start"),
+	],
+)
+def test_a_narrow_store_another_function_makes_reaches_only_the_bytes_it_writes(
+	writer: str, targets: set[int]
+) -> None:
+	caller = bytes.fromhex("42f20000 0368 9847 7047")
+	program = build_program(
+		Machine.EM_ARM,
+		(
+			("writer", 0x1000, len(bytes.fromhex(writer))),
+			("caller", 0x1100, len(caller)),
+			("target", 0x3000, 2),
+		),
+		objects=(("flags", 0x1FFC, bytes(4)), ("slot", 0x2000, _pointer(0x3001, 4))),
+		sections={0x1000: bytes.fromhex(writer), 0x1100: caller, 0x3000: bytes.fromhex("7047")},
+		writable=frozenset({0x1FFC, 0x2000}),
+		pointer_size=4,
+	)
+	(site,) = (site for site in extract_call_sites(program) if site.caller_address == 0x1100)
+	assert tracked_values(site) == targets
+
+
+@pytest.mark.parametrize(
+	("store", "targets"),
+	[
+		pytest.param("c7 05 f2 0f 00 00 01 00 00 00", {0x3000}, id="a dword just below the slot"),
+		pytest.param("c7 05 f4 0f 00 00 01 00 00 00", set[int](), id="a dword across the slot"),
+	],
+)
+def test_an_x86_narrow_store_reaches_only_the_bytes_it_writes(
+	store: str, targets: set[int]
+) -> None:
+	code = bytes.fromhex(store) + bytes.fromhex("ff 15 f0 0f 00 00")
+	program = build_program(
+		Machine.EM_X86_64,
+		(("caller", 0x1000, len(code)), ("target", 0x3000, 1)),
+		objects=(("fields", 0x1FF8, bytes(8)), ("slot", 0x2000, _pointer(0x3000, 8))),
+		sections={0x1000: code, 0x3000: bytes.fromhex("c3")},
+		writable=frozenset({0x1FF8, 0x2000}),
+	)
+	(site,) = extract_call_sites(program)
+	assert tracked_values(site) == targets
+
+
+@pytest.mark.parametrize(
 	("load", "writable", "writer", "targets"),
 	[
 		pytest.param("42f20000 0388", False, "7047", {0x3001}, id="ldrh from ROM"),
