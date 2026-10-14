@@ -655,6 +655,32 @@ def test_load_marks_relro_sections_read_only(fixture_elfs: dict[str, Path]) -> N
 	assert sections[starts[".data"]].writable
 
 
+def test_load_marks_code_sections_executable(fixture_elfs: dict[str, Path]) -> None:
+	with fixture_elfs["nopie"].open("rb") as stream:
+		starts = {
+			section.name: Address(section.header.sh_addr)
+			for section in ELFFile(stream).iter_sections()
+		}
+	sections = load(fixture_elfs["nopie"]).sections
+	assert (sections[starts[".text"]].executable, sections[starts[".data"]].executable) == (
+		True,
+		False,
+	)
+
+
+@pytest.mark.image
+def test_load_reads_where_hello_holds_its_initialized_data_and_what_it_zeroes(
+	zephyr_fixtures: Path,
+) -> None:
+	program = load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf")
+	assert (
+		program.sections[Address(0x2000_0000)].load_address,
+		program.sections[Address(0x2000_0040)].load_address,
+		program.sections[Address(0)].load_address,
+		program.nobits,
+	) == (0x280C, 0x284C, None, ((0x2000_0048, 0x2000_0356), (0x2000_0358, 0x2000_1058)))
+
+
 @pytest.mark.image
 @pytest.mark.parametrize(
 	("elf", "first_code_data"),

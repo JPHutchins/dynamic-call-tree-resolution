@@ -199,6 +199,8 @@ def _load(stream: BinaryIO) -> Program:
 			Address(section.address): Section(
 				data=section.data,
 				writable=bool(section.flags & _SHF_WRITE) and not _relro(relro_spans, section),
+				executable=bool(section.flags & _SHF_EXECINSTR),
+				load_address=_load_address(elf, section.address),
 			)
 			for section in sections.values()
 			if section.flags & _SHF_ALLOC
@@ -218,6 +220,19 @@ def _load(stream: BinaryIO) -> Program:
 			if section.header.sh_flags & _SHF_TLS
 		),
 		entry_point=Address(elf.header["e_entry"]),
+		nobits=tuple(
+			sorted(
+				(
+					Address(section.header.sh_addr),
+					Address(section.header.sh_addr + section.header.sh_size),
+				)
+				for section in elf.iter_sections()
+				if section.header.sh_type == "SHT_NOBITS"
+				and section.header.sh_flags & _SHF_ALLOC
+				and section.header.sh_size > 0
+				and not section.header.sh_flags & _SHF_TLS
+			)
+		),
 	)
 
 
@@ -299,6 +314,18 @@ def _kind_spans(
 			marks, (*(mark[1] for mark in marks[1:]), end), strict=True
 		)
 		if mark_kind == kind and following > address
+	)
+
+
+def _load_address(elf: ELFFile, address: int) -> Address | None:
+	return next(
+		(
+			Address(segment["p_paddr"] + address - segment["p_vaddr"])
+			for segment in elf.iter_segments(type="PT_LOAD")
+			if segment["p_vaddr"] <= address < segment["p_vaddr"] + segment["p_memsz"]
+			and segment["p_paddr"] != segment["p_vaddr"]
+		),
+		None,
 	)
 
 

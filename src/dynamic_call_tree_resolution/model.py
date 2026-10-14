@@ -233,6 +233,10 @@ class Section(Struct):
 
 	data: bytes
 	writable: bool
+	executable: bool = False
+	load_address: Address | None = None
+	"""Where the image holds the section's bytes for startup code to copy, when that differs from
+	where the section runs."""
 
 
 class Program(Struct):
@@ -269,6 +273,8 @@ class Program(Struct):
 	to its alignment, as Zephyr's ``z_tls_data_size`` counts it."""
 	entry_point: Address = Address(0)
 	"""Where execution starts, from the ELF header."""
+	nobits: tuple[tuple[Address, Address], ...] = ()
+	"""Sorted spans of allocated sections the image holds no bytes for, such as ``.bss``."""
 
 
 class ArmProfile(StrEnum):
