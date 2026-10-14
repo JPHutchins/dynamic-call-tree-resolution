@@ -301,7 +301,6 @@ def image_write(
 					pointer_size,
 					starts,
 					_overlapping(writes.values, store, pointer_size, starts)
-					| starts
 					| _word_keys(store, pointer_size, starts)
 					| _aligned_keys(store, pointer_size, starts),
 				).items()

@@ -376,7 +376,7 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
 motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
@@ -388,7 +388,7 @@ by its exception number:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_interrupt_stacks
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
 (exception 1) __start +1036 = 1036 bytes
 (exception 4) z_arm_hard_fault +36 +1072 = 2144 bytes
@@ -405,7 +405,7 @@ z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
@@ -418,7 +418,7 @@ adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
@@ -456,7 +456,7 @@ With `--narrow-by-field`, each thread's tree stays below its own bus emulator:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | rtos: zephyr
 ...
 thermal_tid: unbounded, at least 236 bytes (recursion: 1, measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 ...
@@ -478,7 +478,7 @@ Stating that bounds `thermal_tid` too:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-no-recursion i2c_emul_transfer
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed no recursion: i2c_emul_transfer | rtos: zephyr
 ...
 motion_tid: 236 bytes (measured: 3, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
 thermal_tid: 236 bytes (measured: 3, assumed no recursion: 1, narrowed by field: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
@@ -493,7 +493,7 @@ bounded without assuming anything about recursion:
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --narrow-by-field --assume-unwritten i2c_emul_cfg_0
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed unwritten: i2c_emul_cfg_0 | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | narrowed by field | assumed unwritten: i2c_emul_cfg_0 | rtos: zephyr
 ...
 thermal_tid: 236 bytes (measured: 3, narrowed by field: 1, assumed unwritten: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 788 bytes)
 ...
@@ -513,7 +513,7 @@ thermal_tid: 236 bytes (measured: 3, narrowed by field: 1, assumed unwritten: 1,
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_idle_threads
-resolved slots: 149 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
+resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
 z_idle_threads: 236 bytes (measured: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 256 bytes, margin: 20 bytes)
 z_idle_threads +8 = 8 bytes
 z_impl_k_thread_abort +0 = 8 bytes via static
