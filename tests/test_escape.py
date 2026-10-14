@@ -336,6 +336,13 @@ def test_a_linker_label_lets_its_whole_section_escape_where_code_may_walk_it(
 			["first", "third", "zeroed"],
 			id="a data section",
 		),
+		pytest.param(
+			_BASE_ONLY,
+			(),
+			{0x4000: b"\x00" + (0x2000_0004).to_bytes(4, "little")},
+			["first", "third", "zeroed"],
+			id="a packed data section",
+		),
 	],
 )
 def test_a_word_of_data_lets_the_object_it_points_into_escape(

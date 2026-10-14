@@ -1047,7 +1047,7 @@ def _sections_objects(
 
 
 def _data_escapes(image: _Image, literals: frozenset[int]) -> frozenset[Span]:
-	"""The objects an aligned word of data points into, outside code and the literals it loads."""
+	"""The objects a word of data at any byte offset points into, outside code and its literals."""
 	program = image.program
 	return frozenset(
 		chain.from_iterable(
@@ -1069,8 +1069,8 @@ def _data_escapes(image: _Image, literals: frozenset[int]) -> frozenset[Span]:
 
 
 def _words(program: Program, start: int, data: bytes) -> Iterable[tuple[int, int]]:
-	"""Each aligned word of the data that starts at the address, with its address."""
+	"""Each word at each byte offset of the data that starts at the address, with its address."""
 	return (
 		(start + offset, int.from_bytes(data[offset : offset + 4], program.byte_order))
-		for offset in range(-start % 4, len(data) - 3, 4)
+		for offset in range(len(data) - 3)
 	)
