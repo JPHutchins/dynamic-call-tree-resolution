@@ -3181,6 +3181,54 @@ def test_ram_initializer_holds_what_the_program_stores_to_its_slot(
 	)
 
 
+def _hook_table(code: Mapping[int, str]) -> Program:
+	"""``hooks`` starts with a pointer to ``a`` and has more slots than the analysis enumerates."""
+	return build_program(
+		Machine.EM_ARM,
+		(
+			*(
+				(f"code_{address:x}", address, len(bytes.fromhex(body)))
+				for address, body in code.items()
+			),
+			("a", 0x2000, 2),
+			("b", 0x3000, 2),
+		),
+		objects=(("hooks", 0x4000, _pointer(0x2000, 4) + bytes(0x200)),),
+		sections={
+			**{address: bytes.fromhex(body) for address, body in code.items()},
+			0x2000: bytes.fromhex("7047"),
+			0x3000: bytes.fromhex("7047"),
+		},
+		writable=frozenset({0x4000}),
+		pointer_size=4,
+	)
+
+
+def test_a_hook_no_store_reaches_reads_its_initializer() -> None:
+	"""``movw r3, #0x4000; ldr r3, [r3]; blx r3``."""
+	(site,) = extract_call_sites(_hook_table({0x1000: "44f200031b6898477047"}))
+	assert site.target == Known(values=frozenset({Address(0x2000)}))
+
+
+@pytest.mark.parametrize(
+	"code",
+	[
+		pytest.param({0x1000: "44f2000343f821001b6898477047"}, id="in-the-same-function"),
+		pytest.param(
+			{0x1000: "10b500f07df844f200031b68984710bd", 0x1100: "44f2000343f821007047"},
+			id="in-a-callee",
+		),
+	],
+)
+def test_a_store_the_analysis_cant_place_clobbers_the_object_its_address_came_from(
+	code: Mapping[int, str],
+) -> None:
+	"""``movw r3, #0x4000; str.w r0, [r3, r1, lsl #2]`` writes ``hooks[i]`` for an ``i`` the
+	analysis doesn't know, past the slots it enumerates; then ``ldr r3, [r3]; blx r3``."""
+	(site,) = extract_call_sites(_hook_table(code))
+	assert isinstance(site.target, Top)
+
+
 @pytest.mark.parametrize(
 	("writable", "escaped", "candidates"),
 	[
