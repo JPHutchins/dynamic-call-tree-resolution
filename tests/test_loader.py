@@ -668,6 +668,45 @@ def test_load_marks_code_sections_executable(fixture_elfs: dict[str, Path]) -> N
 	)
 
 
+@pytest.mark.parametrize(
+	("source", "standard", "parameterless"),
+	[
+		pytest.param("prototypes.c", "gnu2x", ["empty", "none"], id="c23"),
+		pytest.param("old_style.c", "gnu17", ["none"], id="c17"),
+	],
+)
+def test_load_reads_which_functions_a_prototype_gives_no_parameters(
+	tmp_path: Path, source: str, standard: str, parameterless: list[str]
+) -> None:
+	elf = tmp_path / "image.elf"
+	subprocess.run(
+		[
+			"arm-none-eabi-gcc",
+			f"-std={standard}",
+			"-mcpu=cortex-m3",
+			"-mthumb",
+			"-nostdlib",
+			"-g",
+			"-e",
+			"none",
+			str(FIXTURES / source),
+			"-o",
+			str(elf),
+		],
+		check=True,
+		capture_output=True,
+	)
+	program = load(elf)
+	assert (
+		sorted(
+			function.name
+			for function in program.functions.values()
+			if aligned(function.address) in program.parameterless
+		)
+		== parameterless
+	)
+
+
 @pytest.mark.image
 def test_load_reads_where_hello_holds_its_initialized_data_and_what_it_zeroes(
 	zephyr_fixtures: Path,

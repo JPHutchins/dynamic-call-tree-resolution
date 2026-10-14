@@ -211,6 +211,7 @@ def _load(stream: BinaryIO) -> Program:
 		inlined=_inlined(dwarf),
 		declarations=_declarations(dwarf),
 		never_returns=_never_returns(dwarf, machine),
+		parameterless=_parameterless(dwarf, machine),
 		symbol_addresses=_symbol_addresses(symtab, machine),
 		labels=_labels(symtab),
 		arm_core=_arm_core(elf),
@@ -493,6 +494,35 @@ def _never_returns(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Addre
 def _noreturn(die: DIE) -> bool:
 	origin = _origin(die)
 	return "DW_AT_noreturn" in die.attributes or (origin is not None and _noreturn(origin))
+
+
+def _parameterless(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Address]:
+	if dwarf is None:
+		return frozenset()
+	return frozenset(
+		_code_start(Address(_int_value(low_pc)), machine)
+		for compilation_unit in dwarf.iter_CUs()
+		for die in _iter_dies(compilation_unit.get_top_DIE())
+		if die.tag == "DW_TAG_subprogram"
+		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
+		if _int_value(low_pc) & ~1
+		if _prototyped(die) and not _declares_parameters(die)
+	)
+
+
+def _prototyped(die: DIE) -> bool:
+	origin = _origin(die)
+	return bool(
+		(prototyped := die.attributes.get("DW_AT_prototyped")) is not None and prototyped.value
+	) or (origin is not None and _prototyped(origin))
+
+
+def _declares_parameters(die: DIE) -> bool:
+	origin = _origin(die)
+	return any(
+		child.tag in ("DW_TAG_formal_parameter", "DW_TAG_unspecified_parameters")
+		for child in die.iter_children()
+	) or (origin is not None and _declares_parameters(origin))
 
 
 def _declarations(dwarf: DWARFInfo | None) -> dict[Address, Declaration]:

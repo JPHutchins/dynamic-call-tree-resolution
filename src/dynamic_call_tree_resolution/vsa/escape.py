@@ -180,7 +180,7 @@ class _Image(Struct):
 	fills: Mapping[Address, _Fill]
 	"""``memcpy``, ``memset``, and functions whose only instruction branches to one of them."""
 	parameterless: frozenset[Address]
-	"""Functions DWARF defines with no parameters, which read no argument registers."""
+	"""Functions that read no argument registers."""
 
 
 class _Effects(Struct):
@@ -286,9 +286,7 @@ def _image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ...]], .
 			)
 		},
 		parameterless=frozenset(
-			normalized(function.address, program.machine)
-			for function in program.functions.values()
-			if function.signature is not None and not function.signature.parameters
+			normalized(address, program.machine) for address in program.parameterless
 		),
 		fills={
 			**routines,
@@ -357,6 +355,7 @@ def _scan(image: _Image, function: Function, blocks: tuple[Block, ...]) -> _Scan
 		if function.signature is not None and function.signature.return_type == "void"
 		else _RETURNED,
 	)
+	back = _back_edges(by_start)
 	in_states: dict[Address, _Registers] = {}
 	effects: list[_Effects] = []
 	for seed in by_start:
@@ -372,7 +371,7 @@ def _scan(image: _Image, function: Function, blocks: tuple[Block, ...]) -> _Scan
 				effects.append(effect)
 			for successor in block.successors:
 				joined, overflow = _join(
-					in_states.get(successor), registers, back=successor <= block.start
+					in_states.get(successor), registers, back=(block.start, successor) in back
 				)
 				if _size(overflow):
 					effects.append(_Effects(escaped=overflow))
@@ -380,6 +379,31 @@ def _scan(image: _Image, function: Function, blocks: tuple[Block, ...]) -> _Scan
 					in_states[successor] = joined
 					worklist.append(successor)
 	return _scanned(image, tuple(effects))
+
+
+def _back_edges(by_start: Mapping[Address, Block]) -> frozenset[tuple[Address, Address]]:
+	"""The edges into a block on the depth-first path to their source, which every loop has."""
+	finished: set[Address] = set()
+	on_path: set[Address] = set()
+	edges: set[tuple[Address, Address]] = set()
+	for root in by_start:
+		if root in finished:
+			continue
+		on_path.add(root)
+		stack = [(root, iter(by_start[root].successors))]
+		while stack:
+			start, successors = stack[-1]
+			successor = next(successors, None)
+			if successor is None:
+				stack.pop()
+				on_path.discard(start)
+				finished.add(start)
+			elif successor in on_path:
+				edges.add((start, successor))
+			elif successor not in finished:
+				on_path.add(successor)
+				stack.append((successor, iter(by_start[successor].successors)))
+	return frozenset(edges)
 
 
 def _scanned(image: _Image, effects: tuple[_Effects, ...]) -> _Scan:

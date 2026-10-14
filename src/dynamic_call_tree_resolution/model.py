@@ -262,6 +262,9 @@ class Program(Struct):
 	"""Each function's declaration, by where its code starts; a clone has its origin's."""
 	never_returns: frozenset[Address] = frozenset()
 	"""Where the code of each function DWARF declares never returns starts."""
+	parameterless: frozenset[Address] = frozenset()
+	"""Where the code of each function a DWARF prototype gives no parameters starts: ``(void)``,
+	not an old-style ``()`` and not ``...``."""
 	symbol_addresses: Mapping[str, frozenset[Address]] = {}
 	"""Where each function symbol's code starts, aliases included."""
 	labels: Mapping[str, Address] = {}

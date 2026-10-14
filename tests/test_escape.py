@@ -57,7 +57,7 @@ def _program(
 	arm_code: tuple[tuple[int, int], ...] = (),
 	writable_code: bool = False,
 	signature: FunctionSignature | None = None,
-	callee: FunctionSignature | None = None,
+	parameterless: frozenset[int] = frozenset(),
 ) -> Program:
 	functions = (("caller", 0x1000, code), *_ROUTINES)
 	return Program(
@@ -69,7 +69,7 @@ def _program(
 				name=name,
 				address=Address(address),
 				size=len(body) // 2,
-				signature={"caller": signature, "other": callee}.get(name),
+				signature=signature if name == "caller" else None,
 			)
 			for name, address, body in functions
 		},
@@ -102,6 +102,7 @@ def _program(
 		labels={name: Address(address) for name, address in (labels or {}).items()},
 		symbol_addresses={name: frozenset({Address(address)}) for name, address, _ in _ROUTINES},
 		nobits=((Address(0x2000_0010), Address(0x2000_0020)),),
+		parameterless=frozenset(map(Address, parameterless)),
 	)
 
 
@@ -199,21 +200,16 @@ def test_a_return_passes_registers_only_when_its_function_returns_a_value(
 
 
 @pytest.mark.parametrize(
-	("parameters", "unescaped"),
+	("parameterless", "unescaped"),
 	[
-		pytest.param(("int *",), _ALL_BUT_FIRST, id="a callee with a parameter"),
-		pytest.param((), _EVERY_OBJECT, id="a callee with none"),
+		pytest.param(frozenset[int](), _ALL_BUT_FIRST, id="a callee with parameters"),
+		pytest.param(frozenset({0x1100}), _EVERY_OBJECT, id="a callee with none"),
 	],
 )
 def test_a_call_passes_argument_registers_only_when_its_callee_takes_parameters(
-	parameters: tuple[str, ...], unescaped: list[str]
+	parameterless: frozenset[int], unescaped: list[str]
 ) -> None:
-	assert (
-		_unescaped(
-			_program(_ARGUMENT, callee=FunctionSignature(return_type="void", parameters=parameters))
-		)
-		== unescaped
-	)
+	assert _unescaped(_program(_ARGUMENT, parameterless=parameterless)) == unescaped
 
 
 @pytest.mark.parametrize(
@@ -371,6 +367,14 @@ def test_a_word_of_data_lets_the_object_it_points_into_escape(
 )
 def test_an_arm_post_indexed_load_moves_its_base(code: str, unescaped: list[str]) -> None:
 	assert _unescaped(_program(code, arm_code=((0x1000, 0x1000 + len(code) // 2),))) == unescaped
+
+
+def test_a_branch_back_into_a_merge_point_joins_rather_than_widens() -> None:
+	"""``cmp; beq else; merge: mov r0, r3; bl other; ...; else: adds r3, #4; b merge``."""
+	assert _unescaped(_program("08b5044b002903d0184600f079f808bd0433f9e700000020")) == [
+		"third",
+		"zeroed",
+	]
 
 
 @pytest.mark.parametrize(
