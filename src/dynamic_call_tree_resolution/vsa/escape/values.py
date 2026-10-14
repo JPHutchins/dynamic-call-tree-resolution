@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Final
 from salix import Struct
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Callable, Mapping
 
 
 _TRACKED_LIMIT: Final = 64
@@ -51,53 +51,80 @@ class Registers(Struct):
 UNKNOWN: Final = Registers(held={}, constants={})
 
 
-def join(current: Registers | None, incoming: Registers, *, back: bool) -> tuple[Registers, Held]:
-	held, overflow = _capped(
-		incoming.held
-		if current is None
-		else {
-			register: (_carried if back else union)(
-				current.held.get(register, NOTHING), incoming.held.get(register, NOTHING)
-			)
-			for register in current.held.keys() | incoming.held.keys()
-		}
-	)
+def join(
+	current: Registers | None, incoming: Registers, *, carries: Callable[[int], bool] | None
+) -> tuple[Registers, Held]:
+	"""The registers where control flow meets, and what escapes there.
+
+	``carries`` is ``None`` along a forward edge. Along an edge back into a loop, it says whether
+	the loop carries what the instruction at an address materialized.
+	"""
+	if current is None:
+		held, overflow = _capped(incoming.held)
+		return Registers(held=held, constants=incoming.constants), overflow
+	joined = {
+		register: _joined(
+			current.held.get(register, NOTHING), incoming.held.get(register, NOTHING), carries
+		)
+		for register in current.held.keys() | incoming.held.keys()
+	}
+	held, overflow = _capped({register: kept for register, (kept, _) in joined.items()})
 	return Registers(
 		held=held,
-		constants=incoming.constants
-		if current is None
-		else {
+		constants={
 			register: value
 			for register, value in current.constants.items()
 			if incoming.constants.get(register) == value
 		},
-	), overflow
+	), union(overflow, *(escaped for _, escaped in joined.values()))
 
 
-def _carried(current: Held, incoming: Held) -> Held:
-	"""The join along an edge back into a loop.
+def _joined(
+	current: Held, incoming: Held, carries: Callable[[int], bool] | None
+) -> tuple[Held, Held]:
+	"""What one register holds after a join, and what escapes there.
 
-	An address the loop moves stays in the object it entered the loop pointing into (C's pointer
-	provenance), so it becomes that address plus an unknown offset.
+	An address a loop carries stays in the object it entered the loop pointing into (C's pointer
+	provenance), so it becomes that address plus an unknown offset. A new address the loop can't
+	be shown to carry escapes instead, which keeps the join from growing.
 	"""
-	moved = frozenset(
-		_lineage(derived)
+	if carries is None:
+		return union(current, incoming), NOTHING
+	arrived = frozenset(
+		derived
 		for derived in chain(incoming.exact, incoming.indexed)
 		if derived not in current.exact and derived not in current.indexed
-	) & frozenset(_lineage(derived) for derived in chain(current.exact, current.indexed))
+	)
+	moved = frozenset(map(_lineage, arrived)) & frozenset(
+		map(_lineage, chain(current.exact, current.indexed))
+	)
+	carried = frozenset(lineage for lineage in moved if carries(lineage[1]))
 	return Held(
 		exact=frozenset(
-			derived for derived in current.exact | incoming.exact if _lineage(derived) not in moved
+			derived
+			for derived in current.exact | incoming.exact
+			if _lineage(derived) not in moved
+			or (derived in current.exact and _lineage(derived) not in carried)
 		),
 		indexed=frozenset(
 			derived
 			for derived in chain(current.indexed, incoming.indexed)
 			if _lineage(derived) not in moved
+			or (derived in current.indexed and _lineage(derived) not in carried)
 		)
 		| frozenset(
 			derived
 			for derived in chain(current.exact, current.indexed)
-			if _lineage(derived) in moved
+			if _lineage(derived) in carried
+		),
+	), Held(
+		exact=frozenset(
+			derived for derived in arrived & incoming.exact if _lineage(derived) in moved - carried
+		),
+		indexed=frozenset(
+			derived
+			for derived in arrived & incoming.indexed
+			if _lineage(derived) in moved - carried
 		),
 	)
 

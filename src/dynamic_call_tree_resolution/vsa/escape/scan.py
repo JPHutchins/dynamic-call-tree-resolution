@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from itertools import chain
+from functools import partial
+from itertools import chain, groupby
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
@@ -34,7 +35,7 @@ from dynamic_call_tree_resolution.vsa.escape.values import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Callable, Mapping
 
 	from dynamic_call_tree_resolution.model import Function, Program
 	from dynamic_call_tree_resolution.vsa.cfg import Block
@@ -91,7 +92,7 @@ def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
 		if function.signature is not None and function.signature.return_type == "void"
 		else RETURNED,
 	)
-	back = _back_edges(by_start)
+	carriers = _carriers(blocks, by_start)
 	in_states: dict[Address, Registers] = {}
 	effects: list[Effects] = []
 	for seed in by_start:
@@ -107,7 +108,9 @@ def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
 				effects.append(effect)
 			for successor in block.successors:
 				joined, overflow = join(
-					in_states.get(successor), registers, back=(block.start, successor) in back
+					in_states.get(successor),
+					registers,
+					carries=carriers.get((block.start, successor)),
 				)
 				if size(overflow):
 					effects.append(Effects(escaped=overflow))
@@ -115,6 +118,81 @@ def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
 					in_states[successor] = joined
 					worklist.append(successor)
 	return _scanned(image, tuple(effects))
+
+
+def _carriers(
+	blocks: tuple[Block, ...], by_start: Mapping[Address, Block]
+) -> Mapping[tuple[Address, Address], Callable[[int], bool]]:
+	"""For each edge back into a loop, which materializations the loop carries.
+
+	Those outside the loop body, when the loop's head dominates the edge; none of a loop that
+	control can enter elsewhere.
+	"""
+	sites = {
+		instruction.address: block.start for block in blocks for instruction in block.instructions
+	}
+	predecessors = _predecessors(by_start)
+	reachable = _reached(by_start, blocks[0].start, None)
+	return {
+		(source, head): partial(_outside, sites, _loop_body(predecessors, source, head))
+		if source in reachable and source not in _reached(by_start, blocks[0].start, head)
+		else _carries_nothing
+		for source, head in _back_edges(by_start)
+	}
+
+
+def _outside(sites: Mapping[int, Address], body: frozenset[Address], site: int) -> bool:
+	return sites[site] not in body
+
+
+def _carries_nothing(_: int) -> bool:
+	return False
+
+
+def _predecessors(by_start: Mapping[Address, Block]) -> Mapping[Address, tuple[Address, ...]]:
+	return {
+		start: tuple(predecessor for _, predecessor in edges)
+		for start, edges in groupby(
+			sorted(
+				(successor, start)
+				for start, block in by_start.items()
+				for successor in block.successors
+			),
+			key=_destination,
+		)
+	}
+
+
+def _destination(edge: tuple[Address, Address]) -> Address:
+	return edge[0]
+
+
+def _reached(
+	by_start: Mapping[Address, Block], root: Address, avoided: Address | None
+) -> frozenset[Address]:
+	"""The blocks control reaches from the root without passing through the avoided one."""
+	seen: set[Address] = set()
+	stack = [root]
+	while stack:
+		start = stack.pop()
+		if start not in seen and start != avoided:
+			seen.add(start)
+			stack.extend(by_start[start].successors)
+	return frozenset(seen)
+
+
+def _loop_body(
+	predecessors: Mapping[Address, tuple[Address, ...]], source: Address, head: Address
+) -> frozenset[Address]:
+	"""The blocks that reach the edge's source without passing through the loop head."""
+	seen: set[Address] = {head}
+	stack = [source]
+	while stack:
+		start = stack.pop()
+		if start not in seen:
+			seen.add(start)
+			stack.extend(predecessors.get(start, ()))
+	return frozenset(seen)
 
 
 def _back_edges(by_start: Mapping[Address, Block]) -> frozenset[tuple[Address, Address]]:

@@ -377,6 +377,23 @@ def test_a_branch_back_into_a_merge_point_joins_rather_than_widens() -> None:
 	]
 
 
+def test_a_loop_entered_at_two_blocks_lets_what_it_moves_escape() -> None:
+	"""``beq b; a: mov r0, r3; bl other; beq done; b: adds r3, #4; b a``: ``b`` is a second entry."""
+	assert _unescaped(_program("08b5054b002904d0184600f079f8002a01d00433f8e708bd00000020")) == [
+		"third",
+		"zeroed",
+	]
+
+
+def test_a_loop_lets_escape_what_it_materializes_afresh_each_time() -> None:
+	"""``1: str r0, [r3]; ldr r3, =first; add r3, r4; adds r4, #4; ...; bne 1b``."""
+	program = _program("10b50424034b1860034b234404348c42f9d110bd0800002000000020")
+	assert (_unescaped(program), _escapes(program).store_targets) == (
+		["second", "third", "zeroed"],
+		{Address(0x1006): frozenset({(0x2000_0004, 0x2000_0008), (0x2000_0008, 0x2000_0010)})},
+	)
+
+
 @pytest.mark.parametrize(
 	"code",
 	[
@@ -414,10 +431,17 @@ def test_a_register_that_may_hold_too_many_addresses_lets_them_escape(
 	assert _unescaped(_program(_predicated_loads(count))) == unescaped
 
 
-def test_a_loop_widens_an_address_to_the_objects_it_reached() -> None:
+@pytest.mark.parametrize(
+	"code",
+	[
+		pytest.param("08b5034804308842fcd100f079f808bd00000020", id="one block"),
+		pytest.param("08b505480430884200d000bf9042f9d100f076f808bd00bf00000020", id="two blocks"),
+	],
+)
+def test_a_loop_widens_an_address_to_the_object_it_entered_the_loop_in(code: str) -> None:
 	assert _unescaped(
 		_program(
-			"08b5034804308842fcd100f079f808bd00000020",
+			code,
 			objects=(("table", 0x2000_0000, 0x40, "int [16]"), ("after", 0x2000_0100, 4, "int")),
 		)
 	) == ["after"]
