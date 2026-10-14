@@ -36,6 +36,7 @@ from dynamic_call_tree_resolution.vsa.escape.values import (
 
 if TYPE_CHECKING:
 	from collections.abc import Callable, Mapping
+	from concurrent.futures import Executor
 
 	from dynamic_call_tree_resolution.model import Function, Program
 	from dynamic_call_tree_resolution.vsa.cfg import Block
@@ -61,18 +62,30 @@ class _Scan(Struct):
 	literals: frozenset[int]
 
 
-def escapes(program: Program, graphs: tuple[tuple[Function, tuple[Block, ...]], ...]) -> Escapes:
+def escapes(
+	program: Program,
+	graphs: tuple[tuple[Function, tuple[Block, ...]], ...],
+	executor: Executor | None = None,
+) -> Escapes:
 	match program.machine.family:
 		case InstructionFamily.X86:
 			return NO_ESCAPES
 		case InstructionFamily.ARM:
-			return _arm_escapes(escape_image(program, graphs), graphs)
+			return _arm_escapes(escape_image(program, graphs), graphs, executor)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _arm_escapes(image: Image, graphs: tuple[tuple[Function, tuple[Block, ...]], ...]) -> Escapes:
-	scans = tuple(_scan(image, function, blocks) for function, blocks in graphs)
+def _arm_escapes(
+	image: Image,
+	graphs: tuple[tuple[Function, tuple[Block, ...]], ...],
+	executor: Executor | None,
+) -> Escapes:
+	scans = (
+		tuple(map(partial(_scan_graph, image), graphs))
+		if executor is None
+		else tuple(executor.map(partial(_scan_graph, image), graphs))
+	)
 	escaped = frozenset(chain.from_iterable(scan.escaped for scan in scans)) | data_escapes(
 		image, frozenset(chain.from_iterable(scan.literals for scan in scans))
 	)
@@ -85,6 +98,10 @@ def _arm_escapes(image: Image, graphs: tuple[tuple[Function, tuple[Block, ...]],
 			if (targets := reached - escaped)
 		},
 	)
+
+
+def _scan_graph(image: Image, graph: tuple[Function, tuple[Block, ...]]) -> _Scan:
+	return _scan(image, graph[0], graph[1])
 
 
 def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:

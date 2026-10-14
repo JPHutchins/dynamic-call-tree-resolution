@@ -94,7 +94,6 @@ def analyze(
 	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())
 	_prewarm_instructions(functions, program.machine)
-	found = escapes(program, functions)
 	top = top_seed(program.machine)
 	threads_by_entry = {
 		entry: tuple(group)
@@ -131,6 +130,7 @@ def analyze(
 		top,
 	)
 	with ThreadPoolExecutor() as executor:
+		found = escapes(program, functions, executor)
 		final = _global_fixpoint(
 			_Rounds(
 				program=program,
