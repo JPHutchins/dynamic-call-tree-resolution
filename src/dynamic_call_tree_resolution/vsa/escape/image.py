@@ -54,7 +54,8 @@ class Image(Struct):
 	nearby: tuple[int, int]
 	"""The addresses close enough to a writable object to follow as possible addresses."""
 	bounded: Mapping[int, tuple[Span, ...]]
-	"""The writable sections each linker label bounds."""
+	"""The writable sections each linker label starts or lies in; one that ends at a label is
+	past it, as an object is past a pointer to its end."""
 	walkable: Mapping[int, tuple[Span, ...]]
 	"""Of those, the ones code may walk as an array from the label: every one at a label that
 	starts no object, else those whose objects share one type, as an iterable section's do."""
@@ -86,7 +87,7 @@ def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ..
 	bounded: Mapping[int, tuple[Span, ...]] = {
 		address: sections
 		for address in program.labels.values()
-		if (sections := tuple(span for span in writable if span[0] <= address <= span[1]))
+		if (sections := tuple(span for span in writable if span[0] <= address < span[1]))
 	}
 	object_starts = frozenset(data_object.address for data_object in program.objects.values())
 	arrays = frozenset(section for section in writable if _one_type(program, section))

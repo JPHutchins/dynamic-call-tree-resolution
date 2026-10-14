@@ -316,6 +316,14 @@ def test_a_linker_label_lets_its_whole_section_escape_where_code_may_walk_it(
 	)
 
 
+def test_a_linker_label_that_ends_a_section_leaves_that_section_alone() -> None:
+	"""``ldr r0, =region_end; bl other`` with ``region_end`` where ``zeroed``'s section ends."""
+	assert (
+		_unescaped(_program("08b5024800f07cf808bd00bf20000020", labels={"region_end": 0x2000_0020}))
+		== _EVERY_OBJECT
+	)
+
+
 @pytest.mark.parametrize(
 	("code", "data_in_code", "sections", "unescaped"),
 	[
