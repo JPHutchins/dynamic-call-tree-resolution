@@ -9,7 +9,15 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
-from dynamic_call_tree_resolution import Address, DataObject, Function, Machine, Program, Section
+from dynamic_call_tree_resolution import (
+	Address,
+	DataObject,
+	Function,
+	FunctionSignature,
+	Machine,
+	Program,
+	Section,
+)
 from dynamic_call_tree_resolution.vsa.cfg import control_flow_graphs
 from dynamic_call_tree_resolution.vsa.escape import Escapes, escapes
 from tests.programs import build_program
@@ -48,6 +56,8 @@ def _program(
 	sections: Mapping[int, bytes] | None = None,
 	arm_code: tuple[tuple[int, int], ...] = (),
 	writable_code: bool = False,
+	signature: FunctionSignature | None = None,
+	callee: FunctionSignature | None = None,
 ) -> Program:
 	functions = (("caller", 0x1000, code), *_ROUTINES)
 	return Program(
@@ -56,7 +66,10 @@ def _program(
 		machine=Machine.EM_ARM,
 		functions={
 			Address(address): Function(
-				name=name, address=Address(address), size=len(body) // 2, signature=None
+				name=name,
+				address=Address(address),
+				size=len(body) // 2,
+				signature={"caller": signature, "other": callee}.get(name),
 			)
 			for name, address, body in functions
 		},
@@ -165,6 +178,42 @@ def test_an_object_escapes_where_its_address_leaves_the_code_that_names_it(
 	code: str, unescaped: list[str]
 ) -> None:
 	assert _unescaped(_program(code)) == unescaped
+
+
+@pytest.mark.parametrize(
+	("return_type", "unescaped"),
+	[pytest.param("int", _ALL_BUT_FIRST, id="int"), pytest.param("void", _EVERY_OBJECT, id="void")],
+)
+def test_a_return_passes_registers_only_when_its_function_returns_a_value(
+	return_type: str, unescaped: list[str]
+) -> None:
+	assert (
+		_unescaped(
+			_program(
+				"0048704700000020",
+				signature=FunctionSignature(return_type=return_type, parameters=()),
+			)
+		)
+		== unescaped
+	)
+
+
+@pytest.mark.parametrize(
+	("parameters", "unescaped"),
+	[
+		pytest.param(("int *",), _ALL_BUT_FIRST, id="a callee with a parameter"),
+		pytest.param((), _EVERY_OBJECT, id="a callee with none"),
+	],
+)
+def test_a_call_passes_argument_registers_only_when_its_callee_takes_parameters(
+	parameters: tuple[str, ...], unescaped: list[str]
+) -> None:
+	assert (
+		_unescaped(
+			_program(_ARGUMENT, callee=FunctionSignature(return_type="void", parameters=parameters))
+		)
+		== unescaped
+	)
 
 
 @pytest.mark.parametrize(

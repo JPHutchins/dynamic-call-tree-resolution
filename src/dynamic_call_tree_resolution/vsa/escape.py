@@ -88,7 +88,7 @@ _PLACED_STORES: Final = (frozenset(ARM_STORE_WIDTHS) | ARM_MULTIPLE_STORES) - {
 	arm_const.ARM_INS_VPUSH,
 }
 _DISPATCHES: Final = frozenset({arm_const.ARM_INS_TBB, arm_const.ARM_INS_TBH})
-_RETURNED: Final = (arm_const.ARM_REG_R0, arm_const.ARM_REG_R1)
+_RETURNED: Final = frozenset({arm_const.ARM_REG_R0, arm_const.ARM_REG_R1})
 
 
 class Escapes(Struct):
@@ -143,7 +143,8 @@ class _Call(Struct):
 
 
 class _Return(Struct):
-	pass
+	passed: frozenset[int]
+	"""The registers that carry the return value."""
 
 
 class _Jump(Struct):
@@ -154,6 +155,14 @@ class _Jump(Struct):
 
 
 type _Control = _Call | _Return | _Jump
+
+
+class _Scope(Struct):
+	"""What the scan of one function needs to know about it."""
+
+	blocks: frozenset[Address]
+	returned: frozenset[int]
+	"""The registers its return value occupies; none when DWARF says it returns ``void``."""
 
 
 class _Image(Struct):
@@ -170,6 +179,8 @@ class _Image(Struct):
 	starts no object, else those whose objects share one type, as an iterable section's do."""
 	fills: Mapping[Address, _Fill]
 	"""``memcpy``, ``memset``, and functions whose only instruction branches to one of them."""
+	parameterless: frozenset[Address]
+	"""Functions DWARF defines with no parameters, which read no argument registers."""
 
 
 class _Effects(Struct):
@@ -206,7 +217,7 @@ def escapes(program: Program, graphs: tuple[tuple[Function, tuple[Block, ...]], 
 
 
 def _arm_escapes(image: _Image, graphs: tuple[tuple[Function, tuple[Block, ...]], ...]) -> Escapes:
-	scans = tuple(_scan(image, blocks) for _, blocks in graphs)
+	scans = tuple(_scan(image, function, blocks) for function, blocks in graphs)
 	escaped = frozenset(chain.from_iterable(scan.escaped for scan in scans)) | _data_escapes(
 		image, frozenset(chain.from_iterable(scan.literals for scan in scans))
 	)
@@ -274,6 +285,11 @@ def _image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ...]], .
 				)
 			)
 		},
+		parameterless=frozenset(
+			normalized(function.address, program.machine)
+			for function in program.functions.values()
+			if function.signature is not None and not function.signature.parameters
+		),
 		fills={
 			**routines,
 			**{
@@ -333,9 +349,14 @@ def _forwarded_fill(
 			return None
 
 
-def _scan(image: _Image, blocks: tuple[Block, ...]) -> _Scan:
+def _scan(image: _Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
 	by_start = {block.start: block for block in blocks}
-	local = frozenset(by_start)
+	scope = _Scope(
+		blocks=frozenset(by_start),
+		returned=frozenset()
+		if function.signature is not None and function.signature.return_type == "void"
+		else _RETURNED,
+	)
 	in_states: dict[Address, _Registers] = {}
 	effects: list[_Effects] = []
 	for seed in by_start:
@@ -347,7 +368,7 @@ def _scan(image: _Image, blocks: tuple[Block, ...]) -> _Scan:
 			block = by_start[worklist.pop()]
 			registers = in_states[block.start]
 			for instruction in block.instructions:
-				registers, effect = _step(image, local, instruction, registers, block.successors)
+				registers, effect = _step(image, scope, instruction, registers, block.successors)
 				effects.append(effect)
 			for successor in block.successors:
 				joined, overflow = _join(
@@ -486,7 +507,7 @@ def _unknown_offset(held: _Held) -> _Held:
 
 def _step(
 	image: _Image,
-	local: frozenset[Address],
+	scope: _Scope,
 	instruction: CsInsn,
 	registers: _Registers,
 	successors: tuple[Address, ...],
@@ -495,7 +516,7 @@ def _step(
 		return registers, _NO_EFFECTS
 	operands = _operands(instruction)
 	written = frozenset(instruction.regs_access()[1])
-	control = _control(image, local, instruction, operands, written, successors)
+	control = _control(image, scope, instruction, operands, written, successors)
 	fill = _filled(image, control, registers.constants)
 	after = _after(
 		instruction,
@@ -510,7 +531,7 @@ def _step(
 		escaped=_union(
 			*(
 				registers.held.get(register, _NOTHING)
-				for register in _escaping(instruction, operands, control, fill, registers)
+				for register in _escaping(image, instruction, operands, control, fill, registers)
 			)
 		),
 		filled=_walked(image, control, fill, registers),
@@ -564,7 +585,7 @@ def _after(
 
 def _control(
 	image: _Image,
-	local: frozenset[Address],
+	scope: _Scope,
 	instruction: CsInsn,
 	operands: tuple[ArmCsOperand, ...],
 	written: frozenset[int],
@@ -580,18 +601,18 @@ def _control(
 	if branch is not None:
 		return (
 			None
-			if normalized(Address(branch.target), machine) in local
+			if normalized(Address(branch.target), machine) in scope.blocks
 			else _Call(target=normalized(Address(branch.target), machine))
 		)
 	if instruction.id in (arm_const.ARM_INS_BX, arm_const.ARM_INS_BLX):
 		return (
-			_Return()
+			_Return(passed=scope.returned)
 			if instruction.id == arm_const.ARM_INS_BX and operands[0].reg == arm_const.ARM_REG_LR
 			else _Call(target=None)
 		)
 	if instruction.id in _DISPATCHES or arm_const.ARM_REG_PC in written:
 		return (
-			_Return()
+			_Return(passed=scope.returned)
 			if _returns(instruction, operands)
 			else _Jump(resolved=len(successors) > (1 if arm_predicated(instruction) else 0))
 		)
@@ -671,6 +692,7 @@ def _reproduced(image: _Image, fill: _Fill, span: Span, destination: int, argume
 
 
 def _escaping(
+	image: _Image,
 	instruction: CsInsn,
 	operands: tuple[ArmCsOperand, ...],
 	control: _Control | None,
@@ -695,7 +717,7 @@ def _escaping(
 			)
 			- _consumed(instruction, operands, listed)
 		)
-		| _passed(control, fill, registers)
+		| _passed(image, control, fill, registers)
 	)
 
 
@@ -715,15 +737,19 @@ def _consumed(
 
 
 def _passed(
-	control: _Control | None, fill: frozenset[Span] | None, registers: _Registers
+	image: _Image, control: _Control | None, fill: frozenset[Span] | None, registers: _Registers
 ) -> frozenset[int]:
 	match control:
 		case None:
 			return frozenset()
-		case _Call():
-			return frozenset() if fill is not None else frozenset(ARM_ARGUMENT_REGISTERS)
-		case _Return():
-			return frozenset(_RETURNED)
+		case _Call(target=target):
+			return (
+				frozenset()
+				if fill is not None or target in image.parameterless
+				else frozenset(ARM_ARGUMENT_REGISTERS)
+			)
+		case _Return(passed=passed):
+			return passed
 		case _Jump(resolved=resolved):
 			return frozenset() if resolved else frozenset(registers.held)
 		case _ as unreachable:
