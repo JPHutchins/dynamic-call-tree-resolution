@@ -67,11 +67,11 @@ def _imports_an_adapter(path: Path) -> bool:
 
 
 def test_only_the_cli_imports_an_rtos_adapter() -> None:
-	assert [
-		path.relative_to(PACKAGE).as_posix()
-		for path in sorted(PACKAGE.rglob("*.py"))
+	assert {
+		path.relative_to(PACKAGE).parts[0]
+		for path in PACKAGE.rglob("*.py")
 		if "rtos" not in path.relative_to(PACKAGE).parts and _imports_an_adapter(path)
-	] == ["cli.py"]
+	} == {"cli"}
 
 
 def test_an_image_without_zephyr_is_bare_metal(fixture_elfs: dict[str, Path]) -> None:
