@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from enum import Enum
-from itertools import accumulate, chain
+from itertools import accumulate, chain, pairwise
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
@@ -154,8 +154,7 @@ def _merged(spans: Iterable[Span]) -> tuple[Span, ...]:
 		if index == 0 or ordered[index][0] >= reach[index - 1]
 	)
 	return tuple(
-		(ordered[first][0], reach[after - 1])
-		for first, after in zip(breaks, (*breaks[1:], len(ordered)), strict=True)
+		(ordered[first][0], reach[after - 1]) for first, after in pairwise((*breaks, len(ordered)))
 	)
 
 

@@ -33,6 +33,7 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 	direct_transfer,
 	reachable_blocks,
 )
+from dynamic_call_tree_resolution.vsa.escape import escapes
 from dynamic_call_tree_resolution.vsa.fallback import address_taken, referenced_only_at, referrers
 from dynamic_call_tree_resolution.vsa.interpret import (
 	CallObservation,
@@ -57,6 +58,7 @@ if TYPE_CHECKING:
 		ThreadCreation,
 		ThreadRoot,
 	)
+	from dynamic_call_tree_resolution.vsa.escape import Escapes
 
 _WIDENING_ROUND: Final = 8
 
@@ -92,6 +94,7 @@ def analyze(
 	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())
 	_prewarm_instructions(functions, program.machine)
+	found = escapes(program, functions)
 	top = top_seed(program.machine)
 	threads_by_entry = {
 		entry: tuple(group)
@@ -138,11 +141,14 @@ def analyze(
 				top=top,
 				creation=creation,
 				assumed_unwritten=assumed_unwritten,
+				escapes=found,
 			),
 			_Round(seeds={**entry_seeds, **roots}, writes=NO_WRITES),
 			1,
 		)
-		final_context = context_for(program, final.writes, assumed_unwritten=assumed_unwritten)
+		final_context = context_for(
+			program, final.writes, assumed_unwritten=assumed_unwritten, escapes=found
+		)
 		results = tuple(
 			executor.map(partial(_final_result, program, final_context, final.seeds), functions)
 		)
@@ -186,6 +192,7 @@ class _Rounds(Struct):
 	top: State
 	creation: _Creation | None
 	assumed_unwritten: tuple[tuple[int, int], ...]
+	escapes: Escapes
 
 
 class _Creation(Struct):
@@ -346,7 +353,10 @@ def _global_fixpoint(rounds: _Rounds, current: _Round, round_number: int) -> _Ro
 				_round_analysis,
 				rounds.program,
 				context_for(
-					rounds.program, current.writes, assumed_unwritten=rounds.assumed_unwritten
+					rounds.program,
+					current.writes,
+					assumed_unwritten=rounds.assumed_unwritten,
+					escapes=rounds.escapes,
 				),
 				current.seeds,
 			),
@@ -535,6 +545,7 @@ def _widened_writes(previous: Writes, current: Writes) -> Writes:
 			for address, value in current.values.items()
 		},
 		unknown_store=current.unknown_store,
+		clobbered=current.clobbered,
 	)
 
 

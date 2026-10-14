@@ -183,6 +183,7 @@ def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
 			if prefixes_and_name[0] in X86_REPEATS or prefixes_and_name[-1] in X86_UNBOUNDED_STORES
 			else destination,
 			Store(words=(), width=operands[0].size),
+			Address(instruction.address),
 		),
 		_ROOT_IDS[context.program.machine],
 	)
@@ -204,7 +205,9 @@ def _push(context: Context, state: State, sp: int, value: ValueSet) -> State:
 	pointer_size = context.program.pointer_size
 	offsets = shift_offsets(lookup(state.sp_offsets, sp), -pointer_size)
 	return set_offsets(
-		store_at(context, state, Frame(offsets=offsets), Store(words=(value,), width=pointer_size)),
+		store_at(
+			context, state, Frame(offsets=offsets), Store(words=(value,), width=pointer_size), None
+		),
 		sp,
 		offsets,
 	)

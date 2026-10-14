@@ -476,6 +476,10 @@ def test_overlapping_objects_escape_together() -> None:
 	).unescaped == ((0x2000_0000, 0x2000_0008),)
 
 
+def test_an_image_without_writable_objects_has_none_unescaped() -> None:
+	assert _escapes(_program(_BASE_ONLY, objects=())).unescaped == ()
+
+
 def test_x86_images_have_no_unescaped_objects() -> None:
 	assert escapes(
 		build_program(

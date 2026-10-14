@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections import defaultdict
 from functools import partial
 from itertools import chain, groupby
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
@@ -52,6 +52,9 @@ class Escapes(Struct):
 	from them."""
 
 
+NO_ESCAPES: Final = Escapes(unescaped=(), store_targets={})
+
+
 class _Scan(Struct):
 	escaped: frozenset[Span]
 	stores: Mapping[Address, frozenset[Span]]
@@ -61,7 +64,7 @@ class _Scan(Struct):
 def escapes(program: Program, graphs: tuple[tuple[Function, tuple[Block, ...]], ...]) -> Escapes:
 	match program.machine.family:
 		case InstructionFamily.X86:
-			return Escapes(unescaped=(), store_targets={})
+			return NO_ESCAPES
 		case InstructionFamily.ARM:
 			return _arm_escapes(escape_image(program, graphs), graphs)
 		case _ as unreachable:

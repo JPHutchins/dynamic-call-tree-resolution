@@ -3106,7 +3106,9 @@ def test_x86_call_clears_the_frame_after_its_address_escapes(code: str, callee: 
 	assert isinstance(site.target, Top)
 
 
-def _hook_program(machine: Machine, code: bytes, *, writable: bool, pointer_size: int) -> Program:
+def _hook_program(
+	machine: Machine, code: bytes, *, writable: bool, pointer_size: int, escaped: bool = False
+) -> Program:
 	return Program(
 		byte_order="little",
 		pointer_size=pointer_size,
@@ -3137,6 +3139,11 @@ def _hook_program(machine: Machine, code: bytes, *, writable: bool, pointer_size
 		sections={
 			Address(0x1000): Section(data=code, writable=False),
 			Address(0x4000): Section(data=_pointer(0x2000, pointer_size), writable=writable),
+			**(
+				{Address(0x5000): Section(data=_pointer(0x4000, pointer_size), writable=False)}
+				if escaped
+				else {}
+			),
 		},
 	)
 
@@ -3175,15 +3182,22 @@ def test_ram_initializer_holds_what_the_program_stores_to_its_slot(
 
 
 @pytest.mark.parametrize(
-	("writable", "candidates"),
+	("writable", "escaped", "candidates"),
 	[
-		pytest.param(True, set[int](), id="ram-initializer-is-unresolved"),
-		pytest.param(False, {0x2000}, id="rom-constant-keeps-its-value"),
+		pytest.param(True, True, set[int](), id="escaped-ram-initializer-is-unresolved"),
+		pytest.param(True, False, {0x2000}, id="unescaped-ram-initializer-keeps-its-value"),
+		pytest.param(False, True, {0x2000}, id="rom-constant-keeps-its-value"),
 	],
 )
-def test_unknown_store_unresolves_only_writable_slots(writable: bool, candidates: set[int]) -> None:
+def test_unknown_store_unresolves_only_escaped_writable_slots(
+	writable: bool, escaped: bool, candidates: set[int]
+) -> None:
 	program = _hook_program(
-		Machine.EM_ARM, bytes.fromhex("2c60 7047"), writable=writable, pointer_size=4
+		Machine.EM_ARM,
+		bytes.fromhex("2c60 7047"),
+		writable=writable,
+		pointer_size=4,
+		escaped=escaped,
 	)
 	resolved = resolve(program).assignments
 	assert {candidate for assignment in resolved for candidate in assignment.candidates} == {

@@ -15,6 +15,7 @@ from salix import Struct
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
 from dynamic_call_tree_resolution.points_to import instruction_set_at, memory_at
 from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized, program_counter
+from dynamic_call_tree_resolution.vsa.escape import NO_ESCAPES
 from dynamic_call_tree_resolution.vsa.lattice import (
 	K_BOUND,
 	Known,
@@ -26,7 +27,6 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	capped,
 	indexed,
 	indexed_offsets,
-	is_top,
 	join,
 	join_maps,
 	lookup,
@@ -38,7 +38,6 @@ from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
 	Writes,
-	after_unknown_store,
 	frame_based,
 	frame_copies_lost,
 	frame_write,
@@ -54,6 +53,7 @@ if TYPE_CHECKING:
 	from capstone import CsInsn, CsMemOperand, CsOperand
 
 	from dynamic_call_tree_resolution.model import Machine, Program
+	from dynamic_call_tree_resolution.vsa.escape import Escapes
 
 
 class Context(Struct):
@@ -75,16 +75,24 @@ class Context(Struct):
 	unwritten_spans: tuple[tuple[int, int], ...] = ()
 	"""The objects the user asserts the program never writes, by address span."""
 	unwritten_starts: tuple[int, ...] = ()
+	unescaped_spans: tuple[tuple[int, int], ...] = ()
+	"""The objects only the code that names them can reach, which an unknown store writes only
+	through an address derived from them."""
+	unescaped_starts: tuple[int, ...] = ()
+	store_targets: Mapping[Address, frozenset[tuple[int, int]]] = {}
+	"""The unescaped objects each store, by address, may write when the analysis can't place it."""
 
 
 def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
 	values = dict(current.values)
 	unknown_store = current.unknown_store
+	clobbered = current.clobbered
 	for writes in written:
 		unknown_store = unknown_store or writes.unknown_store
+		clobbered = clobbered | writes.clobbered
 		for address, value in writes.values.items():
 			values[address] = join(values[address], value) if address in values else value
-	return Writes(values=values, unknown_store=unknown_store)
+	return Writes(values=values, unknown_store=unknown_store, clobbered=clobbered)
 
 
 def context_for(
@@ -92,6 +100,7 @@ def context_for(
 	global_writes: Writes,
 	*,
 	assumed_unwritten: tuple[tuple[int, int], ...] = (),
+	escapes: Escapes = NO_ESCAPES,
 ) -> Context:
 	spans = tuple(
 		sorted(
@@ -129,6 +138,9 @@ def context_for(
 		},
 		unwritten_spans=tuple(sorted(assumed_unwritten)),
 		unwritten_starts=tuple(start for start, _ in sorted(assumed_unwritten)),
+		unescaped_spans=escapes.unescaped,
+		unescaped_starts=tuple(start for start, _ in escapes.unescaped),
+		store_targets=escapes.store_targets,
 	)
 
 
@@ -143,6 +155,18 @@ def _span_at(context: Context, address: Address) -> tuple[int, int] | None:
 def _assumed_unwritten(context: Context, address: Address, width: int) -> bool:
 	index = bisect_right(context.unwritten_starts, address) - 1
 	return index >= 0 and address + width <= context.unwritten_spans[index][1]
+
+
+def _kept(
+	context: Context, clobbered: frozenset[tuple[int, int]], address: Address, width: int
+) -> bool:
+	"""Whether the bytes lie in one unescaped object no unknown store derived from it has written."""
+	index = bisect_right(context.unescaped_starts, address) - 1
+	return (
+		index >= 0
+		and address + width <= context.unescaped_spans[index][1]
+		and context.unescaped_spans[index] not in clobbered
+	)
 
 
 def _read_only(context: Context, address: Address) -> bool:
@@ -222,6 +246,12 @@ def _image_read(
 			local is None
 			and (state.globals.unknown_store or context.global_writes.unknown_store)
 			and not _read_only(context, address)
+			and not _kept(
+				context,
+				state.globals.clobbered | context.global_writes.clobbered,
+				address,
+				width,
+			)
 		) or address in context.external_symbols:
 			return Top()
 		value = _initial_value(context, address, width)
@@ -401,11 +431,17 @@ def store_value(
 	context: Context, state: State, instruction: CsInsn, operand: CsOperand, store: Store
 ) -> State:
 	return store_at(
-		context, state, memory_destination(context, state, instruction, operand.mem), store
+		context,
+		state,
+		memory_destination(context, state, instruction, operand.mem),
+		store,
+		Address(instruction.address),
 	)
 
 
-def store_at(context: Context, state: State, destination: Destination, store: Store) -> State:
+def store_at(
+	context: Context, state: State, destination: Destination, store: Store, site: Address | None
+) -> State:
 	pointer_size = context.program.pointer_size
 	match destination:
 		case Frame(offsets=offsets):
@@ -423,6 +459,27 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 				),
 			)
 		case Image(addresses=addresses):
+			return _image_store(context, state, addresses, store, site)
+		case Unknown():
+			return after_unknown_store(context, state)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _image_store(
+	context: Context, state: State, addresses: ValueSet, store: Store, site: Address | None
+) -> State:
+	match addresses:
+		case Top():
+			return State(
+				registers=state.registers,
+				sp_offsets=state.sp_offsets,
+				stack={} if state.escaped else state.stack,
+				globals=_unknown_writes(context, state.globals, site),
+				escaped=state.escaped,
+				loaded_from=state.loaded_from,
+			)
+		case Known(values=starts):
 			return _weak_across(
 				context,
 				state,
@@ -430,16 +487,44 @@ def store_at(context: Context, state: State, destination: Destination, store: St
 				State(
 					registers=state.registers,
 					sp_offsets=state.sp_offsets,
-					stack={} if state.escaped and is_top(addresses) else state.stack,
-					globals=image_write(state.globals, addresses, store, pointer_size),
+					stack=state.stack,
+					globals=image_write(state.globals, starts, store, context.program.pointer_size),
 					escaped=state.escaped,
 					loaded_from=state.loaded_from,
 				),
 			)
-		case Unknown():
-			return after_unknown_store(state)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def after_unknown_store(context: Context, state: State) -> State:
+	"""The state after a store that may write the stack and any escaped object."""
+	return State(
+		registers=state.registers,
+		sp_offsets=state.sp_offsets,
+		stack={},
+		globals=_unknown_writes(context, state.globals, None),
+		escaped=state.escaped,
+		loaded_from=state.loaded_from,
+	)
+
+
+def _unknown_writes(context: Context, writes: Writes, site: Address | None) -> Writes:
+	"""The writes after an unknown store, which may write any escaped object and its own targets."""
+	clobbered = writes.clobbered | (
+		context.store_targets.get(site, frozenset())
+		if site is not None
+		else frozenset[tuple[int, int]]()
+	)
+	return Writes(
+		values={
+			address: value
+			for address, value in writes.values.items()
+			if _kept(context, clobbered, address, context.program.pointer_size)
+		},
+		unknown_store=True,
+		clobbered=clobbered,
+	)
 
 
 def _weak_across[T: Hashable](
@@ -473,6 +558,7 @@ def weakened(context: Context, before: State, after: State) -> State:
 				for address, value in after.globals.values.items()
 			},
 			unknown_store=after.globals.unknown_store,
+			clobbered=before.globals.clobbered | after.globals.clobbered,
 		),
 		escaped=before.escaped
 		or after.escaped
