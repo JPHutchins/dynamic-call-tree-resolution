@@ -42,7 +42,9 @@ class Writes(Struct):
 	values: Mapping[Address, ValueSet]
 	"""By address; an address no store wrote is absent."""
 	unknown_store: bool
-	"""An unknown store happened, so any writable address may hold anything."""
+	"""An unknown store happened, so any escaped object may hold anything."""
+	clobbered: frozenset[tuple[int, int]] = frozenset()
+	"""The unescaped objects an unknown store derived from them may have written, by span."""
 
 
 NO_WRITES: Final = Writes(values={}, unknown_store=False)
@@ -119,6 +121,7 @@ def _join_writes(current: Writes, incoming: Writes) -> Writes:
 			for address in current.values.keys() & incoming.values.keys()
 		},
 		unknown_store=current.unknown_store or incoming.unknown_store,
+		clobbered=current.clobbered | incoming.clobbered,
 	)
 
 
@@ -194,17 +197,6 @@ def top_registers(state: State, registers: tuple[int, ...]) -> State:
 
 def frame_based(state: State, machine: Machine, register: int) -> bool:
 	return register == SP_REGISTERS[machine][0] or register in state.sp_offsets
-
-
-def after_unknown_store(state: State) -> State:
-	return State(
-		registers=state.registers,
-		sp_offsets=state.sp_offsets,
-		stack={},
-		globals=Writes(values={}, unknown_store=True),
-		escaped=state.escaped,
-		loaded_from=state.loaded_from,
-	)
 
 
 def escaping(state: State, registers: Iterable[int]) -> State:
@@ -294,33 +286,30 @@ def frame_write(
 			assert_never(unreachable)
 
 
-def image_write(writes: Writes, addresses: ValueSet, store: Store, pointer_size: int) -> Writes:
-	match addresses:
-		case Top():
-			return Writes(values={}, unknown_store=True)
-		case Known(values=starts):
-			return Writes(
-				values={
-					**writes.values,
-					**{
-						Address(address): join(writes.values[Address(address)], value)
-						if address in writes.values
-						else value
-						for address, value in _written(
-							store,
-							pointer_size,
-							starts,
-							_overlapping(writes.values, store, pointer_size, starts)
-							| starts
-							| _word_keys(store, pointer_size, starts)
-							| _aligned_keys(store, pointer_size, starts),
-						).items()
-					},
-				},
-				unknown_store=writes.unknown_store,
-			)
-		case _ as unreachable:
-			assert_never(unreachable)
+def image_write(
+	writes: Writes, starts: frozenset[Address], store: Store, pointer_size: int
+) -> Writes:
+	return Writes(
+		values={
+			**writes.values,
+			**{
+				Address(address): join(writes.values[Address(address)], value)
+				if address in writes.values
+				else value
+				for address, value in _written(
+					store,
+					pointer_size,
+					starts,
+					_overlapping(writes.values, store, pointer_size, starts)
+					| starts
+					| _word_keys(store, pointer_size, starts)
+					| _aligned_keys(store, pointer_size, starts),
+				).items()
+			},
+		},
+		unknown_store=writes.unknown_store,
+		clobbered=writes.clobbered,
+	)
 
 
 def _written(

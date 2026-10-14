@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from enum import Enum
-from itertools import accumulate, chain
+from itertools import accumulate, chain, pairwise
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
@@ -54,7 +54,8 @@ class Image(Struct):
 	nearby: tuple[int, int]
 	"""The addresses close enough to a writable object to follow as possible addresses."""
 	bounded: Mapping[int, tuple[Span, ...]]
-	"""The writable sections each linker label bounds."""
+	"""The writable sections each linker label starts or lies in; one that ends at a label is
+	past it, as an object is past a pointer to its end."""
 	walkable: Mapping[int, tuple[Span, ...]]
 	"""Of those, the ones code may walk as an array from the label: every one at a label that
 	starts no object, else those whose objects share one type, as an iterable section's do."""
@@ -86,7 +87,7 @@ def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ..
 	bounded: Mapping[int, tuple[Span, ...]] = {
 		address: sections
 		for address in program.labels.values()
-		if (sections := tuple(span for span in writable if span[0] <= address <= span[1]))
+		if (sections := tuple(span for span in writable if span[0] <= address < span[1]))
 	}
 	object_starts = frozenset(data_object.address for data_object in program.objects.values())
 	arrays = frozenset(section for section in writable if _one_type(program, section))
@@ -154,8 +155,7 @@ def _merged(spans: Iterable[Span]) -> tuple[Span, ...]:
 		if index == 0 or ordered[index][0] >= reach[index - 1]
 	)
 	return tuple(
-		(ordered[first][0], reach[after - 1])
-		for first, after in zip(breaks, (*breaks[1:], len(ordered)), strict=True)
+		(ordered[first][0], reach[after - 1]) for first, after in pairwise((*breaks, len(ordered)))
 	)
 
 

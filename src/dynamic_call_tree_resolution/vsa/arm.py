@@ -36,6 +36,7 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 )
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
+	after_unknown_store,
 	loaded,
 	register_destination,
 	scaled_addresses,
@@ -46,7 +47,6 @@ from dynamic_call_tree_resolution.vsa.memory import (
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
-	after_unknown_store,
 	copy_register,
 	escaping,
 	frame_based,
@@ -113,7 +113,7 @@ def _apply_unconditional(
 		return top_written(
 			instruction,
 			escaping(
-				after_unknown_store(state),
+				after_unknown_store(context, state),
 				tuple(
 					operand.reg
 					for operand in _arm_operands(instruction)
@@ -213,6 +213,7 @@ def _arm_store_multiple(
 			else tuple(lookup(state.registers, operand.reg) for operand in listed),
 			width=width,
 		),
+		Address(instruction.address),
 	)
 	if not (implicit_sp or instruction.writeback):
 		return stored

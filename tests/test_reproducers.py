@@ -167,6 +167,8 @@ ARM_CASES: tuple[tuple[str, str], ...] = (
 	("top_stores.c", "call_bss"),
 	("top_stores.c", "call_data"),
 	("top_stores.c", "call_object"),
+	("escaped_hooks.c", "call_hidden"),
+	("escaped_hooks.c", "call_exposed"),
 	("predicated_store.c", "predicated_store_case"),
 	("call_clobbers.c", "stack_case"),
 	("call_clobbers.c", "global_case"),
@@ -643,6 +645,24 @@ def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
 		seeded.seeded,
 		_worker_targets(program, seeded, seeded.sites),
 	) == (frozenset(), frozenset({"record"}), outcomes[image].observations["worker"])
+
+
+@pytest.mark.parametrize(
+	"image",
+	[
+		pytest.param(case.image, id=_image_id(case.image))
+		for case, _ in CANDIDATES
+		if case.image.source == "escaped_hooks.c" and case.caller == "call_hidden"
+	],
+)
+def test_an_unknown_store_reaches_only_the_hook_whose_address_escapes(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	sites = dict(outcomes[image].sites)
+	assert (sites["call_hidden"], sites["call_exposed"]) == (
+		frozenset({"a", "b"}),
+		frozenset[str](),
+	)
 
 
 @pytest.mark.parametrize(
