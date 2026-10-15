@@ -34,9 +34,9 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.arm import apply_arm
+from dynamic_call_tree_resolution.vsa.branch_edges import successor_states
 from dynamic_call_tree_resolution.vsa.cfg import (
 	Block,
-	CallsNoReturn,
 	DirectCall,
 	MemorySite,
 	RegisterSite,
@@ -46,7 +46,6 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 	is_returning_trap,
 	reachable_blocks,
 )
-from dynamic_call_tree_resolution.vsa.conditions import Conditional, branch_taken
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet, lookup, shift_offsets
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
@@ -177,33 +176,13 @@ def block_states(
 			before_last = transfer(context, instruction, before_last)
 		outgoing = transfer(context, block.instructions[-1], before_last)
 		writes = accumulate_writes(writes, [outgoing.globals])
-		for successor in _live_successors(block, before_last):
+		for successor, state in successor_states(block, before_last, outgoing):
 			existing = in_states.get(successor)
-			joined = join_states(existing, outgoing)
+			joined = join_states(existing, state)
 			if joined != existing:
 				in_states[successor] = joined
 				worklist.append(successor)
 	return in_states, writes
-
-
-def _live_successors(block: Block, state: State) -> tuple[Address, ...]:
-	match block.condition:
-		case None:
-			return block.successors
-		case Conditional(test=test, taken=taken, fallthrough=fallthrough):
-			match branch_taken(test, state.registers):
-				case None:
-					return block.successors
-				case True:
-					return taken
-				case False:
-					return fallthrough
-				case _ as unreachable:
-					assert_never(unreachable)
-		case CallsNoReturn():
-			return ()
-		case _ as unreachable:
-			assert_never(unreachable)
 
 
 def analyze_function(
