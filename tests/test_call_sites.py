@@ -33,7 +33,8 @@ from dynamic_call_tree_resolution import (
 	signature_narrowings,
 	unresolved_slots,
 )
-from dynamic_call_tree_resolution.callgraph import CallEdge
+from dynamic_call_tree_resolution.call_sites import narrowed_targets
+from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
 from dynamic_call_tree_resolution.model import (
 	FUNCTION_POINTER,
 	Dead,
@@ -714,6 +715,44 @@ def test_a_dispatch_function_with_one_indirect_call_dispatches_it(
 		),
 	)
 	assert tuple(site.dispatch for site in resolve(program, model).sites) == dispatches
+
+
+@pytest.mark.parametrize(
+	("code", "kinds"),
+	[
+		pytest.param(
+			"48 c7 c0 00 30 00 00ff d0",
+			{"z_sys_init_run_level": {"target": EdgeKind.DISPATCH}},
+			id="a proven target within the dispatch",
+		),
+		pytest.param("48 c7 c0 00 40 00 00ff d0", {}, id="a proven target outside the dispatch"),
+	],
+)
+def test_a_proven_dispatch_site_keeps_the_dispatchs_trust_only_within_its_entries(
+	code: str, kinds: Mapping[str, Mapping[str, EdgeKind]]
+) -> None:
+	program = build_program(
+		Machine.EM_X86_64,
+		(
+			("z_sys_init_run_level", 0x1000, len(bytes.fromhex(code))),
+			("target", 0x3000, 1),
+			("other", 0x4000, 1),
+		),
+		sections={0x1000: bytes.fromhex(code), 0x3000: b"\xc3", 0x4000: b"\xc3"},
+	)
+	resolution = resolve(
+		program,
+		RtosModel(
+			name="zephyr",
+			evidence=(),
+			threads=(),
+			trampoline=None,
+			dispatches=(
+				Dispatch(function="z_sys_init_run_level", targets=frozenset({Address(0x3000)})),
+			),
+		),
+	)
+	assert narrowed_targets(program, resolution.sites, resolution.assignments) == kinds
 
 
 def test_an_x86_64_32_bit_copy_of_a_frame_address_escapes_the_frame() -> None:

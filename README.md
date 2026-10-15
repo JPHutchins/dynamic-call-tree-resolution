@@ -83,11 +83,11 @@ z_impl_zephyr_fputc@0x8a6: console_out
 ...
 console_out@0x956: uart_stellaris_poll_out
 console_out@0x960: uart_stellaris_poll_out
-z_sys_init_run_level@0xcd0: boot_banner, malloc_prepare, uart_stellaris_init, uart_console_init, sys_clock_driver_init (dispatch, from the RTOS model)
+z_sys_init_run_level@0xcd0: boot_banner, malloc_prepare, uart_stellaris_init, uart_console_init, sys_clock_driver_init
 bg_thread_main@0xd28: <dead>
 z_cstart@0xeb4: <dead>
 ...
-do_device_init@0x1dca: uart_stellaris_init (dispatch, from the RTOS model)
+do_device_init@0x1dca: uart_stellaris_init
 ```
 
 - `rtos:` names the RTOS model and what identified it in the image. `--rtos auto`, the
@@ -591,10 +591,12 @@ contradicts does not hold.
   in the init sections, and the call in `do_device_init` to the `ops.init` of every
   `struct device` in the device list, with no fallback; `analyze` marks both
   `(dispatch, from the RTOS model)`. This assumes that each walks only its linker-built
-  table ([#185] would prove it), and holds only while every such object lies between its
-  section's bounds in read-only memory and the function makes one indirect call.
-  Otherwise the call expands to the fallback, and so does an inlined copy of either
-  loop ([#151]).
+  table, and holds only while every such object lies between its section's bounds in
+  read-only memory and the function makes one indirect call. Otherwise the call expands
+  to the fallback, and so does an inlined copy of either loop ([#151]). Where the
+  value-set analysis proves the walk itself ([#185]), `analyze` shows the proven targets
+  unmarked, and the stack expansion trusts them as it trusts the dispatch, as long as
+  they are among the dispatch's entries.
 
 ### Call targets
 
