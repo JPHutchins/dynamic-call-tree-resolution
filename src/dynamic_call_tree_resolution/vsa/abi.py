@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final, assert_never
+from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from capstone import (
 	CS_ARCH_ARM,
@@ -34,7 +34,7 @@ from dynamic_call_tree_resolution.model import (
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from capstone import CsInsn
+	from capstone import ArmCsOperand, CsInsn, CsOperand
 
 
 DISASSEMBLERS: Final[Mapping[InstructionSet, tuple[int, int]]] = {
@@ -395,6 +395,26 @@ def arm_predicated(instruction: CsInsn) -> bool:
 		instruction.id not in (arm_const.ARM_INS_INVALID, arm_const.ARM_INS_IT)
 		and instruction.cc in ARM_CONDITIONS
 	)
+
+
+def index_scale(machine: Machine, operand: CsOperand) -> int | None:
+	"""What a memory operand's index register is multiplied by; None for a shift other than left."""
+	match machine.family:
+		case InstructionFamily.X86:
+			return operand.mem.scale
+		case InstructionFamily.ARM:
+			return _arm_index_scale(cast("ArmCsOperand", operand))
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _arm_index_scale(operand: ArmCsOperand) -> int | None:
+	"""Capstone keeps an Arm index's shift and sign on the operand, not in ``mem.scale``."""
+	match operand.shift.type:
+		case arm_const.ARM_SFT_INVALID | arm_const.ARM_SFT_LSL:
+			return (-1 if operand.subtracted else 1) << operand.shift.value
+		case _:
+			return None
 
 
 def normalized(address: Address, machine: Machine) -> Address:
