@@ -362,7 +362,7 @@ def _site_operand_addresses(
 		)
 	if frame_based(state, context.program.machine, memory.base):
 		return Top()
-	return memory_addresses(context, state, memory)
+	return memory_addresses(context, state, operand)
 
 
 def _site_resolution(

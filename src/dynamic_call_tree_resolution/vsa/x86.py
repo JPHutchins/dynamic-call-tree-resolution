@@ -109,9 +109,9 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 			return _write(state, machine, destination.reg, Known(values=frozenset({address})))
 		if frame_based(state, machine, memory.base):
 			return _write_offsets(
-				state, machine, destination.reg, stack_offsets(state, memory, memory.base)
+				state, machine, destination.reg, stack_offsets(context, state, source)
 			)
-		return _write(state, machine, destination.reg, memory_addresses(context, state, memory))
+		return _write(state, machine, destination.reg, memory_addresses(context, state, source))
 	if instruction.mnemonic in ("inc", "dec"):
 		destination = _x86_operands(instruction)[0]
 		if destination.type != x86_const.X86_OP_REG:
@@ -170,7 +170,7 @@ def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
 		or prefixes_and_name[-1] in X86_MEMORY_READERS
 	):
 		return top_written(instruction, state, _ROOT_IDS[context.program.machine])
-	destination = memory_destination(context, state, instruction, operands[0].mem)
+	destination = memory_destination(context, state, instruction, operands[0])
 	return top_written(
 		instruction,
 		store_at(

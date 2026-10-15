@@ -14,7 +14,12 @@ from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
 from dynamic_call_tree_resolution.points_to import instruction_set_at, memory_at
-from dynamic_call_tree_resolution.vsa.abi import SP_REGISTERS, normalized, program_counter
+from dynamic_call_tree_resolution.vsa.abi import (
+	SP_REGISTERS,
+	index_scale,
+	normalized,
+	program_counter,
+)
 from dynamic_call_tree_resolution.vsa.escape import NO_ESCAPES
 from dynamic_call_tree_resolution.vsa.lattice import (
 	K_BOUND,
@@ -276,17 +281,24 @@ def _overlapped(context: Context, state: State, address: Address, width: int) ->
 	)
 
 
-def stack_offsets(state: State, memory: CsMemOperand, base_register: int) -> OffsetSet:
-	offsets = lookup(state.sp_offsets, base_register)
+def stack_offsets(context: Context, state: State, operand: CsOperand) -> OffsetSet:
+	memory = operand.mem
+	offsets = lookup(state.sp_offsets, memory.base)
 	if memory.index == 0:
 		return shift_offsets(offsets, memory.disp)
-	return bind(
-		offsets,
-		lambda bases: bind(
-			lookup(state.registers, memory.index),
-			lambda indexes: indexed_offsets(bases, indexes, memory.scale, memory.disp),
-		),
-	)
+	match index_scale(context.program.machine, operand):
+		case None:
+			return Top()
+		case int() as scale:
+			return bind(
+				offsets,
+				lambda bases: bind(
+					lookup(state.registers, memory.index),
+					lambda indexes: indexed_offsets(bases, indexes, scale, memory.disp),
+				),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def scaled_addresses(
@@ -308,7 +320,8 @@ def scaled_addresses(
 			assert_never(unreachable)
 
 
-def memory_addresses(context: Context, state: State, memory: CsMemOperand) -> ValueSet:
+def memory_addresses(context: Context, state: State, operand: CsOperand) -> ValueSet:
+	memory = operand.mem
 	base = (
 		Known(values=frozenset({Address(0)}))
 		if memory.base == 0
@@ -316,9 +329,15 @@ def memory_addresses(context: Context, state: State, memory: CsMemOperand) -> Va
 	)
 	if memory.index == 0:
 		return shift_addresses(base, memory.disp)
-	return scaled_addresses(
-		context, base, lookup(state.registers, memory.index), memory.scale, memory.disp
-	)
+	match index_scale(context.program.machine, operand):
+		case None:
+			return Top()
+		case int() as scale:
+			return scaled_addresses(
+				context, base, lookup(state.registers, memory.index), scale, memory.disp
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def load_value(context: Context, state: State, instruction: CsInsn, operand: CsOperand) -> ValueSet:
@@ -329,11 +348,10 @@ def loaded(
 	context: Context, state: State, instruction: CsInsn, operand: CsOperand, width: int
 ) -> tuple[ValueSet, Address | None]:
 	"""A load's value, zero-extended from its width, and the one image address it reads."""
-	memory = operand.mem
-	match _load_addresses(context, state, instruction, memory):
+	match _load_addresses(context, state, instruction, operand):
 		case None:
 			return _low_bytes(
-				context, stack_read(state.stack, stack_offsets(state, memory, memory.base)), width
+				context, stack_read(state.stack, stack_offsets(context, state, operand)), width
 			), None
 		case Known(values=values) as addresses if len(values) == 1:
 			return _image_value(context, state, addresses, width), next(iter(values))
@@ -348,8 +366,9 @@ def loaded(
 
 
 def _load_addresses(
-	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand
 ) -> ValueSet | None:
+	memory = operand.mem
 	if _pc_relative(context.program.machine, memory):
 		return Known(
 			values=frozenset(
@@ -366,7 +385,7 @@ def _load_addresses(
 		)
 	if frame_based(state, context.program.machine, memory.base):
 		return None
-	return memory_addresses(context, state, memory)
+	return memory_addresses(context, state, operand)
 
 
 def _pc_relative(machine: Machine, memory: CsMemOperand) -> bool:
@@ -399,14 +418,15 @@ type Destination = Frame | Image | Unknown
 
 
 def memory_destination(
-	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand
 ) -> Destination:
 	machine = context.program.machine
+	memory = operand.mem
 	if frame_based(state, machine, memory.base):
-		return Frame(offsets=stack_offsets(state, memory, memory.base))
+		return Frame(offsets=stack_offsets(context, state, operand))
 	if memory.base in SP_REGISTERS[machine] and memory.base not in state.registers:
 		return Unknown()
-	return Image(addresses=_store_addresses(context, state, instruction, memory))
+	return Image(addresses=_store_addresses(context, state, instruction, operand))
 
 
 def register_destination(context: Context, state: State, register: int, delta: int) -> Destination:
@@ -433,7 +453,7 @@ def store_value(
 	return store_at(
 		context,
 		state,
-		memory_destination(context, state, instruction, operand.mem),
+		memory_destination(context, state, instruction, operand),
 		store,
 		Address(instruction.address),
 	)
@@ -572,14 +592,15 @@ def weakened(context: Context, before: State, after: State) -> State:
 
 
 def _store_addresses(
-	context: Context, state: State, instruction: CsInsn, memory: CsMemOperand
+	context: Context, state: State, instruction: CsInsn, operand: CsOperand
 ) -> ValueSet:
+	memory = operand.mem
 	match context.program.machine.family:
 		case InstructionFamily.X86 if memory.base == x86_const.X86_REG_RIP:
 			return Known(
 				values=frozenset({Address(instruction.address + instruction.size + memory.disp)})
 			)
 		case InstructionFamily.X86 | InstructionFamily.ARM:
-			return memory_addresses(context, state, memory)
+			return memory_addresses(context, state, operand)
 		case _ as unreachable:
 			assert_never(unreachable)

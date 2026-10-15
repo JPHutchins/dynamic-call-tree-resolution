@@ -412,6 +412,90 @@ def test_a_narrow_load_reads_the_bytes_it_names(
 	assert tracked_values(site) == targets
 
 
+def _handler_table_program(
+	functions: tuple[tuple[str, int, int], ...],
+	sections: Mapping[int, bytes],
+	*,
+	writable: frozenset[int] = frozenset(),
+	arm_code: tuple[tuple[int, int], ...] = (),
+) -> Program:
+	"""Handlers at 0x3000, 0x3010, 0x3020 and 0x3030; a table at 0x2000 points at the first three."""
+	return build_program(
+		Machine.EM_ARM,
+		(*functions, *((f"handler_{index}", 0x3000 + 0x10 * index, 2) for index in range(4))),
+		objects=(
+			("table", 0x2000, b"".join(_pointer(0x3001 + 0x10 * index, 4) for index in range(3))),
+		),
+		sections={**sections, 0x3000: bytes.fromhex("7047" + "00" * 14) * 4},
+		writable=writable,
+		arm_code=arm_code,
+		pointer_size=4,
+	)
+
+
+@pytest.mark.parametrize(
+	("code", "arm_code", "targets"),
+	[
+		pytest.param("42f20006022456f8243098477047", (), {0x3021}, id="a known index shifted left"),
+		pytest.param(
+			"42f2000656f8203098477047", (), {0x3001, 0x3011, 0x3021}, id="an unknown index"
+		),
+		pytest.param(
+			"081002e30420a0e3023011e733ff2fe11eff2fe1",
+			((0x1000, 0x1014),),
+			{0x3011},
+			id="an A32 subtracted index",
+		),
+		pytest.param(
+			"001002e30420a0e3823091e733ff2fe11eff2fe1",
+			((0x1000, 0x1014),),
+			{0x3021},
+			id="an A32 index shifted left by one",
+		),
+		pytest.param(
+			"001002e30420a0e3223191e733ff2fe11eff2fe1",
+			((0x1000, 0x1014),),
+			set[int](),
+			id="an index shifted right",
+		),
+		pytest.param(
+			"08d04de2113003e300308de50020a0e302319de733ff2fe108d08de21eff2fe1",
+			((0x1000, 0x1020),),
+			{0x3011},
+			id="a frame slot by an index shifted left",
+		),
+		pytest.param(
+			"08d04de2113003e300308de50020a0e322319de733ff2fe108d08de21eff2fe1",
+			((0x1000, 0x1020),),
+			set[int](),
+			id="a frame slot by an index shifted right",
+		),
+	],
+)
+def test_a_load_scales_and_signs_its_index_as_the_operand_encodes(
+	code: str, arm_code: tuple[tuple[int, int], ...], targets: set[int]
+) -> None:
+	caller = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		_handler_table_program(
+			(("caller", 0x1000, len(caller)),), {0x1000: caller}, arm_code=arm_code
+		)
+	)
+	assert tracked_values(site) == targets
+
+
+def test_a_store_through_a_shifted_index_writes_the_word_it_names() -> None:
+	writer = bytes.fromhex("42f20006022443f2310346f824307047")
+	caller = bytes.fromhex("42f20806336898477047")
+	program = _handler_table_program(
+		(("writer", 0x1000, len(writer)), ("caller", 0x1100, len(caller))),
+		{0x1000: writer, 0x1100: caller},
+		writable=frozenset({0x2000}),
+	)
+	(site,) = (site for site in extract_call_sites(program) if site.caller_address == 0x1100)
+	assert tracked_values(site) == {0x3021, 0x3031}
+
+
 @pytest.mark.parametrize(
 	("caller", "assumed", "targets"),
 	[
