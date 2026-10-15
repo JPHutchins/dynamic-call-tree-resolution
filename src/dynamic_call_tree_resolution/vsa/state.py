@@ -274,13 +274,7 @@ def frame_write(
 			)
 			return {
 				**{key: values for key, values in stack.items() if key not in written},
-				**dict(
-					entry
-					for key, value in written.items()
-					for entry in map_entry(
-						key, join(Known(values=stack[key]), value) if key in stack else value
-					)
-				),
+				**dict(entry for key, value in written.items() for entry in map_entry(key, value)),
 			}
 		case _ as unreachable:
 			assert_never(unreachable)
