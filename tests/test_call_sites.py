@@ -2088,7 +2088,7 @@ def test_x86_known_index_with_a_top_base_is_unresolved() -> None:
 	assert isinstance(site.target, Top)
 
 
-def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
+def test_x86_stack_slot_write_replaces_what_the_slot_held() -> None:
 	table_one = b"".join((0x3000 + index * 8).to_bytes(8, "little") for index in range(33))
 	table_two = b"".join((0x5000 + index * 8).to_bytes(8, "little") for index in range(32))
 	code = bytes.fromhex(
@@ -2103,7 +2103,9 @@ def test_x86_stack_slot_write_union_overflows_k_to_top() -> None:
 	)
 	(site,) = extract_call_sites(program)
 	assert site.site_address == 0x1026
-	assert isinstance(site.target, Top)
+	assert site.target == Known(
+		values=frozenset(Address(0x5000 + index * 8) for index in range(32))
+	)
 
 
 def test_x86_global_store_is_a_no_op_in_this_pass() -> None:
@@ -3057,6 +3059,36 @@ def test_thumb_store_writes_the_words_it_covers(code: str, candidates: set[int])
 	)
 	(site,) = extract_call_sites(program)
 	assert site.target == _expected(candidates)
+
+
+@pytest.mark.parametrize(
+	("code", "targets"),
+	[
+		pytest.param(
+			"052001b543f201030093009b984701bd",
+			{0x3001},
+			id="a store to one slot replaces what it held",
+		),
+		pytest.param(
+			"052003b56a46002918bf01aa43f201031360009b984703bd",
+			{5, 0x3001},
+			id="a store to one of two slots keeps both",
+		),
+	],
+)
+def test_a_frame_store_replaces_a_slot_only_when_it_must_write_it(
+	code: str, targets: set[int]
+) -> None:
+	body = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		build_program(
+			Machine.EM_ARM,
+			(("caller", 0x1000, len(body)), ("target", 0x3000, 2)),
+			sections={0x1000: body, 0x3000: bytes.fromhex("7047")},
+			pointer_size=4,
+		)
+	)
+	assert tracked_values(site) == targets
 
 
 def _thumb_slot_program(sections: Mapping[int, bytes]) -> Program:
