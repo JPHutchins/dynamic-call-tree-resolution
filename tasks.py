@@ -9,6 +9,14 @@ from typing import cast
 
 from camas import Claude, Config, Parallel, Sequential, Task, by_glob, by_suffix
 
+python_suffixes = (".py", ".pyi")
+python_scope = by_suffix(python_suffixes)
+
+
+def touches_python(changed: tuple[str, ...]) -> bool:
+	return any(path.endswith(python_suffixes) for path in changed)
+
+
 fixture_c_globs = ("tests/fixtures/**/*.c", "tests/fixtures/**/*.h")
 fixture_c_scope = by_glob(
 	fixture_c_globs,
@@ -21,10 +29,14 @@ fixture_c_scope = by_glob(
 	),
 )
 
-format = Task("uv run ruff format {paths}", mutates=True, paths=".")
-format_check = Task("uv run ruff format --check {paths}", paths=".")
-lint = Task("uv run ruff check {paths}", paths=".", agent_format=("--output-format sarif", "sarif"))
-lint_fix = Task("uv run ruff check --fix {paths}", mutates=True, paths=".")
+format = Task("uv run ruff format {paths}", mutates=True, paths=python_scope)
+format_check = Task("uv run ruff format --check {paths}", paths=python_scope)
+lint = Task(
+	"uv run ruff check {paths}",
+	paths=python_scope,
+	agent_format=("--output-format sarif", "sarif"),
+)
+lint_fix = Task("uv run ruff check --fix {paths}", mutates=True, paths=python_scope)
 c_format = Task(
 	"jphfmt -i {paths}",
 	mutates=True,
@@ -47,8 +59,11 @@ nix_format_check = Task(
 )
 fix = Sequential(lint_fix, format, c_format, nix_format)
 actionlint = Task("uv run actionlint", when=".github")
-mypy = Task("uv run mypy .")
-pyright = Task("uv run pyright src tests tasks.py testbeds/plugin")
+mypy = Task("uv run mypy .", when=touches_python)
+pyright = Task(
+	"uv run pyright src tests tasks.py testbeds/plugin",
+	when=touches_python,
+)
 
 typecheck = Parallel(mypy, pyright)
 test = Task("uv run pytest -v -m 'not slow'", agent_format=("--junitxml {report}", "junit"))
