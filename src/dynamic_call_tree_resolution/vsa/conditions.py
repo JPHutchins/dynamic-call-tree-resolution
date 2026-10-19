@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-from enum import IntEnum
+from enum import Enum, IntEnum, auto
+from itertools import product
 from typing import TYPE_CHECKING, Final, assert_never, cast
 
 from capstone import arm_const
@@ -14,7 +15,7 @@ from salix import Struct
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, lookup
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Iterator, Mapping
+	from collections.abc import Callable, Mapping
 
 	from capstone import ArmCsOperand, CsInsn
 
@@ -79,6 +80,45 @@ class _Flags(Struct):
 	overflow: bool
 
 
+class _Order(Enum):
+	"""How a `cmp` must order its operands for an edge to be taken."""
+
+	BELOW = auto()
+	AT_MOST = auto()
+	ABOVE = auto()
+	AT_LEAST = auto()
+
+
+class _Equality(Enum):
+	"""Whether a `cmp` must find its operands equal for an edge to be taken."""
+
+	EQUAL = auto()
+	UNEQUAL = auto()
+
+
+type _Relation = _Order | _Equality
+
+_ORDERS: Final[Mapping[int, tuple[bool, _Relation]]] = {
+	arm_const.ARM_CC_EQ: (False, _Equality.EQUAL),
+	arm_const.ARM_CC_NE: (False, _Equality.UNEQUAL),
+	arm_const.ARM_CC_HS: (False, _Order.AT_LEAST),
+	arm_const.ARM_CC_LO: (False, _Order.BELOW),
+	arm_const.ARM_CC_HI: (False, _Order.ABOVE),
+	arm_const.ARM_CC_LS: (False, _Order.AT_MOST),
+	arm_const.ARM_CC_GE: (True, _Order.AT_LEAST),
+	arm_const.ARM_CC_LT: (True, _Order.BELOW),
+	arm_const.ARM_CC_GT: (True, _Order.ABOVE),
+	arm_const.ARM_CC_LE: (True, _Order.AT_MOST),
+}
+"""The conditions a `cmp` decides as a relation of its operands, signed or not."""
+_NEGATED: Final[Mapping[_Relation, _Relation]] = {
+	_Equality.EQUAL: _Equality.UNEQUAL,
+	_Equality.UNEQUAL: _Equality.EQUAL,
+	_Order.BELOW: _Order.AT_LEAST,
+	_Order.AT_LEAST: _Order.BELOW,
+	_Order.AT_MOST: _Order.ABOVE,
+	_Order.ABOVE: _Order.AT_MOST,
+}
 _CONDITIONS: Final[Mapping[int, Callable[[_Flags], bool]]] = {
 	arm_const.ARM_CC_EQ: lambda flags: flags.zero,
 	arm_const.ARM_CC_NE: lambda flags: not flags.zero,
@@ -154,50 +194,193 @@ def _compare(setter: CsInsn, written_after: frozenset[int], condition: int) -> C
 	)
 
 
-def branch_taken(test: BranchTest, registers: Mapping[int, frozenset[Address]]) -> bool | None:
-	"""Whether the branch is taken, when every value its operands can hold agrees."""
-	outcomes = _outcomes(test, registers)
-	first = next(outcomes, None)
-	return first if first is not None and all(outcome == first for outcome in outcomes) else None
+def edge_values(
+	test: BranchTest, registers: Mapping[int, frozenset[Address]]
+) -> Mapping[bool, Mapping[int, frozenset[Address]]]:
+	"""The tested registers' values on each outcome's edge; an outcome no value takes is absent.
 
-
-def _outcomes(test: BranchTest, registers: Mapping[int, frozenset[Address]]) -> Iterator[bool]:
+	A test reading a register the analysis knows no value of narrows nothing: both outcomes keep
+	every register whole.
+	"""
 	match test:
-		case ZeroTested(register=register, taken_when_zero=taken_when_zero):
-			return (
-				(value & _WORD_MASK == 0) == taken_when_zero
-				for value in _values(registers, register)
+		case Compared(
+			comparison=Comparison.SUBTRACT,
+			left=left,
+			right=InRegister(register=right),
+			condition=condition,
+		) if left != right and condition in _ORDERS:
+			return _ordered_edges(
+				_keyed(_values(registers, left), _ORDERS[condition][0]),
+				_keyed(_values(registers, right), _ORDERS[condition][0]),
+				(left, right),
+				_ORDERS[condition][1],
 			)
-		case Compared(comparison=comparison, left=left, right=right, condition=condition):
+		case _:
+			return _enumerated_edges(test, registers)
+
+
+def _ordered_edges(
+	left: Mapping[Address, int],
+	right: Mapping[Address, int],
+	registers: tuple[int, int],
+	relation: _Relation,
+) -> Mapping[bool, Mapping[int, frozenset[Address]]]:
+	"""Each outcome's values, found against the other side's extreme instead of every pair."""
+	return (
+		{
+			outcome: {registers[0]: kept[0], registers[1]: kept[1]}
+			for outcome, holding in ((True, relation), (False, _NEGATED[relation]))
+			for kept in (_holding(left, right, holding),)
+			if kept[0]
+		}
+		if left and right
+		else {True: {}, False: {}}
+	)
+
+
+def _holding(
+	left: Mapping[Address, int], right: Mapping[Address, int], relation: _Relation
+) -> tuple[frozenset[Address], frozenset[Address]]:
+	"""The values on each side that the relation holds for with some value on the other."""
+	match relation:
+		case _Equality():
 			return (
-				_CONDITIONS[condition](
-					_flags(comparison, left_value & _WORD_MASK, right_value & _WORD_MASK)
-				)
-				for left_value in _values(registers, left)
-				for right_value in _operand_values(registers, right)
+				_kept(left, _matching(relation, frozenset(right.values()))),
+				_kept(right, _matching(relation, frozenset(left.values()))),
+			)
+		case _Order.BELOW | _Order.AT_MOST:
+			return (
+				_kept(left, _left_of(relation, max(right.values()))),
+				_kept(right, _right_of(relation, min(left.values()))),
+			)
+		case _Order.ABOVE | _Order.AT_LEAST:
+			return (
+				_kept(left, _left_of(relation, min(right.values()))),
+				_kept(right, _right_of(relation, max(left.values()))),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _values(registers: Mapping[int, frozenset[Address]], register: int) -> frozenset[int]:
+def _kept(values: Mapping[Address, int], keeps: Callable[[int], bool]) -> frozenset[Address]:
+	return frozenset(value for value, key in values.items() if keeps(key))
+
+
+def _matching(equality: _Equality, others: frozenset[int]) -> Callable[[int], bool]:
+	"""Whether a key is equal, or unequal, to some key in others."""
+	match equality:
+		case _Equality.EQUAL:
+			return lambda key: key in others
+		case _Equality.UNEQUAL:
+			return lambda key: len(others) > 1 or key not in others
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _left_of(order: _Order, bound: int) -> Callable[[int], bool]:
+	return lambda key: _holds(order, key, bound)
+
+
+def _right_of(order: _Order, bound: int) -> Callable[[int], bool]:
+	return lambda key: _holds(order, bound, key)
+
+
+def _holds(order: _Order, left: int, right: int) -> bool:
+	match order:
+		case _Order.BELOW:
+			return left < right
+		case _Order.AT_MOST:
+			return left <= right
+		case _Order.ABOVE:
+			return left > right
+		case _Order.AT_LEAST:
+			return left >= right
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _keyed(values: frozenset[Address], signed: bool) -> Mapping[Address, int]:
+	"""Each value as the 32-bit integer its compare reads, signed or not."""
+	return {
+		value: (value & _WORD_MASK)
+		- ((value & _WORD_MASK) >> _SIGN_SHIFT << (_SIGN_SHIFT + 1) if signed else 0)
+		for value in values
+	}
+
+
+def _enumerated_edges(
+	test: BranchTest, registers: Mapping[int, frozenset[Address]]
+) -> Mapping[bool, Mapping[int, frozenset[Address]]]:
+	match _assignments(test, registers):
+		case None:
+			return {True: {}, False: {}}
+		case assignments:
+			outcomes = tuple((_taken(test, assignment), assignment) for assignment in assignments)
+			return {
+				outcome: {
+					register: frozenset(
+						assignment[register] for taken, assignment in outcomes if taken == outcome
+					)
+					for register in _registers(test)
+				}
+				for outcome in frozenset(taken for taken, _ in outcomes)
+			}
+
+
+def _assignments(
+	test: BranchTest, registers: Mapping[int, frozenset[Address]]
+) -> tuple[Mapping[int, Address], ...] | None:
+	"""Every combination of values the tested registers hold; None when one holds none known."""
+	known = tuple(_values(registers, register) for register in _registers(test))
+	return (
+		tuple(
+			dict(zip(_registers(test), combination, strict=True)) for combination in product(*known)
+		)
+		if all(known)
+		else None
+	)
+
+
+def _registers(test: BranchTest) -> tuple[int, ...]:
+	match test:
+		case ZeroTested(register=register):
+			return (register,)
+		case Compared(left=left, right=InRegister(register=right)):
+			return (left,) if left == right else (left, right)
+		case Compared(left=left):
+			return (left,)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _taken(test: BranchTest, values: Mapping[int, Address]) -> bool:
+	match test:
+		case ZeroTested(register=register, taken_when_zero=taken_when_zero):
+			return (values[register] & _WORD_MASK == 0) == taken_when_zero
+		case Compared(comparison=comparison, left=left, right=right, condition=condition):
+			return _CONDITIONS[condition](
+				_flags(comparison, values[left] & _WORD_MASK, _operand(values, right) & _WORD_MASK)
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _operand(values: Mapping[int, Address], operand: InRegister | Immediate) -> int:
+	match operand:
+		case InRegister(register=register):
+			return values[register]
+		case Immediate(value=value):
+			return value
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _values(registers: Mapping[int, frozenset[Address]], register: int) -> frozenset[Address]:
 	match lookup(registers, register):
 		case Top():
 			return frozenset()
 		case Known(values=values):
 			return values
-		case _ as unreachable:
-			assert_never(unreachable)
-
-
-def _operand_values(
-	registers: Mapping[int, frozenset[Address]], operand: InRegister | Immediate
-) -> frozenset[int]:
-	match operand:
-		case InRegister(register=register):
-			return _values(registers, register)
-		case Immediate(value=value):
-			return frozenset({value})
 		case _ as unreachable:
 			assert_never(unreachable)
 

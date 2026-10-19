@@ -428,6 +428,7 @@ def _caller_targets(
 				site_targets(program, site, resolved_map, narrowings),
 				narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
 				name,
+				site.dispatch,
 			)
 			for target in targets or {INDIRECT_CALLEE}
 		)
@@ -438,9 +439,13 @@ def _labeled(
 	findings: tuple[SiteTargets, ...],
 	field: frozenset[Address],
 	name: Callable[[Address], str],
+	dispatch: frozenset[Address] | None,
 ) -> tuple[tuple[frozenset[str], EdgeKind], ...]:
 	return tuple(
-		(names, _kind(found)) for found in findings for names in (_names(found, name),) if names
+		(names, _kind(found, dispatch))
+		for found in findings
+		for names in (_names(found, name),)
+		if names
 	) or (
 		((frozenset(map(name, field)), EdgeKind.FIELD),)
 		if field
@@ -464,8 +469,11 @@ def _names(found: SiteTargets, name: Callable[[Address], str]) -> frozenset[str]
 			assert_never(unreachable)
 
 
-def _kind(found: SiteTargets) -> EdgeKind:
+def _kind(found: SiteTargets, dispatch: frozenset[Address] | None) -> EdgeKind:
+	"""A site proven to call only its dispatch's entries is as trusted as the dispatch."""
 	match found:
+		case Chased(targets=targets) if dispatch is not None and targets <= dispatch:
+			return EdgeKind.DISPATCH
 		case Chased():
 			return EdgeKind.CANDIDATE
 		case SignatureNarrowed():
