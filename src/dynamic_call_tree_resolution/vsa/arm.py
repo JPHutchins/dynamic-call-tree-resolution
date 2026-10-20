@@ -298,7 +298,7 @@ def _arm_arithmetic(context: Context, instruction: CsInsn, state: State, sign: i
 				context,
 				lookup(state.registers, register_operand.reg),
 				lookup(state.registers, value_operand.reg),
-				scale,
+				sign * scale,
 				0,
 			),
 		)
