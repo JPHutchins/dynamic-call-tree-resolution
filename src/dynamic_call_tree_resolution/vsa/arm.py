@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, assert_never, cast
 
 from capstone import arm_const
 
@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_STORED_REGISTERS,
 	ARM_TRACKED_LOAD_WIDTHS,
 	ARM_UNTRACKED_STORES,
+	ARM_WORD_MASK,
 	ARM_ZERO_EXTEND_MASKS,
 	arm_predicated,
 )
@@ -136,7 +137,39 @@ def _apply_unconditional(
 		return _arm_arithmetic(context, instruction, state, ARM_ADDITION_SIGNS[instruction_id])
 	if instruction_id in ARM_ZERO_EXTEND_MASKS:
 		return _arm_zero_extend(instruction, state, ARM_ZERO_EXTEND_MASKS[instruction_id])
+	if instruction_id == arm_const.ARM_INS_LSL:
+		return _arm_shift_left(instruction, state)
 	return top_written(instruction, state)
+
+
+def _arm_shift_left(instruction: CsInsn, state: State) -> State:
+	operands = _arm_operands(instruction)
+	match _left_shift_amount(operands):
+		case None:
+			return top_written(instruction, state)
+		case int() as amount:
+			return set_register(
+				state,
+				operands[0].reg,
+				map_set(
+					lookup(state.registers, operands[1].reg),
+					lambda value: Address((value << amount) & ARM_WORD_MASK),
+				),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _left_shift_amount(operands: tuple[ArmCsOperand, ...]) -> int | None:
+	"""The amount a shift by an immediate carries; None for a shift by a register.
+
+	Thumb encodes it as a third operand, A32 as the source operand's shift.
+	"""
+	if len(operands) == 3 and operands[2].type == arm_const.ARM_OP_IMM:
+		return operands[2].imm
+	if len(operands) == 2 and operands[1].shift.type == arm_const.ARM_SFT_LSL:
+		return operands[1].shift.value
+	return None
 
 
 def _arm_zero_extend(instruction: CsInsn, state: State, mask: int) -> State:
