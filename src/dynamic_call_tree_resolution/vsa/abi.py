@@ -226,6 +226,7 @@ X86_UNBOUNDED_STORES: Final = frozenset(
 		"xsaves64",
 	}
 )
+ARM_WORD_MASK: Final = 0xFFFF_FFFF
 ARM_MOVES: Final = frozenset(
 	{arm_const.ARM_INS_MOV, arm_const.ARM_INS_MOVS, arm_const.ARM_INS_MOVW}
 )

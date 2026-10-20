@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Final, assert_never, cast
 from capstone import arm_const
 from salix import Struct
 
+from dynamic_call_tree_resolution.vsa.abi import ARM_WORD_MASK
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, lookup
 
 if TYPE_CHECKING:
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
 
 	from dynamic_call_tree_resolution.model import Address
 
-_WORD_MASK: Final = 0xFFFF_FFFF
 _SIGN_SHIFT: Final = 31
 
 
@@ -302,8 +302,8 @@ def _holds(order: _Order, left: int, right: int) -> bool:
 def _keyed(values: frozenset[Address], signed: bool) -> Mapping[Address, int]:
 	"""Each value as the 32-bit integer its compare reads, signed or not."""
 	return {
-		value: (value & _WORD_MASK)
-		- ((value & _WORD_MASK) >> _SIGN_SHIFT << (_SIGN_SHIFT + 1) if signed else 0)
+		value: (value & ARM_WORD_MASK)
+		- ((value & ARM_WORD_MASK) >> _SIGN_SHIFT << (_SIGN_SHIFT + 1) if signed else 0)
 		for value in values
 	}
 
@@ -356,10 +356,14 @@ def _registers(test: BranchTest) -> tuple[int, ...]:
 def _taken(test: BranchTest, values: Mapping[int, Address]) -> bool:
 	match test:
 		case ZeroTested(register=register, taken_when_zero=taken_when_zero):
-			return (values[register] & _WORD_MASK == 0) == taken_when_zero
+			return (values[register] & ARM_WORD_MASK == 0) == taken_when_zero
 		case Compared(comparison=comparison, left=left, right=right, condition=condition):
 			return _CONDITIONS[condition](
-				_flags(comparison, values[left] & _WORD_MASK, _operand(values, right) & _WORD_MASK)
+				_flags(
+					comparison,
+					values[left] & ARM_WORD_MASK,
+					_operand(values, right) & ARM_WORD_MASK,
+				)
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -388,7 +392,7 @@ def _values(registers: Mapping[int, frozenset[Address]], register: int) -> froze
 def _flags(comparison: Comparison, left: int, right: int) -> _Flags:
 	match comparison:
 		case Comparison.SUBTRACT:
-			return _added(left, ~right & _WORD_MASK, 1)
+			return _added(left, ~right & ARM_WORD_MASK, 1)
 		case Comparison.ADD:
 			return _added(left, right, 0)
 		case _ as unreachable:
@@ -398,7 +402,7 @@ def _flags(comparison: Comparison, left: int, right: int) -> _Flags:
 def _added(left: int, right: int, carry_in: int) -> _Flags:
 	"""The flags of Arm's AddWithCarry.
 
-	>>> _added(0x412C, ~0x412C & _WORD_MASK, 1)
+	>>> _added(0x412C, ~0x412C & ARM_WORD_MASK, 1)
 	_Flags(negative=False, zero=True, carry=True, overflow=False)
 	>>> _added(0x7FFF_FFFF, 1, 0)
 	_Flags(negative=True, zero=False, carry=False, overflow=True)
@@ -409,7 +413,7 @@ def _added(left: int, right: int, carry_in: int) -> _Flags:
 def _sum_flags(left: int, right: int, total: int) -> _Flags:
 	return _Flags(
 		negative=bool(total >> _SIGN_SHIFT & 1),
-		zero=total & _WORD_MASK == 0,
-		carry=total > _WORD_MASK,
+		zero=total & ARM_WORD_MASK == 0,
+		carry=total > ARM_WORD_MASK,
 		overflow=bool((~(left ^ right) & (left ^ total)) >> _SIGN_SHIFT & 1),
 	)

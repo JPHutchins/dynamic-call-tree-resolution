@@ -485,6 +485,50 @@ def test_a_load_scales_and_signs_its_index_as_the_operand_encodes(
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("code", "arm_code"),
+	[
+		pytest.param("42f2000602208300f35898477047", (), id="a Thumb-1 lsls"),
+		pytest.param("42f2000602204fea8003f35898477047", (), id="a Thumb-2 lsl.w"),
+		pytest.param(
+			"006002e30200a0e30031a0e1033096e733ff2fe11eff2fe1", ((0x1000, 0x1018),), id="an A32 lsl"
+		),
+	],
+)
+def test_a_left_shift_by_an_immediate_scales_a_known_index(
+	code: str, arm_code: tuple[tuple[int, int], ...]
+) -> None:
+	caller = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		_handler_table_program(
+			(("caller", 0x1000, len(caller)),), {0x1000: caller}, arm_code=arm_code
+		)
+	)
+	assert tracked_values(site) == {0x3021}
+
+
+@pytest.mark.parametrize(
+	("code", "targets"),
+	[
+		pytest.param("41f60003c8f200035b0098477047", {0x3000}, id="past bit 31, wrapped"),
+		pytest.param("02200223834098477047", set[int](), id="by a register, unknown"),
+	],
+)
+def test_a_left_shift_keeps_32_bits_and_only_an_immediate_amount(
+	code: str, targets: set[int]
+) -> None:
+	body = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		build_program(
+			Machine.EM_ARM,
+			(("caller", 0x1000, len(body)),),
+			sections={0x1000: body},
+			pointer_size=4,
+		)
+	)
+	assert tracked_values(site) == targets
+
+
 def test_a_store_through_a_shifted_index_writes_the_word_it_names() -> None:
 	writer = bytes.fromhex("42f20006022443f2310346f824307047")
 	caller = bytes.fromhex("42f20806336898477047")
