@@ -529,6 +529,36 @@ def test_a_left_shift_keeps_32_bits_and_only_an_immediate_amount(
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("code", "arm_code", "targets"),
+	[
+		pytest.param("42f210060820331a1b6898477047", (), {0x3021}, id="a Thumb-1 subs"),
+		pytest.param(
+			"42f210060220a6eb80031b6898477047", (), {0x3021}, id="a Thumb-2 sub.w shifted left"
+		),
+		pytest.param(
+			"106002e30800a0e3003046e0003093e533ff2fe11eff2fe1",
+			((0x1000, 0x1018),),
+			{0x3021},
+			id="an A32 sub",
+		),
+		pytest.param(
+			"42f200060868a6eb80031b6898477047", (), set[int](), id="an unknown subtrahend"
+		),
+	],
+)
+def test_a_register_subtracted_from_a_known_address_lowers_it(
+	code: str, arm_code: tuple[tuple[int, int], ...], targets: set[int]
+) -> None:
+	caller = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		_handler_table_program(
+			(("caller", 0x1000, len(caller)),), {0x1000: caller}, arm_code=arm_code
+		)
+	)
+	assert tracked_values(site) == targets
+
+
 def test_a_store_through_a_shifted_index_writes_the_word_it_names() -> None:
 	writer = bytes.fromhex("42f20006022443f2310346f824307047")
 	caller = bytes.fromhex("42f20806336898477047")
