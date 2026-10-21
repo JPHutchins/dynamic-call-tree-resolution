@@ -104,11 +104,11 @@ def test_a_never_linked_objects_edges_and_frames_are_left_out_of_the_graph(
 	assert (
 		"z_impl_k_msgq_get" in {frame_key(edge.caller) for edge in load_callgraph(build_directory)},
 		"z_impl_k_msgq_get"
-		in {frame_key(edge.caller) for _, edges in held.callgraphs for edge in edges},
+		in {frame_key(edge.caller) for file in held.callgraphs for edge in file.edges},
 		"z_impl_k_msgq_get"
 		in {frame_key(usage.function) for usage in load_stack_usages(build_directory)},
 		"z_impl_k_msgq_get"
-		in {frame_key(usage.function) for _, usages in held.usages for usage in usages},
+		in {frame_key(usage.function) for file in held.usages for usage in file.usages},
 		"z_impl_k_msgq_get" in held.dropped[Linkage.NEVER_LINKED],
 	) == (True, False, True, False, True)
 
@@ -161,8 +161,8 @@ def test_a_kept_functions_call_to_a_libcall_the_link_dropped_leaves_the_graph(
 		callee: sorted(
 			{
 				frame_key(edge.caller)
-				for _, edges in held.callgraphs
-				for edge in edges
+				for file in held.callgraphs
+				for edge in file.edges
 				if edge.callee == callee
 			}
 		)

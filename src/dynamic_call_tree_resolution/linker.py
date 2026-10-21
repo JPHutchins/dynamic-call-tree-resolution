@@ -13,9 +13,10 @@ from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.callgraph import libcall_nodes
+from dynamic_call_tree_resolution.callgraph import CallgraphFile, libcall_nodes
 from dynamic_call_tree_resolution.loader import defined_function_names
 from dynamic_call_tree_resolution.stack_analysis import frame_key
+from dynamic_call_tree_resolution.stack_usage import StackUsageFile
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -43,8 +44,14 @@ _KEPT_SECTION: Final = re.compile(
 _DISCARDED_INPUT: Final = "\nDiscarded input sections"
 _MEMORY_MAP: Final = "\nLinker script and memory map"
 
-type LinkedObject = tuple[str, str]
-"""An archive member as (archive file name, member), or an object linked directly as ("", path)."""
+
+class LinkedObject(Struct, order=True):
+	"""An object the final link took in: an archive member, or an object linked directly."""
+
+	archive: str
+	"""The archive's file name; empty for an object linked directly."""
+	member: str
+	"""The member's name, or the path of an object linked directly."""
 
 
 class Linkage(StrEnum):
@@ -65,8 +72,8 @@ class Membership(StrEnum):
 class HeldArtifacts(Struct):
 	"""Each artifact's call edges and frames of the function copies the final link kept."""
 
-	callgraphs: tuple[tuple[Path, tuple[CallEdge, ...]], ...]
-	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...]
+	callgraphs: tuple[CallgraphFile, ...]
+	usages: tuple[StackUsageFile, ...]
 	dropped: Mapping[Linkage, frozenset[str]]
 	"""The frame keys of the functions with no kept copy, by why the link has none."""
 	phantom_libcalls: frozenset[str] = frozenset()
@@ -104,16 +111,16 @@ def linker_records(elf: Path) -> LinkerRecords | None:
 			)
 		),
 		sections={
-			linked: {section: kept for _, section, kept in group}
+			linked: {entry.section: entry.kept for entry in group}
 			for linked, group in groupby(
 				sorted(
 					(
 						*(
-							(*_section(match), False)
+							_linked_section(match, kept=False)
 							for match in _REMOVED_SECTION.finditer(listing.read_text())
 						),
 						*(
-							(*_section(match), True)
+							_linked_section(match, kept=True)
 							for match in _KEPT_SECTION.finditer(text.partition(_MEMORY_MAP)[2])
 						),
 					)
@@ -136,7 +143,7 @@ def _providers(included: str) -> Mapping[str, LinkedObject]:
 	...         )
 	...     )
 	... )
-	{'__aeabi_uldivmod': ('libgcc.a', '_aeabi_uldivmod.o'), 'k_a': ('libk.a', 'a.c.obj')}
+	{'__aeabi_uldivmod': LinkedObject(archive='libgcc.a', member='_aeabi_uldivmod.o'), 'k_a': LinkedObject(archive='libk.a', member='a.c.obj')}
 	"""
 	return {
 		match["symbol"]: _linked_object(match["member"]) for match in _PROVIDED.finditer(included)
@@ -158,12 +165,22 @@ def _matched_object(match: re.Match[str]) -> LinkedObject:
 	return _linked_object(match["object"])
 
 
-def _section(match: re.Match[str]) -> tuple[LinkedObject, str]:
-	return (_linked_object(match["object"]), match["section"])
+class _LinkedSection(Struct, order=True):
+	"""A code section of a linked object, and whether the final link kept it."""
+
+	linked: LinkedObject
+	section: str
+	kept: bool
 
 
-def _object_of_section(entry: tuple[LinkedObject, str, bool]) -> LinkedObject:
-	return entry[0]
+def _linked_section(match: re.Match[str], *, kept: bool) -> _LinkedSection:
+	return _LinkedSection(
+		linked=_linked_object(match["object"]), section=match["section"], kept=kept
+	)
+
+
+def _object_of_section(entry: _LinkedSection) -> LinkedObject:
+	return entry.linked
 
 
 def linkage(
@@ -216,7 +233,7 @@ def _artifact_objects(build_directory: Path, artifact: Path) -> tuple[LinkedObje
 	stem = source.rsplit(".", 1)[0]
 	return (
 		(
-			(f"lib{target}.a", f"{posixpath.basename(stem)}.obj"),
+			LinkedObject(archive=f"lib{target}.a", member=f"{posixpath.basename(stem)}.obj"),
 			_linked_object(f"{directory.lstrip('/')}/CMakeFiles/{target}.dir/{stem}.obj"),
 		)
 		if separator
@@ -227,104 +244,146 @@ def _artifact_objects(build_directory: Path, artifact: Path) -> tuple[LinkedObje
 def _linked_object(name: str) -> LinkedObject:
 	match _ARCHIVE_MEMBER.fullmatch(posixpath.normpath(name)):
 		case None:
-			return ("", posixpath.normpath(name).lstrip("/"))
+			return LinkedObject(archive="", member=posixpath.normpath(name).lstrip("/"))
 		case member:
-			return (member["archive"], member["member"])
+			return LinkedObject(archive=member["archive"], member=member["member"])
+
+
+class _LinkedEdge(Struct):
+	"""A ``.ci`` edge, with how the final link kept its caller."""
+
+	edge: CallEdge
+	linkage: Linkage
+	phantom: bool
+	"""Whether the callee is a libcall the final link did not keep."""
+
+
+class _LinkedEdges(Struct):
+	"""One ``.ci`` file's edges, each with how the final link kept its caller."""
+
+	path: Path
+	edges: tuple[_LinkedEdge, ...]
+
+
+class _LinkedUsage(Struct):
+	"""A ``.su`` record, with how the final link kept its function."""
+
+	usage: StackUsage
+	linkage: Linkage
+
+
+class _LinkedUsages(Struct):
+	"""One ``.su`` file's records, each with how the final link kept its function."""
+
+	path: Path
+	usages: tuple[_LinkedUsage, ...]
 
 
 def held_artifacts(
 	records: LinkerRecords,
 	build_directory: Path,
-	callgraphs: tuple[tuple[Path, tuple[CallEdge, ...]], ...],
-	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...],
+	callgraphs: tuple[CallgraphFile, ...],
+	usages: tuple[StackUsageFile, ...],
 ) -> HeldArtifacts:
 	edges = tuple(
-		(
-			path,
-			tuple(
-				(
-					edge,
-					linkage(records, build_directory, path, edge.caller.rsplit(":", 1)[-1]),
-					edge.callee in not_kept,
+		_LinkedEdges(
+			path=file.path,
+			edges=tuple(
+				_LinkedEdge(
+					edge=edge,
+					linkage=linkage(
+						records, build_directory, file.path, edge.caller.rsplit(":", 1)[-1]
+					),
+					phantom=edge.callee in not_kept,
 				)
-				for edge in file_edges
+				for edge in file.edges
 			),
 		)
-		for path, file_edges in callgraphs
+		for file in callgraphs
 		for not_kept in (
 			frozenset(
 				name
-				for name in libcall_nodes(path)
+				for name in libcall_nodes(file.path)
 				if libcall_linkage(records, name) is not Linkage.IN_IMAGE
 			),
 		)
 	)
 	frames = tuple(
-		(
-			path,
-			tuple(
-				(usage, linkage(records, build_directory, path, usage.function))
-				for usage in file_usages
+		_LinkedUsages(
+			path=file.path,
+			usages=tuple(
+				_LinkedUsage(
+					usage=usage,
+					linkage=linkage(records, build_directory, file.path, usage.function),
+				)
+				for usage in file.usages
 			),
 		)
-		for path, file_usages in usages
+		for file in usages
 	)
 	held = frozenset(
 		(
 			*(
-				frame_key(edge.caller)
-				for _, linked_edges in edges
-				for edge, linked, _ in linked_edges
-				if linked is Linkage.IN_IMAGE
+				frame_key(linked.edge.caller)
+				for linked_file in edges
+				for linked in linked_file.edges
+				if linked.linkage is Linkage.IN_IMAGE
 			),
 			*(
-				frame_key(usage.function)
-				for _, linked_frames in frames
-				for usage, linked in linked_frames
-				if linked is Linkage.IN_IMAGE
+				frame_key(linked.usage.function)
+				for linked_file in frames
+				for linked in linked_file.usages
+				if linked.linkage is Linkage.IN_IMAGE
 			),
 		)
 	)
 	discarded = (
 		frozenset(
-			frame_key(usage.function)
-			for _, linked_frames in frames
-			for usage, linked in linked_frames
-			if linked is Linkage.DISCARDED
+			frame_key(linked.usage.function)
+			for linked_file in frames
+			for linked in linked_file.usages
+			if linked.linkage is Linkage.DISCARDED
 		)
 		- held
 	)
 	return HeldArtifacts(
 		callgraphs=tuple(
-			(
-				path,
-				tuple(
-					edge
-					for edge, linked, phantom in linked_edges
-					if linked is Linkage.IN_IMAGE and not phantom
+			CallgraphFile(
+				path=linked_file.path,
+				edges=tuple(
+					linked.edge
+					for linked in linked_file.edges
+					if linked.linkage is Linkage.IN_IMAGE and not linked.phantom
 				),
 			)
-			for path, linked_edges in edges
+			for linked_file in edges
 		),
 		usages=tuple(
-			(path, tuple(usage for usage, linked in linked_frames if linked is Linkage.IN_IMAGE))
-			for path, linked_frames in frames
+			StackUsageFile(
+				path=linked_file.path,
+				usages=tuple(
+					linked.usage
+					for linked in linked_file.usages
+					if linked.linkage is Linkage.IN_IMAGE
+				),
+			)
+			for linked_file in frames
 		),
 		dropped={
 			Linkage.DISCARDED: discarded,
 			Linkage.NEVER_LINKED: frozenset(
-				frame_key(usage.function)
-				for _, linked_frames in frames
-				for usage, linked in linked_frames
-				if linked is Linkage.NEVER_LINKED
+				frame_key(linked.usage.function)
+				for linked_file in frames
+				for linked in linked_file.usages
+				if linked.linkage is Linkage.NEVER_LINKED
 			)
 			- held
 			- discarded,
 		},
 		phantom_libcalls=frozenset(
-			edge.callee
-			for _, linked_edges in edges
-			for edge, linked, phantom in linked_edges
-			if linked is Linkage.IN_IMAGE and phantom
+			linked.edge.callee
+			for linked_file in edges
+			for linked in linked_file.edges
+			if linked.linkage is Linkage.IN_IMAGE and linked.phantom
 		),
 	)
