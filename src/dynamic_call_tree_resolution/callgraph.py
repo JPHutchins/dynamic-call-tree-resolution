@@ -42,6 +42,17 @@ class CallEdge(Struct):
 	kind: EdgeKind = EdgeKind.STATIC
 
 
+class CallPair(Struct, order=True):
+	"""A caller and a callee, whatever kinds of edge join them."""
+
+	caller: str
+	callee: str
+
+
+def call_pair(edge: CallEdge) -> CallPair:
+	return CallPair(caller=edge.caller, callee=edge.callee)
+
+
 _TOKEN: Final = re.compile(r'"(?P<quoted>[^"]*)"|(?P<unterminated>")|[{}:]|[^\s{}:"][^\s{}:]*')
 _LOCATED: Final = re.compile(r"(?P<path>.+):(?P<line>\d+):(?P<column>\d+)")
 

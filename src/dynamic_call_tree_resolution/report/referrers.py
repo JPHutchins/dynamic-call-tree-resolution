@@ -50,8 +50,15 @@ def referrers_report(program: Program) -> tuple[AddressTakenReport, ...]:
 	)
 
 
-def _name_and_address(report: AddressTakenReport) -> tuple[str, int]:
-	return (report.name, report.address)
+class _NameAndAddress(Struct, order=True):
+	"""Where a report sorts among reports."""
+
+	name: str
+	address: int
+
+
+def _name_and_address(report: AddressTakenReport) -> _NameAndAddress:
+	return _NameAndAddress(name=report.name, address=report.address)
 
 
 def _holder(program: Program, slot: Address) -> str | None:

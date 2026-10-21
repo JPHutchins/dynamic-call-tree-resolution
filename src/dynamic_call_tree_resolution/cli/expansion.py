@@ -3,7 +3,9 @@
 
 """Expanding a build's indirect calls from its image."""
 
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING
+
+from salix import Struct
 
 from dynamic_call_tree_resolution.call_sites import (
 	narrowed_targets,
@@ -12,7 +14,9 @@ from dynamic_call_tree_resolution.call_sites import (
 )
 from dynamic_call_tree_resolution.callgraph import (
 	CallEdge,
+	CallPair,
 	EdgeKind,
+	call_pair,
 )
 from dynamic_call_tree_resolution.cli.artifacts import (
 	Artifacts,
@@ -41,7 +45,7 @@ from dynamic_call_tree_resolution.identity import (
 from dynamic_call_tree_resolution.loader import (
 	line_spans,
 )
-from dynamic_call_tree_resolution.model import Address, Dead, Unreached
+from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.points_to import null_slots, unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	slot_counts,
@@ -59,7 +63,6 @@ from dynamic_call_tree_resolution.vsa.frames import (
 	code_depths,
 	code_measure,
 )
-from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from dynamic_call_tree_resolution.vsa.links import linked_calls
 from dynamic_call_tree_resolution.vsa.vectors import (
 	exception_handlers,
@@ -264,35 +267,41 @@ def _assumed_unwritten(
 def _changed_callers(
 	image: Image, before: tuple[CallSite, ...], after: tuple[CallSite, ...]
 ) -> frozenset[str]:
-	targets = {(site.caller_address, site.site_address): _target_key(site) for site in before}
+	targets = {_site_place(site): site.target for site in before}
 	return frozenset(
 		frame_key(stack_name(image.program, image.names, site.caller_address))
 		for site in after
-		if targets.get((site.caller_address, site.site_address)) != _target_key(site)
+		if targets.get(_site_place(site)) != site.target
 	)
 
 
-def _target_key(site: CallSite) -> tuple[str, frozenset[Address]]:
-	match site.target:
-		case Known(values=values):
-			return "known", values
-		case Top() | Unreached() | Dead() as other:
-			return type(other).__name__, frozenset()
-		case _ as unreachable:
-			assert_never(unreachable)
+class _SitePlace(Struct):
+	"""Where a call site is in the image."""
+
+	caller_address: Address
+	site_address: Address
 
 
-def _call_pair(edge: CallEdge) -> tuple[str, str]:
-	return edge.caller, edge.callee
+class _ImageCall(Struct):
+	"""A linked call from one named function of the image to another."""
+
+	caller: Address
+	callee: Address
+
+
+def _site_place(site: CallSite) -> _SitePlace:
+	return _SitePlace(caller_address=site.caller_address, site_address=site.site_address)
 
 
 def _binary_edges(
 	image: Image, measure: CodeMeasure, edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...]
 ) -> tuple[CallEdge, ...]:
 	framed = frozenset(frame_key(frame.function) for frame in frames)
-	known = frozenset((frame_key(edge.caller), frame_key(edge.callee)) for edge in edges)
+	known = frozenset(
+		CallPair(caller=frame_key(edge.caller), callee=frame_key(edge.callee)) for edge in edges
+	)
 	calls = tuple(
-		(caller, callee)
+		_ImageCall(caller=caller, callee=callee)
 		for call in linked_calls(image.program)
 		if call.caller is not None
 		for caller in (normalized(call.caller, image.program.machine),)
@@ -301,18 +310,26 @@ def _binary_edges(
 	)
 	measured = code_depths(
 		measure,
-		frozenset(caller for caller, _ in calls if frame_key(image.names[caller]) not in framed),
+		frozenset(
+			call.caller for call in calls if frame_key(image.names[call.caller]) not in framed
+		),
 	).keys()
 	return tuple(
 		sorted(
 			{
 				CallEdge(
-					caller=image.names[caller], callee=image.names[callee], kind=EdgeKind.BINARY
+					caller=image.names[call.caller],
+					callee=image.names[call.callee],
+					kind=EdgeKind.BINARY,
 				)
-				for caller, callee in calls
-				if caller not in measured
-				and (frame_key(image.names[caller]), frame_key(image.names[callee])) not in known
+				for call in calls
+				if call.caller not in measured
+				and CallPair(
+					caller=frame_key(image.names[call.caller]),
+					callee=frame_key(image.names[call.callee]),
+				)
+				not in known
 			},
-			key=_call_pair,
+			key=call_pair,
 		)
 	)

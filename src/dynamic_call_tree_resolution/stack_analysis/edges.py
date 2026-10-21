@@ -231,18 +231,12 @@ def thread_frames[F: Frame](
 
 def _raw_names_by_key(edges: tuple[CallEdge, ...]) -> Mapping[str, frozenset[str]]:
 	return {
-		key: frozenset(name for _, name in group)
+		key: frozenset(group)
 		for key, group in groupby(
-			sorted(
-				{(frame_key(name), name) for edge in edges for name in (edge.caller, edge.callee)}
-			),
-			key=_first,
+			sorted({name for edge in edges for name in (edge.caller, edge.callee)}, key=frame_key),
+			key=frame_key,
 		)
 	}
-
-
-def _first(pair: tuple[str, str]) -> str:
-	return pair[0]
 
 
 def _graph_names(names_by_key: Mapping[str, frozenset[str]], target: str) -> frozenset[str]:

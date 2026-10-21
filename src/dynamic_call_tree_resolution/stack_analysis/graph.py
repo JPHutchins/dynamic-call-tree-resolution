@@ -8,7 +8,7 @@ from __future__ import annotations
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
-from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
+from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind, call_pair
 from dynamic_call_tree_resolution.stack_analysis.depths import (
 	all_callees,
 	depths_by_component,
@@ -18,6 +18,7 @@ from dynamic_call_tree_resolution.stack_analysis.values import (
 	INDIRECT_CALLEE,
 	AssumedFrame,
 	Frame,
+	FunctionReason,
 	MeasuredFrame,
 	OwnFrame,
 	Reason,
@@ -67,7 +68,7 @@ def stack_graph(
 		narrowings=narrowings,
 		kinds={
 			pair: frozenset(edge.kind for edge in group)
-			for pair, group in groupby(sorted(edges_tuple, key=_pair), key=_pair)
+			for pair, group in groupby(sorted(edges_tuple, key=call_pair), key=call_pair)
 		},
 		roots=tuple(
 			sorted(
@@ -98,7 +99,7 @@ def _narrowings(
 ) -> Mapping[str, frozenset[Reason]]:
 	narrowed = {
 		caller: reasons
-		for caller, group in groupby(sorted(edges, key=_pair), key=_edge_caller)
+		for caller, group in groupby(sorted(edges, key=call_pair), key=_edge_caller)
 		for reasons in (
 			frozenset(_NARROWED[edge.kind] for edge in group if edge.kind in _NARROWED),
 		)
@@ -121,10 +122,6 @@ def _narrowings(
 
 def _edge_caller(edge: CallEdge) -> str:
 	return edge.caller
-
-
-def _pair(edge: CallEdge) -> tuple[str, str]:
-	return (edge.caller, edge.callee)
 
 
 def _adjacency(edges: Iterable[CallEdge]) -> dict[str, frozenset[str]]:
@@ -151,7 +148,7 @@ def _reasons_by_component(
 	closure: dict[str, Reasons] = {}
 	for component in components:
 		members = frozenset(component)
-		reasons = frozenset[tuple[Reason, str]]().union(
+		reasons = frozenset[FunctionReason]().union(
 			*(
 				own_reasons(member, adjacency, frame_by_name, assumed_no_recursion, narrowings)
 				for member in component
@@ -163,7 +160,10 @@ def _reasons_by_component(
 				if callee not in members
 			),
 			(
-				frozenset((Reason.RECURSION, frame_key(member)) for member in component)
+				frozenset(
+					FunctionReason(reason=Reason.RECURSION, function=frame_key(member))
+					for member in component
+				)
 				if len(component) > 1
 				or any(member in adjacency.get(member, frozenset()) for member in component)
 				else frozenset()
@@ -181,7 +181,7 @@ def own_reasons(
 	narrowings: Mapping[str, frozenset[Reason]],
 ) -> Reasons:
 	return frozenset(
-		(reason, frame_key(node))
+		FunctionReason(reason=reason, function=frame_key(node))
 		for reason in (
 			*_frame_reasons(frame_by_name.get(frame_key(node)), node),
 			*narrowings.get(node, frozenset[Reason]()),

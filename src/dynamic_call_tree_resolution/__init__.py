@@ -28,6 +28,9 @@ from dynamic_call_tree_resolution.callgraph import (
 	CallEdge as CallEdge,
 )
 from dynamic_call_tree_resolution.callgraph import (
+	CallPair as CallPair,
+)
+from dynamic_call_tree_resolution.callgraph import (
 	EdgeKind as EdgeKind,
 )
 from dynamic_call_tree_resolution.callgraph import (
@@ -204,6 +207,9 @@ from dynamic_call_tree_resolution.report import (
 from dynamic_call_tree_resolution.span import Span as Span
 from dynamic_call_tree_resolution.stack_analysis import (
 	Bounded as Bounded,
+)
+from dynamic_call_tree_resolution.stack_analysis import (
+	FunctionReason as FunctionReason,
 )
 from dynamic_call_tree_resolution.stack_analysis import (
 	PathStep as PathStep,
