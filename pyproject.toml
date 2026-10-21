@@ -199,4 +199,4 @@ exclude_lines = [
 ]
 
 [tool.uv.sources]
-salix = { git = "https://github.com/JPHutchins/salix", rev = "81eef891acf2529ab218d4f79d2774089e73e30b" }
+salix = { git = "https://github.com/JPHutchins/salix", rev = "a25919133e112f00d19477aa9c66bbdc9747899a" }

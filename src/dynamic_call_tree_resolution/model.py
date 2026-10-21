@@ -8,7 +8,9 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING, Final, Literal, NewType, assert_never
 
-from salix import Struct, replace
+from salix import Struct
+
+from dynamic_call_tree_resolution.structs import replace_as_given
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -160,7 +162,7 @@ def array_elements(member: ArrayMember) -> tuple[Member, ...]:
 	[('[0]', 0), ('[1]', 4)]
 	"""
 	return tuple(
-		replace(member.element, name=f"[{index}]", offset=index * member.stride)
+		replace_as_given(member.element, name=f"[{index}]", offset=index * member.stride)
 		for index in range(member.count)
 	)
 

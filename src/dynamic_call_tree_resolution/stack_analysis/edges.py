@@ -10,7 +10,7 @@ from functools import partial
 from itertools import groupby
 from typing import TYPE_CHECKING, Final
 
-from salix import Struct, replace
+from salix import Struct
 
 from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
 from dynamic_call_tree_resolution.stack_analysis.values import (
@@ -19,6 +19,7 @@ from dynamic_call_tree_resolution.stack_analysis.values import (
 	Frame,
 	frame_key,
 )
+from dynamic_call_tree_resolution.structs import replace_as_given
 
 if TYPE_CHECKING:
 	from collections.abc import Callable, Iterable, Mapping
@@ -221,7 +222,7 @@ def thread_frames[F: Frame](
 ) -> tuple[F, ...]:
 	frames_tuple = tuple(frames)
 	return tuple(
-		replace(frame, function=thread)
+		replace_as_given(frame, function=thread)
 		for thread in threads
 		for frame in frames_tuple
 		if frame_key(frame.function) == trampoline
