@@ -104,6 +104,7 @@ def test_a_known_compare_decides_its_branch_as_integer_comparison_does(
 				left=arm_const.ARM_REG_R0,
 				right=Immediate(value=right),
 				condition=condition,
+				setter=0,
 			),
 			{arm_const.ARM_REG_R0: frozenset({Address(left)})},
 		)
@@ -131,6 +132,7 @@ def test_a_branch_is_decided_only_when_every_operand_value_agrees(
 					left=arm_const.ARM_REG_R0,
 					right=InRegister(register=arm_const.ARM_REG_R1),
 					condition=arm_const.ARM_CC_NE,
+					setter=0,
 				),
 				{
 					register: frozenset(map(Address, values))
@@ -155,6 +157,7 @@ def test_a_branch_is_decided_only_when_every_operand_value_agrees(
 				left=arm_const.ARM_REG_R0,
 				right=Immediate(value=6),
 				condition=arm_const.ARM_CC_LO,
+				setter=0,
 			),
 			{arm_const.ARM_REG_R0: {5, 6, 7}},
 			{True: {arm_const.ARM_REG_R0: {5}}, False: {arm_const.ARM_REG_R0: {6, 7}}},
@@ -166,6 +169,7 @@ def test_a_branch_is_decided_only_when_every_operand_value_agrees(
 				left=arm_const.ARM_REG_R0,
 				right=InRegister(register=arm_const.ARM_REG_R1),
 				condition=arm_const.ARM_CC_LO,
+				setter=0,
 			),
 			{arm_const.ARM_REG_R0: {5, 6, 7}, arm_const.ARM_REG_R1: {6, 7}},
 			{
@@ -180,6 +184,7 @@ def test_a_branch_is_decided_only_when_every_operand_value_agrees(
 				left=arm_const.ARM_REG_R0,
 				right=InRegister(register=arm_const.ARM_REG_R1),
 				condition=arm_const.ARM_CC_HS,
+				setter=0,
 			),
 			{arm_const.ARM_REG_R0: {0x4130, 0x4160, 0x4190}, arm_const.ARM_REG_R1: {0x4190}},
 			{
@@ -194,6 +199,7 @@ def test_a_branch_is_decided_only_when_every_operand_value_agrees(
 				left=arm_const.ARM_REG_R0,
 				right=InRegister(register=arm_const.ARM_REG_R0),
 				condition=arm_const.ARM_CC_EQ,
+				setter=0,
 			),
 			{arm_const.ARM_REG_R0: {3, 4}},
 			{True: {arm_const.ARM_REG_R0: {3, 4}}},
@@ -211,6 +217,7 @@ def test_a_branch_is_decided_only_when_every_operand_value_agrees(
 				left=arm_const.ARM_REG_R0,
 				right=InRegister(register=arm_const.ARM_REG_R1),
 				condition=arm_const.ARM_CC_LO,
+				setter=0,
 			),
 			{arm_const.ARM_REG_R0: {5, 6}},
 			{True: {}, False: {}},
@@ -258,6 +265,7 @@ def test_two_compared_registers_each_keep_the_values_some_other_value_takes_the_
 			left=arm_const.ARM_REG_R0,
 			right=InRegister(register=arm_const.ARM_REG_R1),
 			condition=condition,
+			setter=0,
 		),
 		{
 			arm_const.ARM_REG_R0: frozenset(map(Address, left)),

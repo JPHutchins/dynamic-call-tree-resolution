@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+from itertools import accumulate
 from typing import TYPE_CHECKING, assert_never
 
 from capstone import x86_const
@@ -114,7 +116,7 @@ def _called(state: State, machine: Machine) -> State:
 	)
 
 
-def transfer(context: Context, instruction: CsInsn, state: State) -> State:
+def transfer(context: Context, state: State, instruction: CsInsn) -> State:
 	if is_data(instruction):
 		return state
 	if _calls(instruction, context.program.machine) or is_returning_trap(
@@ -168,15 +170,12 @@ def block_states(
 	worklist = [entry]
 	by_start = {block.start: block for block in blocks}
 	writes = NO_WRITES
+	step = partial(transfer, context)
 	while worklist:
 		block = by_start[worklist.pop()]
-		incoming = in_states[block.start]
-		before_last = incoming
-		for instruction in block.instructions[:-1]:
-			before_last = transfer(context, instruction, before_last)
-		outgoing = transfer(context, block.instructions[-1], before_last)
-		writes = accumulate_writes(writes, [outgoing.globals])
-		for successor, state in successor_states(block, before_last, outgoing):
+		states = tuple(accumulate(block.instructions, step, initial=in_states[block.start]))
+		writes = accumulate_writes(writes, [states[-1].globals])
+		for successor, state in successor_states(block, states, step):
 			existing = in_states.get(successor)
 			joined = join_states(existing, state)
 			if joined != existing:

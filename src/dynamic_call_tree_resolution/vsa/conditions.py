@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 	from capstone import ArmCsOperand, CsInsn
 
 	from dynamic_call_tree_resolution.model import Address
+	from dynamic_call_tree_resolution.vsa.cfg.narrowing import Narrowing
 
 _SIGN_SHIFT: Final = 31
 
@@ -52,6 +53,8 @@ class Compared(Struct):
 	right: InRegister | Immediate
 	condition: int
 	"""The branch's capstone ``ARM_CC_*`` code."""
+	setter: int
+	"""The compare's index in its block."""
 
 
 class ZeroTested(Struct):
@@ -71,6 +74,7 @@ class Conditional(Struct):
 	taken: tuple[Address, ...]
 	"""Empty when the branch leaves the function."""
 	fallthrough: tuple[Address, ...]
+	narrowing: Narrowing
 
 
 class _Flags(Struct):
@@ -158,22 +162,10 @@ def _compared(preceding: tuple[CsInsn, ...], condition: int) -> Compared | None:
 		(index for index in range(len(preceding) - 1, -1, -1) if _sets_flags(preceding[index])),
 		None,
 	)
-	return (
-		None
-		if setter is None
-		else _compare(
-			preceding[setter],
-			frozenset(
-				register
-				for instruction in preceding[setter + 1 :]
-				for register in instruction.regs_access()[1]
-			),
-			condition,
-		)
-	)
+	return None if setter is None else _compare(preceding[setter], setter, condition)
 
 
-def _compare(setter: CsInsn, written_after: frozenset[int], condition: int) -> Compared | None:
+def _compare(setter: CsInsn, index: int, condition: int) -> Compared | None:
 	operands = tuple(cast("ArmCsOperand", operand) for operand in setter.operands)
 	return (
 		Compared(
@@ -183,13 +175,13 @@ def _compare(setter: CsInsn, written_after: frozenset[int], condition: int) -> C
 			if operands[1].type == arm_const.ARM_OP_REG
 			else Immediate(value=operands[1].imm),
 			condition=condition,
+			setter=index,
 		)
 		if setter.id in Comparison
 		and condition in _CONDITIONS
 		and setter.cc == arm_const.ARM_CC_AL
 		and all(operand.shift.type == arm_const.ARM_SFT_INVALID for operand in operands)
 		and operands[1].type in (arm_const.ARM_OP_REG, arm_const.ARM_OP_IMM)
-		and written_after.isdisjoint(setter.regs_access()[0])
 		else None
 	)
 
@@ -321,7 +313,7 @@ def _enumerated_edges(
 					register: frozenset(
 						assignment[register] for taken, assignment in outcomes if taken == outcome
 					)
-					for register in _registers(test)
+					for register in tested_registers(test)
 				}
 				for outcome in frozenset(taken for taken, _ in outcomes)
 			}
@@ -331,17 +323,18 @@ def _assignments(
 	test: BranchTest, registers: Mapping[int, frozenset[Address]]
 ) -> tuple[Mapping[int, Address], ...] | None:
 	"""Every combination of values the tested registers hold; None when one holds none known."""
-	known = tuple(_values(registers, register) for register in _registers(test))
+	known = tuple(_values(registers, register) for register in tested_registers(test))
 	return (
 		tuple(
-			dict(zip(_registers(test), combination, strict=True)) for combination in product(*known)
+			dict(zip(tested_registers(test), combination, strict=True))
+			for combination in product(*known)
 		)
 		if all(known)
 		else None
 	)
 
 
-def _registers(test: BranchTest) -> tuple[int, ...]:
+def tested_registers(test: BranchTest) -> tuple[int, ...]:
 	match test:
 		case ZeroTested(register=register):
 			return (register,)

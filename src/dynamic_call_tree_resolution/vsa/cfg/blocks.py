@@ -24,6 +24,7 @@ from dynamic_call_tree_resolution.vsa.cfg.jump_tables import (
 	dispatches_indirectly,
 	jump_table,
 )
+from dynamic_call_tree_resolution.vsa.cfg.narrowing import narrowing
 from dynamic_call_tree_resolution.vsa.cfg.transfers import (
 	BranchTarget,
 	arm_falls_through,
@@ -247,6 +248,7 @@ def _condition(
 			if branch is not None and branch.target in by_address
 			else (),
 			fallthrough=(Address(next_address),) if next_address is not None else (),
+			narrowing=narrowing(instructions, test),
 		)
 	)
 
