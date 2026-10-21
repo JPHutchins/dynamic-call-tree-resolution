@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, assert_never
 from elftools.dwarf.die import DIE, AttributeValue
 from elftools.dwarf.ranges import BaseAddressEntry, RangeEntry
 from elftools.elf.elffile import ELFFile
+from salix import Struct
 
 from dynamic_call_tree_resolution.loader.dwarf import (
 	die_name,
@@ -83,38 +84,54 @@ def _sequences(rows: tuple[LineState, ...]) -> tuple[tuple[LineState, ...], ...]
 	)
 
 
+class _UnitDie(Struct):
+	"""A DIE, with the compile unit that holds it."""
+
+	unit: CompileUnit
+	die: DIE
+
+
+class _NamedSpan(Struct, order=True):
+	"""Code inlined from a function, by the function's name."""
+
+	name: str
+	span: Span
+
+
 def inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[Span, ...]]:
 	if dwarf is None:
 		return {}
 	dies = tuple(
-		(unit, die)
+		_UnitDie(unit=unit, die=die)
 		for unit in dwarf.iter_CUs()
 		for die in iter_dies(unit.get_top_DIE())
 		if die.tag in ("DW_TAG_subprogram", "DW_TAG_inlined_subroutine")
 	)
 	abstract = {
-		die.offset: die_name(die)
-		for _, die in dies
-		if die.tag == "DW_TAG_subprogram" and "DW_AT_inline" in die.attributes
+		found.die.offset: die_name(found.die)
+		for found in dies
+		if found.die.tag == "DW_TAG_subprogram" and "DW_AT_inline" in found.die.attributes
 	}
 	return {
-		name: tuple(span for _, span in group)
+		name: tuple(named.span for named in group)
 		for name, group in groupby(
 			sorted(
-				(abstract[origin], span)
-				for unit, die in dies
-				if die.tag == "DW_TAG_inlined_subroutine"
-				for origin in (_reference(unit, die.attributes.get("DW_AT_abstract_origin")),)
+				_NamedSpan(name=abstract[origin], span=span)
+				for found in dies
+				if found.die.tag == "DW_TAG_inlined_subroutine"
+				for origin in (
+					_reference(found.unit, found.die.attributes.get("DW_AT_abstract_origin")),
+				)
 				if origin in abstract
-				for span in _die_spans(dwarf, unit, die)
+				for span in _die_spans(dwarf, found.unit, found.die)
 			),
 			key=_span_name,
 		)
 	}
 
 
-def _span_name(named_span: tuple[str, Span]) -> str:
-	return named_span[0]
+def _span_name(named_span: _NamedSpan) -> str:
+	return named_span.name
 
 
 def _reference(unit: CompileUnit, attribute: AttributeValue | None) -> int | None:
@@ -151,16 +168,13 @@ def _range_spans(
 		return ()  # pragma: no cover
 	entries = range_lists.get_range_list_at_offset(offset, cu=unit)
 	return tuple(
-		Span(start=Address(begin), end=Address(end))
+		Span(start=Address(entry.begin_offset), end=Address(entry.end_offset))
+		if entry.is_absolute
+		else Span(start=Address(base + entry.begin_offset), end=Address(base + entry.end_offset))
 		for entry, base in zip(
 			entries, accumulate(entries, _range_base, initial=_unit_base(unit)), strict=False
 		)
 		if isinstance(entry, RangeEntry)
-		for begin, end in (
-			(entry.begin_offset, entry.end_offset)
-			if entry.is_absolute
-			else (base + entry.begin_offset, base + entry.end_offset),
-		)
 	)
 
 

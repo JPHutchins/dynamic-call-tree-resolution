@@ -39,6 +39,7 @@ from dynamic_call_tree_resolution.loader.sections import (
 	SHF_EXECINSTR,
 	SHF_TLS,
 	SHF_WRITE,
+	AlignedBlock,
 	aligned_total,
 	arm_core,
 	elf_byte_order,
@@ -130,7 +131,7 @@ def _load(stream: BinaryIO) -> Program:
 		labels=labels(symtab),
 		arm_core=arm_core(elf),
 		tls_size=aligned_total(
-			(section.header.sh_size, section.header.sh_addralign)
+			AlignedBlock(size=section.header.sh_size, alignment=section.header.sh_addralign)
 			for section in elf.iter_sections()
 			if section.header.sh_flags & SHF_TLS
 		),
