@@ -5,6 +5,7 @@
 
 from dynamic_call_tree_resolution.points_to.assignments import assignments as assignments
 from dynamic_call_tree_resolution.points_to.enumeration import not_enumerated as not_enumerated
+from dynamic_call_tree_resolution.points_to.image import InstructionRun as InstructionRun
 from dynamic_call_tree_resolution.points_to.image import in_writable_memory as in_writable_memory
 from dynamic_call_tree_resolution.points_to.image import instruction_runs as instruction_runs
 from dynamic_call_tree_resolution.points_to.image import instruction_set_at as instruction_set_at

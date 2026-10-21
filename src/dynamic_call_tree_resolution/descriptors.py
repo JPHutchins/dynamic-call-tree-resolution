@@ -12,20 +12,12 @@ from typing import TYPE_CHECKING
 from salix import Struct
 
 from dynamic_call_tree_resolution.callgraph import IndirectCall, indirect_calls
-from dynamic_call_tree_resolution.model import SourceLocation
+from dynamic_call_tree_resolution.model import Field, SourceLocation
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 	from pathlib import Path
-
-
-class Field(Struct, order=True):
-	"""A member of a struct or union."""
-
-	record: str
-	"""``struct`` or ``union``, then the type's name."""
-	member: str
 
 
 class Variable(Struct):

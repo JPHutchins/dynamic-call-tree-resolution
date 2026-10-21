@@ -17,7 +17,6 @@ from dynamic_call_tree_resolution.call_sites import call_site_candidates
 from dynamic_call_tree_resolution.cli import analyze, stack
 from dynamic_call_tree_resolution.descriptors import (
 	Descriptors,
-	Field,
 	Function,
 	Null,
 	Parameter,
@@ -37,6 +36,7 @@ from dynamic_call_tree_resolution.loader import line_spans
 from dynamic_call_tree_resolution.model import (
 	Address,
 	EmbeddedStructMember,
+	Field,
 	FunctionPointerMember,
 	LineSpan,
 	SourceLocation,

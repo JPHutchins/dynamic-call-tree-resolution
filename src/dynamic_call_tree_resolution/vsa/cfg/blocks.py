@@ -78,17 +78,17 @@ def function_graph(
 	program: Program, decoders: Mapping[InstructionSet, Cs], start: Address, function: Function
 ) -> tuple[Function, tuple[Block, ...]] | None:
 	runs = instruction_runs(program, start, function.size)
-	if not any(code for _, code in runs):
+	if not any(run.code for run in runs):
 		return None
 	decoded = tuple(
 		_decoded(
-			decoders[instruction_set_at(program, address)],
+			decoders[instruction_set_at(program, run.start)],
 			program,
-			address,
-			code,
+			run.start,
+			run.code,
 			Span(start=Address(start), end=Address(start + function.size)),
 		)
-		for address, code in runs
+		for run in runs
 	)
 	return (
 		function,

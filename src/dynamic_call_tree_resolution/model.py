@@ -178,6 +178,14 @@ class StructureLayout(Struct):
 	"""Every named member's offset, whatever it holds."""
 
 
+class Field(Struct, order=True):
+	"""A member of a struct or union."""
+
+	record: str
+	"""``struct`` or ``union``, then the type's name."""
+	member: str
+
+
 class Relocation(Struct):
 	"""A link-time fixup."""
 

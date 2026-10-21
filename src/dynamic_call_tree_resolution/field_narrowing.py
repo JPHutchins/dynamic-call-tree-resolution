@@ -13,13 +13,13 @@ from salix import Struct
 
 from dynamic_call_tree_resolution.descriptors import (
 	Element,
-	Field,
 	Function,
 	Null,
 	Other,
 	Parameter,
 	Variable,
 )
+from dynamic_call_tree_resolution.model import Field
 from dynamic_call_tree_resolution.points_to import field_slots, pointer_at
 from dynamic_call_tree_resolution.vsa.abi import normalized
 from dynamic_call_tree_resolution.vsa.links import function_covering
@@ -134,10 +134,7 @@ def field_targets(
 	into it stores. A store of anything but a function or a null leaves the field unknown.
 	"""
 	stored = _stored(stores)
-	slots = {
-		Field(record=record, member=member): slots
-		for (record, member), slots in field_slots(program).items()
-	}
+	slots = field_slots(program)
 	return {
 		field: targets
 		for functions in (
