@@ -48,6 +48,7 @@ from dynamic_call_tree_resolution.model import (
 )
 from dynamic_call_tree_resolution.points_to import instruction_set_at, pointer_at, read_pointer
 from dynamic_call_tree_resolution.vsa import address_taken, linked_address_taken
+from tests.programs import span
 from tests.toolchains import FIXTURES, build_cortex_a15, build_cortex_m3, host_cc
 
 if TYPE_CHECKING:
@@ -327,8 +328,8 @@ def test_load_reads_the_spans_of_each_inlined_copy_of_a_function(tmp_path: Path)
 		"twice" in {function.name for function in program.functions.values()},
 		bool(program.inlined["twice"]),
 		all(
-			main.address <= low < high <= main.address + main.size
-			for low, high in program.inlined["twice"]
+			main.address <= inlined.start < inlined.end <= main.address + main.size
+			for inlined in program.inlined["twice"]
 		),
 	) == (False, True, True)
 
@@ -339,7 +340,7 @@ def test_load_reads_the_ranges_of_zephyrs_inlined_static_thread_start(
 ) -> None:
 	assert load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf").inlined[
 		"z_init_static_threads"
-	] == ((0x1F32, 0x1F4E), (0x1F68, 0x1FDC))
+	] == (span(0x1F32, 0x1F4E), span(0x1F68, 0x1FDC))
 
 
 @pytest.mark.parametrize("literals", ["-mslow-flash-data", "-mpure-code"])
@@ -668,7 +669,9 @@ def test_load_records_data_in_code_from_mapping_symbols(
 ) -> None:
 	spans = load(zephyr_fixtures / elf).data_in_code
 	assert (
-		first_code_data in {low for low, _ in spans} if first_code_data is not None else spans == ()
+		first_code_data in {data.start for data in spans}
+		if first_code_data is not None
+		else spans == ()
 	)
 
 

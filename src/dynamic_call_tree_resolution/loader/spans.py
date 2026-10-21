@@ -26,6 +26,7 @@ from dynamic_call_tree_resolution.model import (
 	LineSpan,
 	SourceLocation,
 )
+from dynamic_call_tree_resolution.span import Span
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -82,7 +83,7 @@ def _sequences(rows: tuple[LineState, ...]) -> tuple[tuple[LineState, ...], ...]
 	)
 
 
-def inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[tuple[Address, Address], ...]]:
+def inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[Span, ...]]:
 	if dwarf is None:
 		return {}
 	dies = tuple(
@@ -112,7 +113,7 @@ def inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[tuple[Address, Address],
 	}
 
 
-def _span_name(named_span: tuple[str, tuple[Address, Address]]) -> str:
+def _span_name(named_span: tuple[str, Span]) -> str:
 	return named_span[0]
 
 
@@ -128,17 +129,15 @@ def _reference(unit: CompileUnit, attribute: AttributeValue | None) -> int | Non
 			assert_never(unreachable)
 
 
-def _die_spans(
-	dwarf: DWARFInfo, unit: CompileUnit, die: DIE
-) -> tuple[tuple[Address, Address], ...]:
+def _die_spans(dwarf: DWARFInfo, unit: CompileUnit, die: DIE) -> tuple[Span, ...]:
 	match die.attributes.get("DW_AT_ranges"), die.attributes.get("DW_AT_low_pc"):
 		case AttributeValue() as ranges, _:
 			return _range_spans(dwarf.range_lists(), int_value(ranges), unit)
 		case None, AttributeValue() as low_pc:
 			return (
-				(
-					Address(int_value(low_pc)),
-					Address(int_value(low_pc) + subprogram_size(die)),
+				Span(
+					start=Address(int_value(low_pc)),
+					end=Address(int_value(low_pc) + subprogram_size(die)),
 				),
 			)
 		case _:
@@ -147,12 +146,12 @@ def _die_spans(
 
 def _range_spans(
 	range_lists: RangeLists | None, offset: int, unit: CompileUnit
-) -> tuple[tuple[Address, Address], ...]:
+) -> tuple[Span, ...]:
 	if range_lists is None:
 		return ()  # pragma: no cover
 	entries = range_lists.get_range_list_at_offset(offset, cu=unit)
 	return tuple(
-		(Address(begin), Address(end))
+		Span(start=Address(begin), end=Address(end))
 		for entry, base in zip(
 			entries, accumulate(entries, _range_base, initial=_unit_base(unit)), strict=False
 		)

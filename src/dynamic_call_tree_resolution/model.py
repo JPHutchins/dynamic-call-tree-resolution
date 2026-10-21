@@ -15,6 +15,7 @@ from dynamic_call_tree_resolution.structs import replace_as_given
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
+	from dynamic_call_tree_resolution.span import Span
 	from dynamic_call_tree_resolution.vsa.lattice import ValueSet
 
 Address = NewType("Address", int)
@@ -252,13 +253,13 @@ class Program(Struct):
 	layouts: Mapping[str, StructureLayout]
 	relocations: tuple[Relocation, ...]
 	sections: Mapping[Address, Section]
-	data_in_code: tuple[tuple[Address, Address], ...]
+	data_in_code: tuple[Span, ...]
 	"""Spans of data inside code, such as literal pools, from ARM `$d` mapping symbols."""
-	arm_code: tuple[tuple[Address, Address], ...]
+	arm_code: tuple[Span, ...]
 	"""Sorted spans of A32 code, from ARM `$a` mapping symbols."""
 	link_references: tuple[LinkReference, ...] = ()
 	"""The references into allocated sections that the linker kept; none without ``--emit-relocs``."""
-	inlined: Mapping[str, tuple[tuple[Address, Address], ...]] = {}
+	inlined: Mapping[str, tuple[Span, ...]] = {}
 	"""The code spans of each function's inlined copies, from DWARF."""
 	declarations: Mapping[Address, Declaration] = {}
 	"""Each function's declaration, by where its code starts; a clone has its origin's."""
@@ -278,7 +279,7 @@ class Program(Struct):
 	to its alignment, as Zephyr's ``z_tls_data_size`` counts it."""
 	entry_point: Address = Address(0)
 	"""Where execution starts, from the ELF header."""
-	nobits: tuple[tuple[Address, Address], ...] = ()
+	nobits: tuple[Span, ...] = ()
 	"""Sorted spans of allocated sections the image holds no bytes for, such as ``.bss``."""
 
 

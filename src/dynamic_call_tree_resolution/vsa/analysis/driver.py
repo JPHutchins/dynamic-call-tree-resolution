@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 		RtosModel,
 		ThreadRoot,
 	)
+	from dynamic_call_tree_resolution.span import Span
 	from dynamic_call_tree_resolution.vsa.interpret import CallObservation
 
 
@@ -80,7 +81,7 @@ def analyze(
 	program: Program,
 	rtos: RtosModel = BARE_METAL,
 	*,
-	assumed_unwritten: tuple[tuple[int, int], ...] = (),
+	assumed_unwritten: tuple[Span, ...] = (),
 ) -> Analysis:
 	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())

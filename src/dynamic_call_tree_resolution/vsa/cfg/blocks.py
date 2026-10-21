@@ -14,6 +14,7 @@ from dynamic_call_tree_resolution.points_to import (
 	instruction_runs,
 	instruction_set_at,
 )
+from dynamic_call_tree_resolution.span import Span
 from dynamic_call_tree_resolution.vsa.abi import (
 	X86_CALLS,
 	arm_predicated,
@@ -85,7 +86,7 @@ def function_graph(
 			program,
 			address,
 			code,
-			(start, start + function.size),
+			Span(start=Address(start), end=Address(start + function.size)),
 		)
 		for address, code in runs
 	)
@@ -100,7 +101,7 @@ def function_graph(
 
 
 def _decoded(
-	disassembler: Cs, program: Program, start: int, code: bytes, function: tuple[int, int]
+	disassembler: Cs, program: Program, start: int, code: bytes, function: Span
 ) -> tuple[tuple[CsInsn, ...], Mapping[int, JumpTable | None]]:
 	instructions: list[CsInsn] = []
 	dispatches: dict[int, JumpTable | None] = {}

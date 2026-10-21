@@ -39,8 +39,8 @@ if TYPE_CHECKING:
 	from concurrent.futures import Executor
 
 	from dynamic_call_tree_resolution.model import Function, Program
+	from dynamic_call_tree_resolution.span import Span
 	from dynamic_call_tree_resolution.vsa.cfg import Block
-	from dynamic_call_tree_resolution.vsa.escape.image import Span
 
 
 class Escapes(Struct):

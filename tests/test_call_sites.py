@@ -48,7 +48,7 @@ from dynamic_call_tree_resolution.report import slot_counts
 from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, expand_indirect_calls
 from dynamic_call_tree_resolution.vsa import address_taken
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
-from tests.programs import build_program
+from tests.programs import build_program, span
 from tests.sites import tracked_values
 from tests.toolchains import FIXTURES, build_cortex_m3
 
@@ -791,7 +791,7 @@ def test_a_load_from_an_object_assumed_unwritten_reads_its_image_value(
 	)
 	(site,) = (
 		site
-		for site in resolve(program, assumed_unwritten=assumed).sites
+		for site in resolve(program, assumed_unwritten=tuple(span(*pair) for pair in assumed)).sites
 		if site.caller_address == 0x1100
 	)
 	assert tracked_values(site) == targets

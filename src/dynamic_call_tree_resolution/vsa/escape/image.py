@@ -14,6 +14,7 @@ from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.points_to import in_writable_memory, memory_at
+from dynamic_call_tree_resolution.span import Span
 from dynamic_call_tree_resolution.vsa.abi import (
 	is_data,
 	normalized,
@@ -26,9 +27,6 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.model import Function, Program
 	from dynamic_call_tree_resolution.vsa.cfg import Block
 	from dynamic_call_tree_resolution.vsa.escape.values import Held
-
-
-type Span = tuple[Address, Address]
 
 
 _NEARBY: Final = 0x1000
@@ -67,7 +65,7 @@ class Image(Struct):
 
 def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ...]], ...]) -> Image:
 	spans = _merged(
-		(data_object.address, Address(data_object.address + data_object.size))
+		Span(start=data_object.address, end=Address(data_object.address + data_object.size))
 		for data_object in program.objects.values()
 		if data_object.size > 0 and in_writable_memory(program, data_object.address)
 	)
@@ -75,7 +73,7 @@ def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ..
 		sorted(
 			(
 				*(
-					(start, Address(start + len(section.data)))
+					Span(start=start, end=Address(start + len(section.data)))
 					for start, section in program.sections.items()
 					if section.writable and section.data
 				),
@@ -87,7 +85,7 @@ def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ..
 	bounded: Mapping[int, tuple[Span, ...]] = {
 		address: sections
 		for address in program.labels.values()
-		if (sections := tuple(span for span in writable if span[0] <= address < span[1]))
+		if (sections := tuple(span for span in writable if span.start <= address < span.end))
 	}
 	object_starts = frozenset(data_object.address for data_object in program.objects.values())
 	arrays = frozenset(section for section in writable if _one_type(program, section))
@@ -99,10 +97,10 @@ def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ..
 	return Image(
 		program=program,
 		spans=spans,
-		starts=tuple(start for start, _ in spans),
+		starts=tuple(span.start for span in spans),
 		nearby=(
-			min(low for low, _ in bounds) - _NEARBY,
-			max(high for _, high in bounds) + _NEARBY,
+			min(span.start for span in bounds) - _NEARBY,
+			max(span.end for span in bounds) + _NEARBY,
 		)
 		if bounds
 		else (0, -1),
@@ -139,7 +137,7 @@ def _one_type(program: Program, section: Span) -> bool:
 				data_object.type_name
 				for data_object in program.objects.values()
 				if data_object.type_name is not None
-				and section[0] <= data_object.address < section[1]
+				and section.start <= data_object.address < section.end
 			}
 		)
 		<= 1
@@ -148,14 +146,15 @@ def _one_type(program: Program, section: Span) -> bool:
 
 def _merged(spans: Iterable[Span]) -> tuple[Span, ...]:
 	ordered = sorted(spans)
-	reach = tuple(accumulate((end for _, end in ordered), max))
+	reach = tuple(accumulate((span.end for span in ordered), max))
 	breaks = tuple(
 		index
 		for index in range(len(ordered))
-		if index == 0 or ordered[index][0] >= reach[index - 1]
+		if index == 0 or ordered[index].start >= reach[index - 1]
 	)
 	return tuple(
-		(ordered[first][0], reach[after - 1]) for first, after in pairwise((*breaks, len(ordered)))
+		Span(start=ordered[first].start, end=reach[after - 1])
+		for first, after in pairwise((*breaks, len(ordered)))
 	)
 
 
@@ -185,14 +184,15 @@ def reproduced(image: Image, fill: Fill, span: Span, destination: int, argument:
 			return any(
 				section.writable
 				and section.load_address is not None
-				and start <= span[0]
-				and span[1] <= start + len(section.data)
+				and start <= span.start
+				and span.end <= start + len(section.data)
 				and section.load_address - start == argument - destination
 				for start, section in image.program.sections.items()
 			)
 		case Fill.ZERO:
 			return argument == 0 and any(
-				low <= span[0] and span[1] <= high for low, high in image.program.nobits
+				nobits.start <= span.start and span.end <= nobits.end
+				for nobits in image.program.nobits
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -222,7 +222,7 @@ def containing(image: Image, address: int) -> frozenset[Span]:
 	index = bisect_right(image.starts, address) - 1
 	return (
 		frozenset({image.spans[index]})
-		if index >= 0 and address < image.spans[index][1]
+		if index >= 0 and address < image.spans[index].end
 		else frozenset()
 	)
 
@@ -233,7 +233,7 @@ def overlapping(image: Image, low: int, high: int) -> frozenset[Span]:
 		for span in image.spans[
 			max(bisect_right(image.starts, low) - 1, 0) : bisect_left(image.starts, high)
 		]
-		if span[1] > low
+		if span.end > low
 	)
 
 
@@ -242,7 +242,7 @@ def sections_objects(
 ) -> frozenset[Span]:
 	return frozenset(
 		chain.from_iterable(
-			overlapping(image, low, high) for low, high in sections.get(address, ())
+			overlapping(image, section.start, section.end) for section in sections.get(address, ())
 		)
 	)
 
@@ -260,8 +260,10 @@ def data_escapes(image: Image, literals: frozenset[int]) -> frozenset[Span]:
 					if not section.executable
 				),
 				chain.from_iterable(
-					_words(program, low, memory_at(program, low, high - low))
-					for low, high in program.data_in_code
+					_words(
+						program, span.start, memory_at(program, span.start, span.end - span.start)
+					)
+					for span in program.data_in_code
 				),
 			)
 			if image.nearby[0] <= word <= image.nearby[1] and address not in literals

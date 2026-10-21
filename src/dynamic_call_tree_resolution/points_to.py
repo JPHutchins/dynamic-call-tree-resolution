@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 	from collections.abc import Iterable, Iterator, Mapping
 
 	from dynamic_call_tree_resolution.model import DataObject, Member, StructureLayout
+	from dynamic_call_tree_resolution.span import Span
 
 
 class _Resolution(Struct):
@@ -519,9 +520,9 @@ def instruction_runs(
 		start,
 		*(
 			edge
-			for low, high in sorted(program.data_in_code)
-			if low < end and start < high
-			for edge in (max(low, start), min(high, end))
+			for span in sorted(program.data_in_code)
+			if span.start < end and start < span.end
+			for edge in (max(span.start, start), min(span.end, end))
 		),
 		end,
 	)
@@ -534,7 +535,7 @@ def instruction_runs(
 				*sorted(
 					edge
 					for span in program.arm_code
-					for edge in span
+					for edge in (span.start, span.end)
 					if code_start < edge < code_end
 				),
 				code_end,
@@ -554,15 +555,15 @@ def instruction_set_at(program: Program, address: Address) -> InstructionSet:
 			index = bisect_right(program.arm_code, address, key=_span_start) - 1
 			return (
 				InstructionSet.A32
-				if index >= 0 and address < program.arm_code[index][1]
+				if index >= 0 and address < program.arm_code[index].end
 				else InstructionSet.T32
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _span_start(span: tuple[Address, Address]) -> Address:
-	return span[0]
+def _span_start(span: Span) -> Address:
+	return span.start
 
 
 def _section_covering(program: Program, address: Address) -> tuple[Address, Section] | None:
