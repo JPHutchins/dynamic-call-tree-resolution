@@ -87,12 +87,19 @@ def parse_callgraph(path: Path) -> tuple[CallEdge, ...]:
 
 
 def load_callgraph(build_directory: Path) -> tuple[CallEdge, ...]:
-	return tuple(edge for _, edges in callgraph_files(build_directory) for edge in edges)
+	return tuple(edge for file in callgraph_files(build_directory) for edge in file.edges)
 
 
-def callgraph_files(build_directory: Path) -> tuple[tuple[Path, tuple[CallEdge, ...]], ...]:
+class CallgraphFile(Struct):
+	"""One ``.ci`` file's call edges."""
+
+	path: Path
+	edges: tuple[CallEdge, ...]
+
+
+def callgraph_files(build_directory: Path) -> tuple[CallgraphFile, ...]:
 	return tuple(
-		(callgraph_file, parse_callgraph(callgraph_file))
+		CallgraphFile(path=callgraph_file, edges=parse_callgraph(callgraph_file))
 		for callgraph_file in sorted(build_directory.glob("**/*.ci"))
 	)
 

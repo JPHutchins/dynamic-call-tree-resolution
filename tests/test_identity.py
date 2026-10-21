@@ -102,11 +102,11 @@ def _joins(program: Program, build_directory: Path) -> Counter[Address]:
 	known = identities(program, stack_names(program))
 	return Counter(
 		address
-		for path, _ in callgraph_files(build_directory)
-		for location in callgraph_locations(path).values()
+		for file in callgraph_files(build_directory)
+		for location in callgraph_locations(file.path).values()
 		if (
 			address := known.by_declaration.get(
-				Declaration(unit=path.name.removesuffix(".ci"), location=location)
+				Declaration(unit=file.path.name.removesuffix(".ci"), location=location)
 			)
 		)
 		is not None
@@ -147,9 +147,9 @@ def test_an_alias_joins_the_body_its_ci_records_under_another_name(zephyr_fixtur
 	known = identities(program, stack_names(program))
 	edges = {
 		(frame_key(edge.caller), frame_key(edge.callee))
-		for path, file_edges in callgraph_files(build_directory)
+		for file in callgraph_files(build_directory)
 		for edge in canonical_edges(
-			known, path.name.removesuffix(".ci"), callgraph_locations(path), file_edges
+			known, file.path.name.removesuffix(".ci"), callgraph_locations(file.path), file.edges
 		)
 	}
 	assert {
@@ -170,9 +170,12 @@ def test_two_functions_sharing_a_name_become_two_nodes_each_with_its_own_frame(
 		sorted(
 			{
 				name
-				for path, file_edges in callgraph_files(build_directory)
+				for file in callgraph_files(build_directory)
 				for edge in canonical_edges(
-					known, path.name.removesuffix(".ci"), callgraph_locations(path), file_edges
+					known,
+					file.path.name.removesuffix(".ci"),
+					callgraph_locations(file.path),
+					file.edges,
 				)
 				for name in (edge.caller, edge.callee)
 				if name.startswith("elapsed")
@@ -180,9 +183,12 @@ def test_two_functions_sharing_a_name_become_two_nodes_each_with_its_own_frame(
 		),
 		sorted(
 			(usage.function, usage.bytes)
-			for path, usages in stack_usage_files(build_directory)
+			for file in stack_usage_files(build_directory)
 			for usage in canonical_frames(
-				known, path.name.removesuffix(".su"), stack_usage_locations(path), usages
+				known,
+				file.path.name.removesuffix(".su"),
+				stack_usage_locations(file.path),
+				file.usages,
 			)
 			if usage.function.startswith("uart_stellaris_init")
 		),

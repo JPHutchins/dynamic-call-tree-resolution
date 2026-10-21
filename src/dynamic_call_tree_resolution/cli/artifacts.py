@@ -44,8 +44,10 @@ if TYPE_CHECKING:
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
+	from dynamic_call_tree_resolution.callgraph import CallgraphFile
 	from dynamic_call_tree_resolution.model import Address, Program, RtosModel, UnresolvedSlot
 	from dynamic_call_tree_resolution.report import SlotCounts
+	from dynamic_call_tree_resolution.stack_usage import StackUsageFile
 
 
 class Expansion(Struct):
@@ -152,17 +154,17 @@ def build_artifacts(build_directory: Path, image: Image | None) -> Artifacts:
 
 def _named_artifacts(
 	known: Identities | None,
-	callgraphs: tuple[tuple[Path, tuple[CallEdge, ...]], ...],
-	usages: tuple[tuple[Path, tuple[StackUsage, ...]], ...],
+	callgraphs: tuple[CallgraphFile, ...],
+	usages: tuple[StackUsageFile, ...],
 	membership: Membership,
 	dropped: Mapping[Linkage, frozenset[str]],
 	phantom_libcalls: frozenset[str],
 ) -> Artifacts:
 	edges = tuple(
-		edge for path, file_edges in callgraphs for edge in _named_edges(known, path, file_edges)
+		edge for file in callgraphs for edge in _named_edges(known, file.path, file.edges)
 	)
 	frames = tuple(
-		frame for path, file_frames in usages for frame in _named_frames(known, path, file_frames)
+		frame for file in usages for frame in _named_frames(known, file.path, file.usages)
 	)
 	return Artifacts(
 		edges=edges,

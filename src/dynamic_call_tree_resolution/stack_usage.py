@@ -47,14 +47,19 @@ def parse_records(text: str) -> tuple[StackUsage, ...]:
 
 
 def load_stack_usages(build_directory: Path) -> tuple[StackUsage, ...]:
-	return tuple(record for _, records in stack_usage_files(build_directory) for record in records)
+	return tuple(record for file in stack_usage_files(build_directory) for record in file.usages)
 
 
-def stack_usage_files(
-	build_directory: Path,
-) -> tuple[tuple[Path, tuple[StackUsage, ...]], ...]:
+class StackUsageFile(Struct):
+	"""One ``.su`` file's records."""
+
+	path: Path
+	usages: tuple[StackUsage, ...]
+
+
+def stack_usage_files(build_directory: Path) -> tuple[StackUsageFile, ...]:
 	return tuple(
-		(stack_file, parse_stack_usage(stack_file))
+		StackUsageFile(path=stack_file, usages=parse_stack_usage(stack_file))
 		for stack_file in sorted(build_directory.glob("**/*.su"))
 	)
 
