@@ -49,17 +49,56 @@ _SINGLE_WORD: Final = 4
 _TLS: Final = "CONFIG_THREAD_LOCAL_STORAGE"
 _RANDOM_OFFSET: Final = "CONFIG_STACK_POINTER_RANDOM"
 _ALIGN_DOUBLE_WORD: Final = "CONFIG_STACK_ALIGN_DOUBLE_WORD"
+
+
+class _SystemThreadSpec(Struct):
+	"""A thread Zephyr creates while it starts, and the option that sizes its stack."""
+
+	name: str
+	entry: str
+	stack_size_option: str
+
+
 _SYSTEM_THREADS: Final = (
-	("z_main_thread", "bg_thread_main", "CONFIG_MAIN_STACK_SIZE"),
-	("z_idle_threads", "idle", "CONFIG_IDLE_STACK_SIZE"),
+	_SystemThreadSpec(
+		name="z_main_thread", entry="bg_thread_main", stack_size_option="CONFIG_MAIN_STACK_SIZE"
+	),
+	_SystemThreadSpec(
+		name="z_idle_threads", entry="idle", stack_size_option="CONFIG_IDLE_STACK_SIZE"
+	),
 )
 _INTERRUPT_STACK: Final = "z_interrupt_stacks"
 _INTERRUPT_STACK_SIZE: Final = "CONFIG_ISR_STACK_SIZE"
+
+
+class _DispatchSpec(Struct):
+	"""A function that calls through a member of each entry of a linker-built table."""
+
+	function: str
+	type_name: str
+	member: tuple[str, ...]
+	"""The path to the called member, through embedded structs."""
+	start_label: str
+	end_label: str
+
+
 _DISPATCHES: Final = (
-	("z_sys_init_run_level", "struct init_entry", ("init_fn",), "__init_start", "__init_end"),
-	("do_device_init", "struct device", ("ops", "init"), "_device_list_start", "_device_list_end"),
+	_DispatchSpec(
+		function="z_sys_init_run_level",
+		type_name="struct init_entry",
+		member=("init_fn",),
+		start_label="__init_start",
+		end_label="__init_end",
+	),
+	_DispatchSpec(
+		function="do_device_init",
+		type_name="struct device",
+		member=("ops", "init"),
+		start_label="_device_list_start",
+		end_label="_device_list_end",
+	),
 )
-_KCONFIG_OPTION: Final = re.compile(r"^(CONFIG_\w+)=(.*)$", re.MULTILINE)
+_KCONFIG_OPTION: Final = re.compile(r"^(?P<option>CONFIG_\w+)=(?P<value>.*)$", re.MULTILINE)
 _KCONFIG_INTEGER: Final = re.compile(r"0x[0-9a-fA-F]+|[0-9]+")
 _ARCH: Final = "CONFIG_ARCH"
 _STACK_NOT_ALL_USABLE: Final = ("CONFIG_ARCH_POSIX", "CONFIG_MPU_STACK_GUARD")
@@ -80,7 +119,9 @@ def kconfig(text: str) -> Kconfig:
 	>>> kconfig('CONFIG_IDLE_STACK_SIZE=256\n# CONFIG_FPU is not set\nCONFIG_BOARD="mps2"\n').options
 	{'CONFIG_IDLE_STACK_SIZE': '256', 'CONFIG_BOARD': '"mps2"'}
 	"""
-	return Kconfig(options={option[1]: option[2] for option in _KCONFIG_OPTION.finditer(text)})
+	return Kconfig(
+		options={match["option"]: match["value"] for match in _KCONFIG_OPTION.finditer(text)}
+	)
 
 
 def _declared(options: Kconfig, stack_size: int | None) -> int | None:
@@ -121,7 +162,7 @@ def _integer(options: Kconfig, name: str) -> int | None:
 			return None
 
 
-_PRIORITY_BITS: Final = re.compile(r"arm,num-irq-priority-bits = < (0x[0-9a-f]+|[0-9]+) >;")
+_PRIORITY_BITS: Final = re.compile(r"arm,num-irq-priority-bits = < (?P<bits>0x[0-9a-f]+|[0-9]+) >;")
 
 
 def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
@@ -149,10 +190,13 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 		exception_frame=_exception_frame(program.arm_core),
 		system_threads=tuple(
 			system_thread
-			for name, entry, size in _SYSTEM_THREADS
+			for spec in _SYSTEM_THREADS
 			if (
 				system_thread := _system_thread(
-					program, name, entry, _declared(options, _integer(options, size))
+					program,
+					spec.name,
+					spec.entry,
+					_declared(options, _integer(options, spec.stack_size_option)),
 				)
 			)
 			is not None
@@ -161,10 +205,7 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 			program, _declared(options, _integer(options, _INTERRUPT_STACK_SIZE))
 		),
 		dispatches=tuple(
-			dispatch
-			for function, type_name, member, start, end in _DISPATCHES
-			if (dispatch := _dispatch(program, function, type_name, member, (start, end)))
-			is not None
+			dispatch for spec in _DISPATCHES if (dispatch := _dispatch(program, spec)) is not None
 		),
 		creation=ThreadCreation(
 			frame_builders=_FRAME_BUILDERS,
@@ -179,22 +220,17 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 	)
 
 
-def _dispatch(
-	program: Program,
-	function: str,
-	type_name: str,
-	member: tuple[str, ...],
-	bounds: tuple[str, str],
-) -> Dispatch | None:
+def _dispatch(program: Program, spec: _DispatchSpec) -> Dispatch | None:
 	entries = tuple(
 		data_object
 		for data_object in program.objects.values()
-		if data_object.type_name == type_name
+		if data_object.type_name == spec.type_name
 	)
-	offset = _member_offset(program, type_name, member)
-	start, end = (program.labels.get(bounds[0]), program.labels.get(bounds[1]))
+	offset = _member_offset(program, spec.type_name, spec.member)
+	start = program.labels.get(spec.start_label)
+	end = program.labels.get(spec.end_label)
 	if (
-		function not in program.symbol_addresses
+		spec.function not in program.symbol_addresses
 		or offset is None
 		or start is None
 		or end is None
@@ -206,7 +242,7 @@ def _dispatch(
 	):
 		return None
 	return Dispatch(
-		function=function,
+		function=spec.function,
 		targets=frozenset(
 			target
 			for entry in entries
@@ -272,7 +308,7 @@ def priority_levels(devicetree: str) -> int | None:
 		case None:
 			return None
 		case re.Match() as bits:
-			return 1 << int(bits[1], 0)
+			return 1 << int(bits["bits"], 0)
 		case _ as unreachable:
 			assert_never(unreachable)
 

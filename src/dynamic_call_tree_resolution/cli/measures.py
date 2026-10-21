@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
 	from pathlib import Path
 
-	from dynamic_call_tree_resolution.call_sites import ProgramResolution
+	from dynamic_call_tree_resolution.call_sites import CallerCandidates, ProgramResolution
 	from dynamic_call_tree_resolution.cli.artifacts import Artifacts, Image
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import (
@@ -238,10 +238,9 @@ def _thread_entries(
 class Targets(Struct):
 	"""The whole image's targets for the indirect calls, by caller key."""
 
-	by_caller: Mapping[str, frozenset[str]]
+	candidates: CallerCandidates
 	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]]
 	"""Reached only through a narrowing, with its edge."""
-	fallback: frozenset[str]
 	narrowed_by_field: tuple[NarrowedSpan, ...]
 	narrow_by_signature: bool
 
@@ -273,8 +272,8 @@ def own_thread_graphs(
 						narrow_by_signature=targets.narrow_by_signature,
 						fallback=resolution.fallback,
 					),
-					targets.by_caller,
-					targets.fallback,
+					targets.candidates.targets_by_caller,
+					targets.candidates.fallback,
 					targets.narrowed_by_caller,
 				)
 				for thread, sites in resolution.threads.items()
