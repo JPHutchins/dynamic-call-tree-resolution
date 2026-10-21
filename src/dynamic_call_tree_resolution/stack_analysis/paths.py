@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.callgraph import CallPair
 from dynamic_call_tree_resolution.stack_analysis.depths import (
 	forward_depths,
 	function_depth,
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 
 	from dynamic_call_tree_resolution.callgraph import EdgeKind
+	from dynamic_call_tree_resolution.stack_analysis.reports import ReportOrder
 
 
 class _Forward(Struct):
@@ -56,8 +58,22 @@ def deepest_path(graph: StackGraph, entry: str) -> tuple[PathStep, ...]:
 	return _walk(graph, root, frozenset(), _entered(graph, root), 0, frozenset(), {})
 
 
-def _root_rank(graph: StackGraph, root: str) -> tuple[bool, int, str]:
-	return (*report_order(root_report(graph, root)), root)
+class _RootRank(Struct, order=True):
+	"""Where a root sorts among the roots of one entry."""
+
+	order: ReportOrder
+	root: str
+
+
+class _CalleeDepth(Struct):
+	"""A callee the walk may take next, with the depth below it."""
+
+	callee: str
+	depth: int
+
+
+def _root_rank(graph: StackGraph, root: str) -> _RootRank:
+	return _RootRank(order=report_order(root_report(graph, root)), root=root)
 
 
 def _walk(
@@ -82,16 +98,16 @@ def _walk(
 	)
 	if callee is None:
 		return (step,)
-	enters = callee[0] not in _members(graph, node)
+	enters = callee.callee not in _members(graph, node)
 	return (
 		step,
 		*_walk(
 			graph,
-			callee[0],
+			callee.callee,
 			frozenset() if enters else path | {node},
-			_entered(graph, callee[0]) if enters else forward,
+			_entered(graph, callee.callee) if enters else forward,
 			cumulative + frame,
-			graph.kinds[(node, callee[0])],
+			graph.kinds[CallPair(caller=node, callee=callee.callee)],
 			within,
 		),
 	)
@@ -103,19 +119,22 @@ def _callee_depths(
 	path: frozenset[str],
 	forward: _Forward | None,
 	within: dict[tuple[str, frozenset[str]], int],
-) -> tuple[tuple[str, int], ...]:
+) -> tuple[_CalleeDepth, ...]:
 	members = _members(graph, node)
 	callees = sorted(graph.adjacency.get(node, frozenset()) - {INDIRECT_CALLEE})
 	if forward is not None:
 		return tuple(
-			(callee, graph.depths[callee] if callee not in members else forward.depths[callee])
+			_CalleeDepth(
+				callee=callee,
+				depth=graph.depths[callee] if callee not in members else forward.depths[callee],
+			)
 			for callee in callees
 			if callee not in members or forward.position[callee] > forward.position[node]
 		)
 	return tuple(
-		(
-			callee,
-			graph.depths[callee]
+		_CalleeDepth(
+			callee=callee,
+			depth=graph.depths[callee]
 			if callee not in members
 			else function_depth(
 				callee,
@@ -132,8 +151,8 @@ def _callee_depths(
 	)
 
 
-def _callee_depth(callee: tuple[str, int]) -> int:
-	return callee[1]
+def _callee_depth(callee: _CalleeDepth) -> int:
+	return callee.depth
 
 
 def _entered(graph: StackGraph, node: str) -> _Forward | None:
@@ -153,8 +172,8 @@ def _members(graph: StackGraph, node: str) -> frozenset[str]:
 
 def _flags(graph: StackGraph, node: str) -> frozenset[Reason]:
 	return frozenset(
-		reason
-		for reason, _ in own_reasons(
+		function_reason.reason
+		for function_reason in own_reasons(
 			node, graph.adjacency, graph.frame_by_name, graph.assumed_no_recursion, graph.narrowings
 		)
 	) | (

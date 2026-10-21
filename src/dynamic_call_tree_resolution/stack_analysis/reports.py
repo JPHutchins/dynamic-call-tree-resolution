@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final, assert_never
 
-from salix import replace
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import BARE_METAL
 from dynamic_call_tree_resolution.stack_analysis.graph import (
@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.stack_analysis.graph import (
 from dynamic_call_tree_resolution.stack_analysis.values import (
 	Bounded,
 	Frame,
+	FunctionReason,
 	Handled,
 	Nested,
 	Nesting,
@@ -156,12 +157,19 @@ def _root_reasons(graph: StackGraph, root: str) -> Reasons:
 	)
 
 
-def report_order(report: StackReport) -> tuple[bool, int]:
+class ReportOrder(Struct, order=True):
+	"""Where a report sorts among reports."""
+
+	bounded: bool
+	negated_depth: int
+
+
+def report_order(report: StackReport) -> ReportOrder:
 	match report.bound:
 		case Unbounded(at_least=at_least):
-			return (False, -at_least)
+			return ReportOrder(bounded=False, negated_depth=-at_least)
 		case Bounded(bytes=depth):
-			return (True, -depth)
+			return ReportOrder(bounded=True, negated_depth=-depth)
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -193,7 +201,7 @@ def _bound(depth: int, reasons: Reasons) -> Bounded | Unbounded:
 			assumed_unwritten=_names(reasons, Reason.ASSUMED_UNWRITTEN),
 			assumed_frames=_names(reasons, Reason.ASSUMED_FRAME),
 		)
-		if any(reason not in _NOTED for reason, _ in reasons)
+		if any(function_reason.reason not in _NOTED for function_reason in reasons)
 		else Bounded(
 			bytes=depth,
 			measured=_names(reasons, Reason.MEASURED),
@@ -207,7 +215,9 @@ def _bound(depth: int, reasons: Reasons) -> Bounded | Unbounded:
 
 
 def _names(reasons: Reasons, reason: Reason) -> frozenset[str]:
-	return frozenset(name for kind, name in reasons if kind is reason)
+	return frozenset(
+		function_reason.function for function_reason in reasons if function_reason.reason is reason
+	)
 
 
 def frame_size(graph: StackGraph, node: str) -> int:
@@ -230,7 +240,7 @@ def interrupt_stack_report(
 		bound=_bound(
 			_bound_depth(base.report.bound)
 			+ sum(exception_frame + _bound_depth(handled.report.bound) for handled in chain),
-			frozenset[tuple[Reason, str]]().union(
+			frozenset[FunctionReason]().union(
 				*(_bound_reasons(handled.report.bound) for handled in (base, *fixed, *configurable))
 			),
 		),
@@ -265,32 +275,45 @@ def _bound_depth(bound: Bounded | Unbounded) -> int:
 			assert_never(unreachable)
 
 
+class _ReasonFunctions(Struct):
+	"""A reason a bound carries, and every function it comes from."""
+
+	reason: Reason
+	functions: frozenset[str]
+
+
 def _bound_reasons(bound: Bounded | Unbounded) -> Reasons:
-	return frozenset((reason, name) for reason, names in _reason_sets(bound) for name in names)
+	return frozenset(
+		FunctionReason(reason=reason_functions.reason, function=function)
+		for reason_functions in _reason_sets(bound)
+		for function in reason_functions.functions
+	)
 
 
-def _reason_sets(bound: Bounded | Unbounded) -> tuple[tuple[Reason, frozenset[str]], ...]:
+def _reason_sets(bound: Bounded | Unbounded) -> tuple[_ReasonFunctions, ...]:
 	match bound:
 		case Bounded():
 			return _noted_sets(bound)
 		case Unbounded():
 			return (
-				(Reason.RECURSION, bound.recursion),
-				(Reason.UNMEASURED, bound.unmeasured),
-				(Reason.DYNAMIC, bound.dynamic),
-				(Reason.UNRESOLVED, bound.unresolved),
+				_ReasonFunctions(reason=Reason.RECURSION, functions=bound.recursion),
+				_ReasonFunctions(reason=Reason.UNMEASURED, functions=bound.unmeasured),
+				_ReasonFunctions(reason=Reason.DYNAMIC, functions=bound.dynamic),
+				_ReasonFunctions(reason=Reason.UNRESOLVED, functions=bound.unresolved),
 				*_noted_sets(bound),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _noted_sets(bound: Bounded | Unbounded) -> tuple[tuple[Reason, frozenset[str]], ...]:
+def _noted_sets(bound: Bounded | Unbounded) -> tuple[_ReasonFunctions, ...]:
 	return (
-		(Reason.MEASURED, bound.measured),
-		(Reason.ASSUMED_NO_RECURSION, bound.assumed_no_recursion),
-		(Reason.NARROWED_BY_FIELD, bound.narrowed_by_field),
-		(Reason.NARROWED_BY_SIGNATURE, bound.narrowed_by_signature),
-		(Reason.ASSUMED_UNWRITTEN, bound.assumed_unwritten),
-		(Reason.ASSUMED_FRAME, bound.assumed_frames),
+		_ReasonFunctions(reason=Reason.MEASURED, functions=bound.measured),
+		_ReasonFunctions(reason=Reason.ASSUMED_NO_RECURSION, functions=bound.assumed_no_recursion),
+		_ReasonFunctions(reason=Reason.NARROWED_BY_FIELD, functions=bound.narrowed_by_field),
+		_ReasonFunctions(
+			reason=Reason.NARROWED_BY_SIGNATURE, functions=bound.narrowed_by_signature
+		),
+		_ReasonFunctions(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
+		_ReasonFunctions(reason=Reason.ASSUMED_FRAME, functions=bound.assumed_frames),
 	)

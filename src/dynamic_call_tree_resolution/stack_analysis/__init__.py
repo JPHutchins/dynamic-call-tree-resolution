@@ -26,6 +26,7 @@ from dynamic_call_tree_resolution.stack_analysis.values import NO_CALLEE as NO_C
 from dynamic_call_tree_resolution.stack_analysis.values import AssumedFrame as AssumedFrame
 from dynamic_call_tree_resolution.stack_analysis.values import Bounded as Bounded
 from dynamic_call_tree_resolution.stack_analysis.values import Frame as Frame
+from dynamic_call_tree_resolution.stack_analysis.values import FunctionReason as FunctionReason
 from dynamic_call_tree_resolution.stack_analysis.values import Handled as Handled
 from dynamic_call_tree_resolution.stack_analysis.values import LevelSource as LevelSource
 from dynamic_call_tree_resolution.stack_analysis.values import MeasuredFrame as MeasuredFrame

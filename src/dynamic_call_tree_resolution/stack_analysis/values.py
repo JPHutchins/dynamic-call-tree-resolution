@@ -16,7 +16,7 @@ from dynamic_call_tree_resolution.stack_usage import StackUsage
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from dynamic_call_tree_resolution.callgraph import EdgeKind
+	from dynamic_call_tree_resolution.callgraph import CallPair, EdgeKind
 
 
 class Bounded(Struct):
@@ -139,7 +139,14 @@ class Reason(StrEnum):
 	ASSUMED_FRAME = "assumed frame"
 
 
-type Reasons = frozenset[tuple[Reason, str]]
+class FunctionReason(Struct):
+	"""A reason a depth carries, and the function it comes from."""
+
+	reason: Reason
+	function: str
+
+
+type Reasons = frozenset[FunctionReason]
 
 
 class MeasuredFrame(Struct):
@@ -175,7 +182,7 @@ class StackGraph(Struct):
 	"""Each node's strongly connected component."""
 	depths: Mapping[str, int]
 	reasons: Mapping[str, Reasons]
-	kinds: Mapping[tuple[str, str], frozenset[EdgeKind]]
+	kinds: Mapping[CallPair, frozenset[EdgeKind]]
 	roots: tuple[str, ...]
 	assumed_no_recursion: frozenset[str] = frozenset()
 	"""The functions whose call to themselves an assumption removed."""
