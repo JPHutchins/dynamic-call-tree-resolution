@@ -111,6 +111,7 @@ def _called(state: State, machine: Machine) -> State:
 			),
 			escaped=passed.escaped,
 			loaded_from=passed.loaded_from,
+			strided=passed.strided,
 		),
 		machine,
 	)

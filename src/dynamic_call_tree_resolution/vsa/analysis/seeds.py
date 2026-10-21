@@ -122,6 +122,7 @@ def _argument_state(
 		globals=NO_WRITES,
 		escaped=False,
 		loaded_from={},
+		strided={},
 	)
 
 

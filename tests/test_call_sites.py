@@ -607,6 +607,87 @@ def test_a_register_subtracted_from_a_known_address_lowers_it(
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("code", "callee", "targets"),
+	[
+		pytest.param(
+			"42f20001106801eb800050f8041c88477047",
+			None,
+			set[int](),
+			id="a negative displacement past the array's start",
+		),
+		pytest.param(
+			"42f20001106801eb80000438016888477047",
+			None,
+			set[int](),
+			id="an immediate subtracted before the access",
+		),
+		pytest.param(
+			"42f20001106801eb8000016888477047",
+			None,
+			{0x3001, 0x3011, 0x3021},
+			id="the array's own slots",
+		),
+		pytest.param(
+			"42f20001106801eb8000043050f8041c88477047",
+			None,
+			{0x3001, 0x3011, 0x3021},
+			id="an immediate the displacement takes back",
+		),
+		pytest.param(
+			"42f20001106801eb800400f003f82168884770477047",
+			0x1014,
+			{0x3001, 0x3011, 0x3021},
+			id="a callee-saved register across a call",
+		),
+		pytest.param(
+			"42f20001106801eb800000f003f80168884770477047",
+			0x1014,
+			set[int](),
+			id="a register a call clobbers",
+		),
+		pytest.param(
+			"42f20001106801eb80000346196888477047",
+			None,
+			{0x3001, 0x3011, 0x3021},
+			id="a moved copy",
+		),
+		pytest.param(
+			"42f20001106801eb80001068016888477047",
+			None,
+			set[int](),
+			id="a register loaded over",
+		),
+	],
+)
+def test_an_unknown_index_reaches_only_slots_in_its_arrays_section(
+	code: str, callee: int | None, targets: set[int]
+) -> None:
+	"""The table at 0x2000 holds three handlers; another object just before it holds the fourth."""
+	body = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		build_program(
+			Machine.EM_ARM,
+			(
+				("caller", 0x1000, len(body) if callee is None else callee - 0x1000),
+				*((("callee", callee, 2),) if callee is not None else ()),
+				*((f"handler_{index}", 0x3000 + 0x10 * index, 2) for index in range(4)),
+			),
+			objects=(
+				("before_table", 0x1FFC, _pointer(0x3031, 4)),
+				(
+					"table",
+					0x2000,
+					b"".join(_pointer(0x3001 + 0x10 * index, 4) for index in range(3)),
+				),
+			),
+			sections={0x1000: body, 0x3000: bytes.fromhex("7047" + "00" * 14) * 4},
+			pointer_size=4,
+		)
+	)
+	assert tracked_values(site) == targets
+
+
 def test_a_store_through_a_shifted_index_writes_the_word_it_names() -> None:
 	writer = bytes.fromhex("42f20006022443f2310346f824307047")
 	caller = bytes.fromhex("42f20806336898477047")
