@@ -658,6 +658,18 @@ def test_a_register_subtracted_from_a_known_address_lowers_it(
 			set[int](),
 			id="a register loaded over",
 		),
+		pytest.param(
+			"42f20001106801eb800050f8043b50f8041c88477047",
+			None,
+			{0x3001, 0x3011, 0x3021},
+			id="a post-indexed load, then the start again",
+		),
+		pytest.param(
+			"42f20001106801ebc000d0e90045a8477047",
+			None,
+			{0x3011},
+			id="a load pair's second word",
+		),
 	],
 )
 def test_an_unknown_index_reaches_only_slots_in_its_arrays_section(
@@ -686,6 +698,47 @@ def test_an_unknown_index_reaches_only_slots_in_its_arrays_section(
 		)
 	)
 	assert tracked_values(site) == targets
+
+
+@pytest.mark.parametrize(
+	("code", "arm_code", "targets"),
+	[
+		pytest.param(
+			"42f20006d6e90145a047a8477047", (), ({0x3011}, {0x3021}), id="a pair from a table"
+		),
+		pytest.param(
+			"42f20006f6e80245336898477047", (), ({0x3021},), id="a pair advancing its base after"
+		),
+		pytest.param(
+			"42f20006f6e90145336898477047", (), ({0x3011},), id="a pair advancing its base first"
+		),
+		pytest.param(
+			"82b043f2010043f21101cde90001dde90045a84702b07047",
+			(),
+			({0x3011},),
+			id="a pair a strd left in the frame",
+		),
+		pytest.param(
+			"006002e3d440c6e135ff2fe11eff2fe1", ((0x1000, 0x1010),), ({0x3021},), id="an A32 pair"
+		),
+		pytest.param("dfe90145a84770470130000011300000", (), (set[int](),), id="a literal pair"),
+	],
+)
+def test_a_load_pair_reads_two_consecutive_words(
+	code: str, arm_code: tuple[tuple[int, int], ...], targets: tuple[set[int], ...]
+) -> None:
+	caller = bytes.fromhex(code)
+	assert (
+		tuple(
+			tracked_values(site)
+			for site in extract_call_sites(
+				_handler_table_program(
+					(("caller", 0x1000, len(caller)),), {0x1000: caller}, arm_code=arm_code
+				)
+			)
+		)
+		== targets
+	)
 
 
 def test_a_store_through_a_shifted_index_writes_the_word_it_names() -> None:

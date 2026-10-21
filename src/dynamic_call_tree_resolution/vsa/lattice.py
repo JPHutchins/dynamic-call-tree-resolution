@@ -92,6 +92,27 @@ def join[T: Hashable](current: Lattice[T], incoming: Lattice[T]) -> Lattice[T]:
 	return bind(current, lambda known: bind(incoming, lambda other: capped(known | other)))
 
 
+def meet[T: Hashable](current: Lattice[T], incoming: Lattice[T]) -> Lattice[T]:
+	"""The values both allow; an unknown side allows anything.
+
+	>>> meet(Top(), Known(values=frozenset({1, 2})))
+	Known(values=frozenset({1, 2}))
+	>>> meet(Known(values=frozenset({1, 2})), Known(values=frozenset({2, 3})))
+	Known(values=frozenset({2}))
+	>>> meet(Known(values=frozenset({1})), Top())
+	Known(values=frozenset({1}))
+	"""
+	match current:
+		case Top():
+			return incoming
+		case Known(values=values):
+			return (
+				Known(values=values & incoming.values) if isinstance(incoming, Known) else current
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
 def put_value[K: int, T: Hashable](
 	mapping: Mapping[K, frozenset[T]], key: K, value: Lattice[T]
 ) -> dict[K, frozenset[T]]:
