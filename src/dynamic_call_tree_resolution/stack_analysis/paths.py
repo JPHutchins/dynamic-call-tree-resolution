@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 
 	from dynamic_call_tree_resolution.callgraph import EdgeKind
+	from dynamic_call_tree_resolution.stack_analysis.depths import WithinKey
 	from dynamic_call_tree_resolution.stack_analysis.reports import ReportOrder
 
 
@@ -83,7 +84,7 @@ def _walk(
 	forward: _Forward | None,
 	cumulative: int,
 	edge: frozenset[EdgeKind],
-	within: dict[tuple[str, frozenset[str]], int],
+	within: dict[WithinKey, int],
 ) -> tuple[PathStep, ...]:
 	frame = frame_size(graph, node)
 	step = PathStep(
@@ -118,7 +119,7 @@ def _callee_depths(
 	node: str,
 	path: frozenset[str],
 	forward: _Forward | None,
-	within: dict[tuple[str, frozenset[str]], int],
+	within: dict[WithinKey, int],
 ) -> tuple[_CalleeDepth, ...]:
 	members = _members(graph, node)
 	callees = sorted(graph.adjacency.get(node, frozenset()) - {INDIRECT_CALLEE})

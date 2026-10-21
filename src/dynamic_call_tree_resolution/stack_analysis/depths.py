@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from salix import Struct
+
 from dynamic_call_tree_resolution.stack_analysis.values import (
 	MAX_CYCLE_SIZE,
 	Frame,
@@ -15,6 +17,13 @@ from dynamic_call_tree_resolution.stack_analysis.values import (
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
+
+
+class WithinKey(Struct):
+	"""A function, and the members of its component already on the path to it."""
+
+	function: str
+	path: frozenset[str]
 
 
 def all_callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
@@ -68,7 +77,7 @@ def depths_by_component(
 	all_nodes = set(adjacency) | all_callees(adjacency)
 	for component in (*components, *((node,) for node in sorted(all_nodes - known))):
 		in_component = frozenset(component)
-		within: dict[tuple[str, frozenset[str]], int] = {}
+		within: dict[WithinKey, int] = {}
 		memo.update(
 			_rooted_depths(component, adjacency, frame_by_name, memo)
 			if len(component) > MAX_CYCLE_SIZE
@@ -142,9 +151,9 @@ def function_depth(
 	path: frozenset[str],
 	memo: Mapping[str, int],
 	in_component: frozenset[str],
-	within: dict[tuple[str, frozenset[str]], int],
+	within: dict[WithinKey, int],
 ) -> int:
-	key = (function, path & in_component)
+	key = WithinKey(function=function, path=path & in_component)
 	if key in within:
 		return within[key]
 	frame = frame_by_name.get(frame_key(function))
