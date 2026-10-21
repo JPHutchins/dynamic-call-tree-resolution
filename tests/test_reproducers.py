@@ -671,7 +671,7 @@ def test_an_unknown_store_reaches_only_the_hook_whose_address_escapes(
 	[
 		pytest.param(
 			case.image,
-			frozenset({"a", "b", "c"}) if "-Os" in case.image.flags else frozenset[str](),
+			frozenset[str]() if "-O0" in case.image.flags else frozenset({"a", "b", "c"}),
 			id=_image_id(case.image),
 		)
 		for case, _ in CANDIDATES
@@ -681,8 +681,7 @@ def test_an_unknown_store_reaches_only_the_hook_whose_address_escapes(
 def test_a_walk_between_a_sections_bounds_calls_only_its_records(
 	image: Image, targets: frozenset[str], outcomes: Mapping[Image, Outcome]
 ) -> None:
-	"""-O0 keeps the walk's pointer in a frame slot, which branch narrowing leaves whole; -O2
-	counts with an index it compares before advancing."""
+	"""-O0 keeps the walk's pointer in a frame slot, which branch narrowing leaves whole."""
 	assert dict(outcomes[image].sites)["walk"] == targets
 
 

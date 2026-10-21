@@ -35,6 +35,7 @@ ARM_INS_LDR: int
 ARM_INS_LDRB: int
 ARM_INS_LDRH: int
 ARM_INS_LSL: int
+ARM_INS_LSR: int
 ARM_INS_MOV: int
 ARM_INS_MOVS: int
 ARM_INS_MOVT: int
@@ -98,7 +99,10 @@ ARM_REG_R0: int
 ARM_REG_R1: int
 ARM_REG_R2: int
 ARM_REG_R3: int
+ARM_REG_R4: int
+ARM_REG_R6: int
 ARM_REG_R12: int
 ARM_REG_SP: int
 ARM_SFT_INVALID: int
 ARM_SFT_LSL: int
+ARM_SFT_LSR: int

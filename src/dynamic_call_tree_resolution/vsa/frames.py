@@ -209,10 +209,6 @@ def _measured_blocks(
 	)
 
 
-def _step(context: Context, state: State, instruction: CsInsn) -> State:
-	return transfer(context, instruction, state)
-
-
 def _steps(
 	context: Context, blocks: tuple[Block, ...], states: Mapping[Address, State]
 ) -> tuple[tuple[CsInsn, State], ...]:
@@ -223,7 +219,7 @@ def _steps(
 		for step in zip(
 			block.instructions,
 			accumulate(
-				block.instructions[:-1], partial(_step, context), initial=states[block.start]
+				block.instructions[:-1], partial(transfer, context), initial=states[block.start]
 			),
 			strict=True,
 		)

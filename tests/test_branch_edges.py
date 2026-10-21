@@ -56,11 +56,29 @@ def _table_program(code: str) -> Program:
 			"42f200060024032c04d256f8243098470134f8e77047",
 			id="an index compared against an immediate",
 		),
+		pytest.param(
+			"70b542f200060225002456f824309847ac4204f10104f8d170bd",
+			id="an index compared before it advances",
+		),
+		pytest.param(
+			"70b542f2000442f20c052646ae4204f1040400d370bd54f8043c9847f5e7",
+			id="a copy compared before the pointer advances",
+		),
+		pytest.param(
+			"70b542f2000442f20c05264604f10404ae4200d370bd54f8043c9847f5e7",
+			id="a copy compared after the pointer advances",
+		),
 	],
 )
 def test_a_walk_calls_only_the_entries_before_its_bound(code: str) -> None:
 	(site,) = extract_call_sites(_table_program(code))
 	assert tracked_values(site) == {0x3001, 0x3011, 0x3021}
+
+
+def test_a_copy_is_narrowed_only_where_it_still_holds_its_source() -> None:
+	code = "70b542f2000408b142f2080442f20405264642f20404ae4201d22368984770bd"
+	(site,) = extract_call_sites(_table_program(code))
+	assert tracked_values(site) == {0x3011}
 
 
 def test_a_cbz_keeps_null_off_the_call_it_guards() -> None:

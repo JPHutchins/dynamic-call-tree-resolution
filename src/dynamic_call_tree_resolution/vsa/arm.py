@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from enum import IntEnum
 from typing import TYPE_CHECKING, assert_never, cast
 
 from capstone import arm_const
@@ -61,6 +62,13 @@ from dynamic_call_tree_resolution.vsa.state import (
 
 if TYPE_CHECKING:
 	from capstone import ArmCsOperand, CsInsn
+
+
+class _Shift(IntEnum):
+	"""A logical shift, by its capstone instruction id."""
+
+	LEFT = arm_const.ARM_INS_LSL
+	RIGHT = arm_const.ARM_INS_LSR
 
 
 def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
@@ -137,14 +145,14 @@ def _apply_unconditional(
 		return _arm_arithmetic(context, instruction, state, ARM_ADDITION_SIGNS[instruction_id])
 	if instruction_id in ARM_ZERO_EXTEND_MASKS:
 		return _arm_zero_extend(instruction, state, ARM_ZERO_EXTEND_MASKS[instruction_id])
-	if instruction_id == arm_const.ARM_INS_LSL:
-		return _arm_shift_left(instruction, state)
+	if instruction_id in _Shift:
+		return _arm_shift(instruction, state, _Shift(instruction_id))
 	return top_written(instruction, state)
 
 
-def _arm_shift_left(instruction: CsInsn, state: State) -> State:
+def _arm_shift(instruction: CsInsn, state: State, shift: _Shift) -> State:
 	operands = _arm_operands(instruction)
-	match _left_shift_amount(operands):
+	match _shift_amount(operands, shift):
 		case None:
 			return top_written(instruction, state)
 		case int() as amount:
@@ -153,23 +161,43 @@ def _arm_shift_left(instruction: CsInsn, state: State) -> State:
 				operands[0].reg,
 				map_set(
 					lookup(state.registers, operands[1].reg),
-					lambda value: Address((value << amount) & ARM_WORD_MASK),
+					lambda value: _shifted(shift, value, amount),
 				),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _left_shift_amount(operands: tuple[ArmCsOperand, ...]) -> int | None:
+def _shifted(shift: _Shift, value: int, amount: int) -> Address:
+	match shift:
+		case _Shift.LEFT:
+			return Address((value << amount) & ARM_WORD_MASK)
+		case _Shift.RIGHT:
+			return Address((value & ARM_WORD_MASK) >> amount)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _shift_amount(operands: tuple[ArmCsOperand, ...], shift: _Shift) -> int | None:
 	"""The amount a shift by an immediate carries; None for a shift by a register.
 
 	Thumb encodes it as a third operand, A32 as the source operand's shift.
 	"""
 	if len(operands) == 3 and operands[2].type == arm_const.ARM_OP_IMM:
 		return operands[2].imm
-	if len(operands) == 2 and operands[1].shift.type == arm_const.ARM_SFT_LSL:
+	if len(operands) == 2 and operands[1].shift.type == _operand_shift(shift):
 		return operands[1].shift.value
 	return None
+
+
+def _operand_shift(shift: _Shift) -> int:
+	match shift:
+		case _Shift.LEFT:
+			return arm_const.ARM_SFT_LSL
+		case _Shift.RIGHT:
+			return arm_const.ARM_SFT_LSR
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _arm_zero_extend(instruction: CsInsn, state: State, mask: int) -> State:

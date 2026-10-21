@@ -144,7 +144,7 @@ def test_a_site_in_a_block_control_flow_never_reaches_is_unreached() -> None:
 		pytest.param(
 			Machine.EM_ARM,
 			"0524 0525 ac42 0446 00d3 7047 9847 7047",
-			(INDIRECT_CALLEE,),
+			(),
 			id="an operand rewritten after the cmp",
 		),
 		pytest.param(
@@ -515,6 +515,54 @@ def test_a_left_shift_by_an_immediate_scales_a_known_index(
 	],
 )
 def test_a_left_shift_keeps_32_bits_and_only_an_immediate_amount(
+	code: str, targets: set[int]
+) -> None:
+	body = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		build_program(
+			Machine.EM_ARM,
+			(("caller", 0x1000, len(body)),),
+			sections={0x1000: body},
+			pointer_size=4,
+		)
+	)
+	assert tracked_values(site) == targets
+
+
+@pytest.mark.parametrize(
+	("code", "arm_code"),
+	[
+		pytest.param("42f200060820800856f8203098477047", (), id="a Thumb-1 lsrs"),
+		pytest.param("42f2000608214fea910056f8203098477047", (), id="a Thumb-2 lsr.w"),
+		pytest.param(
+			"006002e30800a0e32001a0e1003196e733ff2fe11eff2fe1", ((0x1000, 0x1018),), id="an A32 lsr"
+		),
+	],
+)
+def test_a_right_shift_by_an_immediate_divides_a_known_index(
+	code: str, arm_code: tuple[tuple[int, int], ...]
+) -> None:
+	caller = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		_handler_table_program(
+			(("caller", 0x1000, len(caller)),), {0x1000: caller}, arm_code=arm_code
+		)
+	)
+	assert tracked_values(site) == {0x3021}
+
+
+@pytest.mark.parametrize(
+	("code", "targets"),
+	[
+		pytest.param(
+			"42f2000043f20001431a5b0898477047",
+			{0x7FFF_F800},
+			id="a negative difference, as 32 bits",
+		),
+		pytest.param("08200223c34098477047", set[int](), id="by a register, unknown"),
+	],
+)
+def test_a_right_shift_reads_32_bits_and_only_an_immediate_amount(
 	code: str, targets: set[int]
 ) -> None:
 	body = bytes.fromhex(code)
