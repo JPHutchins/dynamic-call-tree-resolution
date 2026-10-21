@@ -9,7 +9,7 @@ from functools import partial, reduce
 from typing import TYPE_CHECKING, Final, assert_never
 
 from capstone import CS_OP_REG
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.vsa.abi import FLAG_REGISTER_NAMES, SP_REGISTERS
@@ -64,6 +64,18 @@ class State(Struct):
 	"""A frame address may be held where the analysis does not track it."""
 	loaded_from: Mapping[int, Address]
 	"""The one image address each register's value was loaded from."""
+	strided: Mapping[int, Strided]
+	"""The registers holding an unknown index into an array, which an access resolves within the
+	array's section."""
+
+
+class Strided(Struct):
+	"""An array's base plus an unknown, non-negative index times a stride."""
+
+	base: Address
+	stride: int
+	offset: int = 0
+	"""The constant added to the indexed address since."""
 
 
 class Store(Struct):
@@ -83,6 +95,7 @@ def top_seed(machine: Machine) -> State:
 		globals=NO_WRITES,
 		escaped=False,
 		loaded_from={},
+		strided={},
 	)
 
 
@@ -98,12 +111,13 @@ def join_states(current: State | None, incoming: State) -> State:
 		escaped=current.escaped
 		or incoming.escaped
 		or frame_copies_lost(current.sp_offsets, incoming.sp_offsets, sp_offsets),
-		loaded_from={
-			register: address
-			for register, address in current.loaded_from.items()
-			if incoming.loaded_from.get(register) == address
-		},
+		loaded_from=agreed_facts(current.loaded_from, incoming.loaded_from),
+		strided=agreed_facts(current.strided, incoming.strided),
 	)
+
+
+def agreed_facts[T](current: Mapping[int, T], incoming: Mapping[int, T]) -> dict[int, T]:
+	return {register: fact for register, fact in current.items() if incoming.get(register) == fact}
 
 
 def frame_copies_lost(
@@ -129,7 +143,17 @@ def set_register(state: State, register: int, value: ValueSet) -> State:
 	return set_loaded(state, register, value, None)
 
 
-def set_loaded(state: State, register: int, value: ValueSet, source: Address | None) -> State:
+def set_strided(state: State, register: int, strided: Strided) -> State:
+	return set_loaded(state, register, Top(), None, strided)
+
+
+def set_loaded(
+	state: State,
+	register: int,
+	value: ValueSet,
+	source: Address | None,
+	strided: Strided | None = None,
+) -> State:
 	sp_offsets = dict(state.sp_offsets)
 	sp_offsets.pop(register, None)
 	return State(
@@ -138,33 +162,26 @@ def set_loaded(state: State, register: int, value: ValueSet, source: Address | N
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
-		loaded_from=_loaded(state.loaded_from, register, source),
+		loaded_from=_with_fact(state.loaded_from, register, source),
+		strided=_with_fact(state.strided, register, strided),
 	)
 
 
-def _loaded(
-	loaded_from: Mapping[int, Address], register: int, source: Address | None
-) -> Mapping[int, Address]:
+def _with_fact[T](facts: Mapping[int, T], register: int, fact: T | None) -> Mapping[int, T]:
 	return (
-		{**loaded_from, register: source}
-		if source is not None
-		else {held: address for held, address in loaded_from.items() if held != register}
-		if register in loaded_from
-		else loaded_from
+		{**facts, register: fact}
+		if fact is not None
+		else {held: kept for held, kept in facts.items() if held != register}
+		if register in facts
+		else facts
 	)
 
 
-def without_loaded(
-	loaded_from: Mapping[int, Address], registers: Collection[int]
-) -> Mapping[int, Address]:
+def without_facts[T](facts: Mapping[int, T], registers: Collection[int]) -> Mapping[int, T]:
 	return (
-		loaded_from
-		if loaded_from.keys().isdisjoint(registers)
-		else {
-			register: address
-			for register, address in loaded_from.items()
-			if register not in registers
-		}
+		facts
+		if facts.keys().isdisjoint(registers)
+		else {register: fact for register, fact in facts.items() if register not in registers}
 	)
 
 
@@ -177,7 +194,8 @@ def set_offsets(state: State, register: int, value: OffsetSet) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped or is_top(value),
-		loaded_from=_loaded(state.loaded_from, register, None),
+		loaded_from=_with_fact(state.loaded_from, register, None),
+		strided=_with_fact(state.strided, register, None),
 	)
 
 
@@ -191,7 +209,8 @@ def top_registers(state: State, registers: tuple[int, ...]) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
-		loaded_from=without_loaded(state.loaded_from, registers),
+		loaded_from=without_facts(state.loaded_from, registers),
+		strided=without_facts(state.strided, registers),
 	)
 
 
@@ -202,14 +221,7 @@ def frame_based(state: State, machine: Machine, register: int) -> bool:
 def escaping(state: State, registers: Iterable[int]) -> State:
 	if state.escaped or not any(register in state.sp_offsets for register in registers):
 		return state
-	return State(
-		registers=state.registers,
-		sp_offsets=state.sp_offsets,
-		stack=state.stack,
-		globals=state.globals,
-		escaped=True,
-		loaded_from=state.loaded_from,
-	)
+	return replace(state, escaped=True)
 
 
 def top_written(instruction: CsInsn, state: State, roots: Mapping[int, int] | None = None) -> State:
@@ -244,7 +256,8 @@ def top_written(instruction: CsInsn, state: State, roots: Mapping[int, int] | No
 				instruction.reg_name(register) not in FLAG_REGISTER_NAMES for register in written
 			)
 		),
-		loaded_from=without_loaded(state.loaded_from, dropped),
+		loaded_from=without_facts(state.loaded_from, dropped),
+		strided=without_facts(state.strided, dropped),
 	)
 
 
@@ -368,5 +381,9 @@ def copy_register(state: State, destination: int, source: int) -> State:
 	if source in state.sp_offsets:
 		return set_offsets(state, destination, Known(values=state.sp_offsets[source]))
 	return set_loaded(
-		state, destination, lookup(state.registers, source), state.loaded_from.get(source)
+		state,
+		destination,
+		lookup(state.registers, source),
+		state.loaded_from.get(source),
+		state.strided.get(source),
 	)

@@ -9,6 +9,7 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, assert_never, cast
 
 from capstone import arm_const
+from salix import replace
 
 from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.vsa.abi import (
@@ -30,6 +31,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 from dynamic_call_tree_resolution.vsa.lattice import (
 	Known,
 	Top,
+	indexed,
 	lookup,
 	map_set,
 	put_value,
@@ -41,7 +43,6 @@ from dynamic_call_tree_resolution.vsa.memory import (
 	after_unknown_store,
 	loaded,
 	register_destination,
-	scaled_addresses,
 	store_at,
 	store_value,
 	weakened,
@@ -49,19 +50,23 @@ from dynamic_call_tree_resolution.vsa.memory import (
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
+	Strided,
 	copy_register,
 	escaping,
 	frame_based,
 	set_loaded,
 	set_offsets,
 	set_register,
+	set_strided,
 	stack_read,
 	top_written,
-	without_loaded,
+	without_facts,
 )
 
 if TYPE_CHECKING:
 	from capstone import ArmCsOperand, CsInsn
+
+	from dynamic_call_tree_resolution.vsa.lattice import ValueSet
 
 
 class _Shift(IntEnum):
@@ -319,18 +324,25 @@ def _arm_arithmetic(context: Context, instruction: CsInsn, state: State, sign: i
 		scale = _arm_shift_scale(value_operand)
 		if scale is None:
 			return top_written(instruction, state)
-		return set_register(
+		return _arm_indexed(
 			state,
 			destination.reg,
-			scaled_addresses(
-				context,
-				lookup(state.registers, register_operand.reg),
-				lookup(state.registers, value_operand.reg),
-				sign * scale,
-				0,
-			),
+			lookup(state.registers, register_operand.reg),
+			lookup(state.registers, value_operand.reg),
+			sign * scale,
 		)
 	return top_written(instruction, state)  # pragma: no cover
+
+
+def _arm_indexed(
+	state: State, destination: int, base: ValueSet, index: ValueSet, stride: int
+) -> State:
+	"""An unknown index into one array waits for the access that picks its slots."""
+	match base, index:
+		case Known(values=bases), Top() if len(bases) == 1 and stride > 0:
+			return set_strided(state, destination, Strided(base=next(iter(bases)), stride=stride))
+		case _:
+			return set_register(state, destination, indexed(base, index, stride, 0))
 
 
 def _arm_shift_destination(state: State, destination: int, source: int, delta: int) -> State:
@@ -340,7 +352,15 @@ def _arm_shift_destination(state: State, destination: int, source: int, delta: i
 		)
 	if destination == arm_const.ARM_REG_SP:
 		return set_offsets(state, destination, Top())
-	return set_register(state, destination, shift_addresses(lookup(state.registers, source), delta))
+	match state.strided.get(source):
+		case None:
+			return set_register(
+				state, destination, shift_addresses(lookup(state.registers, source), delta)
+			)
+		case Strided() as strided:
+			return set_strided(state, destination, replace(strided, offset=strided.offset + delta))
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _arm_pop(instruction: CsInsn, state: State) -> State:
@@ -364,5 +384,6 @@ def _arm_pop(instruction: CsInsn, state: State) -> State:
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
-		loaded_from=without_loaded(state.loaded_from, registers),
+		loaded_from=without_facts(state.loaded_from, registers),
+		strided=without_facts(state.strided, registers),
 	)

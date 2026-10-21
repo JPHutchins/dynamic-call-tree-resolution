@@ -10,7 +10,7 @@ from functools import partial
 from typing import TYPE_CHECKING, assert_never
 
 from capstone import arm_const, x86_const
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
 from dynamic_call_tree_resolution.points_to import instruction_set_at, memory_at
@@ -42,7 +42,9 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Store,
+	Strided,
 	Writes,
+	agreed_facts,
 	frame_based,
 	frame_copies_lost,
 	frame_write,
@@ -200,6 +202,16 @@ def _low_bytes(context: Context, values: ValueSet, width: int) -> ValueSet:
 	)
 
 
+def _array_slots(context: Context, base: Address, start: Address, stride: int) -> ValueSet:
+	"""The array's slots moved to start, when start lies in the section of the array's base."""
+	index = bisect_right(context.section_starts, base) - 1
+	return (
+		shift_addresses(_section_slots(context, base, stride), start - base)
+		if index >= 0 and context.section_spans[index][0] <= start < context.section_spans[index][1]
+		else Top()
+	)
+
+
 def _section_slots(context: Context, start: Address, stride: int) -> ValueSet:
 	index = bisect_right(context.section_starts, start) - 1
 	if index < 0 or stride <= 0 or _span_at(context, start) is None:
@@ -328,7 +340,7 @@ def memory_addresses(context: Context, state: State, operand: CsOperand) -> Valu
 		else lookup(state.registers, memory.base)
 	)
 	if memory.index == 0:
-		return shift_addresses(base, memory.disp)
+		return _displaced(context, state.strided.get(memory.base), base, memory.disp)
 	match index_scale(context.program.machine, operand):
 		case None:
 			return Top()
@@ -336,6 +348,16 @@ def memory_addresses(context: Context, state: State, operand: CsOperand) -> Valu
 			return scaled_addresses(
 				context, base, lookup(state.registers, memory.index), scale, memory.disp
 			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _displaced(context: Context, strided: Strided | None, base: ValueSet, disp: int) -> ValueSet:
+	match strided:
+		case None:
+			return shift_addresses(base, disp)
+		case Strided(base=array, stride=stride, offset=offset):
+			return _array_slots(context, array, Address(array + offset + disp), stride)
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -469,14 +491,7 @@ def store_at(
 				context,
 				state,
 				offsets,
-				State(
-					registers=state.registers,
-					sp_offsets=state.sp_offsets,
-					stack=frame_write(state.stack, offsets, store, pointer_size),
-					globals=state.globals,
-					escaped=state.escaped,
-					loaded_from=state.loaded_from,
-				),
+				replace(state, stack=frame_write(state.stack, offsets, store, pointer_size)),
 			)
 		case Image(addresses=addresses):
 			return _image_store(context, state, addresses, store, site)
@@ -491,26 +506,19 @@ def _image_store(
 ) -> State:
 	match addresses:
 		case Top():
-			return State(
-				registers=state.registers,
-				sp_offsets=state.sp_offsets,
+			return replace(
+				state,
 				stack={} if state.escaped else state.stack,
 				globals=_unknown_writes(context, state.globals, site),
-				escaped=state.escaped,
-				loaded_from=state.loaded_from,
 			)
 		case Known(values=starts):
 			return _weak_across(
 				context,
 				state,
 				addresses,
-				State(
-					registers=state.registers,
-					sp_offsets=state.sp_offsets,
-					stack=state.stack,
+				replace(
+					state,
 					globals=image_write(state.globals, starts, store, context.program.pointer_size),
-					escaped=state.escaped,
-					loaded_from=state.loaded_from,
 				),
 			)
 		case _ as unreachable:
@@ -519,14 +527,7 @@ def _image_store(
 
 def after_unknown_store(context: Context, state: State) -> State:
 	"""The state after a store that may write the stack and any escaped object."""
-	return State(
-		registers=state.registers,
-		sp_offsets=state.sp_offsets,
-		stack={},
-		globals=_unknown_writes(context, state.globals, None),
-		escaped=state.escaped,
-		loaded_from=state.loaded_from,
-	)
+	return replace(state, stack={}, globals=_unknown_writes(context, state.globals, None))
 
 
 def _unknown_writes(context: Context, writes: Writes, site: Address | None) -> Writes:
@@ -583,11 +584,8 @@ def weakened(context: Context, before: State, after: State) -> State:
 		escaped=before.escaped
 		or after.escaped
 		or frame_copies_lost(before.sp_offsets, after.sp_offsets, sp_offsets),
-		loaded_from={
-			register: address
-			for register, address in before.loaded_from.items()
-			if after.loaded_from.get(register) == address
-		},
+		loaded_from=agreed_facts(before.loaded_from, after.loaded_from),
+		strided=agreed_facts(before.strided, after.strided),
 	)
 
 

@@ -51,7 +51,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	set_register,
 	stack_read,
 	top_written,
-	without_loaded,
+	without_facts,
 )
 
 if TYPE_CHECKING:
@@ -227,7 +227,8 @@ def _pop(state: State, machine: Machine, pointer_size: int, destination: int) ->
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
-		loaded_from=without_loaded(state.loaded_from, (root,)),
+		loaded_from=without_facts(state.loaded_from, (root,)),
+		strided=without_facts(state.strided, (root,)),
 	)
 
 
