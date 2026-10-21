@@ -3,6 +3,7 @@
 
 """Worst-case stack depth over a resolved call graph."""
 
+from dynamic_call_tree_resolution.stack_analysis.edges import ThreadEntry as ThreadEntry
 from dynamic_call_tree_resolution.stack_analysis.edges import ThreadTargets as ThreadTargets
 from dynamic_call_tree_resolution.stack_analysis.edges import (
 	expand_indirect_calls as expand_indirect_calls,

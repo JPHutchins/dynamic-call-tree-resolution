@@ -28,6 +28,20 @@ if TYPE_CHECKING:
 _TRUSTED: Final = frozenset({EdgeKind.EXTERNAL, EdgeKind.DISPATCH})
 
 
+class ThreadEntry(Struct):
+	"""Where a thread starts, and the kind of edge that starts it."""
+
+	entry: str
+	started_by: EdgeKind
+
+
+class _Callee(Struct, order=True):
+	"""A callee an edge leads to, with the edge's kind."""
+
+	callee: str
+	kind: EdgeKind
+
+
 def expand_indirect_calls(
 	edges: Iterable[CallEdge],
 	targets_by_caller: Mapping[str, frozenset[str]],
@@ -39,9 +53,9 @@ def expand_indirect_calls(
 	edges_tuple = tuple(edges)
 	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
 	return tuple(
-		CallEdge(caller=edge.caller, callee=callee, kind=kind)
+		CallEdge(caller=edge.caller, callee=expanded.callee, kind=expanded.kind)
 		for edge in edges_tuple
-		for callee, kind in (
+		for expanded in (
 			_expansion(
 				targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
 				(narrowed_by_caller or {}).get(frame_key(edge.caller), {}),
@@ -53,7 +67,7 @@ def expand_indirect_calls(
 				targets_by_caller.get(frame_key(edge.caller), frozenset[str]()), edge.kind
 			)
 			if edge.callee == INDIRECT_CALLEE
-			else ((edge.callee, edge.kind),)
+			else (_Callee(callee=edge.callee, kind=edge.kind),)
 		)
 	)
 
@@ -65,10 +79,10 @@ def _expansion(
 	graph_targets: Callable[[str], frozenset[str]],
 	*,
 	exact: bool,
-) -> list[tuple[str, EdgeKind]]:
+) -> list[_Callee]:
 	candidates = targets - {INDIRECT_CALLEE}
 	return sorted(
-		(graph_target, _indirect_kind(target, candidates, narrowed))
+		_Callee(callee=graph_target, kind=_indirect_kind(target, candidates, narrowed))
 		for target in (candidates - {NO_CALLEE})
 		| (
 			fallback
@@ -85,8 +99,8 @@ def _complete(candidates: frozenset[str], narrowed: Mapping[str, EdgeKind]) -> b
 	)
 
 
-def _unexpanded(targets: frozenset[str], kind: EdgeKind) -> list[tuple[str, EdgeKind]]:
-	return [] if targets == frozenset({NO_CALLEE}) else [(INDIRECT_CALLEE, kind)]
+def _unexpanded(targets: frozenset[str], kind: EdgeKind) -> list[_Callee]:
+	return [] if targets == frozenset({NO_CALLEE}) else [_Callee(callee=INDIRECT_CALLEE, kind=kind)]
 
 
 def _indirect_kind(
@@ -98,13 +112,13 @@ def _indirect_kind(
 def thread_edges(
 	edges: Iterable[CallEdge],
 	trampoline: str,
-	entries_by_thread: Mapping[str, tuple[str, EdgeKind]],
+	entries_by_thread: Mapping[str, ThreadEntry],
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	names_by_key = _raw_names_by_key(edges_tuple)
 	return tuple(
 		thread_edge
-		for thread, (entry, started_by) in entries_by_thread.items()
+		for thread, started in entries_by_thread.items()
 		for thread_edge in (
 			*(
 				CallEdge(caller=thread, callee=edge.callee, kind=edge.kind)
@@ -112,8 +126,8 @@ def thread_edges(
 				if frame_key(edge.caller) == trampoline and edge.callee != INDIRECT_CALLEE
 			),
 			*(
-				CallEdge(caller=thread, callee=name, kind=started_by)
-				for name in sorted(_graph_names(names_by_key, entry))
+				CallEdge(caller=thread, callee=name, kind=started.started_by)
+				for name in sorted(_graph_names(names_by_key, started.entry))
 			),
 		)
 	)
@@ -154,15 +168,17 @@ def own_thread_edges(
 			for name in sorted(graph_targets(entry))
 		),
 		*(
-			CallEdge(caller=_in_thread(thread, edge.caller), callee=callee, kind=kind)
+			CallEdge(
+				caller=_in_thread(thread, edge.caller), callee=expanded.callee, kind=expanded.kind
+			)
 			for edge in edges_tuple
 			if frame_key(edge.caller) in own.reached
-			for callee, kind in (
+			for expanded in (
 				(
 					sorted(
-						(
-							node(graph_target),
-							_indirect_kind(
+						_Callee(
+							callee=node(graph_target),
+							kind=_indirect_kind(
 								target,
 								own.targets_by_caller[frame_key(edge.caller)],
 								own.narrowed_by_caller.get(frame_key(edge.caller), {}),
@@ -184,7 +200,7 @@ def own_thread_edges(
 					)
 				)
 				if edge.callee == INDIRECT_CALLEE
-				else ((node(edge.callee), edge.kind),)
+				else (_Callee(callee=node(edge.callee), kind=edge.kind),)
 			)
 		),
 	)

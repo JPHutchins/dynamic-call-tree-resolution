@@ -71,6 +71,14 @@ class _VcgEdge(Struct):
 	targetname: str
 
 
+class _Parsed[T](Struct):
+	"""What a parse of ``.ci`` tokens read."""
+
+	value: T
+	end: int
+	"""The index of the token after it."""
+
+
 def parse_callgraph(path: Path) -> tuple[CallEdge, ...]:
 	return tuple(
 		CallEdge(caller=edge.sourcename, callee=edge.targetname)
@@ -92,7 +100,7 @@ def callgraph_files(build_directory: Path) -> tuple[tuple[Path, tuple[CallEdge, 
 def callgraph_locations(path: Path) -> Mapping[str, SourceLocation]:
 	return {
 		entry["title"]: location
-		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph")[0].get("node", [])
+		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph").value.get("node", [])
 		if "title" in entry
 		if (location := _label_location(entry.get("label", ""))) is not None
 	}
@@ -101,7 +109,7 @@ def callgraph_locations(path: Path) -> Mapping[str, SourceLocation]:
 def indirect_calls(path: Path) -> tuple[IndirectCall, ...]:
 	return tuple(
 		IndirectCall(caller=entry["sourcename"], location=location)
-		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph")[0].get("edge", [])
+		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph").value.get("edge", [])
 		if entry.get("targetname") == "__indirect_call"
 		if (location := _location(entry.get("label", ""))) is not None
 	)
@@ -111,7 +119,7 @@ def libcall_nodes(path: Path) -> frozenset[str]:
 	"""The calls GCC records as ``<built-in>``: libgcc and libc routines it emits itself."""
 	return frozenset(
 		entry["title"]
-		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph")[0].get("node", [])
+		for entry in _parse_body(_tokenize(path.read_text()), 0, "graph").value.get("node", [])
 		if "title" in entry and entry.get("label", "").split(r"\n")[1:2] == ["<built-in>"]
 	)
 
@@ -153,9 +161,9 @@ def _location(place: str) -> SourceLocation | None:
 
 
 def _parse_vcg(text: str) -> tuple[_VcgEdge, ...]:
-	tokens = _tokenize(text)
-	entries, _ = _parse_body(tokens, 0, "graph")
-	return tuple(_edge(entry) for entry in entries.get("edge", []))
+	return tuple(
+		_edge(entry) for entry in _parse_body(_tokenize(text), 0, "graph").value.get("edge", [])
+	)
 
 
 def _edge(entry: dict[str, str]) -> _VcgEdge:
@@ -187,7 +195,7 @@ def _parse_body(
 	tokens: tuple[str, ...],
 	index: int,
 	key: str,
-) -> tuple[dict[str, list[dict[str, str]]], int]:
+) -> _Parsed[dict[str, list[dict[str, str]]]]:
 	if tokens[index] != key or tokens[index + 1] != ":" or tokens[index + 2] != "{":
 		raise ValueError(f"expected '{key}: {{' at token {index}")
 	entries: dict[str, list[dict[str, str]]] = {}
@@ -198,14 +206,15 @@ def _parse_body(
 			raise ValueError(f"expected ':' after '{entry_key}' at token {index + 1}")
 		index += 2
 		if tokens[index] == "{":
-			entry, index = _parse_entry(tokens, index)
-			entries.setdefault(entry_key, []).append(entry)
+			parsed = _parse_entry(tokens, index)
+			entries.setdefault(entry_key, []).append(parsed.value)
+			index = parsed.end
 		else:
 			index += 1
-	return entries, index + 1
+	return _Parsed(value=entries, end=index + 1)
 
 
-def _parse_entry(tokens: tuple[str, ...], index: int) -> tuple[dict[str, str], int]:
+def _parse_entry(tokens: tuple[str, ...], index: int) -> _Parsed[dict[str, str]]:
 	entry: dict[str, str] = {}
 	index += 1
 	while tokens[index] != "}":
@@ -215,4 +224,4 @@ def _parse_entry(tokens: tuple[str, ...], index: int) -> tuple[dict[str, str], i
 		index += 2
 		entry[entry_key] = tokens[index]
 		index += 1
-	return entry, index + 1
+	return _Parsed(value=entry, end=index + 1)

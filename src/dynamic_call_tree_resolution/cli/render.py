@@ -7,6 +7,8 @@ import sys
 from itertools import accumulate
 from typing import TYPE_CHECKING, assert_never
 
+from salix import Struct
+
 from dynamic_call_tree_resolution.cli.app import (
 	oversized,
 )
@@ -25,6 +27,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	Bounded,
 	Nesting,
 	PathStep,
+	Reason,
 	StackGraph,
 	StackReport,
 	Unbounded,
@@ -48,12 +51,16 @@ def render(report: StackReport) -> str:
 		case Bounded(bytes=depth) as bound:
 			notes = _notes(
 				(
-					("measured", bound.measured),
-					("assumed no recursion", bound.assumed_no_recursion),
-					("narrowed by field", bound.narrowed_by_field),
-					("narrowed by signature", bound.narrowed_by_signature),
-					("assumed unwritten", bound.assumed_unwritten),
-					("assumed frame", bound.assumed_frames),
+					_Count(reason=Reason.MEASURED, functions=bound.measured),
+					_Count(
+						reason=Reason.ASSUMED_NO_RECURSION, functions=bound.assumed_no_recursion
+					),
+					_Count(reason=Reason.NARROWED_BY_FIELD, functions=bound.narrowed_by_field),
+					_Count(
+						reason=Reason.NARROWED_BY_SIGNATURE, functions=bound.narrowed_by_signature
+					),
+					_Count(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
+					_Count(reason=Reason.ASSUMED_FRAME, functions=bound.assumed_frames),
 				),
 				_thread_stack_additions(bound),
 				(*_nesting_notes(report.nesting), *_stack_notes(report)),
@@ -62,16 +69,20 @@ def render(report: StackReport) -> str:
 		case Unbounded() as bound:
 			notes = _notes(
 				(
-					("recursion", bound.recursion),
-					("unmeasured", bound.unmeasured),
-					("measured", bound.measured),
-					("assumed no recursion", bound.assumed_no_recursion),
-					("narrowed by field", bound.narrowed_by_field),
-					("narrowed by signature", bound.narrowed_by_signature),
-					("assumed unwritten", bound.assumed_unwritten),
-					("assumed frame", bound.assumed_frames),
-					("dynamic", bound.dynamic),
-					("unresolved", bound.unresolved),
+					_Count(reason=Reason.RECURSION, functions=bound.recursion),
+					_Count(reason=Reason.UNMEASURED, functions=bound.unmeasured),
+					_Count(reason=Reason.MEASURED, functions=bound.measured),
+					_Count(
+						reason=Reason.ASSUMED_NO_RECURSION, functions=bound.assumed_no_recursion
+					),
+					_Count(reason=Reason.NARROWED_BY_FIELD, functions=bound.narrowed_by_field),
+					_Count(
+						reason=Reason.NARROWED_BY_SIGNATURE, functions=bound.narrowed_by_signature
+					),
+					_Count(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
+					_Count(reason=Reason.ASSUMED_FRAME, functions=bound.assumed_frames),
+					_Count(reason=Reason.DYNAMIC, functions=bound.dynamic),
+					_Count(reason=Reason.UNRESOLVED, functions=bound.unresolved),
 				),
 				_thread_stack_additions(bound),
 				(*_nesting_notes(report.nesting), *_stack_notes(report)),
@@ -81,24 +92,42 @@ def render(report: StackReport) -> str:
 			assert_never(unreachable)
 
 
+class _Count(Struct):
+	"""The functions a report names for one reason."""
+
+	reason: Reason
+	functions: frozenset[str]
+
+
+class _Addition(Struct):
+	"""Bytes a thread's stack holds beyond its deepest path."""
+
+	label: str
+	added: int
+
+
 def _notes(
-	counts: tuple[tuple[str, frozenset[str]], ...],
-	additions: tuple[tuple[str, int], ...],
+	counts: tuple[_Count, ...],
+	additions: tuple[_Addition, ...],
 	nesting: tuple[str, ...],
 ) -> str:
 	return ", ".join(
 		(
-			*(f"{name}: {len(functions)}" for name, functions in counts if functions),
-			*(f"{name}: {added} bytes" for name, added in additions if added),
+			*(f"{count.reason}: {len(count.functions)}" for count in counts if count.functions),
+			*(
+				f"{addition.label}: {addition.added} bytes"
+				for addition in additions
+				if addition.added
+			),
 			*nesting,
 		)
 	)
 
 
-def _thread_stack_additions(bound: Bounded | Unbounded) -> tuple[tuple[str, int], ...]:
+def _thread_stack_additions(bound: Bounded | Unbounded) -> tuple[_Addition, ...]:
 	return (
-		("stack reservation", bound.stack_reservation),
-		("exception frame", bound.exception_frame),
+		_Addition(label="stack reservation", added=bound.stack_reservation),
+		_Addition(label="exception frame", added=bound.exception_frame),
 	)
 
 
@@ -106,14 +135,14 @@ def thread_stack_steps(
 	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
 ) -> tuple[str, ...]:
 	return tuple(
-		f"({name}) +{added} = {steps[-1].cumulative + total} bytes"
+		f"({addition.label}) +{addition.added} = {steps[-1].cumulative + total} bytes"
 		for report in shown[:1]
 		if steps
 		for additions in (_thread_stack_additions(report.bound),)
-		for (name, added), total in zip(
-			additions, accumulate(added for _, added in additions), strict=True
+		for addition, total in zip(
+			additions, accumulate(addition.added for addition in additions), strict=True
 		)
-		if added
+		if addition.added
 	)
 
 

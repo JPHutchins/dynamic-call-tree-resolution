@@ -167,7 +167,7 @@ def expand_from_elf(
 		narrowed_by_caller=narrowed_by_caller,
 	)
 	binary = _binary_edges(image, measure, expanded, artifacts.frames)
-	threads_edges, threads_frames = thread_graph(
+	threads = thread_graph(
 		image,
 		model,
 		(*in_image_edges, *binary, *register.edges),
@@ -176,15 +176,15 @@ def expand_from_elf(
 	code = code_measures(
 		image,
 		measure,
-		(*expanded, *binary, *threads_edges),
-		(*artifacts.frames, *threads_frames, *register.frames),
+		(*expanded, *binary, *threads.edges),
+		(*artifacts.frames, *threads.frames, *register.frames),
 		hardware_roots | frozenset(exceptions.values()),
 		frozenset(),
 	)
 	return Expansion(
-		expanded=(*expanded, *binary, *code.edges, *threads_edges),
-		in_image_edges=(*in_image_edges, *unrecorded, *threads_edges),
-		frames=(*artifacts.frames, *threads_frames, *register.frames, *code.frames),
+		expanded=(*expanded, *binary, *code.edges, *threads.edges),
+		in_image_edges=(*in_image_edges, *unrecorded, *threads.edges),
+		frames=(*artifacts.frames, *threads.frames, *register.frames, *code.frames),
 		threads=frozenset(thread.name for thread in model.threads)
 		| frozenset(thread.name for thread in model.system_threads),
 		hardware_roots=hardware_roots,
