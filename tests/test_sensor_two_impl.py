@@ -20,7 +20,7 @@ from dynamic_call_tree_resolution import (
 	extract_call_sites,
 	load,
 )
-from dynamic_call_tree_resolution.call_sites import per_caller_candidates
+from dynamic_call_tree_resolution.call_sites import CallerCandidates, per_caller_candidates
 from dynamic_call_tree_resolution.callgraph import load_callgraph
 from dynamic_call_tree_resolution.stack_analysis import (
 	expand_indirect_calls,
@@ -63,21 +63,18 @@ def test_analyze_resolves_each_threads_dispatch_to_its_own_impl(executable: Path
 class _Resolution(Struct):
 	edges: tuple[CallEdge, ...]
 	frames: tuple[StackUsage, ...]
-	targets_by_caller: Mapping[str, frozenset[str]]
-	fallback: frozenset[str]
+	candidates: CallerCandidates
 
 
 @pytest.fixture(scope="module")
 def resolution(artifacts: Path, executable: Path) -> _Resolution:
 	program = load(executable)
-	targets_by_caller, fallback = per_caller_candidates(
-		program, extract_call_sites(program), assignments(program)
-	)
 	return _Resolution(
 		edges=load_callgraph(artifacts),
 		frames=load_stack_usages(artifacts),
-		targets_by_caller=targets_by_caller,
-		fallback=fallback,
+		candidates=per_caller_candidates(
+			program, extract_call_sites(program), assignments(program)
+		),
 	)
 
 
@@ -86,7 +83,10 @@ def _depths(resolution: _Resolution, *, exact: bool) -> Mapping[str, StackReport
 		report.entry: report
 		for report in worst_case_depths(
 			expand_indirect_calls(
-				resolution.edges, resolution.targets_by_caller, resolution.fallback, exact=exact
+				resolution.edges,
+				resolution.candidates.targets_by_caller,
+				resolution.candidates.fallback,
+				exact=exact,
 			),
 			resolution.frames,
 			entry_edges=resolution.edges,
