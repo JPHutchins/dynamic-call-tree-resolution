@@ -3130,7 +3130,7 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 			Machine.EM_ARM,
 			"42f20004 c0f20004 00de a047",
 			0x2000,
-			set[int](),
+			Unreached(),
 			id="thumb-udf-is-terminal",
 		),
 		pytest.param(
@@ -3160,13 +3160,13 @@ def test_every_function_a_site_candidate_names_is_address_taken(
 			Machine.EM_X86_64,
 			"48c7c300300000 0f0b ffd3",
 			0x3000,
-			set[int](),
+			Unreached(),
 			id="x86-ud2-is-terminal",
 		),
 	],
 )
 def test_a_returning_trap_falls_through_and_clobbers_caller_saved_registers(
-	machine: Machine, code: str, target: int, candidates: set[int]
+	machine: Machine, code: str, target: int, candidates: set[int] | Unreached
 ) -> None:
 	body = bytes.fromhex(code)
 	program = _program(
@@ -3689,11 +3689,11 @@ def test_thumb_pre_indexed_writeback_advances_the_base(code: str, candidates: se
 	("data_in_code", "sites"),
 	[
 		pytest.param(((0x1008, 0x100C),), [{0x2000}], id="a-marked-literal-is-not-decoded"),
-		pytest.param((), [{0x2000}, set[int]()], id="an-unmarked-literal-decodes-as-blx"),
+		pytest.param((), [{0x2000}, Unreached()], id="an-unmarked-literal-decodes-as-blx"),
 	],
 )
 def test_thumb_data_in_code_is_not_decoded(
-	data_in_code: tuple[tuple[int, int], ...], sites: list[set[int]]
+	data_in_code: tuple[tuple[int, int], ...], sites: list[set[int] | Unreached]
 ) -> None:
 	body = bytes.fromhex("42f20003 9847 7047 90470000")
 	program = build_program(
@@ -3819,13 +3819,13 @@ def test_thumb_unbounded_dispatch_reaches_every_block(code: str) -> None:
 @pytest.mark.parametrize(
 	("code", "candidates"),
 	[
-		pytest.param("00b5 42f20003 5df804fb 9847", set[int](), id="ldr-pc-from-sp-returns"),
-		pytest.param("42f20003 f746 9847", set[int](), id="mov-pc-lr-returns"),
+		pytest.param("00b5 42f20003 5df804fb 9847", Unreached(), id="ldr-pc-from-sp-returns"),
+		pytest.param("42f20003 f746 9847", Unreached(), id="mov-pc-lr-returns"),
 		pytest.param("42f20003 9f46", {0x2000}, id="mov-pc-is-a-site"),
 		pytest.param("44f20003 d3f804f0", {0x3000}, id="ldr-pc-is-a-site"),
 	],
 )
-def test_thumb_pc_write_is_a_return_or_a_site(code: str, candidates: set[int]) -> None:
+def test_thumb_pc_write_is_a_return_or_a_site(code: str, candidates: set[int] | Unreached) -> None:
 	(site,) = extract_call_sites(_thumb_dispatch_program(code))
 	assert site.target == _expected(candidates)
 
@@ -4142,7 +4142,9 @@ def test_a32_dispatch_past_the_case_limit_is_unbounded(compare: str, candidates:
 	assert site.target == _expected(candidates)
 
 
-def _expected(candidates: Collection[int]) -> ValueSet:
+def _expected(candidates: Collection[int] | Unreached) -> ValueSet | Unreached:
+	if isinstance(candidates, Unreached):
+		return candidates
 	return (
 		Known(values=frozenset(Address(address) for address in candidates))
 		if frozenset(candidates)
