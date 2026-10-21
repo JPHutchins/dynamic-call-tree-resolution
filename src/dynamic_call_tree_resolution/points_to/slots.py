@@ -16,6 +16,7 @@ from dynamic_call_tree_resolution.model import (
 	Address,
 	ArrayMember,
 	EmbeddedStructMember,
+	Field,
 	FunctionPointerMember,
 	FunctionSignature,
 	NullSlot,
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 
 
 class _SlotUniverseEntry(Struct):
+	slot: Address
 	path: tuple[str | None, ...]
 	signature: FunctionSignature | None
 	record: str | None = None
@@ -52,13 +54,14 @@ def unresolved_slots(
 		sorted(
 			(
 				UnresolvedSlot(
-					slot=slot,
+					slot=entry.slot,
 					path=entry.path,
 					signature=entry.signature,
-					residue=_residue(program, slot),
+					residue=_residue(program, entry.slot),
 				)
-				for slot, entry in dict(reversed(tuple(_slot_universe(program)))).items()
-				if slot not in resolved_by_slot and not _holds_null_in_rom(program, slot)
+				for entry in _first_entries(program)
+				if entry.slot not in resolved_by_slot
+				and not _holds_null_in_rom(program, entry.slot)
 			),
 			key=_slot_address,
 		)
@@ -70,23 +73,23 @@ def null_slots(program: Program, resolved: tuple[SlotAssignment, ...]) -> tuple[
 	return tuple(
 		sorted(
 			(
-				NullSlot(slot=slot, path=entry.path, signature=entry.signature)
-				for slot, entry in dict(reversed(tuple(_slot_universe(program)))).items()
-				if slot not in resolved_by_slot and _holds_null_in_rom(program, slot)
+				NullSlot(slot=entry.slot, path=entry.path, signature=entry.signature)
+				for entry in _first_entries(program)
+				if entry.slot not in resolved_by_slot and _holds_null_in_rom(program, entry.slot)
 			),
 			key=_slot_address,
 		)
 	)
 
 
-def field_slots(program: Program) -> Mapping[tuple[str, str], frozenset[Address]]:
+def field_slots(program: Program) -> Mapping[Field, frozenset[Address]]:
 	"""Every function-pointer slot that is a named member of a layout, by layout and member."""
 	return {
-		field: frozenset(slot for _, slot in group)
+		field: frozenset(entry.slot for entry in group)
 		for field, group in groupby(
 			sorted(
-				((entry.record, member), slot)
-				for slot, entry in _slot_universe(program)
+				_FieldSlot(field=Field(record=entry.record, member=member), slot=entry.slot)
+				for entry in _slot_universe(program)
 				if entry.record is not None
 				for member in (entry.path[-1],)
 				if member is not None
@@ -110,18 +113,30 @@ def _holds_null_in_rom(program: Program, slot: Address) -> bool:
 	return not in_writable_memory(program, slot) and pointer_at(program, slot) == 0
 
 
-def _field_of(entry: tuple[tuple[str, str], Address]) -> tuple[str, str]:
-	return entry[0]
+class _FieldSlot(Struct, order=True):
+	"""A slot that is a named member of a layout."""
+
+	field: Field
+	slot: Address
 
 
-def _slot_universe(program: Program) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
+def _field_of(entry: _FieldSlot) -> Field:
+	return entry.field
+
+
+def _first_entries(program: Program) -> Iterable[_SlotUniverseEntry]:
+	return {entry.slot: entry for entry in reversed(tuple(_slot_universe(program)))}.values()
+
+
+def _slot_universe(program: Program) -> Iterable[_SlotUniverseEntry]:
 	for data_object in program.objects.values():
 		layout = layout_of(program, data_object)
 		if layout is None:
 			if data_object.type_name == FUNCTION_POINTER:
-				yield (
-					data_object.address,
-					_SlotUniverseEntry(path=(data_object.name,), signature=data_object.signature),
+				yield _SlotUniverseEntry(
+					slot=data_object.address,
+					path=(data_object.name,),
+					signature=data_object.signature,
 				)
 			elif data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
 				yield from _array_element_slots(program, data_object, (data_object.name,))
@@ -132,9 +147,8 @@ def _slot_universe(program: Program) -> Iterable[tuple[Address, _SlotUniverseEnt
 	for relocation in program.relocations:
 		if relocation.target not in program.functions:
 			continue
-		yield (
-			relocation.slot,
-			_SlotUniverseEntry(path=slot_path(program, relocation.slot), signature=None),
+		yield _SlotUniverseEntry(
+			slot=relocation.slot, path=slot_path(program, relocation.slot), signature=None
 		)
 
 
@@ -153,15 +167,16 @@ def _residue(program: Program, slot: Address) -> Residue:
 
 def _array_element_slots(
 	program: Program, data_object: DataObject, path: tuple[str | None, ...]
-) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
+) -> Iterable[_SlotUniverseEntry]:
 	element_name = array_element_type(data_object.type_name) if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
 	if element_layout is None:
 		if element_name == FUNCTION_POINTER:
 			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
-				yield (
-					Address(data_object.address + base_offset),
-					_SlotUniverseEntry(path=(*path, f"[{index}]"), signature=data_object.signature),
+				yield _SlotUniverseEntry(
+					slot=Address(data_object.address + base_offset),
+					path=(*path, f"[{index}]"),
+					signature=data_object.signature,
 				)
 		return
 	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
@@ -176,14 +191,16 @@ def _member_slots(
 	members: tuple[Member, ...],
 	path: tuple[str | None, ...],
 	record: str | None,
-) -> Iterable[tuple[Address, _SlotUniverseEntry]]:
+) -> Iterable[_SlotUniverseEntry]:
 	for member in members:
 		member_path = (*path, member.name)
 		match member:
 			case FunctionPointerMember(offset=offset, signature=signature):
-				yield (
-					Address(data_object.address + base_offset + offset),
-					_SlotUniverseEntry(path=member_path, signature=signature, record=record),
+				yield _SlotUniverseEntry(
+					slot=Address(data_object.address + base_offset + offset),
+					path=member_path,
+					signature=signature,
+					record=record,
 				)
 			case EmbeddedStructMember(offset=offset, type_name=type_name, members=inner_members):
 				yield from _member_slots(

@@ -9,6 +9,8 @@ from bisect import bisect_right
 from itertools import pairwise
 from typing import TYPE_CHECKING, assert_never
 
+from salix import Struct
+
 from dynamic_call_tree_resolution.model import (
 	Address,
 	InstructionSet,
@@ -39,21 +41,27 @@ def read_pointer(program: Program, address: Address, bound: int | None) -> Addre
 
 def in_writable_memory(program: Program, address: Address) -> bool:
 	covering = _section_covering(program, address)
-	return covering is None or covering[1].writable
+	return covering is None or covering.section.writable
 
 
 def memory_at(program: Program, address: Address, size: int) -> bytes:
 	covering = _section_covering(program, address)
 	if covering is None:
 		return b""
-	start, section = covering
-	return section.data[address - start : address - start + size]
+	return covering.section.data[address - covering.start : address - covering.start + size]
 
 
-def _section_covering(program: Program, address: Address) -> tuple[Address, Section] | None:
+class _Covering(Struct):
+	"""A section, with the address it starts at."""
+
+	start: Address
+	section: Section
+
+
+def _section_covering(program: Program, address: Address) -> _Covering | None:
 	return next(
 		(
-			(start, section)
+			_Covering(start=start, section=section)
 			for start, section in program.sections.items()
 			if start <= address < start + len(section.data)
 		),
@@ -61,9 +69,14 @@ def _section_covering(program: Program, address: Address) -> tuple[Address, Sect
 	)
 
 
-def instruction_runs(
-	program: Program, start: Address, size: int
-) -> tuple[tuple[Address, bytes], ...]:
+class InstructionRun(Struct):
+	"""Code of one instruction set, with the address it starts at."""
+
+	start: Address
+	code: bytes
+
+
+def instruction_runs(program: Program, start: Address, size: int) -> tuple[InstructionRun, ...]:
 	end = start + size
 	edges = (
 		start,
@@ -76,7 +89,7 @@ def instruction_runs(
 		end,
 	)
 	return tuple(
-		(Address(low), memory_at(program, Address(low), high - low))
+		InstructionRun(start=Address(low), code=memory_at(program, Address(low), high - low))
 		for code_start, code_end in zip(edges[::2], edges[1::2], strict=True)
 		for low, high in pairwise(
 			(

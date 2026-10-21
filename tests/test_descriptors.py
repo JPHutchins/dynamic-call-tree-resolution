@@ -14,7 +14,6 @@ from dynamic_call_tree_resolution.callgraph import IndirectCall
 from dynamic_call_tree_resolution.descriptors import (
 	DescribedCall,
 	Descriptors,
-	Field,
 	Function,
 	Null,
 	Parameter,
@@ -24,7 +23,7 @@ from dynamic_call_tree_resolution.descriptors import (
 	described_calls,
 	load_descriptors,
 )
-from dynamic_call_tree_resolution.model import SourceLocation
+from dynamic_call_tree_resolution.model import Field, SourceLocation
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 
 if TYPE_CHECKING:

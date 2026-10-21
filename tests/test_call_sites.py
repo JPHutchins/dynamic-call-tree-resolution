@@ -4106,8 +4106,8 @@ def test_instruction_runs_split_where_a32_code_ends() -> None:
 		arm_code=((0x1000, 0x1004),),
 	)
 	assert [
-		(address, len(code), instruction_set_at(program, address))
-		for address, code in instruction_runs(program, Address(0x1000), 16)
+		(run.start, len(run.code), instruction_set_at(program, run.start))
+		for run in instruction_runs(program, Address(0x1000), 16)
 	] == [
 		(0x1000, 4, InstructionSet.A32),
 		(0x1004, 4, InstructionSet.T32),

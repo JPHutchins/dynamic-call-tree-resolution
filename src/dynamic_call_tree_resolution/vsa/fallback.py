@@ -149,10 +149,10 @@ def _non_branch_instructions(program: Program) -> Iterator[tuple[CsInsn, ...]]:
 	return (
 		tuple(
 			instruction
-			for address, code in instruction_runs(
-				program, start, function_extent(program, functions, start)
+			for run in instruction_runs(program, start, function_extent(program, functions, start))
+			for instruction in decoders[instruction_set_at(program, run.start)].disasm(
+				run.code, run.start
 			)
-			for instruction in decoders[instruction_set_at(program, address)].disasm(code, address)
 			if not is_data(instruction)
 			and not any(instruction.group(group) for group in _BRANCH_GROUPS)
 		)
