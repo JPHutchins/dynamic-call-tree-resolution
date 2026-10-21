@@ -36,6 +36,28 @@ class Identities(Struct):
 	"""The names of the functions that share each colliding frame key."""
 
 
+class _KeyedName(Struct, order=True):
+	"""A function's stack name under its frame key."""
+
+	key: str
+	name: str
+
+
+class _KeyedStart(Struct, order=True):
+	"""A function's start and symbol name under its frame key."""
+
+	key: str
+	start: Address
+	name: str
+
+
+class _DeclaredAt(Struct):
+	"""A function's start, under the declaration it has."""
+
+	declaration: Declaration
+	address: Address
+
+
 def identities(program: Program, names: Mapping[Address, str]) -> Identities:
 	return Identities(
 		by_declaration={
@@ -46,10 +68,13 @@ def identities(program: Program, names: Mapping[Address, str]) -> Identities:
 		by_symbol=program.symbol_addresses,
 		names=names,
 		copies={
-			key: tuple(sorted(name for _, name in copies))
+			key: tuple(sorted(copy.name for copy in copies))
 			for key, group in groupby(
 				sorted(
-					(frame_key(function.name), names[normalized(address, program.machine)])
+					_KeyedName(
+						key=frame_key(function.name),
+						name=names[normalized(address, program.machine)],
+					)
 					for address, function in program.functions.items()
 					if normalized(address, program.machine) in names
 				),
@@ -75,7 +100,11 @@ def stack_names(program: Program) -> Mapping[Address, str]:
 		for _, group in groupby(
 			sorted(
 				(
-					(frame_key(function.name), normalized(address, program.machine), function.name)
+					_KeyedStart(
+						key=frame_key(function.name),
+						start=normalized(address, program.machine),
+						name=function.name,
+					)
 					for address, function in program.functions.items()
 				),
 			),
@@ -133,23 +162,23 @@ def _named(
 
 
 def _distinct_names(
-	group: tuple[tuple[str, Address, str], ...], declarations: Mapping[Address, Declaration]
+	group: tuple[_KeyedStart, ...], declarations: Mapping[Address, Declaration]
 ) -> Mapping[Address, str]:
 	match group:
-		case ((_, start, name),):
-			return {start: name}
+		case (only,):
+			return {only.start: only.name}
 		case _:
 			return _qualified(group, declarations)
 
 
 def _qualified(
-	group: tuple[tuple[str, Address, str], ...], declarations: Mapping[Address, Declaration]
+	group: tuple[_KeyedStart, ...], declarations: Mapping[Address, Declaration]
 ) -> Mapping[Address, str]:
 	paths = {
-		start: PurePosixPath(posixpath.normpath(declarations[start].unit)).parts
-		if start in declarations
+		keyed.start: PurePosixPath(posixpath.normpath(declarations[keyed.start].unit)).parts
+		if keyed.start in declarations
 		else ()
-		for _, start, _ in group
+		for keyed in group
 	}
 	depth = next(
 		(
@@ -161,51 +190,41 @@ def _qualified(
 		None,
 	)
 	return {
-		start: f"{key}@{'/'.join(paths[start][-depth:])}"
+		keyed.start: f"{keyed.key}@{'/'.join(paths[keyed.start][-depth:])}"
 		if depth is not None
-		else f"{key}@{start:#x}"
-		for key, start, _ in group
+		else f"{keyed.key}@{keyed.start:#x}"
+		for keyed in group
 	}
 
 
-def _copy_key(entry: tuple[str, str]) -> str:
-	return entry[0]
+def _copy_key(copy: _KeyedName) -> str:
+	return copy.key
 
 
-def _key(entry: tuple[str, Address, str]) -> str:
-	return entry[0]
+def _key(keyed: _KeyedStart) -> str:
+	return keyed.key
 
 
 def _addresses_by_declaration(program: Program) -> Mapping[Declaration, frozenset[Address]]:
 	return {
-		declaration: frozenset(address for _, address in group)
+		declaration: frozenset(declared.address for declared in group)
 		for declaration, group in groupby(
 			sorted(
 				(
-					(
-						Declaration(
+					_DeclaredAt(
+						declaration=Declaration(
 							unit=PurePosixPath(declaration.unit).name, location=declaration.location
 						),
-						address,
+						address=address,
 					)
 					for address, declaration in program.declarations.items()
 				),
-				key=_declaration_order,
+				key=_declared,
 			),
 			key=_declared,
 		)
 	}
 
 
-def _declaration_order(entry: tuple[Declaration, Address]) -> tuple[str, str, int, int]:
-	declaration, _ = entry
-	return (
-		declaration.unit,
-		declaration.location.file,
-		declaration.location.line,
-		declaration.location.column,
-	)
-
-
-def _declared(entry: tuple[Declaration, Address]) -> Declaration:
-	return entry[0]
+def _declared(declared: _DeclaredAt) -> Declaration:
+	return declared.declaration

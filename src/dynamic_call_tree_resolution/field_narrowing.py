@@ -46,6 +46,27 @@ class NarrowedSpan(Struct):
 	narrowing: FieldNarrowing
 
 
+class _SiteKey(Struct, order=True):
+	"""Where an indirect call is, by function and source location."""
+
+	function: str
+	location: SourceLocation
+
+
+class _StoredValue(Struct):
+	"""A value the descriptors saw stored into a field."""
+
+	field: Field
+	value: Descriptor
+
+
+class _NamedAddress(Struct, order=True):
+	"""One of the names a function symbol gives an address."""
+
+	address: Address
+	name: str
+
+
 def field_narrowings(
 	program: Program, descriptors: Descriptors, spans: tuple[LineSpan, ...]
 ) -> tuple[NarrowedSpan, ...]:
@@ -171,16 +192,16 @@ def _stored_functions(
 
 def _stored(stores: tuple[Store, ...]) -> Mapping[Field, frozenset[Descriptor]]:
 	return {
-		field: frozenset(value for _, value in group)
+		field: frozenset(stored.value for stored in group)
 		for field, group in groupby(
 			sorted(
 				(
-					(field, store.value)
+					_StoredValue(field=field, value=store.value)
 					for store in stores
 					for field in (_stored_field(store.place),)
 					if field is not None
 				),
-				key=_field_order,
+				key=_stored_into,
 			),
 			key=_stored_into,
 		)
@@ -197,35 +218,27 @@ def _stored_field(place: Place) -> Field | None:
 			assert_never(unreachable)
 
 
-def _field_order(entry: tuple[Field, Descriptor]) -> tuple[str, str]:
-	return (entry[0].record, entry[0].member)
+def _stored_into(stored: _StoredValue) -> Field:
+	return stored.field
 
 
-def _stored_into(entry: tuple[Field, Descriptor]) -> Field:
-	return entry[0]
-
-
-def _callees(sites: tuple[Site, ...]) -> Mapping[tuple[str, SourceLocation], frozenset[Descriptor]]:
+def _callees(sites: tuple[Site, ...]) -> Mapping[_SiteKey, frozenset[Descriptor]]:
 	return {
 		key: frozenset(site.callee for site in group)
-		for key, group in groupby(sorted(sites, key=_site_order), key=_site_key)
+		for key, group in groupby(sorted(sites, key=_site_key), key=_site_key)
 	}
 
 
-def _site_key(site: Site) -> tuple[str, SourceLocation]:
-	return (site.function, site.location)
-
-
-def _site_order(site: Site) -> tuple[str, str, int, int]:
-	return (site.function, site.location.file, site.location.line, site.location.column)
+def _site_key(site: Site) -> _SiteKey:
+	return _SiteKey(function=site.function, location=site.location)
 
 
 def _names_by_address(program: Program) -> Mapping[Address, frozenset[str]]:
 	return {
-		address: frozenset(name for _, name in group)
+		address: frozenset(named.name for named in group)
 		for address, group in groupby(
 			sorted(
-				(address, name)
+				_NamedAddress(address=address, name=name)
 				for name, addresses in program.symbol_addresses.items()
 				for address in addresses
 			),
@@ -234,17 +247,21 @@ def _names_by_address(program: Program) -> Mapping[Address, frozenset[str]]:
 	}
 
 
-def _address_of(entry: tuple[Address, str]) -> Address:
-	return entry[0]
+def _address_of(named: _NamedAddress) -> Address:
+	return named.address
 
 
 def _site_field(
-	callees: Mapping[tuple[str, SourceLocation], frozenset[Descriptor]],
+	callees: Mapping[_SiteKey, frozenset[Descriptor]],
 	names: frozenset[str],
 	location: SourceLocation,
 ) -> Field | None:
 	match tuple(
-		frozenset(callee for name in names for callee in callees.get((name, location), frozenset()))
+		frozenset(
+			callee
+			for name in names
+			for callee in callees.get(_SiteKey(function=name, location=location), frozenset())
+		)
 	):
 		case (Field() as field,):
 			return field

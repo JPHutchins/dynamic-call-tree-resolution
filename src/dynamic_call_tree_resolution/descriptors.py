@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 	from pathlib import Path
 
 
-class Field(Struct):
+class Field(Struct, order=True):
 	"""A member of a struct or union."""
 
 	record: str
@@ -137,7 +137,12 @@ def described_calls(descriptors: Descriptors, build_directory: Path) -> tuple[De
 		DescribedCall(
 			unit=unit,
 			call=call,
-			callee=_agreed(callees.get((unit, frame_key(call.caller), call.location), frozenset())),
+			callee=_agreed(
+				callees.get(
+					_CallKey(unit=unit, function=frame_key(call.caller), location=call.location),
+					frozenset(),
+				)
+			),
 		)
 		for callees in (_callees(descriptors.sites),)
 		for path in sorted(build_directory.glob("**/*.ci"))
@@ -146,27 +151,23 @@ def described_calls(descriptors: Descriptors, build_directory: Path) -> tuple[De
 	)
 
 
-def _callees(
-	sites: tuple[Site, ...],
-) -> Mapping[tuple[str, str, SourceLocation], frozenset[Descriptor]]:
+class _CallKey(Struct, order=True):
+	"""Where an indirect call is, by unit, frame key and source location."""
+
+	unit: str
+	function: str
+	location: SourceLocation
+
+
+def _callees(sites: tuple[Site, ...]) -> Mapping[_CallKey, frozenset[Descriptor]]:
 	return {
 		key: frozenset(site.callee for site in group)
-		for key, group in groupby(sorted(sites, key=_site_order), key=_site_key)
+		for key, group in groupby(sorted(sites, key=_call_key), key=_call_key)
 	}
 
 
-def _site_key(site: Site) -> tuple[str, str, SourceLocation]:
-	return (site.unit, frame_key(site.function), site.location)
-
-
-def _site_order(site: Site) -> tuple[str, str, str, int, int]:
-	return (
-		site.unit,
-		frame_key(site.function),
-		site.location.file,
-		site.location.line,
-		site.location.column,
-	)
+def _call_key(site: Site) -> _CallKey:
+	return _CallKey(unit=site.unit, function=frame_key(site.function), location=site.location)
 
 
 def _agreed(callees: frozenset[Descriptor]) -> Descriptor | None:

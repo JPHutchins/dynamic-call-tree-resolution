@@ -207,7 +207,7 @@ class LinkReference(Struct):
 	kind: ReferenceKind
 
 
-class SourceLocation(Struct):
+class SourceLocation(Struct, order=True):
 	"""A place in the source, by file name, line and column."""
 
 	file: str
@@ -223,7 +223,7 @@ class LineSpan(Struct):
 	location: SourceLocation
 
 
-class Declaration(Struct):
+class Declaration(Struct, order=True):
 	"""A function's declaration, within the compilation unit that defines it."""
 
 	unit: str
