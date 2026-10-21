@@ -40,6 +40,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	Nested,
 	Nesting,
 	PriorityLevels,
+	ThreadEntry,
 	ThreadTargets,
 	entry_report,
 	frame_key,
@@ -77,7 +78,9 @@ def test_a_thread_is_the_trampolines_frame_and_calls_with_its_indirect_call_to_t
 		StackUsage(function="entry", bytes=100, bounded=True),
 		StackUsage(function="leaf", bytes=10, bounded=True),
 	)
-	threads = thread_edges(edges, "trampoline", {"worker_tid": ("entry", EdgeKind.THREAD)})
+	threads = thread_edges(
+		edges, "trampoline", {"worker_tid": ThreadEntry(entry="entry", started_by=EdgeKind.THREAD)}
+	)
 	depths = {
 		report.entry: report.bound
 		for report in worst_case_depths(

@@ -20,10 +20,11 @@ if TYPE_CHECKING:
 
 
 class WithinKey(Struct):
-	"""A function, and the members of its component already on the path to it."""
+	"""A function's place in the memo of depths within its component."""
 
 	function: str
 	path: frozenset[str]
+	"""The members of the component already on the path to it."""
 
 
 def all_callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:

@@ -60,18 +60,31 @@ def stack_usage_files(
 
 
 def stack_usage_locations(path: Path) -> Mapping[str, SourceLocation]:
-	return dict(map(_record_location, filter(None, path.read_text().splitlines())))
+	return {
+		record.function: record.location
+		for record in map(_record_location, filter(None, path.read_text().splitlines()))
+	}
 
 
-def _record_location(line: str) -> tuple[str, SourceLocation]:
-	"""Where a ``.su`` record says its function is declared, by the function's name.
+class _RecordLocation(Struct):
+	"""Where a ``.su`` record says its function is declared."""
+
+	function: str
+	location: SourceLocation
+
+
+def _record_location(line: str) -> _RecordLocation:
+	"""Where a ``.su`` record says its function is declared, with the function's name.
 
 	>>> _record_location("/src/kernel/sched.c:403:13:reschedule" + chr(9) + "0" + chr(9) + "static")
-	('reschedule', SourceLocation(file='sched.c', line=403, column=13))
+	_RecordLocation(function='reschedule', location=SourceLocation(file='sched.c', line=403, column=13))
 	"""
 	location = _location(line.split("\t", maxsplit=1)[0])
-	return location.function, SourceLocation(
-		file=PurePosixPath(location.path).name, line=location.line, column=location.column
+	return _RecordLocation(
+		function=location.function,
+		location=SourceLocation(
+			file=PurePosixPath(location.path).name, line=location.line, column=location.column
+		),
 	)
 
 

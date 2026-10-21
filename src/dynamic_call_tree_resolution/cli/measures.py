@@ -33,6 +33,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	MeasuredFrame,
 	OwnFrame,
 	PriorityLevels,
+	ThreadEntry,
 	frame_key,
 	own_thread_edges,
 	thread_edges,
@@ -50,13 +51,19 @@ from dynamic_call_tree_resolution.vsa.vectors import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Mapping
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
 	from dynamic_call_tree_resolution.cli.artifacts import Artifacts, Image
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
-	from dynamic_call_tree_resolution.model import Address, CallSite, RtosModel
+	from dynamic_call_tree_resolution.model import (
+		Address,
+		CallSite,
+		RtosModel,
+		SystemThread,
+		ThreadRoot,
+	)
 	from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 
@@ -65,6 +72,13 @@ class _CodeMeasures(Struct):
 
 	frames: tuple[Frame, ...]
 	edges: tuple[CallEdge, ...]
+
+
+class _ThreadGraph(Struct):
+	"""The calls and frames the RTOS model's threads add to the graph."""
+
+	edges: tuple[CallEdge, ...]
+	frames: tuple[Frame, ...]
 
 
 def register_callers(
@@ -192,25 +206,33 @@ def thread_graph(
 	model: RtosModel,
 	edges: tuple[CallEdge, ...],
 	frames: tuple[Frame, ...],
-) -> tuple[tuple[CallEdge, ...], tuple[Frame, ...]]:
+) -> _ThreadGraph:
 	entries_by_thread = {
-		thread.name: (frame_key(stack_name(image.program, image.names, thread.entry)), started_by)
-		for threads, started_by in (
-			(model.threads, EdgeKind.THREAD),
-			(model.system_threads, EdgeKind.SYSTEM_THREAD),
-		)
-		for thread in threads
+		**_thread_entries(image, model.threads, EdgeKind.THREAD),
+		**_thread_entries(image, model.system_threads, EdgeKind.SYSTEM_THREAD),
 	}
 	match model.trampoline:
 		case None:
-			return (), ()
+			return _ThreadGraph(edges=(), frames=())
 		case str() as trampoline:
-			return (
-				thread_edges(edges, trampoline, entries_by_thread),
-				thread_frames(frames, trampoline, entries_by_thread),
+			return _ThreadGraph(
+				edges=thread_edges(edges, trampoline, entries_by_thread),
+				frames=thread_frames(frames, trampoline, entries_by_thread),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _thread_entries(
+	image: Image, threads: Iterable[ThreadRoot | SystemThread], started_by: EdgeKind
+) -> Mapping[str, ThreadEntry]:
+	return {
+		thread.name: ThreadEntry(
+			entry=frame_key(stack_name(image.program, image.names, thread.entry)),
+			started_by=started_by,
+		)
+		for thread in threads
+	}
 
 
 class Targets(Struct):
