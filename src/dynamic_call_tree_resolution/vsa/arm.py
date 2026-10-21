@@ -121,6 +121,8 @@ def _apply_unconditional(
 				origin,
 			)
 		return set_loaded(state, load_destination.reg, value, origin)
+	if instruction_id == arm_const.ARM_INS_LDRD:
+		return _arm_load_pair(context, instruction, state)
 	if instruction_id in ARM_STORE_WIDTHS:
 		return _arm_store(context, instruction, instruction_id, state)
 	if instruction_id in ARM_UNTRACKED_STORES:
@@ -218,6 +220,25 @@ def _arm_zero_extend(instruction: CsInsn, state: State, mask: int) -> State:
 	)
 
 
+def _arm_load_pair(context: Context, instruction: CsInsn, state: State) -> State:
+	"""Two words, the second 4 bytes past the first; a literal pair stays unknown."""
+	first, second = _arm_operands(instruction)[:2]
+	source = instruction.operands[2]
+	base = source.mem.base
+	if base == arm_const.ARM_REG_PC:
+		return top_written(instruction, state)
+	pair = set_loaded(
+		set_loaded(state, first.reg, *loaded(context, state, instruction, source, 4)),
+		second.reg,
+		*loaded(context, _advance(state, base, 4), instruction, source, 4),
+	)
+	if base in (first.reg, second.reg):
+		return pair
+	if len(instruction.operands) == 4:
+		return _advance(pair, base, instruction.operands[3].imm)
+	return _advance(pair, base, source.mem.disp) if instruction.writeback else pair
+
+
 def _arm_store(context: Context, instruction: CsInsn, instruction_id: int, state: State) -> State:
 	operands = _arm_operands(instruction)
 	memory_index = next(
@@ -287,11 +308,7 @@ def _arm_store_multiple(
 
 
 def _advance(state: State, register: int, delta: int) -> State:
-	if register == arm_const.ARM_REG_SP or register in state.sp_offsets:
-		return set_offsets(
-			state, register, shift_offsets(lookup(state.sp_offsets, register), delta)
-		)
-	return set_register(state, register, shift_addresses(lookup(state.registers, register), delta))
+	return _arm_shift_destination(state, register, register, delta)
 
 
 def _arm_shift_scale(operand: ArmCsOperand) -> int | None:

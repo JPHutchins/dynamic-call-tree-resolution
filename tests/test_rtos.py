@@ -466,7 +466,6 @@ def _records_incomplete(program: Program, model: RtosModel) -> tuple[Program, Rt
 	[
 		pytest.param(_builder_with_two_entries, id="a frame builder with two entry parameters"),
 		pytest.param(_trampoline_held_elsewhere, id="the trampoline held outside its builders"),
-		pytest.param(_records_incomplete, id="the static thread records incomplete"),
 	],
 )
 def test_the_call_that_starts_every_thread_stays_unresolved_when_a_creation_gate_fails(
@@ -475,6 +474,29 @@ def test_the_call_that_starts_every_thread_stays_unresolved_when_a_creation_gate
 ) -> None:
 	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
 	assert _trampoline_targets(*perturbed(program, rtos_model(program, RtosChoice.AUTO))) == []
+
+
+@pytest.mark.image
+def test_without_every_record_read_the_static_threads_start_what_the_analysis_reads(
+	zephyr_fixtures: Path,
+) -> None:
+	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
+	assert _trampoline_targets(
+		*_records_incomplete(program, rtos_model(program, RtosChoice.AUTO))
+	) == ["bg_thread_main", "sensor_thread", "idle"]
+
+
+@pytest.mark.image
+def test_the_records_narrow_the_entries_their_static_thread_start_passes(
+	zephyr_fixtures: Path,
+) -> None:
+	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
+	model = rtos_model(program, RtosChoice.AUTO)
+	assert model.creation is not None
+	assert _trampoline_targets(
+		program,
+		replace(model, creation=replace(model.creation, static_entries=frozenset[Address]())),
+	) == ["bg_thread_main", "idle"]
 
 
 @pytest.mark.image

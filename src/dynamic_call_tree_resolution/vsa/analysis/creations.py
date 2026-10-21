@@ -20,7 +20,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 from dynamic_call_tree_resolution.vsa.interpret import (
 	CallObservation,
 )
-from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet
+from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet, meet
 from dynamic_call_tree_resolution.vsa.links import function_covering
 
 if TYPE_CHECKING:
@@ -176,10 +176,14 @@ def _static_entries(observation: CallObservation, creation: Creation) -> CallObs
 	return (
 		replace(
 			observation,
-			arguments={**observation.arguments, creation.setup_entry: creation.static_entries},
+			arguments={
+				**observation.arguments,
+				creation.setup_entry: meet(
+					observation.arguments.get(creation.setup_entry, Top()), creation.static_entries
+				),
+			},
 		)
 		if observation.callee == creation.setup
-		and isinstance(observation.arguments.get(creation.setup_entry, Top()), Top)
 		and any(observation.site - low in range(high - low) for low, high in creation.static_spans)
 		else observation
 	)
