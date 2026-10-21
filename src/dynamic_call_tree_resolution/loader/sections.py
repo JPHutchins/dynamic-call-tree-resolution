@@ -52,17 +52,26 @@ SHF_TLS: Final = 0x400
 _MAPPING_SYMBOL: Final = re.compile(r"\$[adt](\..*)?")
 
 
-def aligned_total(blocks: Iterable[tuple[int, int]]) -> int:
+class AlignedBlock(Struct):
+	"""A block of memory, with the alignment it starts at."""
+
+	size: int
+	alignment: int
+
+
+def aligned_total(blocks: Iterable[AlignedBlock]) -> int:
 	"""Each block's size rounded up to its alignment, summed.
 
-	>>> aligned_total(((4, 8), (4, 4)))
+	>>> aligned_total((AlignedBlock(size=4, alignment=8), AlignedBlock(size=4, alignment=4)))
 	12
-	>>> aligned_total(((4, 0), (6, 1)))
+	>>> aligned_total((AlignedBlock(size=4, alignment=0), AlignedBlock(size=6, alignment=1)))
 	10
 	"""
 	return sum(
-		size if alignment <= 1 else (size + alignment - 1) // alignment * alignment
-		for size, alignment in blocks
+		block.size
+		if block.alignment <= 1
+		else (block.size + block.alignment - 1) // block.alignment * block.alignment
+		for block in blocks
 	)
 
 
@@ -88,9 +97,16 @@ def arm_core(elf: ELFFile) -> ArmCore | None:
 			return None
 
 
-def mapped_spans(
-	elf: ELFFile, markers: tuple[tuple[int, int, str], ...], kind: str
-) -> tuple[Span, ...]:
+class MappingMarker(Struct, order=True):
+	"""An Arm mapping symbol: where code of one kind, or data, starts in a section."""
+
+	section: int
+	address: int
+	kind: str
+	"""``a`` for A32 code, ``t`` for T32 code, ``d`` for data."""
+
+
+def mapped_spans(elf: ELFFile, markers: tuple[MappingMarker, ...], kind: str) -> tuple[Span, ...]:
 	return tuple(
 		span
 		for section_index, group in groupby(markers, key=_marker_section)
@@ -100,7 +116,7 @@ def mapped_spans(
 	)
 
 
-def mapping_markers(symtab: SymbolTableSection | None) -> tuple[tuple[int, int, str], ...]:
+def mapping_markers(symtab: SymbolTableSection | None) -> tuple[MappingMarker, ...]:
 	return tuple(
 		sorted(
 			marker
@@ -110,24 +126,24 @@ def mapping_markers(symtab: SymbolTableSection | None) -> tuple[tuple[int, int, 
 	)
 
 
-def _mapping_marker(symbol: Symbol) -> tuple[int, int, str] | None:
+def _mapping_marker(symbol: Symbol) -> MappingMarker | None:
 	section_index = symbol["st_shndx"]
 	if not _MAPPING_SYMBOL.fullmatch(symbol.name) or not isinstance(section_index, int):
 		return None
-	return section_index, symbol["st_value"], symbol.name[1]
+	return MappingMarker(section=section_index, address=symbol["st_value"], kind=symbol.name[1])
 
 
-def _marker_section(marker: tuple[int, int, str]) -> int:
-	return marker[0]
+def _marker_section(marker: MappingMarker) -> int:
+	return marker.section
 
 
-def _kind_spans(marks: tuple[tuple[int, int, str], ...], end: int, kind: str) -> Iterator[Span]:
+def _kind_spans(marks: tuple[MappingMarker, ...], end: int, kind: str) -> Iterator[Span]:
 	return (
-		Span(start=Address(address), end=Address(following))
-		for (_, address, mark_kind), following in zip(
-			marks, (*(mark[1] for mark in marks[1:]), end), strict=True
+		Span(start=Address(mark.address), end=Address(following))
+		for mark, following in zip(
+			marks, (*(later.address for later in marks[1:]), end), strict=True
 		)
-		if mark_kind == kind and following > address
+		if mark.kind == kind and following > mark.address
 	)
 
 

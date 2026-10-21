@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, assert_never
 
 from elftools.dwarf.die import DIE
 from elftools.elf.elffile import ELFFile
+from salix import Struct
 
 from dynamic_call_tree_resolution.loader.dwarf import (
 	attr_string,
@@ -240,19 +241,26 @@ def _declared(die: DIE) -> DIE | None:
 			return die
 
 
+class _SymbolAddress(Struct, order=True):
+	"""A symbol's name and address."""
+
+	name: str
+	address: Address
+
+
 def symbol_addresses(
 	symtab: SymbolTableSection | None, machine: Machine
 ) -> dict[str, frozenset[Address]]:
 	if symtab is None:
 		return {}  # pragma: no cover
 	named = sorted(
-		(symbol.name, _code_start(Address(symbol["st_value"]), machine))
+		_SymbolAddress(name=symbol.name, address=_code_start(Address(symbol["st_value"]), machine))
 		for symbol in symtab.iter_symbols()
 		if symbol["st_info"]["type"] == "STT_FUNC"
 		if symbol["st_shndx"] != "SHN_UNDEF"
 	)
 	return {
-		name: frozenset(address for _, address in group)
+		name: frozenset(entry.address for entry in group)
 		for name, group in groupby(named, key=_symbol_name)
 	}
 
@@ -262,7 +270,7 @@ def labels(symtab: SymbolTableSection | None) -> dict[str, Address]:
 		name: next(iter(addresses))
 		for name, group in groupby(
 			sorted(
-				(symbol.name, Address(symbol["st_value"]))
+				_SymbolAddress(name=symbol.name, address=Address(symbol["st_value"]))
 				for symbol in (symtab.iter_symbols() if symtab is not None else ())
 				if symbol["st_info"]["type"] == "STT_NOTYPE"
 				and symbol["st_shndx"] != "SHN_UNDEF"
@@ -271,13 +279,13 @@ def labels(symtab: SymbolTableSection | None) -> dict[str, Address]:
 			),
 			key=_symbol_name,
 		)
-		for addresses in ({address for _, address in group},)
+		for addresses in ({entry.address for entry in group},)
 		if len(addresses) == 1
 	}
 
 
-def _symbol_name(named: tuple[str, Address]) -> str:
-	return named[0]
+def _symbol_name(named: _SymbolAddress) -> str:
+	return named.name
 
 
 def _code_start(address: Address, machine: Machine) -> Address:
