@@ -55,6 +55,8 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 	from pathlib import Path
 
+	from dynamic_call_tree_resolution.call_sites import CallerCandidates
+
 ARTIFACT_DIRECTORIES = ("counter-su", "sensor-two-impl")
 
 FRAMES = (
@@ -1266,7 +1268,7 @@ def test_deepest_path_of_an_unknown_entry_is_an_error() -> None:
 @pytest.fixture(scope="module")
 def counter_candidates(
 	zephyr_fixtures: Path,
-) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
+) -> CallerCandidates:
 	program = load(zephyr_fixtures / ARTIFACT_DIRECTORIES[0] / "zephyr" / "zephyr.exe")
 	resolution = resolve(program)
 	return per_caller_candidates(program, resolution.sites, resolution.assignments)
@@ -1279,7 +1281,7 @@ def _depth(report: StackReport) -> int:
 @pytest.mark.image
 def test_no_acyclic_counter_entry_is_deeper_with_candidates_alone_than_with_the_fallback(
 	zephyr_fixtures: Path,
-	counter_candidates: tuple[Mapping[str, frozenset[str]], frozenset[str]],
+	counter_candidates: CallerCandidates,
 ) -> None:
 	artifacts = zephyr_fixtures / ARTIFACT_DIRECTORIES[0]
 	edges = load_callgraph(artifacts)
@@ -1288,7 +1290,12 @@ def test_no_acyclic_counter_entry_is_deeper_with_candidates_alone_than_with_the_
 		{
 			report.entry: report
 			for report in worst_case_depths(
-				expand_indirect_calls(edges, *counter_candidates, exact=exact),
+				expand_indirect_calls(
+					edges,
+					counter_candidates.targets_by_caller,
+					counter_candidates.fallback,
+					exact=exact,
+				),
 				frames,
 				entry_edges=edges,
 			)
@@ -1307,13 +1314,17 @@ def test_no_acyclic_counter_entry_is_deeper_with_candidates_alone_than_with_the_
 @pytest.mark.parametrize("expanded", [False, True], ids=["static", "expanded"])
 def test_every_counter_entry_has_a_deepest_path_as_deep_as_its_bound(
 	zephyr_fixtures: Path,
-	counter_candidates: tuple[Mapping[str, frozenset[str]], frozenset[str]],
+	counter_candidates: CallerCandidates,
 	expanded: bool,
 ) -> None:
 	artifacts = zephyr_fixtures / ARTIFACT_DIRECTORIES[0]
 	edges = load_callgraph(artifacts)
 	graph = stack_graph(
-		expand_indirect_calls(edges, *counter_candidates) if expanded else edges,
+		expand_indirect_calls(
+			edges, counter_candidates.targets_by_caller, counter_candidates.fallback
+		)
+		if expanded
+		else edges,
 		load_stack_usages(artifacts),
 		entry_edges=edges,
 	)

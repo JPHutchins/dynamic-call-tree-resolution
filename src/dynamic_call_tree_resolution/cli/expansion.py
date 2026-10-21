@@ -138,7 +138,7 @@ def expand_from_elf(
 		if model.interrupt_stack is not None
 		else {}
 	)
-	targets_by_caller, fallback = per_caller_candidates(
+	candidates = per_caller_candidates(
 		image.program,
 		resolution.sites,
 		resolution.assignments,
@@ -162,8 +162,8 @@ def expand_from_elf(
 	unrecorded = unrecorded_sites(image, resolution.sites, (*in_image_edges, *register.edges))
 	expanded = expand_indirect_calls(
 		(*artifacts.edges, *register.edges, *unrecorded),
-		targets_by_caller,
-		fallback,
+		candidates.targets_by_caller,
+		candidates.fallback,
 		narrowed_by_caller=narrowed_by_caller,
 	)
 	binary = _binary_edges(image, measure, expanded, artifacts.frames)
@@ -198,9 +198,9 @@ def expand_from_elf(
 				resolution,
 				(*in_image_edges, *unrecorded, *binary),
 				Targets(
-					by_caller=targets_by_caller,
+					by_caller=candidates.targets_by_caller,
 					narrowed_by_caller=narrowed_by_caller,
-					fallback=fallback,
+					fallback=candidates.fallback,
 					narrowed_by_field=narrowed_by_field,
 					narrow_by_signature=narrow_by_signature,
 				),

@@ -67,6 +67,14 @@ class ProgramResolution(Struct):
 	"""Where in the image a tracked store writes a word."""
 
 
+class CallerCandidates(Struct):
+	"""The targets each caller's indirect calls expand to, by caller key."""
+
+	targets_by_caller: Mapping[str, frozenset[str]]
+	fallback: frozenset[str]
+	"""What a call without candidates may reach."""
+
+
 def resolve(
 	program: Program,
 	rtos: RtosModel = BARE_METAL,
@@ -332,10 +340,10 @@ def per_caller_candidates(
 	narrowed_by_field: tuple[NarrowedSpan, ...] = (),
 	names: Mapping[Address, str] | None = None,
 	fallback: frozenset[Address] | None = None,
-) -> tuple[Mapping[str, frozenset[str]], frozenset[str]]:
+) -> CallerCandidates:
 	available = fallback if fallback is not None else fallback_addresses(program)
-	return (
-		_targets_by_caller(
+	return CallerCandidates(
+		targets_by_caller=_targets_by_caller(
 			program,
 			sites,
 			resolved,
@@ -344,7 +352,7 @@ def per_caller_candidates(
 			names=names,
 			fallback=available,
 		),
-		frozenset(map(partial(stack_name, program, names), available)),
+		fallback=frozenset(map(partial(stack_name, program, names), available)),
 	)
 
 
@@ -359,7 +367,7 @@ def _targets_by_caller(
 	fallback: frozenset[Address] | None,
 ) -> Mapping[str, frozenset[str]]:
 	return {
-		caller: frozenset(target for _, target, _ in group)
+		caller: frozenset(entry.target for entry in group)
 		for caller, group in groupby(
 			_caller_targets(
 				program, sites, resolved, narrow_by_signature, narrowed_by_field, names, fallback
@@ -390,17 +398,32 @@ def narrowed_targets(
 		)
 		for entries in (tuple(group),)
 		for candidates in (
-			frozenset(target for _, target, kind in entries if kind is EdgeKind.CANDIDATE),
+			frozenset(entry.target for entry in entries if entry.kind is EdgeKind.CANDIDATE),
 		)
 		for only in (
 			{
-				target: kind
-				for _, target, kind in entries
-				if kind is not EdgeKind.CANDIDATE and target not in candidates
+				entry.target: entry.kind
+				for entry in entries
+				if entry.kind is not EdgeKind.CANDIDATE and entry.target not in candidates
 			},
 		)
 		if only
 	}
+
+
+class _CallerTarget(Struct, order=True):
+	"""A target one of a caller's indirect calls may reach, with the edge it is reached by."""
+
+	caller: str
+	target: str
+	kind: EdgeKind
+
+
+class _LabeledTargets(Struct):
+	"""The names a site's finding reaches, with the edge they are reached by."""
+
+	names: frozenset[str]
+	kind: EdgeKind
 
 
 def _caller_targets(
@@ -411,7 +434,7 @@ def _caller_targets(
 	narrowed_by_field: tuple[NarrowedSpan, ...],
 	names: Mapping[Address, str] | None,
 	fallback: frozenset[Address] | None,
-) -> tuple[tuple[str, str, EdgeKind], ...]:
+) -> tuple[_CallerTarget, ...]:
 	resolved_map = {assignment.slot: assignment for assignment in resolved}
 	narrowings = (
 		signature_narrowings(
@@ -423,15 +446,17 @@ def _caller_targets(
 	name = partial(stack_name, program, names)
 	return tuple(
 		sorted(
-			(frame_key(name(site.caller_address)), target, kind)
+			_CallerTarget(
+				caller=frame_key(name(site.caller_address)), target=target, kind=labeled.kind
+			)
 			for site in sites
-			for targets, kind in _labeled(
+			for labeled in _labeled(
 				site_targets(program, site, resolved_map, narrowings),
 				narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
 				name,
 				site.dispatch,
 			)
-			for target in targets or {INDIRECT_CALLEE}
+			for target in labeled.names or {INDIRECT_CALLEE}
 		)
 	)
 
@@ -441,16 +466,16 @@ def _labeled(
 	field: frozenset[Address],
 	name: Callable[[Address], str],
 	dispatch: frozenset[Address] | None,
-) -> tuple[tuple[frozenset[str], EdgeKind], ...]:
+) -> tuple[_LabeledTargets, ...]:
 	return tuple(
-		(names, _kind(found, dispatch))
+		_LabeledTargets(names=names, kind=_kind(found, dispatch))
 		for found in findings
 		for names in (_names(found, name),)
 		if names
 	) or (
-		((frozenset(map(name, field)), EdgeKind.FIELD),)
+		(_LabeledTargets(names=frozenset(map(name, field)), kind=EdgeKind.FIELD),)
 		if field
-		else ((frozenset[str](), EdgeKind.CANDIDATE),)
+		else (_LabeledTargets(names=frozenset[str](), kind=EdgeKind.CANDIDATE),)
 	)
 
 
@@ -489,8 +514,8 @@ def _kind(found: SiteTargets, dispatch: frozenset[Address] | None) -> EdgeKind:
 			assert_never(unreachable)
 
 
-def _caller(entry: tuple[str, str, EdgeKind]) -> str:
-	return entry[0]
+def _caller(entry: _CallerTarget) -> str:
+	return entry.caller
 
 
 def own_targets(

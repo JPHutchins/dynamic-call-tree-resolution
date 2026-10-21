@@ -4,6 +4,9 @@
 """Static resolution of indirect calls in embedded firmware ELF images."""
 
 from dynamic_call_tree_resolution.call_sites import (
+	CallerCandidates as CallerCandidates,
+)
+from dynamic_call_tree_resolution.call_sites import (
 	ProgramResolution as ProgramResolution,
 )
 from dynamic_call_tree_resolution.call_sites import (

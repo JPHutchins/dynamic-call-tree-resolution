@@ -408,10 +408,10 @@ def test_every_observed_target_is_a_candidate_of_the_callers_sites(
 def _expanded_call_graph(elf: Path) -> tuple[CallEdge, ...]:
 	program = load(elf)
 	resolution = resolve(program)
-	targets_by_caller, fallback = per_caller_candidates(
-		program, resolution.sites, resolution.assignments
+	candidates = per_caller_candidates(program, resolution.sites, resolution.assignments)
+	return expand_indirect_calls(
+		load_callgraph(elf.parent), candidates.targets_by_caller, candidates.fallback
 	)
-	return expand_indirect_calls(load_callgraph(elf.parent), targets_by_caller, fallback)
 
 
 def _caller_key(edge: CallEdge) -> str:

@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 	from pathlib import Path
 
+	from dynamic_call_tree_resolution.call_sites import CallerCandidates
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 
 pytestmark = pytest.mark.image
@@ -141,7 +142,7 @@ def test_every_target_a_resolution_names_is_in_the_fallback_so_removing_it_never
 	expansion = expansions[name]
 	names = stack_names(expansion.program)
 	narrow_by_signature, narrowed_by_field = _narrowed(zephyr_fixtures, name, expansion, narrowing)
-	targets_by_caller, fallback = per_caller_candidates(
+	candidates = per_caller_candidates(
 		expansion.program,
 		expansion.resolution.sites,
 		expansion.resolution.assignments,
@@ -152,7 +153,7 @@ def test_every_target_a_resolution_names_is_in_the_fallback_so_removing_it_never
 	named = [
 		(resolution, caller, target)
 		for resolution, by_caller in (
-			("global", targets_by_caller),
+			("global", candidates.targets_by_caller),
 			*(
 				(
 					thread,
@@ -176,7 +177,7 @@ def test_every_target_a_resolution_names_is_in_the_fallback_so_removing_it_never
 		[
 			(resolution, caller, target)
 			for resolution, caller, target in named
-			if target not in fallback
+			if target not in candidates.fallback
 		],
 	) == (True, [])
 
@@ -193,8 +194,7 @@ def _lower_bound(report: StackReport) -> int:
 
 def _depths(
 	expansion: Expansion,
-	targets_by_caller: Mapping[str, frozenset[str]],
-	fallback: frozenset[str],
+	candidates: CallerCandidates,
 	*,
 	exact: bool,
 ) -> Mapping[str, int]:
@@ -202,7 +202,10 @@ def _depths(
 		report.entry: _lower_bound(report)
 		for report in worst_case_depths(
 			expand_indirect_calls(
-				expansion.in_image_edges, targets_by_caller, fallback, exact=exact
+				expansion.in_image_edges,
+				candidates.targets_by_caller,
+				candidates.fallback,
+				exact=exact,
 			),
 			expansion.frames,
 			entry_edges=expansion.in_image_edges,
@@ -215,14 +218,14 @@ def test_no_entry_is_deeper_with_its_candidates_alone_than_with_the_fallback_too
 	expansions: Mapping[str, Expansion], name: str
 ) -> None:
 	expansion = expansions[name]
-	targets_by_caller, fallback = per_caller_candidates(
+	candidates = per_caller_candidates(
 		expansion.program,
 		expansion.resolution.sites,
 		expansion.resolution.assignments,
 		names=stack_names(expansion.program),
 	)
-	exact = _depths(expansion, targets_by_caller, fallback, exact=True)
-	sound = _depths(expansion, targets_by_caller, fallback, exact=False)
+	exact = _depths(expansion, candidates, exact=True)
+	sound = _depths(expansion, candidates, exact=False)
 	assert (
 		any(edge.callee == INDIRECT_CALLEE for edge in expansion.in_image_edges),
 		{

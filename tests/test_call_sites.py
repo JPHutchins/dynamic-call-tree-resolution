@@ -11,6 +11,7 @@ import pytest
 
 from dynamic_call_tree_resolution import (
 	Address,
+	CallerCandidates,
 	CallSite,
 	DataObject,
 	Function,
@@ -186,9 +187,11 @@ def test_a_site_only_branches_the_values_decide_against_lead_to_calls_nothing(
 	assert (
 		tuple(
 			edge.callee
+			for candidates in (per_caller_candidates(program, extract_call_sites(program), ()),)
 			for edge in expand_indirect_calls(
 				(CallEdge(caller="caller", callee=INDIRECT_CALLEE),),
-				*per_caller_candidates(program, extract_call_sites(program), ()),
+				candidates.targets_by_caller,
+				candidates.fallback,
 			)
 		)
 		== callees
@@ -935,9 +938,11 @@ def test_a_target_that_can_only_be_0_calls_nothing_unless_a_writable_slot_holds_
 	assert (
 		tuple(
 			edge.callee
+			for candidates in (per_caller_candidates(program, extract_call_sites(program), ()),)
 			for edge in expand_indirect_calls(
 				(CallEdge(caller="caller", callee=INDIRECT_CALLEE),),
-				*per_caller_candidates(program, extract_call_sites(program), ()),
+				candidates.targets_by_caller,
+				candidates.fallback,
 			)
 		)
 		== callees
@@ -1180,9 +1185,12 @@ def test_conflicting_paths_fall_back_to_the_resolved_union() -> None:
 			relocated=False,
 		),
 	)
-	by_caller, fallback = per_caller_candidates(program, extract_call_sites(program), resolved)
-	assert by_caller == {"caller": frozenset({"target_a", "target_b"})}
-	assert fallback == frozenset({"target_a", "target_b"})
+	assert per_caller_candidates(
+		program, extract_call_sites(program), resolved
+	) == CallerCandidates(
+		targets_by_caller={"caller": frozenset({"target_a", "target_b"})},
+		fallback=frozenset({"target_a", "target_b"}),
+	)
 
 
 def test_x86_conditional_branch_keeps_registers() -> None:
@@ -1695,15 +1703,20 @@ def test_per_caller_candidates_keeps_a_site_without_candidates_an_indirect_call(
 ) -> None:
 	program = load(fixture_elfs["nopie"])
 	resolved = assignments(program)
-	by_caller, fallback = per_caller_candidates(program, extract_call_sites(program), resolved)
-	assert set(by_caller) <= {function.name for function in program.functions.values()}
-	assert INDIRECT_CALLEE in by_caller["main"]  # main's bss_cb site has no candidates
-	assert fallback == {program.functions[address].name for address in address_taken(program)}
+	candidates = per_caller_candidates(program, extract_call_sites(program), resolved)
+	assert set(candidates.targets_by_caller) <= {
+		function.name for function in program.functions.values()
+	}
+	# main's bss_cb site has no candidates
+	assert INDIRECT_CALLEE in candidates.targets_by_caller["main"]
+	assert candidates.fallback == {
+		program.functions[address].name for address in address_taken(program)
+	}
 	assert {
 		program.functions[address].name
 		for assignment in resolved
 		for address in assignment.candidates
-	} < fallback
+	} < candidates.fallback
 
 
 def test_x86_loop_merges_conditional_paths_into_a_union() -> None:
@@ -3038,13 +3051,13 @@ def test_report_narrows_a_bss_site_to_its_slot_signature_only_when_asked(
 def test_stack_expansion_narrows_a_bss_site_to_its_slot_signature_only_when_asked() -> None:
 	program = _bss_slot_site_program()
 	sites = extract_call_sites(program)
-	assert per_caller_candidates(program, sites, ()) == (
-		{"caller": frozenset({INDIRECT_CALLEE})},
-		frozenset({"matching", "non_matching"}),
+	assert per_caller_candidates(program, sites, ()) == CallerCandidates(
+		targets_by_caller={"caller": frozenset({INDIRECT_CALLEE})},
+		fallback=frozenset({"matching", "non_matching"}),
 	)
-	assert per_caller_candidates(program, sites, (), narrow_by_signature=True) == (
-		{"caller": frozenset({"matching"})},
-		frozenset({"matching", "non_matching"}),
+	assert per_caller_candidates(program, sites, (), narrow_by_signature=True) == CallerCandidates(
+		targets_by_caller={"caller": frozenset({"matching"})},
+		fallback=frozenset({"matching", "non_matching"}),
 	)
 
 
