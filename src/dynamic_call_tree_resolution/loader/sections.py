@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.model import (
 	ArmCore,
 	ArmProfile,
 )
+from dynamic_call_tree_resolution.span import Span
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Iterator
@@ -89,7 +90,7 @@ def arm_core(elf: ELFFile) -> ArmCore | None:
 
 def mapped_spans(
 	elf: ELFFile, markers: tuple[tuple[int, int, str], ...], kind: str
-) -> tuple[tuple[Address, Address], ...]:
+) -> tuple[Span, ...]:
 	return tuple(
 		span
 		for section_index, group in groupby(markers, key=_marker_section)
@@ -120,11 +121,9 @@ def _marker_section(marker: tuple[int, int, str]) -> int:
 	return marker[0]
 
 
-def _kind_spans(
-	marks: tuple[tuple[int, int, str], ...], end: int, kind: str
-) -> Iterator[tuple[Address, Address]]:
+def _kind_spans(marks: tuple[tuple[int, int, str], ...], end: int, kind: str) -> Iterator[Span]:
 	return (
-		(Address(address), Address(following))
+		Span(start=Address(address), end=Address(following))
 		for (_, address, mark_kind), following in zip(
 			marks, (*(mark[1] for mark in marks[1:]), end), strict=True
 		)
@@ -144,9 +143,10 @@ def load_address(elf: ELFFile, address: int) -> Address | None:
 	)
 
 
-def relro(spans: tuple[tuple[int, int], ...], section: SectionBytes) -> bool:
+def relro(spans: tuple[Span, ...], section: SectionBytes) -> bool:
 	return any(
-		start <= section.address and section.address + section.size <= end for start, end in spans
+		span.start <= section.address and section.address + section.size <= span.end
+		for span in spans
 	)
 
 

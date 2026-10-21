@@ -14,6 +14,7 @@ from dynamic_call_tree_resolution.model import (
 	Address,
 	Machine,
 )
+from dynamic_call_tree_resolution.span import Span
 from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 )
@@ -42,7 +43,7 @@ class Creation(Struct):
 	"""Each frame builder's function-pointer argument, by the builder's start."""
 	setup: Address
 	setup_entry: int
-	static_spans: tuple[tuple[Address, Address], ...]
+	static_spans: tuple[Span, ...]
 	static_entries: ValueSet
 
 
@@ -130,9 +131,9 @@ def _entry_position(function: Function) -> int | None:
 			return None
 
 
-def _span(function: Function, machine: Machine) -> tuple[Address, Address]:
+def _span(function: Function, machine: Machine) -> Span:
 	start = normalized(function.address, machine)
-	return (start, Address(start + function.size))
+	return Span(start=start, end=Address(start + function.size))
 
 
 def _held_only_by(
@@ -184,6 +185,6 @@ def _static_entries(observation: CallObservation, creation: Creation) -> CallObs
 			},
 		)
 		if observation.callee == creation.setup
-		and any(observation.site - low in range(high - low) for low, high in creation.static_spans)
+		and any(observation.site in span for span in creation.static_spans)
 		else observation
 	)

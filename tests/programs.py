@@ -6,6 +6,7 @@
 from typing import TYPE_CHECKING
 
 from dynamic_call_tree_resolution import Address, DataObject, Function, Machine, Program, Section
+from dynamic_call_tree_resolution.span import Span
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -45,8 +46,8 @@ def build_program(
 		},
 		layouts={},
 		relocations=(),
-		data_in_code=tuple((Address(low), Address(high)) for low, high in data_in_code),
-		arm_code=tuple(sorted((Address(low), Address(high)) for low, high in arm_code)),
+		data_in_code=tuple(span(low, high) for low, high in data_in_code),
+		arm_code=tuple(sorted(span(low, high) for low, high in arm_code)),
 		never_returns=frozenset(map(Address, never_returns)),
 		sections={
 			Address(address): Section(data=data, writable=address in writable)
@@ -56,3 +57,7 @@ def build_program(
 			)
 		},
 	)
+
+
+def span(start: int, end: int) -> Span:
+	return Span(start=Address(start), end=Address(end))

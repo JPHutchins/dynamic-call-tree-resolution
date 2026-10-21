@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 		Program,
 		ThreadRoot,
 	)
+	from dynamic_call_tree_resolution.span import Span
 	from dynamic_call_tree_resolution.vsa.escape import Escapes
 
 
@@ -78,7 +79,7 @@ class Rounds(Struct):
 	entry_seeds: Mapping[Address, State]
 	top: State
 	creation: Creation | None
-	assumed_unwritten: tuple[tuple[int, int], ...]
+	assumed_unwritten: tuple[Span, ...]
 	escapes: Escapes
 
 

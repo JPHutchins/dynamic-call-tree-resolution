@@ -20,7 +20,7 @@ from dynamic_call_tree_resolution import (
 )
 from dynamic_call_tree_resolution.vsa.cfg import control_flow_graphs
 from dynamic_call_tree_resolution.vsa.escape import Escapes, escapes
-from tests.programs import build_program
+from tests.programs import build_program, span
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -97,11 +97,11 @@ def _program(
 				for address, data in (sections or {}).items()
 			},
 		},
-		data_in_code=tuple((Address(low), Address(high)) for low, high in data_in_code),
-		arm_code=tuple((Address(low), Address(high)) for low, high in arm_code),
+		data_in_code=tuple(span(low, high) for low, high in data_in_code),
+		arm_code=tuple(span(low, high) for low, high in arm_code),
 		labels={name: Address(address) for name, address in (labels or {}).items()},
 		symbol_addresses={name: frozenset({Address(address)}) for name, address, _ in _ROUTINES},
-		nobits=((Address(0x2000_0010), Address(0x2000_0020)),),
+		nobits=(span(0x2000_0010, 0x2000_0020),),
 		parameterless=frozenset(map(Address, parameterless)),
 	)
 
@@ -111,7 +111,9 @@ def _escapes(program: Program) -> Escapes:
 
 
 def _unescaped(program: Program) -> list[str]:
-	return sorted(program.objects[start].name for start, _ in _escapes(program).unescaped)
+	return sorted(
+		program.objects[unescaped.start].name for unescaped in _escapes(program).unescaped
+	)
 
 
 @pytest.mark.parametrize(
@@ -398,7 +400,11 @@ def test_a_loop_lets_escape_what_it_materializes_afresh_each_time() -> None:
 	program = _program("10b50424034b1860034b234404348c42f9d110bd0800002000000020")
 	assert (_unescaped(program), _escapes(program).store_targets) == (
 		["second", "third", "zeroed"],
-		{Address(0x1006): frozenset({(0x2000_0004, 0x2000_0008), (0x2000_0008, 0x2000_0010)})},
+		{
+			Address(0x1006): frozenset(
+				{span(0x2000_0004, 0x2000_0008), span(0x2000_0008, 0x2000_0010)}
+			)
+		},
 	)
 
 
@@ -472,7 +478,7 @@ def test_a_loop_widens_an_address_to_the_object_it_entered_the_loop_in(code: str
 def test_a_store_targets_the_object_its_address_was_derived_from(
 	code: str, target: tuple[int, int]
 ) -> None:
-	assert _escapes(_program(code)).store_targets == {Address(0x1002): frozenset({target})}
+	assert _escapes(_program(code)).store_targets == {Address(0x1002): frozenset({span(*target)})}
 
 
 def test_overlapping_objects_escape_together() -> None:
@@ -481,7 +487,7 @@ def test_overlapping_objects_escape_together() -> None:
 			_BASE_ONLY,
 			objects=(("outer", 0x2000_0000, 8, "long long int"), ("inner", 0x2000_0004, 4, "int")),
 		)
-	).unescaped == ((0x2000_0000, 0x2000_0008),)
+	).unescaped == (span(0x2000_0000, 0x2000_0008),)
 
 
 def test_an_image_without_writable_objects_has_none_unescaped() -> None:

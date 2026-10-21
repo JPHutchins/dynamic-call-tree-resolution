@@ -14,6 +14,7 @@ from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
 from dynamic_call_tree_resolution.points_to import instruction_set_at, memory_at
+from dynamic_call_tree_resolution.span import Span
 from dynamic_call_tree_resolution.vsa.abi import (
 	SP_REGISTERS,
 	index_scale,
@@ -67,11 +68,11 @@ class Context(Struct):
 	"""What every function's interpretation reads from the program."""
 
 	program: Program
-	object_spans: tuple[tuple[int, int], ...]
+	object_spans: tuple[Span, ...]
 	object_starts: tuple[int, ...]
-	section_spans: tuple[tuple[int, int], ...]
+	section_spans: tuple[Span, ...]
 	section_starts: tuple[int, ...]
-	read_only_spans: tuple[tuple[int, int], ...]
+	read_only_spans: tuple[Span, ...]
 	read_only_starts: tuple[int, ...]
 	global_writes: Writes
 	global_covered: frozenset[int]
@@ -79,14 +80,14 @@ class Context(Struct):
 	function_starts: frozenset[Address]
 	external_symbols: Mapping[Address, str]
 	"""The undefined symbol whose address the dynamic loader writes to each slot."""
-	unwritten_spans: tuple[tuple[int, int], ...] = ()
+	unwritten_spans: tuple[Span, ...] = ()
 	"""The objects the user asserts the program never writes, by address span."""
 	unwritten_starts: tuple[int, ...] = ()
-	unescaped_spans: tuple[tuple[int, int], ...] = ()
+	unescaped_spans: tuple[Span, ...] = ()
 	"""The objects only the code that names them can reach, which an unknown store writes only
 	through an address derived from them."""
 	unescaped_starts: tuple[int, ...] = ()
-	store_targets: Mapping[Address, frozenset[tuple[int, int]]] = {}
+	store_targets: Mapping[Address, frozenset[Span]] = {}
 	"""The unescaped objects each store, by address, may write when the analysis can't place it."""
 
 
@@ -106,31 +107,29 @@ def context_for(
 	program: Program,
 	global_writes: Writes,
 	*,
-	assumed_unwritten: tuple[tuple[int, int], ...] = (),
+	assumed_unwritten: tuple[Span, ...] = (),
 	escapes: Escapes = NO_ESCAPES,
 ) -> Context:
 	spans = tuple(
 		sorted(
-			(object_.address, object_.address + object_.size)
+			Span(start=object_.address, end=Address(object_.address + object_.size))
 			for object_ in program.objects.values()
 			if object_.size > 0
 		)
 	)
 	sections = tuple(
-		sorted(
-			(start, start + len(section.data), section.writable)
-			for start, section in program.sections.items()
-		)
+		Span(start=start, end=Address(start + len(section.data)))
+		for start, section in sorted(program.sections.items())
 	)
-	read_only = tuple((start, end) for start, end, writable in sections if not writable)
+	read_only = tuple(span for span in sections if not program.sections[span.start].writable)
 	return Context(
 		program=program,
 		object_spans=spans,
-		object_starts=tuple(span[0] for span in spans),
-		section_spans=tuple((start, end) for start, end, _ in sections),
-		section_starts=tuple(start for start, _, _ in sections),
+		object_starts=tuple(span.start for span in spans),
+		section_spans=sections,
+		section_starts=tuple(span.start for span in sections),
 		read_only_spans=read_only,
-		read_only_starts=tuple(span[0] for span in read_only),
+		read_only_starts=tuple(span.start for span in read_only),
 		global_writes=global_writes,
 		global_covered=frozenset(
 			key + offset for key in global_writes.values for offset in range(program.pointer_size)
@@ -144,41 +143,39 @@ def context_for(
 			if relocation.symbol is not None
 		},
 		unwritten_spans=tuple(sorted(assumed_unwritten)),
-		unwritten_starts=tuple(start for start, _ in sorted(assumed_unwritten)),
+		unwritten_starts=tuple(span.start for span in sorted(assumed_unwritten)),
 		unescaped_spans=escapes.unescaped,
-		unescaped_starts=tuple(start for start, _ in escapes.unescaped),
+		unescaped_starts=tuple(span.start for span in escapes.unescaped),
 		store_targets=escapes.store_targets,
 	)
 
 
-def _span_at(context: Context, address: Address) -> tuple[int, int] | None:
+def _span_at(context: Context, address: Address) -> Span | None:
 	index = bisect_right(context.object_starts, address) - 1
 	if index < 0:
 		return None
 	span = context.object_spans[index]
-	return span if span[0] <= address < span[1] else None
+	return span if span.start <= address < span.end else None
 
 
 def _assumed_unwritten(context: Context, address: Address, width: int) -> bool:
 	index = bisect_right(context.unwritten_starts, address) - 1
-	return index >= 0 and address + width <= context.unwritten_spans[index][1]
+	return index >= 0 and address + width <= context.unwritten_spans[index].end
 
 
-def _kept(
-	context: Context, clobbered: frozenset[tuple[int, int]], address: Address, width: int
-) -> bool:
+def _kept(context: Context, clobbered: frozenset[Span], address: Address, width: int) -> bool:
 	"""Whether the bytes lie in one unescaped object no unknown store derived from it has written."""
 	index = bisect_right(context.unescaped_starts, address) - 1
 	return (
 		index >= 0
-		and address + width <= context.unescaped_spans[index][1]
+		and address + width <= context.unescaped_spans[index].end
 		and context.unescaped_spans[index] not in clobbered
 	)
 
 
 def _read_only(context: Context, address: Address) -> bool:
 	index = bisect_right(context.read_only_starts, address) - 1
-	return index >= 0 and address < context.read_only_spans[index][1]
+	return index >= 0 and address < context.read_only_spans[index].end
 
 
 def _initial_value(context: Context, address: Address, width: int) -> Address | None:
@@ -186,7 +183,7 @@ def _initial_value(context: Context, address: Address, width: int) -> Address | 
 	data = memory_at(context.program, address, width)
 	return (
 		None
-		if (span is not None and address + width > span[1]) or len(data) != width
+		if (span is not None and address + width > span.end) or len(data) != width
 		else Address(int.from_bytes(data, context.program.byte_order))
 	)
 
@@ -207,7 +204,7 @@ def _array_slots(context: Context, base: Address, start: Address, stride: int) -
 	index = bisect_right(context.section_starts, base) - 1
 	return (
 		shift_addresses(_section_slots(context, base, stride), start - base)
-		if index >= 0 and context.section_spans[index][0] <= start < context.section_spans[index][1]
+		if index >= 0 and start in context.section_spans[index]
 		else Top()
 	)
 
@@ -216,7 +213,7 @@ def _section_slots(context: Context, start: Address, stride: int) -> ValueSet:
 	index = bisect_right(context.section_starts, start) - 1
 	if index < 0 or stride <= 0 or _span_at(context, start) is None:
 		return Top()
-	count = (context.section_spans[index][1] - start) // stride
+	count = (context.section_spans[index].end - start) // stride
 	if not 0 < count <= K_BOUND:
 		return Top()
 	return Known(values=frozenset(Address(start + offset * stride) for offset in range(count)))
@@ -533,9 +530,7 @@ def after_unknown_store(context: Context, state: State) -> State:
 def _unknown_writes(context: Context, writes: Writes, site: Address | None) -> Writes:
 	"""The writes after an unknown store, which may write any escaped object and its own targets."""
 	clobbered = writes.clobbered | (
-		context.store_targets.get(site, frozenset())
-		if site is not None
-		else frozenset[tuple[int, int]]()
+		context.store_targets.get(site, frozenset()) if site is not None else frozenset[Span]()
 	)
 	return Writes(
 		values={

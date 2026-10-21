@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
+	from dynamic_call_tree_resolution.span import Span
 
 
 def extract_call_sites(program: Program) -> tuple[CallSite, ...]:
@@ -70,7 +71,7 @@ def resolve(
 	program: Program,
 	rtos: RtosModel = BARE_METAL,
 	*,
-	assumed_unwritten: tuple[tuple[int, int], ...] = (),
+	assumed_unwritten: tuple[Span, ...] = (),
 ) -> ProgramResolution:
 	analysis = analyze(program, rtos, assumed_unwritten=assumed_unwritten)
 	return ProgramResolution(

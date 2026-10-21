@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 	from capstone import CsInsn
 
 	from dynamic_call_tree_resolution.model import Machine
+	from dynamic_call_tree_resolution.span import Span
 
 
 class Writes(Struct):
@@ -43,7 +44,7 @@ class Writes(Struct):
 	"""By address; an address no store wrote is absent."""
 	unknown_store: bool
 	"""An unknown store happened, so any escaped object may hold anything."""
-	clobbered: frozenset[tuple[int, int]] = frozenset()
+	clobbered: frozenset[Span] = frozenset()
 	"""The unescaped objects an unknown store derived from them may have written, by span."""
 
 

@@ -58,6 +58,7 @@ from dynamic_call_tree_resolution.model import (
 	Program,
 	Section,
 )
+from dynamic_call_tree_resolution.span import Span
 
 if TYPE_CHECKING:
 	from pathlib import Path
@@ -86,7 +87,10 @@ def _load(stream: BinaryIO) -> Program:
 	relocations = allocated_relocations(elf, raw_sections, pointer_size, byte_order)
 	sections = relocated_sections(raw_sections, relocations, pointer_size, byte_order)
 	relro_spans = tuple(
-		(segment["p_vaddr"], segment["p_vaddr"] + segment["p_memsz"])
+		Span(
+			start=Address(segment["p_vaddr"]),
+			end=Address(segment["p_vaddr"] + segment["p_memsz"]),
+		)
 		for segment in elf.iter_segments(type="PT_GNU_RELRO")
 	)
 	machine = Machine(elf.header["e_machine"])
@@ -133,9 +137,9 @@ def _load(stream: BinaryIO) -> Program:
 		entry_point=Address(elf.header["e_entry"]),
 		nobits=tuple(
 			sorted(
-				(
-					Address(section.header.sh_addr),
-					Address(section.header.sh_addr + section.header.sh_size),
+				Span(
+					start=Address(section.header.sh_addr),
+					end=Address(section.header.sh_addr + section.header.sh_size),
 				)
 				for section in elf.iter_sections()
 				if section.header.sh_type == "SHT_NOBITS"

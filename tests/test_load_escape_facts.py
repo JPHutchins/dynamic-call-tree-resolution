@@ -13,6 +13,7 @@ from elftools.elf.elffile import ELFFile
 
 from dynamic_call_tree_resolution import Address, load
 from dynamic_call_tree_resolution.model import aligned
+from tests.programs import span
 from tests.toolchains import FIXTURES
 
 if TYPE_CHECKING:
@@ -81,4 +82,4 @@ def test_load_reads_where_hello_holds_its_initialized_data_and_what_it_zeroes(
 		program.sections[Address(0x2000_0040)].load_address,
 		program.sections[Address(0)].load_address,
 		program.nobits,
-	) == (0x280C, 0x284C, None, ((0x2000_0048, 0x2000_0356), (0x2000_0358, 0x2000_1058)))
+	) == (0x280C, 0x284C, None, (span(0x2000_0048, 0x2000_0356), span(0x2000_0358, 0x2000_1058)))

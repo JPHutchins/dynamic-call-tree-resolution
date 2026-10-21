@@ -13,6 +13,7 @@ from capstone import arm_const
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily, Machine, aligned
+from dynamic_call_tree_resolution.span import Span
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_LOAD_WIDTHS,
 	arm_predicated,
@@ -63,7 +64,7 @@ class _Case(Struct):
 	"""Where a dispatch goes for one index."""
 
 	target: Address
-	table: tuple[int, int] | None
+	table: Span | None
 	"""The bytes the dispatch read the target from."""
 
 
@@ -89,9 +90,7 @@ def _arm_dispatches(instruction: CsInsn) -> bool:
 			return False
 
 
-def jump_table(
-	instructions: list[CsInsn], program: Program, function: tuple[int, int]
-) -> JumpTable | None:
+def jump_table(instructions: list[CsInsn], program: Program, function: Span) -> JumpTable | None:
 	guard = _window_start(instructions, len(instructions) - 1) - 1
 	if (
 		guard < 1
@@ -137,7 +136,7 @@ def _bounded(
 	start: int,
 	guard: int,
 	program: Program,
-	function: tuple[int, int],
+	function: Span,
 ) -> JumpTable | None:
 	dispatch = instructions[-1]
 	compare = instructions[guard - 1]
@@ -161,17 +160,15 @@ def _bounded(
 		)
 		if case is not None
 	)
-	if len(cases) <= compare.operands[1].imm or not all(
-		function[0] <= case.target < function[1] for case in cases
-	):
+	if len(cases) <= compare.operands[1].imm or not all(case.target in function for case in cases):
 		return None
 	tables = tuple(case.table for case in cases if case.table is not None)
-	end = max((high for _, high in tables), default=0)
+	end = max((table.end for table in tables), default=0)
 	return JumpTable(
 		targets=tuple(case.target for case in cases),
 		skip=end + end % 2
 		if dispatch.address + dispatch.size
-		<= min((low for low, _ in tables), default=-1)
+		<= min((table.start for table in tables), default=-1)
 		<= dispatch.address + dispatch.size + 2
 		else None,
 		guarded=tuple(instruction.address for instruction in instructions[start + 1 :]),
@@ -223,7 +220,9 @@ def _read_case(
 	return (
 		None
 		if address is None or entry is None
-		else _Case(target=target(entry), table=(address, address + width))
+		else _Case(
+			target=target(entry), table=Span(start=Address(address), end=Address(address + width))
+		)
 	)
 
 

@@ -47,6 +47,7 @@ from dynamic_call_tree_resolution.report import (
 	slot_counts,
 )
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
+from dynamic_call_tree_resolution.span import Span
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	expand_indirect_calls,
@@ -218,14 +219,14 @@ def expand_from_elf(
 	)
 
 
-def _unwritten_spans(program: Program, names: tuple[str, ...]) -> tuple[tuple[int, int], ...]:
+def _unwritten_spans(program: Program, names: tuple[str, ...]) -> tuple[Span, ...]:
 	return tuple(span for name in names for span in (_unwritten_span(program, name),))
 
 
-def _unwritten_span(program: Program, name: str) -> tuple[int, int]:
+def _unwritten_span(program: Program, name: str) -> Span:
 	match tuple(obj for obj in program.objects.values() if obj.name == name):
 		case (found,):
-			return found.address, found.address + found.size
+			return Span(start=found.address, end=Address(found.address + found.size))
 		case ():
 			raise ValueError(f"--assume-unwritten: no data object is named {name}")
 		case several:
@@ -246,8 +247,11 @@ def _assumed_unwritten(
 		contradicted=tuple(
 			name
 			for name in names
-			for start, end in (_unwritten_span(image.program, name),)
-			if any(start - image.program.pointer_size < key < end for key in resolution.written)
+			for span in (_unwritten_span(image.program, name),)
+			if any(
+				span.start - image.program.pointer_size < key < span.end
+				for key in resolution.written
+			)
 		),
 		callers=_changed_callers(image, baseline.sites, resolution.sites),
 		thread_callers={

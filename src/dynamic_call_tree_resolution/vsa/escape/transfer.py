@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
 	from capstone import ArmCsOperand, CsInsn
 
-	from dynamic_call_tree_resolution.vsa.escape.image import Span
+	from dynamic_call_tree_resolution.span import Span
 
 
 _COMPARES: Final = frozenset(

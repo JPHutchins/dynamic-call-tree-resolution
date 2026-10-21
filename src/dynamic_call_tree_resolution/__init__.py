@@ -201,6 +201,7 @@ from dynamic_call_tree_resolution.report import (
 from dynamic_call_tree_resolution.report import (
 	build_report as build_report,
 )
+from dynamic_call_tree_resolution.span import Span as Span
 from dynamic_call_tree_resolution.stack_analysis import (
 	Bounded as Bounded,
 )
