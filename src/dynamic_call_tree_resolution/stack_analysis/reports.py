@@ -71,17 +71,9 @@ def thread_reports(
 
 def _stack_sizes(rtos: RtosModel) -> Mapping[str, int]:
 	return {
-		name: size
-		for name, size in (
-			*((thread.name, thread.stack_size) for thread in rtos.threads),
-			*((thread.name, thread.stack_size) for thread in rtos.system_threads),
-			*(
-				(stack.name, stack.stack_size)
-				for stack in (rtos.interrupt_stack,)
-				if stack is not None
-			),
-		)
-		if size is not None
+		stack.name: stack.stack_size
+		for stack in (*rtos.threads, *rtos.system_threads, rtos.interrupt_stack)
+		if stack is not None and stack.stack_size is not None
 	}
 
 

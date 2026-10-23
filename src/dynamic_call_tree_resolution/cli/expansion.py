@@ -198,9 +198,8 @@ def expand_from_elf(
 				resolution,
 				(*in_image_edges, *unrecorded, *binary),
 				Targets(
-					by_caller=candidates.targets_by_caller,
+					candidates=candidates,
 					narrowed_by_caller=narrowed_by_caller,
-					fallback=candidates.fallback,
 					narrowed_by_field=narrowed_by_field,
 					narrow_by_signature=narrow_by_signature,
 				),
