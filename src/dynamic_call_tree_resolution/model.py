@@ -337,6 +337,20 @@ class InterruptStack(Struct):
 	"""The stack size the build's configuration declares."""
 
 
+class PrivilegedStack(Struct):
+	"""The stack a user thread starts and makes its system calls on; each has one, alike."""
+
+	name: str
+	system_call: Address
+	"""The function each system call starts on it."""
+	user_start: Address
+	"""The function a user thread starts on it, before it drops to user mode."""
+	saved: int
+	"""The bytes a system call keeps at its top before its function runs."""
+	stack_size: int | None = None
+	"""The stack size the build's configuration declares."""
+
+
 class Dispatch(Struct):
 	"""A function an RTOS calls each entry of a linker-built table through."""
 
@@ -383,6 +397,7 @@ class RtosModel(Struct):
 	"""The bytes the RTOS writes at the bottom of each thread's stack to catch an overflow."""
 	system_threads: tuple[SystemThread, ...] = ()
 	interrupt_stack: InterruptStack | None = None
+	privileged_stack: PrivilegedStack | None = None
 	dispatches: tuple[Dispatch, ...] = ()
 	not_counted: frozenset[Uncounted] = frozenset()
 	"""What the image shows the RTOS adds to each thread's stack, left out of its rows."""

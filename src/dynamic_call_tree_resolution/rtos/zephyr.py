@@ -18,6 +18,7 @@ from dynamic_call_tree_resolution.model import (
 	EmbeddedStructMember,
 	InterruptStack,
 	Machine,
+	PrivilegedStack,
 	RtosModel,
 	SystemThread,
 	ThreadCreation,
@@ -78,6 +79,11 @@ _SYSTEM_THREADS: Final = (
 )
 _INTERRUPT_STACK: Final = "z_interrupt_stacks"
 _INTERRUPT_STACK_SIZE: Final = "CONFIG_ISR_STACK_SIZE"
+_PRIVILEGED_STACKS: Final = "priv_stacks"
+_PRIVILEGED_STACK_SIZE: Final = "CONFIG_PRIVILEGED_STACK_SIZE"
+_SYSCALL_ENTRY: Final = "z_arm_do_syscall"
+_USER_START: Final = "arch_user_mode_enter"
+_SYSCALL_SAVED_WORDS: Final = 2
 
 
 class _SectionDispatch(Struct):
@@ -224,6 +230,9 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 		interrupt_stack=_interrupt_stack(
 			program, _declared(options, _integer(options, _INTERRUPT_STACK_SIZE))
 		),
+		privileged_stack=_privileged_stack(
+			program, _declared(options, _integer(options, _PRIVILEGED_STACK_SIZE))
+		),
 		dispatches=tuple(
 			dispatch for spec in _DISPATCHES if (dispatch := _dispatch(program, spec)) is not None
 		),
@@ -350,6 +359,36 @@ def _interrupt_stack(program: Program, stack_size: int | None) -> InterruptStack
 			return None
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _privileged_stack(program: Program, stack_size: int | None) -> PrivilegedStack | None:
+	"""Where an M-profile core starts a user thread and runs its system calls.
+
+	The SVC handler leaves the caller's stack pointer and return address at the top.
+	"""
+	match (
+		program.arm_core,
+		_addresses_of(program, _SYSCALL_ENTRY),
+		_addresses_of(program, _USER_START),
+	):
+		case ArmCore(profile=ArmProfile.MICROCONTROLLER), (system_call,), (user_start,) if any(
+			data_object.name == _PRIVILEGED_STACKS for data_object in program.objects.values()
+		):
+			return PrivilegedStack(
+				name=_PRIVILEGED_STACKS,
+				system_call=system_call,
+				user_start=user_start,
+				saved=_SYSCALL_SAVED_WORDS * program.pointer_size,
+				stack_size=stack_size,
+			)
+		case _:
+			return None
+
+
+def _addresses_of(program: Program, name: str) -> tuple[Address, ...]:
+	return tuple(
+		address for address, function in program.functions.items() if function.name == name
+	)
 
 
 def priority_levels(devicetree: str) -> int | None:

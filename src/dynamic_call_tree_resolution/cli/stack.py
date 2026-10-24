@@ -80,9 +80,9 @@ def in_image(reports: tuple[StackReport, ...], expansion: Expansion) -> tuple[St
 		if report.entry in expansion.image_functions
 		or report.entry in expansion.threads
 		or report.entry in expansion.hardware_roots
-		or (
-			expansion.rtos.interrupt_stack is not None
-			and report.entry == expansion.rtos.interrupt_stack.name
+		or any(
+			stack is not None and report.entry == stack.name
+			for stack in (expansion.rtos.interrupt_stack, expansion.rtos.privileged_stack)
 		)
 	)
 

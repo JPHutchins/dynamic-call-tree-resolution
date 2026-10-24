@@ -219,9 +219,11 @@ def zephyr_stack_pointers(
 	)
 
 
-def zephyr_word(machine: ZephyrMachine, elf: Path, breakpoint: str, address: str) -> int:
-	"""The word at an address when a breakpoint is first hit, under gdb on QEMU."""
-	(word,) = (
+def zephyr_values(
+	machine: ZephyrMachine, elf: Path, breakpoint: str, expressions: tuple[str, ...]
+) -> tuple[int, ...]:
+	"""Each expression's value when a breakpoint is first hit, under gdb on QEMU."""
+	return tuple(
 		int(line.split()[1], 16)
 		for line in subprocess.run(
 			[
@@ -250,8 +252,11 @@ def zephyr_word(machine: ZephyrMachine, elf: Path, breakpoint: str, address: str
 				f"break {breakpoint}",
 				"-ex",
 				"continue",
-				"-ex",
-				rf'printf "word %#x\n", *(unsigned int *)({address})',
+				*(
+					argument
+					for expression in expressions
+					for argument in ("-ex", rf'printf "value %#x\n", {expression}')
+				),
 				"-ex",
 				"kill",
 				str(elf),
@@ -260,9 +265,8 @@ def zephyr_word(machine: ZephyrMachine, elf: Path, breakpoint: str, address: str
 			capture_output=True,
 			text=True,
 		).stdout.splitlines()
-		if line.startswith("word ")
+		if line.startswith("value ")
 	)
-	return word
 
 
 class IndirectCall(Struct):
