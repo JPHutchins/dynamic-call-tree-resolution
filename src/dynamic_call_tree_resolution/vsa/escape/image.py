@@ -24,8 +24,8 @@ from dynamic_call_tree_resolution.vsa.cfg import branch_target
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
 
-	from dynamic_call_tree_resolution.model import Function, Program
-	from dynamic_call_tree_resolution.vsa.cfg import Block
+	from dynamic_call_tree_resolution.model import Program
+	from dynamic_call_tree_resolution.vsa.cfg import Block, FunctionGraph
 	from dynamic_call_tree_resolution.vsa.escape.values import Held
 
 
@@ -63,7 +63,7 @@ class Image(Struct):
 	"""Functions that read no argument registers."""
 
 
-def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ...]], ...]) -> Image:
+def escape_image(program: Program, graphs: tuple[FunctionGraph, ...]) -> Image:
 	spans = _merged(
 		Span(start=data_object.address, end=Address(data_object.address + data_object.size))
 		for data_object in program.objects.values()
@@ -122,9 +122,9 @@ def escape_image(program: Program, graphs: tuple[tuple[Function, tuple[Block, ..
 		fills={
 			**routines,
 			**{
-				normalized(function.address, program.machine): fill
-				for function, blocks in graphs
-				if (fill := _forwarded_fill(program, routines, blocks)) is not None
+				normalized(graph.function.address, program.machine): fill
+				for graph in graphs
+				if (fill := _forwarded_fill(program, routines, graph.blocks)) is not None
 			},
 		},
 	)

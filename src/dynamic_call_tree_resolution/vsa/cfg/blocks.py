@@ -59,6 +59,13 @@ class CallsNoReturn(Struct):
 	"""A block-ending direct call to a function that never returns."""
 
 
+class FunctionGraph(Struct):
+	"""A function, with its code's basic blocks."""
+
+	function: Function
+	blocks: tuple[Block, ...]
+
+
 def reachable_blocks(
 	blocks: tuple[Block, ...], cut: frozenset[Address] = frozenset()
 ) -> frozenset[Address]:
@@ -76,7 +83,7 @@ def reachable_blocks(
 
 def function_graph(
 	program: Program, decoders: Mapping[InstructionSet, Cs], start: Address, function: Function
-) -> tuple[Function, tuple[Block, ...]] | None:
+) -> FunctionGraph | None:
 	runs = instruction_runs(program, start, function.size)
 	if not any(run.code for run in runs):
 		return None
@@ -90,19 +97,26 @@ def function_graph(
 		)
 		for run in runs
 	)
-	return (
+	return FunctionGraph(
 		function,
 		_build_blocks(
-			tuple(instruction for run, _ in decoded for instruction in run),
+			tuple(instruction for decode in decoded for instruction in decode.instructions),
 			program.machine,
-			{address: table for _, tables in decoded for address, table in tables.items()},
+			{address: table for decode in decoded for address, table in decode.dispatches.items()},
 		),
 	)
 
 
+class _Decoded(Struct):
+	"""One run's instructions, and the jump table each indirect dispatch among them reads."""
+
+	instructions: tuple[CsInsn, ...]
+	dispatches: Mapping[int, JumpTable | None]
+
+
 def _decoded(
 	disassembler: Cs, program: Program, start: int, code: bytes, function: Span
-) -> tuple[tuple[CsInsn, ...], Mapping[int, JumpTable | None]]:
+) -> _Decoded:
 	instructions: list[CsInsn] = []
 	dispatches: dict[int, JumpTable | None] = {}
 	offset = 0
@@ -117,7 +131,7 @@ def _decoded(
 					break
 		else:
 			break
-	return tuple(instructions), dispatches
+	return _Decoded(tuple(instructions), dispatches)
 
 
 def _build_blocks(

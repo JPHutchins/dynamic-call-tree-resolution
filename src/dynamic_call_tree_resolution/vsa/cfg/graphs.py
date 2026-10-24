@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 from dynamic_call_tree_resolution.vsa.cfg.blocks import (
 	Block,
 	CallsNoReturn,
+	FunctionGraph,
 	conditional_exit,
 	function_graph,
 	reachable_blocks,
@@ -55,7 +56,7 @@ def _function_address(function: Function) -> Address:
 	return function.address
 
 
-def control_flow_graphs(program: Program) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
+def control_flow_graphs(program: Program) -> dict[Address, FunctionGraph]:
 	decoders = disassemblers(program.arm_core)
 	by_start = functions_by_start(program)
 	return _cut_calls_that_never_return(
@@ -98,7 +99,7 @@ def _first_graph(
 	decoders: Mapping[InstructionSet, Cs],
 	start: Address,
 	functions: Iterable[Function],
-) -> tuple[Function, tuple[Block, ...]] | None:
+) -> FunctionGraph | None:
 	return next(
 		filter(
 			None, (function_graph(program, decoders, start, function) for function in functions)
@@ -116,33 +117,33 @@ class _Exits(Struct):
 
 
 def _cut_calls_that_never_return(
-	program: Program, graphs: Mapping[Address, tuple[Function, tuple[Block, ...]]]
-) -> dict[Address, tuple[Function, tuple[Block, ...]]]:
-	exits = {start: _exits(program, blocks) for start, (_, blocks) in graphs.items()}
+	program: Program, graphs: Mapping[Address, FunctionGraph]
+) -> dict[Address, FunctionGraph]:
+	exits = {start: _exits(program, graph.blocks) for start, graph in graphs.items()}
 	never_returning = _never_returning(graphs, exits, program.never_returns)
 	return {
-		start: (
-			function,
+		start: FunctionGraph(
+			graph.function,
 			tuple(
 				replace(block, condition=CallsNoReturn())
 				if exits[start].calls.get(block.start) in never_returning
 				else block
-				for block in blocks
+				for block in graph.blocks
 			),
 		)
-		for start, (function, blocks) in graphs.items()
+		for start, graph in graphs.items()
 	}
 
 
 def _never_returning(
-	graphs: Mapping[Address, tuple[Function, tuple[Block, ...]]],
+	graphs: Mapping[Address, FunctionGraph],
 	exits: Mapping[Address, _Exits],
 	known: frozenset[Address],
 ) -> frozenset[Address]:
 	grown = known | frozenset(
 		start
-		for start, (_, blocks) in graphs.items()
-		if start not in known and _leaves_only_into(blocks, exits[start], known)
+		for start, graph in graphs.items()
+		if start not in known and _leaves_only_into(graph.blocks, exits[start], known)
 	)
 	return known if grown == known else _never_returning(graphs, exits, grown)
 

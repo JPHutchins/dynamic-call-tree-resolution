@@ -40,7 +40,7 @@ from dynamic_call_tree_resolution.vsa.analysis.seeds import (
 	seed_from_thread,
 )
 from dynamic_call_tree_resolution.vsa.cfg import (
-	Block,
+	FunctionGraph,
 	control_flow_graphs,
 )
 from dynamic_call_tree_resolution.vsa.escape import escapes
@@ -54,7 +54,6 @@ if TYPE_CHECKING:
 	from capstone import ArmCsOperand, CsOperand
 
 	from dynamic_call_tree_resolution.model import (
-		Function,
 		Program,
 		RtosModel,
 		ThreadRoot,
@@ -170,11 +169,9 @@ def _entry(thread: ThreadRoot) -> Address:
 	return thread.entry
 
 
-def _prewarm_instructions(
-	functions: tuple[tuple[Function, tuple[Block, ...]], ...], machine: Machine
-) -> None:
-	for _, blocks in functions:
-		for block in blocks:
+def _prewarm_instructions(functions: tuple[FunctionGraph, ...], machine: Machine) -> None:
+	for graph in functions:
+		for block in graph.blocks:
 			for instruction in block.instructions:
 				if is_data(instruction):
 					continue

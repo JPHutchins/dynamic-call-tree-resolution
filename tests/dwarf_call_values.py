@@ -77,8 +77,8 @@ def checked(elf: Path) -> Checked:
 	program = load(elf)
 	call_at = {
 		instruction.address + instruction.size: instruction.address
-		for _, blocks in control_flow_graphs(program).values()
-		for block in blocks
+		for graph in control_flow_graphs(program).values()
+		for block in graph.blocks
 		for instruction in block.instructions
 	}
 	arguments = _arguments(analyze(program).observations)

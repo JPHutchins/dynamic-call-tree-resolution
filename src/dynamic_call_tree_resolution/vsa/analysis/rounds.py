@@ -30,6 +30,7 @@ from dynamic_call_tree_resolution.vsa.analysis.seeds import (
 )
 from dynamic_call_tree_resolution.vsa.cfg import (
 	Block,
+	FunctionGraph,
 	direct_transfer,
 	reachable_blocks,
 )
@@ -46,7 +47,6 @@ if TYPE_CHECKING:
 	from concurrent.futures import Executor
 
 	from dynamic_call_tree_resolution.model import (
-		Function,
 		Program,
 		ThreadRoot,
 	)
@@ -73,7 +73,7 @@ class Rounds(Struct):
 	"""What every round of the whole-image fixpoint shares."""
 
 	program: Program
-	functions: tuple[tuple[Function, tuple[Block, ...]], ...]
+	functions: tuple[FunctionGraph, ...]
 	executor: Executor
 	roots: Mapping[Address, State]
 	entry_seeds: Mapping[Address, State]
@@ -131,11 +131,13 @@ def _round_analysis(
 	program: Program,
 	context: Context,
 	seeds: Mapping[Address, State],
-	function_blocks: tuple[Function, tuple[Block, ...]],
+	graph: FunctionGraph,
 ) -> FunctionResult:
-	function, blocks = function_blocks
 	return analyze_function(
-		context, function, blocks, seeds[normalized(function.address, program.machine)]
+		context,
+		graph.function,
+		graph.blocks,
+		seeds[normalized(graph.function.address, program.machine)],
 	)
 
 
@@ -143,20 +145,19 @@ def final_result(
 	program: Program,
 	context: Context,
 	seeds: Mapping[Address, State],
-	function_blocks: tuple[Function, tuple[Block, ...]],
+	graph: FunctionGraph,
 ) -> FunctionResult:
-	function, blocks = function_blocks
 	return analyze_function(
 		context,
-		function,
-		blocks,
-		seeds.get(normalized(function.address, program.machine), top_seed(program.machine)),
+		graph.function,
+		graph.blocks,
+		seeds.get(normalized(graph.function.address, program.machine), top_seed(program.machine)),
 	)
 
 
 def thread_sites(
 	program: Program,
-	functions: tuple[tuple[Function, tuple[Block, ...]], ...],
+	functions: tuple[FunctionGraph, ...],
 	context: Context,
 	executor: Executor,
 	trampoline: Address,
@@ -174,7 +175,7 @@ def thread_sites(
 	seeds = _thread_fixpoint(program, functions, context, executor, start, start, 1)
 	reached = _reached(functions, seeds, program.machine)
 	return ThreadSites(
-		reached=frozenset(function.address for function, _ in reached),
+		reached=frozenset(graph.function.address for graph in reached),
 		sites=tuple(
 			site
 			for result in executor.map(partial(final_result, program, context, seeds), reached)
@@ -185,7 +186,7 @@ def thread_sites(
 
 def _thread_fixpoint(
 	program: Program,
-	functions: tuple[tuple[Function, tuple[Block, ...]], ...],
+	functions: tuple[FunctionGraph, ...],
 	context: Context,
 	executor: Executor,
 	start: Mapping[Address, State],
@@ -217,19 +218,19 @@ def _thread_fixpoint(
 
 def analysis_roots(
 	program: Program,
-	functions: tuple[tuple[Function, tuple[Block, ...]], ...],
+	functions: tuple[FunctionGraph, ...],
 	taken: frozenset[Address],
 ) -> frozenset[Address]:
 	machine = program.machine
-	starts = frozenset(normalized(function.address, machine) for function, _ in functions)
+	starts = frozenset(normalized(graph.function.address, machine) for graph in functions)
 	reachable = {
-		normalized(function.address, machine): reachable_blocks(blocks)
-		for function, blocks in functions
+		normalized(graph.function.address, machine): reachable_blocks(graph.blocks)
+		for graph in functions
 	}
 	transferred = frozenset[Address]().union(
 		*(
-			_callees(blocks, machine, normalized(function.address, machine), starts)
-			for function, blocks in functions
+			_callees(graph.blocks, machine, normalized(graph.function.address, machine), starts)
+			for graph in functions
 		)
 	)
 	gap_targets = frozenset[Address]().union(
@@ -237,14 +238,14 @@ def analysis_roots(
 			_callees(
 				(
 					block
-					for block in blocks
-					if block.start not in reachable[normalized(function.address, machine)]
+					for block in graph.blocks
+					if block.start not in reachable[normalized(graph.function.address, machine)]
 				),
 				machine,
-				normalized(function.address, machine),
+				normalized(graph.function.address, machine),
 				starts,
 			)
-			for function, blocks in functions
+			for graph in functions
 		)
 	)
 	seeded = (
@@ -253,17 +254,17 @@ def analysis_roots(
 		| frozenset(normalized(address, machine) for address in taken)
 	) & starts
 	callees = {
-		normalized(function.address, machine): _callees(
+		normalized(graph.function.address, machine): _callees(
 			(
 				block
-				for block in blocks
-				if block.start in reachable[normalized(function.address, machine)]
+				for block in graph.blocks
+				if block.start in reachable[normalized(graph.function.address, machine)]
 			),
 			machine,
-			normalized(function.address, machine),
+			normalized(graph.function.address, machine),
 			starts,
 		)
-		for function, blocks in functions
+		for graph in functions
 	}
 	return seeded | (starts - _call_closure(seeded, callees))
 
@@ -293,12 +294,10 @@ def _call_closure(
 
 
 def _reached(
-	functions: tuple[tuple[Function, tuple[Block, ...]], ...],
+	functions: tuple[FunctionGraph, ...],
 	seeds: Mapping[Address, State],
 	machine: Machine,
-) -> tuple[tuple[Function, tuple[Block, ...]], ...]:
+) -> tuple[FunctionGraph, ...]:
 	return tuple(
-		function_blocks
-		for function_blocks in functions
-		if normalized(function_blocks[0].address, machine) in seeds
+		graph for graph in functions if normalized(graph.function.address, machine) in seeds
 	)

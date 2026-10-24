@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 	from dynamic_call_tree_resolution.model import Function, Program
 	from dynamic_call_tree_resolution.span import Span
-	from dynamic_call_tree_resolution.vsa.cfg import Block
+	from dynamic_call_tree_resolution.vsa.cfg import Block, FunctionGraph
 
 
 class Escapes(Struct):
@@ -64,7 +64,7 @@ class _Scan(Struct):
 
 def escapes(
 	program: Program,
-	graphs: tuple[tuple[Function, tuple[Block, ...]], ...],
+	graphs: tuple[FunctionGraph, ...],
 	executor: Executor | None = None,
 ) -> Escapes:
 	match program.machine.family:
@@ -78,7 +78,7 @@ def escapes(
 
 def _arm_escapes(
 	image: Image,
-	graphs: tuple[tuple[Function, tuple[Block, ...]], ...],
+	graphs: tuple[FunctionGraph, ...],
 	executor: Executor | None,
 ) -> Escapes:
 	scans = (
@@ -100,8 +100,8 @@ def _arm_escapes(
 	)
 
 
-def _scan_graph(image: Image, graph: tuple[Function, tuple[Block, ...]]) -> _Scan:
-	return _scan(image, graph[0], graph[1])
+def _scan_graph(image: Image, graph: FunctionGraph) -> _Scan:
+	return _scan(image, graph.function, graph.blocks)
 
 
 def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
