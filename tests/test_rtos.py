@@ -39,9 +39,10 @@ from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.programs import build_program
 from tests.toolchains import (
+	ZephyrMachine,
 	zephyr_console_cortex_m3,
-	zephyr_stack_pointers_cortex_m3,
-	zephyr_word_cortex_r52,
+	zephyr_stack_pointers,
+	zephyr_word,
 )
 
 if TYPE_CHECKING:
@@ -267,8 +268,11 @@ def test_the_main_and_idle_threads_start_their_stack_reservation_below_their_sta
 ) -> None:
 	program = load(zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf")
 	assert set(
-		zephyr_stack_pointers_cortex_m3(
-			zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf", "*z_thread_entry", 2
+		zephyr_stack_pointers(
+			ZephyrMachine.LM3S6965EVB,
+			zephyr_fixtures / "hello" / "zephyr" / "zephyr.elf",
+			"*z_thread_entry",
+			2,
 		)
 	) == {
 		stack.address + stack.size - model.stack_reservation
@@ -334,6 +338,19 @@ def hello_program(zephyr_fixtures: Path) -> Program:
 			4 + 8 + 63 + 5,
 			id="the largest random offset",
 		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_THREAD_USERSPACE_LOCAL_DATA=y\n'
+			"CONFIG_STACK_ALIGN_DOUBLE_WORD=y\n",
+			False,
+			4 + 4,
+			id="the userspace-local data, rounded",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_THREAD_LOCAL_STORAGE=y\nCONFIG_THREAD_USERSPACE_LOCAL_DATA=y\n',
+			True,
+			4 + 8 + 4,
+			id="the userspace-local data below TLS",
+		),
 	],
 )
 def test_the_stack_reservation_follows_the_builds_config(
@@ -366,11 +383,6 @@ def test_the_stack_reservation_follows_the_builds_config(
 			'CONFIG_ARCH="arm"\n',
 			frozenset[Uncounted](),
 			id="hello adds nothing the model leaves out",
-		),
-		pytest.param(
-			'CONFIG_ARCH="arm"\nCONFIG_THREAD_USERSPACE_LOCAL_DATA=y\n',
-			frozenset({Uncounted.USERSPACE_LOCAL_DATA}),
-			id="userspace-local data",
 		),
 		pytest.param(
 			'CONFIG_ARCH="arm"\nCONFIG_USE_SWITCH=y\n',
@@ -421,11 +433,32 @@ def test_zephyrs_thread_rows_add_the_stack_sentinel_the_build_writes(
 
 
 @pytest.mark.image
+def test_each_userspace_thread_starts_its_stack_reservation_below_its_stack_top_on_qemu(
+	zephyr_fixtures: Path,
+) -> None:
+	elf = zephyr_fixtures / "userspace" / "zephyr" / "zephyr.elf"
+	program = load(elf)
+	assert set(zephyr_stack_pointers(ZephyrMachine.MPS2_AN385, elf, "*z_thread_entry", 4)) == {
+		stack.address + stack.size - model.stack_reservation
+		for model in (rtos_model(program, RtosChoice.AUTO),)
+		for stack in program.objects.values()
+		if stack.name
+		in {
+			"z_main_stack",
+			"z_idle_stacks",
+			"_k_thread_stack_user_tid",
+			"_k_thread_stack_supervisor_tid",
+		}
+	}
+
+
+@pytest.mark.image
 def test_zephyr_writes_the_stack_sentinel_in_the_lowest_word_of_a_threads_stack_on_qemu(
 	zephyr_fixtures: Path,
 ) -> None:
 	assert (
-		zephyr_word_cortex_r52(
+		zephyr_word(
+			ZephyrMachine.MPS3_AN536,
 			zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
 			"thread_b_entry_point",
 			"&_k_thread_stack_thread_b",
@@ -464,16 +497,24 @@ def test_without_a_config_a_symbol_only_its_build_defines_shows_what_zephyr_adds
 def test_without_a_config_the_userspace_local_data_type_shows_zephyr_reserves_it(
 	hello_program: Program,
 ) -> None:
-	assert rtos_model(
-		replace(
-			hello_program,
-			layouts={
-				**hello_program.layouts,
-				"struct _thread_userspace_local_data": StructureLayout(members=(), size=4),
-			},
-		),
-		RtosChoice.ZEPHYR,
-	).not_counted == frozenset({Uncounted.USERSPACE_LOCAL_DATA})
+	assert (
+		rtos_model(
+			replace(
+				hello_program,
+				symbol_addresses={
+					name: addresses
+					for name, addresses in hello_program.symbol_addresses.items()
+					if name != "arch_tls_stack_setup"
+				},
+				layouts={
+					**hello_program.layouts,
+					"struct _thread_userspace_local_data": StructureLayout(members=(), size=4),
+				},
+			),
+			RtosChoice.ZEPHYR,
+		).stack_reservation
+		== 4 + 4
+	)
 
 
 @pytest.mark.image
@@ -521,9 +562,7 @@ def test_zephyrs_thread_rows_leave_out_the_exception_frames_of_a_core_that_is_no
 @pytest.mark.parametrize(
 	("name", "not_counted"),
 	[
-		pytest.param(
-			"userspace", frozenset({Uncounted.USERSPACE_LOCAL_DATA}), id="userspace on mps2/an385"
-		),
+		pytest.param("userspace", frozenset[Uncounted](), id="userspace on mps2/an385"),
 		pytest.param(
 			"synchronization-r52",
 			frozenset({Uncounted.EXCEPTION_FRAMES}),
@@ -548,15 +587,15 @@ def test_without_its_config_a_testbed_still_shows_what_zephyr_adds_to_its_thread
 	[
 		pytest.param(
 			"userspace",
-			["supervisor_tid", "user_tid", "z_idle_threads", "z_main_thread"],
+			[],
 			[
 				(
-					"supervisor_tid: unbounded, at least 244 bytes (unmeasured: 2, exception frame: "
-					"36 bytes, not counted: userspace-local data, stack: 1024 bytes)"
+					"supervisor_tid: unbounded, at least 252 bytes (unmeasured: 2, stack "
+					"reservation: 8 bytes, exception frame: 36 bytes, stack: 1024 bytes)"
 				),
 				(
-					"user_tid: unbounded, at least 244 bytes (unmeasured: 2, exception frame: 36 "
-					"bytes, not counted: userspace-local data, stack: 1024 bytes)"
+					"user_tid: unbounded, at least 252 bytes (unmeasured: 2, stack reservation: 8 "
+					"bytes, exception frame: 36 bytes, stack: 1024 bytes)"
 				),
 			],
 			id="userspace on mps2/an385",
@@ -575,7 +614,7 @@ def test_without_its_config_a_testbed_still_shows_what_zephyr_adds_to_its_thread
 		),
 	],
 )
-def test_cli_stack_marks_every_thread_row_its_testbed_adds_uncounted_bytes_to(
+def test_cli_stack_marks_the_thread_rows_whose_testbed_adds_what_the_model_leaves_out(
 	zephyr_fixtures: Path,
 	capsys: pytest.CaptureFixture[str],
 	name: str,
@@ -584,12 +623,11 @@ def test_cli_stack_marks_every_thread_row_its_testbed_adds_uncounted_bytes_to(
 ) -> None:
 	artifacts = zephyr_fixtures / name
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf")
-	by_entry = {
-		line.split(":")[0]: line
-		for line in capsys.readouterr().out.splitlines()
-		if "not counted" in line
-	}
-	assert (sorted(by_entry), [by_entry[row.split(":")[0]] for row in rows]) == (marked, rows)
+	by_entry = {line.split(":")[0]: line for line in capsys.readouterr().out.splitlines()}
+	assert (
+		sorted(entry for entry, line in by_entry.items() if "not counted" in line),
+		[by_entry[row.split(":")[0]] for row in rows],
+	) == (marked, rows)
 
 
 def _trampoline_targets(program: Program, model: RtosModel) -> list[str]:

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+from enum import StrEnum
 from itertools import islice
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, cast
+from typing import IO, TYPE_CHECKING, assert_never, cast
 
 from salix import Struct
 
@@ -25,31 +26,40 @@ CORTEX_A15_HARNESS = FIXTURES / "cortex-a15"
 HOST_HARNESS = FIXTURES / "host"
 
 _CC_FLAGS = ("-std=gnu2x", "-Wall", "-Wextra", "-Werror", "-Wdouble-promotion")
-_ZEPHYR_QEMU_CORTEX_M3 = (
-	"qemu-system-arm",
-	"-machine",
-	"lm3s6965evb",
-	"-cpu",
-	"cortex-m3",
-	"-monitor",
-	"none",
-	"-icount",
-	"shift=6,align=off,sleep=off",
-	"-rtc",
-	"clock=vm",
-)
 
-_ZEPHYR_QEMU_CORTEX_R52 = (
-	"qemu-system-arm",
-	"-machine",
-	"mps3-an536",
-	"-cpu",
-	"cortex-r52",
-	"-monitor",
-	"none",
-	"-icount",
-	"shift=6,align=off,sleep=off",
-)
+
+class ZephyrMachine(StrEnum):
+	"""A QEMU machine a Zephyr testbed runs on."""
+
+	LM3S6965EVB = "lm3s6965evb"
+	MPS2_AN385 = "mps2-an385"
+	MPS3_AN536 = "mps3-an536"
+
+	@property
+	def cpu(self) -> str:
+		match self:
+			case ZephyrMachine.LM3S6965EVB | ZephyrMachine.MPS2_AN385:
+				return "cortex-m3"
+			case ZephyrMachine.MPS3_AN536:
+				return "cortex-r52"
+			case _ as unreachable:
+				assert_never(unreachable)
+
+
+def _zephyr_qemu(machine: ZephyrMachine) -> tuple[str, ...]:
+	return (
+		"qemu-system-arm",
+		"-machine",
+		machine,
+		"-cpu",
+		machine.cpu,
+		"-monitor",
+		"none",
+		"-icount",
+		"shift=6,align=off,sleep=off",
+		"-rtc",
+		"clock=vm",
+	)
 
 
 def host_cc(*flags: str) -> tuple[str, ...]:
@@ -142,7 +152,7 @@ def zephyr_console_cortex_m3(elf: Path, line_count: int) -> tuple[str, ...]:
 		[
 			"timeout",
 			"30",
-			*_ZEPHYR_QEMU_CORTEX_M3,
+			*_zephyr_qemu(ZephyrMachine.LM3S6965EVB),
 			"-nographic",
 			"-serial",
 			"stdio",
@@ -160,7 +170,9 @@ def zephyr_console_cortex_m3(elf: Path, line_count: int) -> tuple[str, ...]:
 		return lines
 
 
-def zephyr_stack_pointers_cortex_m3(elf: Path, breakpoint: str, hits: int) -> tuple[int, ...]:
+def zephyr_stack_pointers(
+	machine: ZephyrMachine, elf: Path, breakpoint: str, hits: int
+) -> tuple[int, ...]:
 	"""The stack pointer at each of a breakpoint's first hits, under gdb on QEMU."""
 	return tuple(
 		int(stack_pointer, 16)
@@ -175,7 +187,7 @@ def zephyr_stack_pointers_cortex_m3(elf: Path, breakpoint: str, hits: int) -> tu
 				"target remote | "
 				+ shlex.join(
 					(
-						*_ZEPHYR_QEMU_CORTEX_M3,
+						*_zephyr_qemu(machine),
 						"-display",
 						"none",
 						"-serial",
@@ -207,7 +219,7 @@ def zephyr_stack_pointers_cortex_m3(elf: Path, breakpoint: str, hits: int) -> tu
 	)
 
 
-def zephyr_word_cortex_r52(elf: Path, breakpoint: str, address: str) -> int:
+def zephyr_word(machine: ZephyrMachine, elf: Path, breakpoint: str, address: str) -> int:
 	"""The word at an address when a breakpoint is first hit, under gdb on QEMU."""
 	(word,) = (
 		int(line.split()[1], 16)
@@ -222,7 +234,7 @@ def zephyr_word_cortex_r52(elf: Path, breakpoint: str, address: str) -> int:
 				"target remote | "
 				+ shlex.join(
 					(
-						*_ZEPHYR_QEMU_CORTEX_R52,
+						*_zephyr_qemu(machine),
 						"-display",
 						"none",
 						"-serial",
@@ -272,7 +284,7 @@ def zephyr_indirect_calls_cortex_m3(
 		"target remote | "
 		+ shlex.join(
 			(
-				*_ZEPHYR_QEMU_CORTEX_M3,
+				*_zephyr_qemu(ZephyrMachine.LM3S6965EVB),
 				"-display",
 				"none",
 				"-serial",

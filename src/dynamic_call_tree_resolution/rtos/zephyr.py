@@ -52,6 +52,7 @@ _RANDOM_OFFSET: Final = "CONFIG_STACK_POINTER_RANDOM"
 _ALIGN_DOUBLE_WORD: Final = "CONFIG_STACK_ALIGN_DOUBLE_WORD"
 _LOCAL_DATA: Final = "CONFIG_THREAD_USERSPACE_LOCAL_DATA"
 _LOCAL_DATA_TYPE: Final = "struct _thread_userspace_local_data"
+_LOCAL_DATA_BYTES: Final = 4
 _SENTINEL: Final = "CONFIG_STACK_SENTINEL"
 _SENTINEL_CHECK: Final = "z_check_stack_sentinel"
 _SENTINEL_BYTES: Final = 4
@@ -327,7 +328,9 @@ def _stack_reservation(program: Program, options: Kconfig) -> int:
 	match program.machine:
 		case Machine.EM_ARM:
 			return _headroom(
-				_tls_bytes(program, options) + _random_offset(options),
+				_tls_bytes(program, options)
+				+ _local_data_bytes(program, options)
+				+ _random_offset(options),
 				_stack_pointer_alignment(options),
 			)
 		case Machine.EM_386 | Machine.EM_X86_64:
@@ -346,6 +349,15 @@ def _tls_bytes(program: Program, options: Kconfig) -> int:
 	return (
 		program.tls_size + _TOOLCHAIN_TLS_POINTERS * program.pointer_size
 		if _TLS_SETUP in program.symbol_addresses or options.options.get(_TLS) == "y"
+		else 0
+	)
+
+
+def _local_data_bytes(program: Program, options: Kconfig) -> int:
+	"""The userspace-local data Zephyr keeps below TLS when errno lives outside it."""
+	return (
+		_LOCAL_DATA_BYTES
+		if options.options.get(_LOCAL_DATA) == "y" or _LOCAL_DATA_TYPE in program.layouts
 		else 0
 	)
 
@@ -432,8 +444,6 @@ def _not_counted(program: Program, options: Kconfig) -> frozenset[Uncounted]:
 		for uncounted, shown in {
 			Uncounted.EXCEPTION_FRAMES: program.machine is Machine.EM_ARM
 			and _exception_frame(program.arm_core) == 0,
-			Uncounted.USERSPACE_LOCAL_DATA: options.options.get(_LOCAL_DATA) == "y"
-			or _LOCAL_DATA_TYPE in program.layouts,
 			Uncounted.SWITCH_FRAME: options.options.get(_SWITCH) == "y"
 			or any(symbol in program.symbol_addresses for symbol in _SWITCH_CODE),
 		}.items()

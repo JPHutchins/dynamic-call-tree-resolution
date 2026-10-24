@@ -172,7 +172,7 @@ def test_an_unbounded_stack_serializes_what_the_rtos_model_leaves_out_sorted() -
 				unmeasured=frozenset(),
 				dynamic=frozenset(),
 				unresolved=frozenset(),
-				not_counted=frozenset({Uncounted.USERSPACE_LOCAL_DATA, Uncounted.SWITCH_FRAME}),
+				not_counted=frozenset({Uncounted.SWITCH_FRAME, Uncounted.EXCEPTION_FRAMES}),
 			)
 		)
-	).endswith(b'"not_counted":["switch frame","userspace-local data"]}')
+	).endswith(b'"not_counted":["exception frames","switch frame"]}')

@@ -16,7 +16,7 @@ from dynamic_call_tree_resolution import build_report, load, resolve
 from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.report import BoundedStack, StackEntryReport
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
-from tests.toolchains import zephyr_console_cortex_m3, zephyr_stack_pointers_cortex_m3
+from tests.toolchains import ZephyrMachine, zephyr_console_cortex_m3, zephyr_stack_pointers
 
 if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
@@ -324,8 +324,11 @@ def test_each_thread_starts_its_stack_reservation_below_its_stack_top_on_qemu(
 	zephyr_fixtures: Path, resolved: _Resolved
 ) -> None:
 	assert set(
-		zephyr_stack_pointers_cortex_m3(
-			zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf", "*z_thread_entry", 3
+		zephyr_stack_pointers(
+			ZephyrMachine.LM3S6965EVB,
+			zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf",
+			"*z_thread_entry",
+			3,
 		)
 	) == {
 		stack.address + stack.size - model.stack_reservation

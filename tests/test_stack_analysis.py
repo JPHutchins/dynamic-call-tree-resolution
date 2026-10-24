@@ -172,7 +172,7 @@ def test_a_threads_row_bounds_only_from_below_while_the_rtos_model_leaves_out_wh
 				SystemThread(name="main_thread", entry=Address(0x100)),
 				SystemThread(name="worker", entry=Address(0x200)),
 			),
-			not_counted=frozenset({Uncounted.USERSPACE_LOCAL_DATA}),
+			not_counted=frozenset({Uncounted.EXCEPTION_FRAMES}),
 		),
 	) == (
 		StackReport(
@@ -192,7 +192,7 @@ def test_a_threads_row_bounds_only_from_below_while_the_rtos_model_leaves_out_wh
 				narrowed_by_signature=frozenset({"notify"}),
 				assumed_unwritten=frozenset({"hook"}),
 				assumed_frames=frozenset({"vector"}),
-				not_counted=frozenset({Uncounted.USERSPACE_LOCAL_DATA}),
+				not_counted=frozenset({Uncounted.EXCEPTION_FRAMES}),
 			),
 		),
 		StackReport(
@@ -206,7 +206,7 @@ def test_a_threads_row_bounds_only_from_below_while_the_rtos_model_leaves_out_wh
 				stack_reservation=16,
 				exception_frame=36,
 				stack_sentinel=4,
-				not_counted=frozenset({Uncounted.USERSPACE_LOCAL_DATA}),
+				not_counted=frozenset({Uncounted.EXCEPTION_FRAMES}),
 			),
 		),
 		StackReport(entry="isr", bound=Bounded(bytes=24)),
