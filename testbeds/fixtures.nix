@@ -7,6 +7,7 @@
   cmake,
   ninja,
   dtc,
+  gperf,
   gitMinimal,
   nukeReferences,
   gcc-arm-embedded-14,
@@ -27,6 +28,7 @@ stdenv.mkDerivation {
     cmake
     ninja
     dtc
+    gperf
     gitMinimal
     nukeReferences
   ];
@@ -44,6 +46,7 @@ stdenv.mkDerivation {
         cmake
         ninja
         dtc
+        gperf
         gitMinimal
         nukeReferences
         gcc-arm-embedded-14
@@ -61,6 +64,7 @@ stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
     export HOME=$TMPDIR
+    chmod -R u+w zephyr
     mkdir -p build
   ''
   + lib.concatMapStrings (
@@ -68,7 +72,7 @@ stdenv.mkDerivation {
     ''
       ZEPHYR_TOOLCHAIN_VARIANT=${build.TOOLCHAIN} west build -b ${build.BOARD} -d build/${build.NAME} \
         -s ${build.SOURCE} -- ${lib.escapeShellArg "-DEXTRA_CFLAGS=${build.EXTRA_CFLAGS}"} \
-        ${lib.escapeShellArg "-DEXTRA_LDFLAGS=${build.EXTRA_LDFLAGS}"} \
+        ${lib.escapeShellArg "-DEXTRA_LDFLAGS=${build.EXTRA_LDFLAGS}"} ${build.EXTRA_ARGS} \
         -DBUILD_VERSION=${buildVersion} > build/${build.NAME}.log 2>&1 \
         || { cat build/${build.NAME}.log; exit 1; }
     ''

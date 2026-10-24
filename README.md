@@ -851,9 +851,16 @@ which the tests marked image and the examples above read, so the first `nix deve
 a machine builds it. Each testbed ships its whole build folder: the ELF, `.config`, the
 generated devicetree and headers, the link maps, and the `.su` and `.ci` files where
 they were built. Nix store paths in it are scrubbed, so it refers to nothing outside
-itself. The `qemu_cortex_m3` testbeds link with `--emit-relocs` and
-`--print-gc-sections`, and each also ships the final link's `gc-sections.txt` next to
-the ELF, taken from the build log ([#150]).
+itself. The Arm testbeds link with `--emit-relocs` and `--print-gc-sections`, and each
+also ships the final link's `gc-sections.txt` next to the ELF, taken from the build log
+([#150]). `userspace` links without `--emit-relocs`: Zephyr's userspace build reads its
+first link's DWARF with pyelftools, which can't apply the relocations that keeps.
+
+Two testbeds hold what thread rows don't count yet ([#151]): `userspace`, a user
+thread and a supervisor thread on `mps2/an385`, the Cortex-M3 under QEMU with an MPU;
+and `synchronization-r52`, Zephyr's sample on a Cortex-R52 (`mps3/an536/cpu0`) with the
+stack sentinel. A testbed's `EXTRA_ARGS` in `testbeds/builds.json` passes options such as
+`-DCONFIG_STACK_SENTINEL=y` to CMake.
 
 Each Arm testbed also ships `descriptors.txt`: for every indirect call, what GCC saw it
 load its callee from (a struct field, a parameter, a variable or an array element), and

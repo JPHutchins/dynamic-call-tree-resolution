@@ -129,7 +129,7 @@ builds = tuple(
 testbeds = Parallel(
 	Task(
 		"uv run --group build west build -b {BOARD} -d ../.camas/build/{NAME} -s {SOURCE} "
-		"-- '-DEXTRA_CFLAGS={EXTRA_CFLAGS}' '-DEXTRA_LDFLAGS={EXTRA_LDFLAGS}'",
+		"-- '-DEXTRA_CFLAGS={EXTRA_CFLAGS}' '-DEXTRA_LDFLAGS={EXTRA_LDFLAGS}' {EXTRA_ARGS}",
 		cwd=Path("testbeds"),
 		env={"ZEPHYR_TOOLCHAIN_VARIANT": "{TOOLCHAIN}"},
 	),

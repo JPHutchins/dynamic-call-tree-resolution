@@ -475,6 +475,81 @@ def test_zephyrs_thread_rows_leave_out_the_exception_frames_of_a_core_that_is_no
 	)
 
 
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("name", "not_counted"),
+	[
+		pytest.param(
+			"userspace", frozenset({Uncounted.USERSPACE_LOCAL_DATA}), id="userspace on mps2/an385"
+		),
+		pytest.param(
+			"synchronization-r52",
+			frozenset({Uncounted.EXCEPTION_FRAMES, Uncounted.STACK_SENTINEL}),
+			id="synchronization with the stack sentinel on a Cortex-R52",
+		),
+	],
+)
+def test_without_its_config_a_testbed_still_shows_what_zephyr_adds_to_its_thread_stacks(
+	zephyr_fixtures: Path, name: str, not_counted: frozenset[Uncounted]
+) -> None:
+	assert (
+		rtos_model(
+			load(zephyr_fixtures / name / "zephyr" / "zephyr.elf"), RtosChoice.AUTO
+		).not_counted
+		== not_counted
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("name", "marked", "rows"),
+	[
+		pytest.param(
+			"userspace",
+			["supervisor_tid", "user_tid", "z_idle_threads", "z_main_thread"],
+			[
+				(
+					"supervisor_tid: unbounded, at least 244 bytes (unmeasured: 2, exception frame: "
+					"36 bytes, not counted: userspace-local data, stack: 1024 bytes)"
+				),
+				(
+					"user_tid: unbounded, at least 244 bytes (unmeasured: 2, exception frame: 36 "
+					"bytes, not counted: userspace-local data, stack: 1024 bytes)"
+				),
+			],
+			id="userspace on mps2/an385",
+		),
+		pytest.param(
+			"synchronization-r52",
+			["thread_b", "z_idle_threads", "z_main_thread"],
+			[
+				(
+					"thread_b: unbounded, at least 260 bytes (measured: 5, stack reservation: 16 "
+					"bytes, not counted: exception frames, not counted: stack sentinel, stack: 1024 "
+					"bytes)"
+				),
+			],
+			id="synchronization with the stack sentinel on a Cortex-R52",
+		),
+	],
+)
+def test_cli_stack_marks_every_thread_row_its_testbed_adds_uncounted_bytes_to(
+	zephyr_fixtures: Path,
+	capsys: pytest.CaptureFixture[str],
+	name: str,
+	marked: list[str],
+	rows: list[str],
+) -> None:
+	artifacts = zephyr_fixtures / name
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf")
+	by_entry = {
+		line.split(":")[0]: line
+		for line in capsys.readouterr().out.splitlines()
+		if "not counted" in line
+	}
+	assert (sorted(by_entry), [by_entry[row.split(":")[0]] for row in rows]) == (marked, rows)
+
+
 def _trampoline_targets(program: Program, model: RtosModel) -> list[str]:
 	resolution = resolve(program, model)
 	(site,) = (

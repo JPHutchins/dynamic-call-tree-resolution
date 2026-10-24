@@ -96,6 +96,7 @@
               ./testbeds/plugin/replay.py
               ./tests/fixtures/sensor-two-impl-app
               ./tests/fixtures/sensor-threads-app
+              ./tests/fixtures/userspace-app
             ];
           };
         };
