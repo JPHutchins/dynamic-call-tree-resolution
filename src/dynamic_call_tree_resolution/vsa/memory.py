@@ -359,27 +359,37 @@ def _displaced(context: Context, strided: Strided | None, base: ValueSet, disp: 
 			assert_never(unreachable)
 
 
+class Loaded(Struct):
+	"""A load's value, zero-extended from its width, and the one image address it reads."""
+
+	value: ValueSet
+	origin: Address | None
+
+
 def load_value(context: Context, state: State, instruction: CsInsn, operand: CsOperand) -> ValueSet:
-	return loaded(context, state, instruction, operand, context.program.pointer_size)[0]
+	return loaded(context, state, instruction, operand, context.program.pointer_size).value
 
 
 def loaded(
 	context: Context, state: State, instruction: CsInsn, operand: CsOperand, width: int
-) -> tuple[ValueSet, Address | None]:
-	"""A load's value, zero-extended from its width, and the one image address it reads."""
+) -> Loaded:
 	match _load_addresses(context, state, instruction, operand):
 		case None:
-			return _low_bytes(
-				context, stack_read(state.stack, stack_offsets(context, state, operand)), width
-			), None
+			return Loaded(
+				_low_bytes(
+					context, stack_read(state.stack, stack_offsets(context, state, operand)), width
+				),
+				None,
+			)
 		case Known(values=values) as addresses if len(values) == 1:
-			return _image_value(context, state, addresses, width), next(iter(values))
+			return Loaded(_image_value(context, state, addresses, width), next(iter(values)))
 		case Known() | Top() as addresses:
-			return (
+			return Loaded(
 				_image_value(context, state, addresses, width)
 				if width >= context.program.pointer_size
-				else Top()
-			), None
+				else Top(),
+				None,
+			)
 		case _ as unreachable:
 			assert_never(unreachable)
 

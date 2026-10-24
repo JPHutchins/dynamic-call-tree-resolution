@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final, cast
 
 from capstone import x86_const
+from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
@@ -74,12 +75,8 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 					state, machine, destination.reg, Known(values=frozenset({Address(source.imm)}))
 				)
 			case (x86_const.X86_OP_REG, x86_const.X86_OP_MEM):
-				return _write(
-					state,
-					machine,
-					destination.reg,
-					*loaded(context, state, instruction, source, context.program.pointer_size),
-				)
+				word = loaded(context, state, instruction, source, context.program.pointer_size)
+				return _write(state, machine, destination.reg, word.value, word.origin)
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_REG):
 				return store_value(
 					context,
@@ -213,22 +210,30 @@ def _push(context: Context, state: State, sp: int, value: ValueSet) -> State:
 	)
 
 
+class _RegisterRoot(Struct):
+	"""The register a write lands in."""
+
+	root: int
+	bits: int
+	"""The width of the part written, or 0 for a register outside every family."""
+
+
 def _pop(state: State, machine: Machine, pointer_size: int, destination: int) -> State:
 	sp = SP_REGISTERS[machine][0]
 	offsets = lookup(state.sp_offsets, sp)
-	root, bits = _root(machine, destination)
+	written = _root(machine, destination)
 	return State(
 		registers=put_value(
 			state.registers,
-			root,
-			stack_read(state.stack, offsets) if bits in (0, _ROOT_BITS[machine]) else Top(),
+			written.root,
+			stack_read(state.stack, offsets) if written.bits in (0, _ROOT_BITS[machine]) else Top(),
 		),
 		sp_offsets=put_value(state.sp_offsets, sp, shift_offsets(offsets, pointer_size)),
 		stack=state.stack,
 		globals=state.globals,
 		escaped=state.escaped,
-		loaded_from=without_facts(state.loaded_from, (root,)),
-		strided=without_facts(state.strided, (root,)),
+		loaded_from=without_facts(state.loaded_from, (written.root,)),
+		strided=without_facts(state.strided, (written.root,)),
 	)
 
 
@@ -237,19 +242,25 @@ _ROOT_BITS: Final = {Machine.EM_X86_64: 64, Machine.EM_386: 32}
 
 _ROOTS: Final = {
 	machine: {
-		register: (family.wide if machine is Machine.EM_X86_64 else family.narrow, family.bits)
+		register: _RegisterRoot(
+			root=family.wide if machine is Machine.EM_X86_64 else family.narrow, bits=family.bits
+		)
 		for register, family in X86_REGISTERS.items()
 	}
 	for machine in (Machine.EM_X86_64, Machine.EM_386)
 }
 _ROOT_IDS: Final = {
-	machine: {register: root for register, (root, _) in roots.items()}
+	machine: {register: found.root for register, found in roots.items()}
 	for machine, roots in _ROOTS.items()
 }
 
 
-def _root(machine: Machine, register: int) -> tuple[int, int]:
-	return _ROOTS[machine].get(register, (register, 0))
+def _root(machine: Machine, register: int) -> _RegisterRoot:
+	return (
+		found
+		if (found := _ROOTS[machine].get(register)) is not None
+		else _RegisterRoot(root=register, bits=0)
+	)
 
 
 def _write(
@@ -259,13 +270,13 @@ def _write(
 	value: ValueSet,
 	source: Address | None = None,
 ) -> State:
-	root, bits = _root(machine, register)
+	written = _root(machine, register)
 	return (
-		set_loaded(state, root, value, source)
-		if bits in (0, _ROOT_BITS[machine])
-		else set_loaded(state, root, map_set(value, _low_32), source)
-		if bits == 32
-		else set_register(state, root, Top())
+		set_loaded(state, written.root, value, source)
+		if written.bits in (0, _ROOT_BITS[machine])
+		else set_loaded(state, written.root, map_set(value, _low_32), source)
+		if written.bits == 32
+		else set_register(state, written.root, Top())
 	)
 
 
@@ -274,8 +285,10 @@ def _low_32(value: Address) -> Address:
 
 
 def _write_offsets(state: State, machine: Machine, register: int, offsets: OffsetSet) -> State:
-	root, bits = _root(machine, register)
-	return set_offsets(state, root, offsets if bits in (0, _ROOT_BITS[machine]) else Top())
+	written = _root(machine, register)
+	return set_offsets(
+		state, written.root, offsets if written.bits in (0, _ROOT_BITS[machine]) else Top()
+	)
 
 
 def _copy(state: State, machine: Machine, destination: int, source: int) -> State:
