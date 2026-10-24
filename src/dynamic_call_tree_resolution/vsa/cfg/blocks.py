@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from itertools import groupby
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct, replace
@@ -64,6 +65,32 @@ class FunctionGraph(Struct):
 
 	function: Function
 	blocks: tuple[Block, ...]
+
+
+def predecessors(by_start: Mapping[Address, Block]) -> Mapping[Address, tuple[Address, ...]]:
+	"""The blocks each block is a successor of, in address order."""
+	return {
+		start: tuple(inbound.predecessor for inbound in group)
+		for start, group in groupby(
+			sorted(
+				_Inbound(block=successor, predecessor=start)
+				for start, block in by_start.items()
+				for successor in block.successors
+			),
+			key=_entered,
+		)
+	}
+
+
+class _Inbound(Struct, order=True):
+	"""An edge, by the block it enters."""
+
+	block: Address
+	predecessor: Address
+
+
+def _entered(inbound: _Inbound) -> Address:
+	return inbound.block
 
 
 def reachable_blocks(

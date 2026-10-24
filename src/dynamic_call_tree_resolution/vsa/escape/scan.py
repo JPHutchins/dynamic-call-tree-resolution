@@ -7,12 +7,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from functools import partial
-from itertools import chain, groupby
+from itertools import chain
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
+from dynamic_call_tree_resolution.vsa.cfg import predecessors
 from dynamic_call_tree_resolution.vsa.escape.image import (
 	Image,
 	containing,
@@ -151,10 +152,10 @@ def _carriers(
 	sites = {
 		instruction.address: block.start for block in blocks for instruction in block.instructions
 	}
-	predecessors = _predecessors(by_start)
+	inbound = predecessors(by_start)
 	reachable = _reached(by_start, blocks[0].start, None)
 	return {
-		(source, head): partial(_outside, sites, _loop_body(predecessors, source, head))
+		(source, head): partial(_outside, sites, _loop_body(inbound, source, head))
 		if source in reachable and source not in _reached(by_start, blocks[0].start, head)
 		else _carries_nothing
 		for source, head in _back_edges(by_start)
@@ -167,24 +168,6 @@ def _outside(sites: Mapping[int, Address], body: frozenset[Address], site: int) 
 
 def _carries_nothing(_: int) -> bool:
 	return False
-
-
-def _predecessors(by_start: Mapping[Address, Block]) -> Mapping[Address, tuple[Address, ...]]:
-	return {
-		start: tuple(predecessor for _, predecessor in edges)
-		for start, edges in groupby(
-			sorted(
-				(successor, start)
-				for start, block in by_start.items()
-				for successor in block.successors
-			),
-			key=_destination,
-		)
-	}
-
-
-def _destination(edge: tuple[Address, Address]) -> Address:
-	return edge[0]
 
 
 def _reached(
@@ -202,7 +185,7 @@ def _reached(
 
 
 def _loop_body(
-	predecessors: Mapping[Address, tuple[Address, ...]], source: Address, head: Address
+	inbound: Mapping[Address, tuple[Address, ...]], source: Address, head: Address
 ) -> frozenset[Address]:
 	"""The blocks that reach the edge's source without passing through the loop head."""
 	seen: set[Address] = {head}
@@ -211,7 +194,7 @@ def _loop_body(
 		start = stack.pop()
 		if start not in seen:
 			seen.add(start)
-			stack.extend(predecessors.get(start, ()))
+			stack.extend(inbound.get(start, ()))
 	return frozenset(seen)
 
 
