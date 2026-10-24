@@ -42,6 +42,13 @@ class Fill(Enum):
 _FILL_ROUTINES: Final = {"memcpy": Fill.COPY, "memset": Fill.ZERO}
 
 
+class Nearby(Struct):
+	"""The addresses from low through high, both included."""
+
+	low: int
+	high: int
+
+
 class Image(Struct):
 	"""What attributing an address needs to know about the image, computed once."""
 
@@ -49,7 +56,7 @@ class Image(Struct):
 	spans: tuple[Span, ...]
 	"""Writable objects, with overlapping objects merged, sorted."""
 	starts: tuple[Address, ...]
-	nearby: tuple[int, int]
+	nearby: Nearby
 	"""The addresses close enough to a writable object to follow as possible addresses."""
 	bounded: Mapping[int, tuple[Span, ...]]
 	"""The writable sections each linker label starts or lies in; one that ends at a label is
@@ -98,12 +105,12 @@ def escape_image(program: Program, graphs: tuple[FunctionGraph, ...]) -> Image:
 		program=program,
 		spans=spans,
 		starts=tuple(span.start for span in spans),
-		nearby=(
-			min(span.start for span in bounds) - _NEARBY,
-			max(span.end for span in bounds) + _NEARBY,
+		nearby=Nearby(
+			low=min(span.start for span in bounds) - _NEARBY,
+			high=max(span.end for span in bounds) + _NEARBY,
 		)
 		if bounds
-		else (0, -1),
+		else Nearby(low=0, high=-1),
 		bounded=bounded,
 		walkable={
 			address: walkable
@@ -266,7 +273,7 @@ def data_escapes(image: Image, literals: frozenset[int]) -> frozenset[Span]:
 					for span in program.data_in_code
 				),
 			)
-			if image.nearby[0] <= word <= image.nearby[1] and address not in literals
+			if image.nearby.low <= word <= image.nearby.high and address not in literals
 		)
 	)
 

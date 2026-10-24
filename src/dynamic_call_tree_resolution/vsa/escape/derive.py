@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final, cast
 
 from capstone import CS_AC_WRITE, arm_const
+from salix import Struct
 
 from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.points_to import instruction_set_at, memory_at
@@ -24,6 +25,7 @@ from dynamic_call_tree_resolution.vsa.escape.values import (
 	Derived,
 	Held,
 	Registers,
+	RegisterValue,
 	offset_by,
 	size,
 	union,
@@ -80,7 +82,7 @@ PLACED_STORES: Final = (frozenset(ARM_STORE_WIDTHS) | ARM_MULTIPLE_STORES) - {
 
 def derived_destination(
 	image: Image, instruction: CsInsn, operands: tuple[ArmCsOperand, ...], registers: Registers
-) -> Mapping[int, tuple[Held, int | None]]:
+) -> Mapping[int, RegisterValue]:
 	if (
 		not operands
 		or operands[0].type != arm_const.ARM_OP_REG
@@ -89,7 +91,18 @@ def derived_destination(
 		return {}
 	constant = _constant(image.program, instruction, operands, registers.constants)
 	held = _destination_held(image, instruction, operands, registers, constant)
-	return {operands[0].reg: (held, constant)} if constant is not None or size(held) else {}
+	return (
+		{operands[0].reg: RegisterValue(held, constant)}
+		if constant is not None or size(held)
+		else {}
+	)
+
+
+class _Terms(Struct):
+	"""An addition's two terms."""
+
+	left: ArmCsOperand
+	right: ArmCsOperand
 
 
 def _constant(
@@ -121,8 +134,8 @@ def _constant(
 			return ((high.imm << 16) | (constants[destination.reg] & 0xFFFF)) & WORD_MASK
 		case identifier, _ if identifier in ARM_ADDITION_SIGNS:
 			match (
-				constants.get(_terms(operands)[0].reg),
-				_operand_constant(_terms(operands)[1], constants),
+				constants.get(_terms(operands).left.reg),
+				_operand_constant(_terms(operands).right, constants),
 			):
 				case int() as augend, int() as addend:
 					return (augend + ARM_ADDITION_SIGNS[identifier] * addend) & WORD_MASK
@@ -150,34 +163,34 @@ def _destination_held(
 ) -> Held:
 	if instruction.id in MOVES and operands[1].type == arm_const.ARM_OP_REG:
 		return registers.held.get(operands[1].reg, NOTHING)
-	if instruction.id in ARM_ADDITION_SIGNS and _terms(operands)[0].reg != arm_const.ARM_REG_PC:
+	if instruction.id in ARM_ADDITION_SIGNS and _terms(operands).left.reg != arm_const.ARM_REG_PC:
 		return _sum(instruction, operands, registers)
 	return (
 		Held(
 			exact=frozenset({Derived(origin=constant, address=constant, site=instruction.address)})
 		)
-		if constant is not None and image.nearby[0] <= constant <= image.nearby[1]
+		if constant is not None and image.nearby.low <= constant <= image.nearby.high
 		else NOTHING
 	)
 
 
 def _sum(instruction: CsInsn, operands: tuple[ArmCsOperand, ...], registers: Registers) -> Held:
 	sign = ARM_ADDITION_SIGNS[instruction.id]
-	left, right = _terms(operands)
-	if right.type == arm_const.ARM_OP_IMM:
-		return offset_by(registers.held.get(left.reg, NOTHING), sign * right.imm)
+	terms = _terms(operands)
+	if terms.right.type == arm_const.ARM_OP_IMM:
+		return offset_by(registers.held.get(terms.left.reg, NOTHING), sign * terms.right.imm)
 	return union(
 		_offset_or_unknown(
-			registers.held.get(left.reg, NOTHING),
-			_contribution(registers.constants.get(right.reg), right),
+			registers.held.get(terms.left.reg, NOTHING),
+			_contribution(registers.constants.get(terms.right.reg), terms.right),
 			sign,
 		),
 		NOTHING
-		if sign < 0 and left.reg in registers.constants
+		if sign < 0 and terms.left.reg in registers.constants
 		else _offset_or_unknown(
-			registers.held.get(right.reg, NOTHING),
-			registers.constants.get(left.reg)
-			if right.shift.type == arm_const.ARM_SFT_INVALID
+			registers.held.get(terms.right.reg, NOTHING),
+			registers.constants.get(terms.left.reg)
+			if terms.right.shift.type == arm_const.ARM_SFT_INVALID
 			else None,
 			sign,
 		),
@@ -188,9 +201,13 @@ def _offset_or_unknown(held: Held, delta: int | None, sign: int) -> Held:
 	return unknown_offset(held) if delta is None else offset_by(held, sign * delta)
 
 
-def _terms(operands: tuple[ArmCsOperand, ...]) -> tuple[ArmCsOperand, ArmCsOperand]:
-	"""An addition's two terms; a two-operand form adds to its destination."""
-	return (operands[1], operands[2]) if len(operands) == 3 else (operands[0], operands[1])
+def _terms(operands: tuple[ArmCsOperand, ...]) -> _Terms:
+	"""A two-operand addition adds to its destination."""
+	return (
+		_Terms(left=operands[1], right=operands[2])
+		if len(operands) == 3
+		else _Terms(left=operands[0], right=operands[1])
+	)
 
 
 def _operand_constant(operand: ArmCsOperand, constants: Mapping[int, int]) -> int | None:
@@ -217,7 +234,7 @@ def _contribution(value: int | None, operand: ArmCsOperand) -> int | None:
 
 def written_back(
 	instruction: CsInsn, operands: tuple[ArmCsOperand, ...], registers: Registers
-) -> Mapping[int, tuple[Held, int | None]]:
+) -> Mapping[int, RegisterValue]:
 	"""The base register a load or store moves past what it accessed."""
 	if instruction.id in LISTED_BASES:
 		return (
@@ -258,11 +275,11 @@ def written_back(
 	return {}
 
 
-def _moved(registers: Registers, base: int, delta: int | None) -> tuple[Held, int | None]:
+def _moved(registers: Registers, base: int, delta: int | None) -> RegisterValue:
 	return (
-		(unknown_offset(registers.held.get(base, NOTHING)), None)
+		RegisterValue(unknown_offset(registers.held.get(base, NOTHING)), None)
 		if delta is None
-		else (
+		else RegisterValue(
 			offset_by(registers.held.get(base, NOTHING), delta),
 			_masked(None if base not in registers.constants else registers.constants[base] + delta),
 		)

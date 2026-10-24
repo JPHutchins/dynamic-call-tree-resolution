@@ -125,18 +125,19 @@ def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
 			block = by_start[worklist.pop()]
 			registers = in_states[block.start]
 			for instruction in block.instructions:
-				registers, effect = step(image, scope, instruction, registers, block.successors)
-				effects.append(effect)
+				stepped = step(image, scope, instruction, registers, block.successors)
+				registers = stepped.registers
+				effects.append(stepped.effects)
 			for successor in block.successors:
-				joined, overflow = join(
+				joined = join(
 					in_states.get(successor),
 					registers,
 					carries=carriers.get(_Edge(source=block.start, destination=successor)),
 				)
-				if size(overflow):
-					effects.append(Effects(escaped=overflow))
-				if joined != in_states.get(successor):
-					in_states[successor] = joined
+				if size(joined.escaped):
+					effects.append(Effects(escaped=joined.escaped))
+				if joined.registers != in_states.get(successor):
+					in_states[successor] = joined.registers
 					worklist.append(successor)
 	return _scanned(image, tuple(effects))
 
