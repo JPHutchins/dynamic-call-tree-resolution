@@ -36,7 +36,7 @@ from dynamic_call_tree_resolution.vsa.escape.values import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Mapping
+	from collections.abc import Callable, Iterator, Mapping
 	from concurrent.futures import Executor
 
 	from dynamic_call_tree_resolution.model import Function, Program
@@ -131,7 +131,7 @@ def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
 				joined, overflow = join(
 					in_states.get(successor),
 					registers,
-					carries=carriers.get((block.start, successor)),
+					carries=carriers.get(_Edge(source=block.start, destination=successor)),
 				)
 				if size(overflow):
 					effects.append(Effects(escaped=overflow))
@@ -141,9 +141,16 @@ def _scan(image: Image, function: Function, blocks: tuple[Block, ...]) -> _Scan:
 	return _scanned(image, tuple(effects))
 
 
+class _Edge(Struct):
+	"""An edge of a function's control-flow graph."""
+
+	source: Address
+	destination: Address
+
+
 def _carriers(
 	blocks: tuple[Block, ...], by_start: Mapping[Address, Block]
-) -> Mapping[tuple[Address, Address], Callable[[int], bool]]:
+) -> Mapping[_Edge, Callable[[int], bool]]:
 	"""For each edge back into a loop, which materializations the loop carries.
 
 	Those outside the loop body, when the loop's head dominates the edge; none of a loop that
@@ -155,10 +162,11 @@ def _carriers(
 	inbound = predecessors(by_start)
 	reachable = _reached(by_start, blocks[0].start, None)
 	return {
-		(source, head): partial(_outside, sites, _loop_body(inbound, source, head))
-		if source in reachable and source not in _reached(by_start, blocks[0].start, head)
+		edge: partial(_outside, sites, _loop_body(inbound, edge.source, edge.destination))
+		if edge.source in reachable
+		and edge.source not in _reached(by_start, blocks[0].start, edge.destination)
 		else _carries_nothing
-		for source, head in _back_edges(by_start)
+		for edge in _back_edges(by_start)
 	}
 
 
@@ -198,28 +206,35 @@ def _loop_body(
 	return frozenset(seen)
 
 
-def _back_edges(by_start: Mapping[Address, Block]) -> frozenset[tuple[Address, Address]]:
+class _Visit(Struct):
+	"""A block on the depth-first path, with the successors it has yet to follow."""
+
+	start: Address
+	successors: Iterator[Address]
+
+
+def _back_edges(by_start: Mapping[Address, Block]) -> frozenset[_Edge]:
 	"""The edges into a block on the depth-first path to their source, which every loop has."""
 	finished: set[Address] = set()
 	on_path: set[Address] = set()
-	edges: set[tuple[Address, Address]] = set()
+	edges: set[_Edge] = set()
 	for root in by_start:
 		if root in finished:
 			continue
 		on_path.add(root)
-		stack = [(root, iter(by_start[root].successors))]
+		stack = [_Visit(root, iter(by_start[root].successors))]
 		while stack:
-			start, successors = stack[-1]
-			successor = next(successors, None)
+			visit = stack[-1]
+			successor = next(visit.successors, None)
 			if successor is None:
 				stack.pop()
-				on_path.discard(start)
-				finished.add(start)
+				on_path.discard(visit.start)
+				finished.add(visit.start)
 			elif successor in on_path:
-				edges.add((start, successor))
+				edges.add(_Edge(source=visit.start, destination=successor))
 			elif successor not in finished:
 				on_path.add(successor)
-				stack.append((successor, iter(by_start[successor].successors)))
+				stack.append(_Visit(successor, iter(by_start[successor].successors)))
 	return frozenset(edges)
 
 
