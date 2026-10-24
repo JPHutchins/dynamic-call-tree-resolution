@@ -585,7 +585,7 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=5.0.0,<6" },
     { name = "msgspec", specifier = ">=0.21.1,<0.22" },
     { name = "pyelftools", specifier = "==0.33" },
-    { name = "salix", git = "https://github.com/JPHutchins/salix?rev=a25919133e112f00d19477aa9c66bbdc9747899a" },
+    { name = "salix", specifier = ">=0.1.0a2,<0.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -1539,8 +1539,34 @@ wheels = [
 
 [[package]]
 name = "salix"
-version = "0.1.0a1"
-source = { git = "https://github.com/JPHutchins/salix?rev=a25919133e112f00d19477aa9c66bbdc9747899a#a25919133e112f00d19477aa9c66bbdc9747899a" }
+version = "0.1.0a2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/81/d70179b75d0c056a4081494664af09583af5b16fceb37e221706e2d8ed82/salix-0.1.0a2.tar.gz", hash = "sha256:cceb1dfdfc8b92098faf0e5cbf7c1c615056d2b8215c66e877259d846bec8a6d", size = 102782, upload-time = "2026-10-24T00:03:14.234Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/a0/ea852d7309eef2960e197514ca64cc084fac362ea1feb32dc752338d46b0/salix-0.1.0a2-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:e7ec1a47a039b3efb6713469669b4e11d8dddfc26e9570480e57543edca72d60", size = 76503, upload-time = "2026-10-24T00:02:44.091Z" },
+    { url = "https://files.pythonhosted.org/packages/94/03/6443086d755c9be0d0cac2f2afe96b96081004e9f0334dc36b3498a5e2e9/salix-0.1.0a2-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:fb34d586a7aa04ceda1438e29cad6792b343ade7bd9f0d2b795cb37a16c98a7b", size = 79422, upload-time = "2026-10-24T00:02:45.335Z" },
+    { url = "https://files.pythonhosted.org/packages/25/db/7f57067ff0fdd03719ec9a9ba485d3b115998ee59f9b753b9f1afe21e8e6/salix-0.1.0a2-cp314-cp314-manylinux_2_17_aarch64.whl", hash = "sha256:a44b9b674896259f7aeed3457a3132a1716810b64ead29d971e63d12b03743ef", size = 81829, upload-time = "2026-10-24T00:02:46.666Z" },
+    { url = "https://files.pythonhosted.org/packages/00/86/f7c34880584cea018c89f52c75c907291851f5cf428ade862c1eac5c9d81/salix-0.1.0a2-cp314-cp314-manylinux_2_17_x86_64.whl", hash = "sha256:c825f9edc38116cfb12ae1e7da8a6008870be9795c1233d34cc562a0a2d66bb9", size = 84663, upload-time = "2026-10-24T00:02:47.923Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/55/93ce57f99fea16808ebbb3957db207b8c2fd740b0b93a53051c871a9f73f/salix-0.1.0a2-cp314-cp314-pyemscripten_2026_0_wasm32.whl", hash = "sha256:433eae6c402c6e17d456ba81b028f620a3c0e92e3bf5888da4accef9b49f6b7c", size = 58651, upload-time = "2026-10-24T00:02:49.119Z" },
+    { url = "https://files.pythonhosted.org/packages/07/48/240c1c52ad485eb6880b2cfcd96cf12a38b01062e6fbde5e3ae9968928d5/salix-0.1.0a2-cp314-cp314-win_amd64.whl", hash = "sha256:ce6d4a462d0cbe980789267492fcbebca06ea416b2d1f2f9d2ee93017807272b", size = 163522, upload-time = "2026-10-24T00:02:50.393Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/f3/39d80f4303928775840c386d9fa578f789babbf5c3a9d194db8a748eaf61/salix-0.1.0a2-cp314-cp314-win_arm64.whl", hash = "sha256:a7bf2f400fe13d380de6e598e3bef7f08cb902004ea59a15f3fa6073fd304ecb", size = 151351, upload-time = "2026-10-24T00:02:51.685Z" },
+    { url = "https://files.pythonhosted.org/packages/88/f2/001582c52003c548c478447529e2e23326b1ad2c2b5528eddcb858575630/salix-0.1.0a2-cp314-cp314t-macosx_10_13_x86_64.whl", hash = "sha256:9f2db63ea549caa3525348addeb4f2d2884694584d159c90ca59d5495b8b90f5", size = 81885, upload-time = "2026-10-24T00:02:53.499Z" },
+    { url = "https://files.pythonhosted.org/packages/88/52/d18758ac0b2a6f0c490d4b7eb10ca9323237cf6cb6fb078ef276c39b10f9/salix-0.1.0a2-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:2157328e5ec1f89b5d594b4c702fac2ba4e4f85f561f6590412c171070f6706d", size = 84644, upload-time = "2026-10-24T00:02:54.691Z" },
+    { url = "https://files.pythonhosted.org/packages/41/74/12e56db5124214b838b61d442f799d04630f7178a2f435c7d329c93970e6/salix-0.1.0a2-cp314-cp314t-manylinux_2_17_aarch64.whl", hash = "sha256:0c0701e6f0f94721f0e17d47a92f4adc7100b8419074f8d6bc90a7f8b1f727cf", size = 87567, upload-time = "2026-10-24T00:02:55.988Z" },
+    { url = "https://files.pythonhosted.org/packages/63/e8/f1d2d8c28de10b3bf412aac8fd42eb42b4820671849bef8b255a3b332340/salix-0.1.0a2-cp314-cp314t-manylinux_2_17_x86_64.whl", hash = "sha256:11cc50aff41efc452fa9606a31fd6909cb7b9e45c926a58f848111fb5832c76b", size = 90065, upload-time = "2026-10-24T00:02:57.4Z" },
+    { url = "https://files.pythonhosted.org/packages/39/2f/7712eff50fde2455f00ccda4d31feaacc3a212d6ab75c7bc682baedb56a5/salix-0.1.0a2-cp314-cp314t-win_amd64.whl", hash = "sha256:3165e6ac5757de365ea706f02940e15420a3cd332da90651637e701936a18861", size = 169017, upload-time = "2026-10-24T00:02:58.65Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/9a/f198b8a7e5a3edddb5faf321ac2ad1edc64e491f9440a603c44211777d55/salix-0.1.0a2-cp315-cp315-macosx_10_13_x86_64.whl", hash = "sha256:1527278df4f5b5365bc86a9ade0d49761860fcda524d25269802976195e70908", size = 76599, upload-time = "2026-10-24T00:02:59.983Z" },
+    { url = "https://files.pythonhosted.org/packages/75/66/2c8d12f8161cbaece93185f4c1a4daa8ef72eb024f2fb5f03687820ca15a/salix-0.1.0a2-cp315-cp315-macosx_11_0_arm64.whl", hash = "sha256:334d293890a19006d818d6770bd2d1aa876926c9e03e353dbbd77bc84cde3b66", size = 79512, upload-time = "2026-10-24T00:03:01.287Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/6c/e5453b14757461c152d243faa1b31329bcab994b313bceac0fb62835456b/salix-0.1.0a2-cp315-cp315-manylinux_2_17_aarch64.whl", hash = "sha256:c0e689c607ec72f4800d70145b575327cc3ddb3579164096aedd9e44e047535a", size = 82006, upload-time = "2026-10-24T00:03:02.53Z" },
+    { url = "https://files.pythonhosted.org/packages/72/b7/c95b932c6b963515e525fb624d1c2ecae3ac336897418ed56ee987b2ef4a/salix-0.1.0a2-cp315-cp315-manylinux_2_17_x86_64.whl", hash = "sha256:38b9e28a6551e6482af434b5a71dd16925d9fa76fca202207da88c6a49748e76", size = 84725, upload-time = "2026-10-24T00:03:03.791Z" },
+    { url = "https://files.pythonhosted.org/packages/33/df/4ca39eb4d04571eeb2e5619817ebd816c1ff6c05de6ce3140a2ea3a12b83/salix-0.1.0a2-cp315-cp315-win_amd64.whl", hash = "sha256:6bfe8984418dbb3a6ef637e93441d906fb03d66782164599b21a181fd808d991", size = 163673, upload-time = "2026-10-24T00:03:05.084Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/f2/20c49f04b08649ee8f1450c84934cfb44ebf0b22babfc0951c2db06b53be/salix-0.1.0a2-cp315-cp315-win_arm64.whl", hash = "sha256:1af0a5488a3105774460bd825bfabf18c73693443dc65e3ad815f80c73172d85", size = 151512, upload-time = "2026-10-24T00:03:06.42Z" },
+    { url = "https://files.pythonhosted.org/packages/57/5a/f14b9b95bcf07dbc96fb40fd817aaea640e3f258434134826bea247429b1/salix-0.1.0a2-cp315-cp315t-macosx_10_13_x86_64.whl", hash = "sha256:33421cfc8598ed27964628bb37d773c473dffa9e6e736678c573836af5d8b14c", size = 81820, upload-time = "2026-10-24T00:03:07.697Z" },
+    { url = "https://files.pythonhosted.org/packages/72/84/55fc23ef845ce13e7d36064d2c51b0b86cd24b432046c8cb2da6f526b9e4/salix-0.1.0a2-cp315-cp315t-macosx_11_0_arm64.whl", hash = "sha256:76a2f6699abd961f3c199909230eef9708e318d2bd064b4c67229f27bb363c4a", size = 84758, upload-time = "2026-10-24T00:03:08.94Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/40/720e0c83b7ffef0b34f7f98dcfa3d4abd5915b98dcc35decf682ce60aa78/salix-0.1.0a2-cp315-cp315t-manylinux_2_17_aarch64.whl", hash = "sha256:19ad26e65468854402494a4d219eed9ce1f2ecad2d821440304d6f9528b17191", size = 87745, upload-time = "2026-10-24T00:03:10.181Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/9d/7ce1f855e2d743d826ef141f8094d4677485eb9ad8b6fea1d3fda72bc87d/salix-0.1.0a2-cp315-cp315t-manylinux_2_17_x86_64.whl", hash = "sha256:f4138b40f7b655795e19c87f1ec1b9fa2bfabf511b047038f912761e253966e4", size = 89930, upload-time = "2026-10-24T00:03:11.409Z" },
+    { url = "https://files.pythonhosted.org/packages/30/6f/251c0280954db787a8178d957f72dfa06aa5b337def1eec01e8cc0910904/salix-0.1.0a2-cp315-cp315t-win_amd64.whl", hash = "sha256:4628859b4355cc27806e763ada891d5034cfa17982a7e8a535454a5d428af5fb", size = 169002, upload-time = "2026-10-24T00:03:12.618Z" },
+]
 
 [[package]]
 name = "semver"
