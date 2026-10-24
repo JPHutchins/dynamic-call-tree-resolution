@@ -54,6 +54,7 @@ _LOCAL_DATA: Final = "CONFIG_THREAD_USERSPACE_LOCAL_DATA"
 _LOCAL_DATA_TYPE: Final = "struct _thread_userspace_local_data"
 _SENTINEL: Final = "CONFIG_STACK_SENTINEL"
 _SENTINEL_CHECK: Final = "z_check_stack_sentinel"
+_SENTINEL_BYTES: Final = 4
 _SWITCH: Final = "CONFIG_USE_SWITCH"
 _SWITCH_CODE: Final = ("arm_m_exc_exit", "z_arm_context_switch")
 
@@ -195,6 +196,7 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 		trampoline=_TRAMPOLINE,
 		stack_reservation=_stack_reservation(program, options),
 		exception_frame=_exception_frame(program.arm_core),
+		stack_sentinel=_stack_sentinel(program, options),
 		system_threads=tuple(
 			system_thread
 			for spec in _SYSTEM_THREADS
@@ -414,6 +416,15 @@ def _exception_frame(core: ArmCore | None) -> int:
 			assert_never(unreachable)
 
 
+def _stack_sentinel(program: Program, options: Kconfig) -> int:
+	"""The word Zephyr writes at the bottom of each thread's stack and checks for an overflow."""
+	return (
+		_SENTINEL_BYTES
+		if options.options.get(_SENTINEL) == "y" or _SENTINEL_CHECK in program.symbol_addresses
+		else 0
+	)
+
+
 def _not_counted(program: Program, options: Kconfig) -> frozenset[Uncounted]:
 	"""What the image shows Zephyr adds to a thread's stack that the model leaves out."""
 	return frozenset(
@@ -423,8 +434,6 @@ def _not_counted(program: Program, options: Kconfig) -> frozenset[Uncounted]:
 			and _exception_frame(program.arm_core) == 0,
 			Uncounted.USERSPACE_LOCAL_DATA: options.options.get(_LOCAL_DATA) == "y"
 			or _LOCAL_DATA_TYPE in program.layouts,
-			Uncounted.STACK_SENTINEL: options.options.get(_SENTINEL) == "y"
-			or _SENTINEL_CHECK in program.symbol_addresses,
 			Uncounted.SWITCH_FRAME: options.options.get(_SWITCH) == "y"
 			or any(symbol in program.symbol_addresses for symbol in _SWITCH_CODE),
 		}.items()

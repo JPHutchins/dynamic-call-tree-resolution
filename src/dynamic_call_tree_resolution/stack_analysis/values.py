@@ -31,6 +31,9 @@ class Bounded(Struct):
 	``bytes``."""
 	exception_frame: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
+	stack_sentinel: int = 0
+	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
+	``bytes``."""
 	assumed_no_recursion: frozenset[str] = frozenset()
 	"""Reachable functions assumed never to call themselves."""
 	narrowed_by_field: frozenset[str] = frozenset()
@@ -62,6 +65,9 @@ class Unbounded(Struct):
 	``at_least``."""
 	exception_frame: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``at_least``."""
+	stack_sentinel: int = 0
+	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
+	``at_least``."""
 	assumed_no_recursion: frozenset[str] = frozenset()
 	"""Reachable functions assumed never to call themselves."""
 	narrowed_by_field: frozenset[str] = frozenset()

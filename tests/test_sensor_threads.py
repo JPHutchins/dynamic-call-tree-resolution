@@ -106,6 +106,7 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 				measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 				stack_reservation_bytes=16,
 				exception_frame_bytes=36,
+				stack_sentinel_bytes=0,
 				narrowed_by_field=("i2c_emul_transfer",),
 				**provenance,
 			),

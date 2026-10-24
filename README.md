@@ -770,6 +770,9 @@ contradicts does not hold.
   Stack canaries take nothing more on Arm: Zephyr places them in TLS only on x86 and
   RISC-V, and a frame's canary word is part of its `.su` frame. x86 images get neither
   this nor the exception frame ([#151]).
+- Under Zephyr, a thread row also adds the stack sentinel when the build has one: the
+  word Zephyr writes at the bottom of each thread's stack and checks for an overflow. The `.config` beside the image says so (`CONFIG_STACK_SENTINEL`), and so does
+  the `z_check_stack_sentinel` symbol ([#151]).
 - Under Zephyr, a thread row bounds only from below, `unbounded, at least N bytes`, and
   names what it leaves out as `not counted`, when the image shows that Zephyr adds to a
   thread's stack something the model doesn't count yet:
@@ -777,7 +780,6 @@ contradicts does not hold.
     attributes name no profile;
   - `userspace-local data`: `CONFIG_THREAD_USERSPACE_LOCAL_DATA`, or the
     `struct _thread_userspace_local_data` type;
-  - `stack sentinel`: `CONFIG_STACK_SENTINEL`, or the `z_check_stack_sentinel` symbol;
   - `switch frame`: `CONFIG_USE_SWITCH`, or the `arm_m_exc_exit` or
     `z_arm_context_switch` symbol, since a suspended thread's registers then stay on its
     stack.

@@ -39,6 +39,18 @@ _ZEPHYR_QEMU_CORTEX_M3 = (
 	"clock=vm",
 )
 
+_ZEPHYR_QEMU_CORTEX_R52 = (
+	"qemu-system-arm",
+	"-machine",
+	"mps3-an536",
+	"-cpu",
+	"cortex-r52",
+	"-monitor",
+	"none",
+	"-icount",
+	"shift=6,align=off,sleep=off",
+)
+
 
 def host_cc(*flags: str) -> tuple[str, ...]:
 	return ("cc", *_CC_FLAGS, *flags)
@@ -193,6 +205,52 @@ def zephyr_stack_pointers_cortex_m3(elf: Path, breakpoint: str, hits: int) -> tu
 		if line.startswith("hit ")
 		for _, stack_pointer in (line.split(),)
 	)
+
+
+def zephyr_word_cortex_r52(elf: Path, breakpoint: str, address: str) -> int:
+	"""The word at an address when a breakpoint is first hit, under gdb on QEMU."""
+	(word,) = (
+		int(line.split()[1], 16)
+		for line in subprocess.run(
+			[
+				"timeout",
+				"60",
+				"arm-none-eabi-gdb",
+				"-batch",
+				"-nx",
+				"-ex",
+				"target remote | "
+				+ shlex.join(
+					(
+						*_ZEPHYR_QEMU_CORTEX_R52,
+						"-display",
+						"none",
+						"-serial",
+						"null",
+						"-kernel",
+						str(elf),
+						"-S",
+						"-gdb",
+						"stdio",
+					)
+				),
+				"-ex",
+				f"break {breakpoint}",
+				"-ex",
+				"continue",
+				"-ex",
+				rf'printf "word %#x\n", *(unsigned int *)({address})',
+				"-ex",
+				"kill",
+				str(elf),
+			],
+			check=False,
+			capture_output=True,
+			text=True,
+		).stdout.splitlines()
+		if line.startswith("word ")
+	)
+	return word
 
 
 class IndirectCall(Struct):

@@ -132,6 +132,7 @@ def _thread_stack_additions(bound: Bounded | Unbounded) -> tuple[_Addition, ...]
 	return (
 		_Addition(label="stack reservation", added=bound.stack_reservation),
 		_Addition(label="exception frame", added=bound.exception_frame),
+		_Addition(label="stack sentinel", added=bound.stack_sentinel),
 	)
 
 

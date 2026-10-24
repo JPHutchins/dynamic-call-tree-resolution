@@ -363,7 +363,6 @@ class Uncounted(StrEnum):
 
 	EXCEPTION_FRAMES = "exception frames"
 	USERSPACE_LOCAL_DATA = "userspace-local data"
-	STACK_SENTINEL = "stack sentinel"
 	SWITCH_FRAME = "switch frame"
 
 
@@ -381,6 +380,8 @@ class RtosModel(Struct):
 	"""The bytes the RTOS takes from the top of each thread's stack before the thread's entry runs."""
 	exception_frame: int = 0
 	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
+	stack_sentinel: int = 0
+	"""The bytes the RTOS writes at the bottom of each thread's stack to catch an overflow."""
 	system_threads: tuple[SystemThread, ...] = ()
 	interrupt_stack: InterruptStack | None = None
 	dispatches: tuple[Dispatch, ...] = ()
