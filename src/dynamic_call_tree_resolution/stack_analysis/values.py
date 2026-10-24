@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 
 	from dynamic_call_tree_resolution.callgraph import CallPair, EdgeKind
+	from dynamic_call_tree_resolution.model import Uncounted
 
 
 class Bounded(Struct):
@@ -71,6 +72,8 @@ class Unbounded(Struct):
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
 	assumed_frames: frozenset[str] = frozenset()
 	"""Reachable functions whose frames ``--assume-frame`` states."""
+	not_counted: frozenset[Uncounted] = frozenset()
+	"""What the RTOS adds to a thread's stack that its model leaves out of ``at_least``."""
 
 
 class LevelSource(StrEnum):

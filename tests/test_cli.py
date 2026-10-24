@@ -24,9 +24,13 @@ from dynamic_call_tree_resolution import (
 	SignatureReport,
 	StackEntryReport,
 	StackPathReport,
+	StackReport,
+	Unbounded,
 	UnboundedStack,
 )
 from dynamic_call_tree_resolution.cli import analyze, compare, main, referrers, stack, summary
+from dynamic_call_tree_resolution.cli.render import render
+from dynamic_call_tree_resolution.model import Uncounted
 from tests.dctr import dctr
 from tests.expected import EXPECTED_PATHS
 from tests.toolchains import FIXTURES, build_cortex_m3
@@ -735,3 +739,25 @@ def test_cli_summary_json(
 	assert report.worst_case_entry == "main"
 	assert isinstance(report.worst_case, UnboundedStack)
 	assert report.worst_case.at_least_bytes == 16
+
+
+def test_a_threads_row_names_each_addition_the_rtos_model_leaves_out_and_shows_no_margin() -> None:
+	assert render(
+		StackReport(
+			entry="worker",
+			bound=Unbounded(
+				at_least=100,
+				recursion=frozenset(),
+				unmeasured=frozenset(),
+				dynamic=frozenset(),
+				unresolved=frozenset(),
+				stack_reservation=16,
+				exception_frame=36,
+				not_counted=frozenset({Uncounted.SWITCH_FRAME, Uncounted.STACK_SENTINEL}),
+			),
+			stack_size=1024,
+		)
+	) == (
+		"worker: unbounded, at least 100 bytes (stack reservation: 16 bytes, exception frame: 36 "
+		"bytes, not counted: stack sentinel, not counted: switch frame, stack: 1024 bytes)"
+	)

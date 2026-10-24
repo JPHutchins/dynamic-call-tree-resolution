@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.model import (
 	SystemThread,
 	ThreadCreation,
 	ThreadRoot,
+	Uncounted,
 )
 from dynamic_call_tree_resolution.points_to import in_writable_memory, pointer_at
 
@@ -49,6 +50,12 @@ _SINGLE_WORD: Final = 4
 _TLS: Final = "CONFIG_THREAD_LOCAL_STORAGE"
 _RANDOM_OFFSET: Final = "CONFIG_STACK_POINTER_RANDOM"
 _ALIGN_DOUBLE_WORD: Final = "CONFIG_STACK_ALIGN_DOUBLE_WORD"
+_LOCAL_DATA: Final = "CONFIG_THREAD_USERSPACE_LOCAL_DATA"
+_LOCAL_DATA_TYPE: Final = "struct _thread_userspace_local_data"
+_SENTINEL: Final = "CONFIG_STACK_SENTINEL"
+_SENTINEL_CHECK: Final = "z_check_stack_sentinel"
+_SWITCH: Final = "CONFIG_USE_SWITCH"
+_SWITCH_CODE: Final = ("arm_m_exc_exit", "z_arm_context_switch")
 
 
 class _SystemThreadSpec(Struct):
@@ -217,6 +224,7 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 				else None
 			),
 		),
+		not_counted=_not_counted(program, options),
 	)
 
 
@@ -404,6 +412,24 @@ def _exception_frame(core: ArmCore | None) -> int:
 			return 0
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _not_counted(program: Program, options: Kconfig) -> frozenset[Uncounted]:
+	"""What the image shows Zephyr adds to a thread's stack that the model leaves out."""
+	return frozenset(
+		uncounted
+		for uncounted, shown in {
+			Uncounted.EXCEPTION_FRAMES: program.machine is Machine.EM_ARM
+			and _exception_frame(program.arm_core) == 0,
+			Uncounted.USERSPACE_LOCAL_DATA: options.options.get(_LOCAL_DATA) == "y"
+			or _LOCAL_DATA_TYPE in program.layouts,
+			Uncounted.STACK_SENTINEL: options.options.get(_SENTINEL) == "y"
+			or _SENTINEL_CHECK in program.symbol_addresses,
+			Uncounted.SWITCH_FRAME: options.options.get(_SWITCH) == "y"
+			or any(symbol in program.symbol_addresses for symbol in _SWITCH_CODE),
+		}.items()
+		if shown
+	)
 
 
 def _address(data_object: DataObject) -> Address:
