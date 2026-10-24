@@ -5,6 +5,7 @@ manifest:
       revision: e560c91b1f74146baa3177b07b92a8733c60b7c7
       import:
         name-allowlist:
+          - cmsis
           - cmsis_6
   self:
     path: manifest

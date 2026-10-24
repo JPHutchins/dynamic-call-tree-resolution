@@ -11,6 +11,16 @@ west-commands = "scripts/west-commands.yml"
 hash = "sha256-/MFCbUmllR5jJIPsNlc0eCy6VGmrsPPuAr6yPAnZ0gY="
 
 [[manifest.projects]]
+name = "cmsis"
+url = "https://github.com/zephyrproject-rtos/cmsis"
+revision = "512cc7e895e8491696b61f7ba8066b4a182569b8"
+path = "modules/hal/cmsis"
+groups = ["hal"]
+
+[manifest.projects.nix]
+hash = "sha256-IR4Za8TuYY7nkqK57xUJ2uWnCp7wB9B4/ZjhalLhCUU="
+
+[[manifest.projects]]
 name = "cmsis_6"
 url = "https://github.com/zephyrproject-rtos/CMSIS_6"
 revision = "1c1840af7a7e757d6e2fec3ddb0e5ce0dfcc93c8"
