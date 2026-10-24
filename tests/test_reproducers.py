@@ -301,14 +301,20 @@ IMAGES = tuple(
 ARM_IMAGES = tuple(image for image in IMAGES if image.platform is not Platform.HOST)
 
 
+class SiteCandidates(Struct):
+	"""A call site's caller, with dctr's candidate names for it."""
+
+	caller: str
+	names: frozenset[str]
+
+
 class Outcome(Struct):
 	"""One image, built, run and analyzed."""
 
 	elf: Path
 	observations: Mapping[str, frozenset[str]]
 	"""Target names the run observed, by caller."""
-	sites: tuple[tuple[str, frozenset[str]], ...]
-	"""Each call site's caller and dctr's candidate names."""
+	sites: tuple[SiteCandidates, ...]
 	code: Decoded | None
 	"""The image's code as objdump lists it and as dctr decodes it; none on the host."""
 
@@ -351,11 +357,11 @@ def _observations(result: subprocess.CompletedProcess[str]) -> Mapping[str, froz
 	}
 
 
-def _sites(elf: Path) -> tuple[tuple[str, frozenset[str]], ...]:
+def _sites(elf: Path) -> tuple[SiteCandidates, ...]:
 	program = load(elf)
 	resolution = resolve(program)
 	return tuple(
-		(site.caller, frozenset(candidate.name for candidate in site.candidates))
+		SiteCandidates(site.caller, frozenset(candidate.name for candidate in site.candidates))
 		for site in build_report(program, resolution.assignments, resolution.sites).call_sites
 	)
 
@@ -399,7 +405,7 @@ def test_every_observed_target_is_a_candidate_of_the_callers_sites(
 ) -> None:
 	outcome = outcomes[case.image]
 	observed = outcome.observations[case.caller]
-	sites = tuple(names for caller, names in outcome.sites if caller == case.caller)
+	sites = tuple(site.names for site in outcome.sites if site.caller == case.caller)
 	assert sites
 	union = frozenset[str]().union(*sites)
 	assert not union or observed <= union
@@ -569,7 +575,7 @@ def test_a_loop_a_read_only_count_of_0_skips_is_dead_and_never_runs(
 )
 def test_switch_case_sites_name_every_case(image: Image, outcomes: Mapping[Image, Outcome]) -> None:
 	assert frozenset[str]().union(
-		*(names for caller, names in outcomes[image].sites if caller == "switch_case")
+		*(site.names for site in outcomes[image].sites if site.caller == "switch_case")
 	) == {"a", "b", "c", "d", "e"}
 
 
@@ -659,7 +665,7 @@ def test_a_seeded_entry_resolves_to_exactly_what_its_record_passes(
 def test_an_unknown_store_reaches_only_the_hook_whose_address_escapes(
 	image: Image, outcomes: Mapping[Image, Outcome]
 ) -> None:
-	sites = dict(outcomes[image].sites)
+	sites = {site.caller: site.names for site in outcomes[image].sites}
 	assert (sites["call_hidden"], sites["call_exposed"]) == (
 		frozenset({"a", "b"}),
 		frozenset[str](),
@@ -682,7 +688,7 @@ def test_a_walk_between_a_sections_bounds_calls_only_its_records(
 	image: Image, targets: frozenset[str], outcomes: Mapping[Image, Outcome]
 ) -> None:
 	"""-O0 keeps the walk's pointer in a frame slot, which branch narrowing leaves whole."""
-	assert dict(outcomes[image].sites)["walk"] == targets
+	assert {site.caller: site.names for site in outcomes[image].sites}["walk"] == targets
 
 
 @pytest.mark.parametrize(
@@ -705,7 +711,7 @@ def test_every_constant_dwarf_call_value_is_an_argument_the_analysis_allows(
 def test_a_stack_passed_argument_resolves_to_what_every_caller_passes(
 	image: Image, outcomes: Mapping[Image, Outcome]
 ) -> None:
-	sites = dict(outcomes[image].sites)
+	sites = {site.caller: site.names for site in outcomes[image].sites}
 	assert (sites["run"], sites["taken"]) == (outcomes[image].observations["run"], frozenset())
 
 

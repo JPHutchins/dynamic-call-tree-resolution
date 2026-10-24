@@ -13,7 +13,7 @@ import pytest
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import SymbolTableSection
-from salix import replace
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution import Address, ReferenceKind, load
 from dynamic_call_tree_resolution.callgraph import load_callgraph
@@ -203,17 +203,41 @@ def test_sensor_two_impl_names_the_record_that_holds_each_thread_entry(
 	}
 
 
+class _NamedAddress(Struct):
+	"""A function symbol's frame key, with its address."""
+
+	name: str
+	address: int
+
+
+class _Call(Struct):
+	"""A call, from a caller to a callee."""
+
+	caller: int
+	callee: int
+
+
+class _NamedCall(Struct):
+	"""A call, by its caller's and callee's frame keys."""
+
+	caller: str
+	callee: str
+
+
 def _addresses_by_name(program: Program, elf: Path) -> dict[str, frozenset[int]]:
 	with elf.open("rb") as stream:
 		symbols = ELFFile(stream).get_section_by_name(".symtab")
 		assert isinstance(symbols, SymbolTableSection)
 		named = [
-			(frame_key(symbol.name), normalized(Address(symbol["st_value"]), program.machine))
+			_NamedAddress(
+				frame_key(symbol.name), normalized(Address(symbol["st_value"]), program.machine)
+			)
 			for symbol in symbols.iter_symbols()
 			if symbol["st_info"]["type"] == "STT_FUNC" and symbol["st_shndx"] != "SHN_UNDEF"
 		]
 	return {
-		name: frozenset(address for other, address in named if other == name) for name, _ in named
+		name: frozenset(entry.address for entry in named if entry.name == name)
+		for name in {entry.name: entry for entry in named}
 	}
 
 
@@ -284,20 +308,23 @@ def test_the_calls_the_linker_kept_cover_every_ci_edge_but_those_of_an_ambiguous
 	program = load(elf)
 	addresses = _addresses_by_name(program, elf)
 	binary = frozenset(
-		(normalized(call.caller, program.machine), normalized(call.callee, program.machine))
+		_Call(
+			caller=normalized(call.caller, program.machine),
+			callee=normalized(call.callee, program.machine),
+		)
 		for call in linked_calls(program)
 		if call.caller is not None
 	)
 	edges = [
-		(frame_key(edge.caller), frame_key(edge.callee))
+		_NamedCall(caller=frame_key(edge.caller), callee=frame_key(edge.callee))
 		for edge in load_callgraph(zephyr_fixtures / name)
 		if edge.callee != INDIRECT_CALLEE
 	]
 	ci = frozenset(
-		(caller, callee)
-		for caller_name, callee_name in edges
-		for caller in addresses.get(caller_name, frozenset())
-		for callee in addresses.get(callee_name, frozenset())
+		_Call(caller=caller, callee=callee)
+		for edge in edges
+		for caller in addresses.get(edge.caller, frozenset())
+		for callee in addresses.get(edge.callee, frozenset())
 	)
 	ambiguous = frozenset(
 		address for named in addresses.values() if len(named) > 1 for address in named
@@ -305,11 +332,13 @@ def test_the_calls_the_linker_kept_cover_every_ci_edge_but_those_of_an_ambiguous
 	assert (
 		len(binary & ci),
 		sorted(
-			(_name_at(program, caller), _name_at(program, callee)) for caller, callee in binary - ci
+			(_name_at(program, call.caller), _name_at(program, call.callee)) for call in binary - ci
 		),
 		len(ci - binary),
-		all(caller in ambiguous or callee in ambiguous for caller, callee in ci - binary),
-		len({name for edge in edges for name in edge if name not in addresses}),
+		all(call.caller in ambiguous or call.callee in ambiguous for call in ci - binary),
+		len(
+			{name for edge in edges for name in (edge.caller, edge.callee) if name not in addresses}
+		),
 	) == (both, binary_only, 7, True, not_in_image)
 
 

@@ -73,6 +73,27 @@ class Checked(Struct):
 	"""Values outside a set the analysis knows: the analysis or GCC is wrong about each."""
 
 
+class _KnownValue(Struct):
+	"""A DWARF call value, with the set the analysis knows at that call."""
+
+	value: CallValue
+	candidates: frozenset[Address]
+
+
+class _ArgumentAt(Struct, order=True):
+	"""An argument position at one call site."""
+
+	site: int
+	position: int
+
+
+class _Argument(Struct):
+	"""The value one observation saw at an argument position."""
+
+	at: _ArgumentAt
+	value: ValueSet
+
+
 def checked(elf: Path) -> Checked:
 	program = load(elf)
 	call_at = {
@@ -84,29 +105,35 @@ def checked(elf: Path) -> Checked:
 	arguments = _arguments(analyze(program).observations)
 	starts = frozenset(aligned(function.address) for function in program.functions.values())
 	known = tuple(
-		(value, candidates)
+		_KnownValue(value, candidates)
 		for value in call_values(elf)
-		for candidates in (arguments.get((call_at.get(value.return_pc, -1), value.position)),)
+		for candidates in (
+			arguments.get(
+				_ArgumentAt(site=call_at.get(value.return_pc, -1), position=value.position)
+			),
+		)
 		if candidates is not None
 	)
 	return Checked(
-		agreed=sum(_agrees(value.value, candidates, starts) for value, candidates in known),
+		agreed=sum(_agrees(found.value.value, found.candidates, starts) for found in known),
 		excluded=tuple(
-			value for value, candidates in known if not _agrees(value.value, candidates, starts)
+			found.value
+			for found in known
+			if not _agrees(found.value.value, found.candidates, starts)
 		),
 	)
 
 
 def _arguments(
 	observations: tuple[CallObservation, ...],
-) -> Mapping[tuple[int, int], frozenset[Address] | None]:
+) -> Mapping[_ArgumentAt, frozenset[Address] | None]:
 	"""Each call's known values by argument position; ``None`` where any observation is Top."""
 	return {
-		key: _joined(tuple(value for _, value in group))
+		key: _joined(tuple(argument.value for argument in group))
 		for key, group in groupby(
 			sorted(
 				(
-					((observation.site, position), value)
+					_Argument(_ArgumentAt(site=observation.site, position=position), value)
 					for observation in observations
 					for position, value in observation.arguments.items()
 				),
@@ -117,8 +144,8 @@ def _arguments(
 	}
 
 
-def _argument_key(argument: tuple[tuple[int, int], ValueSet]) -> tuple[int, int]:
-	return argument[0]
+def _argument_key(argument: _Argument) -> _ArgumentAt:
+	return argument.at
 
 
 def _joined(values: tuple[ValueSet, ...]) -> frozenset[Address] | None:
@@ -217,6 +244,13 @@ def _position(parameter: DIE) -> int | None:
 	return None if expression is None else _position_of(expression)
 
 
+class _Leb128(Struct):
+	"""A LEB128 number, with how many bytes it takes."""
+
+	value: int
+	length: int
+
+
 def _position_of(expression: bytes) -> int | None:
 	"""The argument position a single-operation location names.
 
@@ -231,10 +265,10 @@ def _position_of(expression: bytes) -> int | None:
 		case (op,) if _DW_OP_REG0 <= op <= _DW_OP_REG3:
 			return op - _DW_OP_REG0
 		case (op, *rest) if op == _DW_OP_BREG13:
-			offset, end = _leb128(bytes(rest), signed=True)
+			offset = _leb128(bytes(rest), signed=True)
 			return (
-				_REGISTER_ARGUMENTS + offset // _WORD
-				if end == len(rest) and offset >= 0 and offset % _WORD == 0
+				_REGISTER_ARGUMENTS + offset.value // _WORD
+				if offset.length == len(rest) and offset.value >= 0 and offset.value % _WORD == 0
 				else None
 			)
 		case _:
@@ -268,23 +302,23 @@ def _constant(expression: bytes) -> int | None:
 		case (op, *operand) if op in _FIXED and len(operand) == _FIXED[op][0]:
 			return int.from_bytes(bytes(operand), "little", signed=_FIXED[op][1])
 		case (op, *operand) if op in (_DW_OP_CONSTU, _DW_OP_CONSTS):
-			value, end = _leb128(bytes(operand), signed=op == _DW_OP_CONSTS)
-			return value if end == len(operand) else None
+			number = _leb128(bytes(operand), signed=op == _DW_OP_CONSTS)
+			return number.value if number.length == len(operand) else None
 		case _:
 			return None
 
 
-def _leb128(data: bytes, *, signed: bool) -> tuple[int, int]:
+def _leb128(data: bytes, *, signed: bool) -> _Leb128:
 	"""A LEB128 number and how many bytes it takes.
 
 	>>> _leb128(bytes([0xE5, 0x8E, 0x26]), signed=False)
-	(624485, 3)
+	_Leb128(value=624485, length=3)
 	>>> _leb128(bytes([0x7F]), signed=True)
-	(-1, 1)
+	_Leb128(value=-1, length=1)
 	"""
 	end = next((index + 1 for index, byte in enumerate(data) if not byte & 0x80), len(data))
 	value = sum((byte & 0x7F) << (7 * index) for index, byte in enumerate(data[:end]))
-	return (
-		value - (1 << (7 * end)) if signed and end and data[end - 1] & 0x40 else value,
-		end,
+	return _Leb128(
+		value=value - (1 << (7 * end)) if signed and end and data[end - 1] & 0x40 else value,
+		length=end,
 	)

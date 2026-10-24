@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import pytest
-from salix import replace
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution import (
 	Address,
@@ -411,10 +411,17 @@ def _named(program: Program, name: str) -> Address:
 	return address
 
 
-def _builder_with_two_entries(program: Program, model: RtosModel) -> tuple[Program, RtosModel]:
+class _Analyzed(Struct):
+	"""A program, with the RTOS model it is analyzed under."""
+
+	program: Program
+	model: RtosModel
+
+
+def _builder_with_two_entries(program: Program, model: RtosModel) -> _Analyzed:
 	builder = program.functions[_named(program, "arch_new_thread")]
 	assert builder.signature is not None
-	return (
+	return _Analyzed(
 		replace(
 			program,
 			functions={
@@ -432,13 +439,13 @@ def _builder_with_two_entries(program: Program, model: RtosModel) -> tuple[Progr
 	)
 
 
-def _trampoline_held_elsewhere(program: Program, model: RtosModel) -> tuple[Program, RtosModel]:
+def _trampoline_held_elsewhere(program: Program, model: RtosModel) -> _Analyzed:
 	(record, *_) = (
 		data_object.address
 		for data_object in program.objects.values()
 		if data_object.name.startswith("_k_thread_data_")
 	)
-	return (
+	return _Analyzed(
 		replace(
 			program,
 			link_references=(
@@ -455,9 +462,9 @@ def _trampoline_held_elsewhere(program: Program, model: RtosModel) -> tuple[Prog
 	)
 
 
-def _records_incomplete(program: Program, model: RtosModel) -> tuple[Program, RtosModel]:
+def _records_incomplete(program: Program, model: RtosModel) -> _Analyzed:
 	assert model.creation is not None
-	return program, replace(model, creation=replace(model.creation, static_entries=None))
+	return _Analyzed(program, replace(model, creation=replace(model.creation, static_entries=None)))
 
 
 @pytest.mark.image
@@ -470,10 +477,11 @@ def _records_incomplete(program: Program, model: RtosModel) -> tuple[Program, Rt
 )
 def test_the_call_that_starts_every_thread_stays_unresolved_when_a_creation_gate_fails(
 	zephyr_fixtures: Path,
-	perturbed: Callable[[Program, RtosModel], tuple[Program, RtosModel]],
+	perturbed: Callable[[Program, RtosModel], _Analyzed],
 ) -> None:
 	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
-	assert _trampoline_targets(*perturbed(program, rtos_model(program, RtosChoice.AUTO))) == []
+	analyzed = perturbed(program, rtos_model(program, RtosChoice.AUTO))
+	assert _trampoline_targets(analyzed.program, analyzed.model) == []
 
 
 @pytest.mark.image
@@ -481,9 +489,12 @@ def test_without_every_record_read_the_static_threads_start_what_the_analysis_re
 	zephyr_fixtures: Path,
 ) -> None:
 	program = load(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf")
-	assert _trampoline_targets(
-		*_records_incomplete(program, rtos_model(program, RtosChoice.AUTO))
-	) == ["bg_thread_main", "sensor_thread", "idle"]
+	analyzed = _records_incomplete(program, rtos_model(program, RtosChoice.AUTO))
+	assert _trampoline_targets(analyzed.program, analyzed.model) == [
+		"bg_thread_main",
+		"sensor_thread",
+		"idle",
+	]
 
 
 @pytest.mark.image
