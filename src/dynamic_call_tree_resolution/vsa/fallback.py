@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from itertools import groupby, repeat
+from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
 from capstone import (
@@ -34,6 +34,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	program_counter,
 )
 from dynamic_call_tree_resolution.vsa.links import (
+	SlotTarget,
 	function_extent,
 	functions_by_start,
 	linked_targets,
@@ -65,7 +66,7 @@ def address_taken(program: Program) -> frozenset[Address]:
 
 
 def linked_address_taken(program: Program) -> frozenset[Address]:
-	return frozenset(function for _, function in linked_targets(program, ReferenceKind.ADDRESS))
+	return frozenset(linked.target for linked in linked_targets(program, ReferenceKind.ADDRESS))
 
 
 def referrers(
@@ -74,11 +75,15 @@ def referrers(
 	computed = (
 		_slots_by_target(_computed_slots(program), functions)
 		if functions
-		else dict[int, frozenset[Address]]()
+		else dict[Address, frozenset[Address]]()
 	)
 	linked = _slots_by_target(linked_targets(program, ReferenceKind.ADDRESS), functions)
 	relocated = _slots_by_target(
-		((relocation.slot, relocation.target) for relocation in program.relocations), functions
+		(
+			SlotTarget(slot=relocation.slot, target=relocation.target)
+			for relocation in program.relocations
+		),
+		functions,
 	)
 	return {
 		function: frozenset(_occurrences(program, function))
@@ -99,13 +104,13 @@ def referenced_only_at(
 
 
 def _slots_by_target(
-	references: Iterable[tuple[Address, int]], targets: AbstractSet[Address]
-) -> Mapping[int, frozenset[Address]]:
+	references: Iterable[SlotTarget], targets: AbstractSet[Address]
+) -> Mapping[Address, frozenset[Address]]:
 	return {
-		target: frozenset(slot for slot, _ in group)
+		target: frozenset(reference.slot for reference in group)
 		for target, group in groupby(
 			sorted(
-				((slot, target) for slot, target in references if target in targets),
+				(reference for reference in references if reference.target in targets),
 				key=_target,
 			),
 			key=_target,
@@ -113,8 +118,8 @@ def _slots_by_target(
 	}
 
 
-def _target(reference: tuple[Address, int]) -> int:
-	return reference[1]
+def _target(reference: SlotTarget) -> Address:
+	return reference.target
 
 
 def _occurrences(program: Program, function: Address) -> Iterator[Address]:
@@ -134,12 +139,12 @@ def _computed_addresses(program: Program) -> Iterator[int]:
 			yield from _instruction_addresses(program, instructions, index)
 
 
-def _computed_slots(program: Program) -> Iterator[tuple[Address, int]]:
+def _computed_slots(program: Program) -> Iterator[SlotTarget]:
 	for instructions in _non_branch_instructions(program):
 		for index in range(len(instructions)):
-			yield from zip(
-				repeat(Address(instructions[index].address)),
-				_instruction_addresses(program, instructions, index),
+			yield from (
+				SlotTarget(slot=Address(instructions[index].address), target=Address(value))
+				for value in _instruction_addresses(program, instructions, index)
 			)
 
 

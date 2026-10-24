@@ -9,6 +9,8 @@ from functools import partial
 from itertools import takewhile
 from typing import TYPE_CHECKING, Final, assert_never
 
+from salix import Struct
+
 from dynamic_call_tree_resolution.model import Address, ArmCore, ArmProfile
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 
@@ -30,12 +32,12 @@ def vector_table(program: Program) -> Mapping[Address, Address]:
 			return next(
 				(
 					{
-						slot: handler
-						for slot, handler in takewhile(
+						entry.slot: entry.word
+						for entry in takewhile(
 							partial(_handler_or_reserved, program),
 							_words(program, base, section, offset),
 						)
-						if handler != 0
+						if entry.word != 0
 					}
 					for base, section in sorted(program.sections.items())
 					for offset in range(
@@ -72,11 +74,18 @@ def hardware_handlers(program: Program) -> frozenset[Address]:
 	return referenced_only_at(referrers(program, frozenset(slots_by_handler)), slots_by_handler)
 
 
+class _VectorWord(Struct):
+	"""A word of a vector table, with the slot that holds it."""
+
+	slot: Address
+	word: Address
+
+
 def _words(
 	program: Program, base: Address, section: Section, start: int
-) -> tuple[tuple[Address, Address], ...]:
+) -> tuple[_VectorWord, ...]:
 	return tuple(
-		(Address(base + offset), _word(program, section, offset))
+		_VectorWord(slot=Address(base + offset), word=_word(program, section, offset))
 		for offset in range(
 			start, len(section.data) - program.pointer_size + 1, program.pointer_size
 		)
@@ -89,8 +98,8 @@ def _word(program: Program, section: Section, offset: int) -> Address:
 	)
 
 
-def _handler_or_reserved(program: Program, word: tuple[Address, Address]) -> bool:
-	return word[1] == 0 or word[1] in program.functions
+def _handler_or_reserved(program: Program, entry: _VectorWord) -> bool:
+	return entry.word == 0 or entry.word in program.functions
 
 
 def _is_initial_stack(value: int) -> bool:

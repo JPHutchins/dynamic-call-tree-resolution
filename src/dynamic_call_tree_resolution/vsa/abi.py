@@ -37,11 +37,18 @@ if TYPE_CHECKING:
 	from capstone import ArmCsOperand, CsInsn, CsOperand
 
 
-DISASSEMBLERS: Final[Mapping[InstructionSet, tuple[int, int]]] = {
-	InstructionSet.X86_64: (CS_ARCH_X86, CS_MODE_64),
-	InstructionSet.X86_32: (CS_ARCH_X86, CS_MODE_32),
-	InstructionSet.A32: (CS_ARCH_ARM, CS_MODE_ARM),
-	InstructionSet.T32: (CS_ARCH_ARM, CS_MODE_THUMB),
+class CapstoneMode(Struct):
+	"""A capstone architecture, with the mode to decode it in."""
+
+	architecture: int
+	mode: int
+
+
+DISASSEMBLERS: Final[Mapping[InstructionSet, CapstoneMode]] = {
+	InstructionSet.X86_64: CapstoneMode(architecture=CS_ARCH_X86, mode=CS_MODE_64),
+	InstructionSet.X86_32: CapstoneMode(architecture=CS_ARCH_X86, mode=CS_MODE_32),
+	InstructionSet.A32: CapstoneMode(architecture=CS_ARCH_ARM, mode=CS_MODE_ARM),
+	InstructionSet.T32: CapstoneMode(architecture=CS_ARCH_ARM, mode=CS_MODE_THUMB),
 }
 
 
@@ -439,24 +446,22 @@ def normalized(address: Address, machine: Machine) -> Address:
 
 def disassemblers(core: ArmCore | None) -> Mapping[InstructionSet, Cs]:
 	return {
-		instruction_set: _disassembler(*_architecture_and_mode(instruction_set, core))
+		instruction_set: _disassembler(_architecture_and_mode(instruction_set, core))
 		for instruction_set in InstructionSet
 	}
 
 
-def _architecture_and_mode(
-	instruction_set: InstructionSet, core: ArmCore | None
-) -> tuple[int, int]:
+def _architecture_and_mode(instruction_set: InstructionSet, core: ArmCore | None) -> CapstoneMode:
 	"""An M-profile core's Thumb code has its own encodings, such as ``mrs r0, MSP``."""
 	match instruction_set, core:
 		case InstructionSet.T32, ArmCore(profile=ArmProfile.MICROCONTROLLER):
-			return CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_MCLASS
+			return CapstoneMode(architecture=CS_ARCH_ARM, mode=CS_MODE_THUMB | CS_MODE_MCLASS)
 		case _:
 			return DISASSEMBLERS[instruction_set]
 
 
-def _disassembler(architecture: int, mode: int) -> Cs:
-	disassembler = Cs(architecture, mode)
+def _disassembler(mode: CapstoneMode) -> Cs:
+	disassembler = Cs(mode.architecture, mode.mode)
 	disassembler.detail = True
 	disassembler.skipdata = True
 	return disassembler
