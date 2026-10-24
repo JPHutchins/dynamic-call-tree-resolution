@@ -25,6 +25,7 @@ from dynamic_call_tree_resolution.vsa.cfg.blocks import (
 	FunctionGraph,
 	conditional_exit,
 	function_graph,
+	predecessors,
 	reachable_blocks,
 )
 from dynamic_call_tree_resolution.vsa.cfg.jump_tables import (
@@ -166,13 +167,7 @@ def _exits(program: Program, blocks: tuple[Block, ...]) -> _Exits:
 	machine = program.machine
 	starts = frozenset(block.start for block in blocks)
 	by_start = {block.start: block for block in blocks}
-	predecessors = {
-		start: tuple(source for source, _ in group)
-		for start, group in groupby(
-			sorted((block.start, successor) for block in blocks for successor in block.successors),
-			key=_successor,
-		)
-	}
+	inbound = predecessors(by_start)
 	return _Exits(
 		calls={
 			block.start: normalized(Address(callee), machine)
@@ -182,7 +177,7 @@ def _exits(program: Program, blocks: tuple[Block, ...]) -> _Exits:
 		},
 		exits={
 			block.start: _left_into(
-				program, _straight_line(machine, block, by_start, predecessors, frozenset())
+				program, _straight_line(machine, block, by_start, inbound, frozenset())
 			)
 			for block in blocks
 			if _leaves(block, machine, starts)
@@ -191,19 +186,15 @@ def _exits(program: Program, blocks: tuple[Block, ...]) -> _Exits:
 	)
 
 
-def _successor(edge: tuple[Address, Address]) -> Address:
-	return edge[1]
-
-
 def _straight_line(
 	machine: Machine,
 	block: Block,
 	by_start: Mapping[Address, Block],
-	predecessors: Mapping[Address, tuple[Address, ...]],
+	inbound: Mapping[Address, tuple[Address, ...]],
 	visited: frozenset[Address],
 ) -> tuple[CsInsn, ...]:
 	"""The block's instructions, after those of the blocks that only run straight into it."""
-	match predecessors.get(block.start, ()):
+	match inbound.get(block.start, ()):
 		case (source,) if (
 			source not in visited
 			and by_start[source].successors == (block.start,)
@@ -212,7 +203,7 @@ def _straight_line(
 		):
 			return (
 				*_straight_line(
-					machine, by_start[source], by_start, predecessors, visited | {block.start}
+					machine, by_start[source], by_start, inbound, visited | {block.start}
 				),
 				*block.instructions,
 			)
