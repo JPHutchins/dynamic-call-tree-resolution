@@ -753,11 +753,13 @@ def test_a_threads_row_names_each_addition_the_rtos_model_leaves_out_and_shows_n
 				unresolved=frozenset(),
 				stack_reservation=16,
 				exception_frame=36,
-				not_counted=frozenset({Uncounted.SWITCH_FRAME, Uncounted.STACK_SENTINEL}),
+				stack_sentinel=4,
+				not_counted=frozenset({Uncounted.SWITCH_FRAME, Uncounted.USERSPACE_LOCAL_DATA}),
 			),
 			stack_size=1024,
 		)
 	) == (
 		"worker: unbounded, at least 100 bytes (stack reservation: 16 bytes, exception frame: 36 "
-		"bytes, not counted: stack sentinel, not counted: switch frame, stack: 1024 bytes)"
+		"bytes, stack sentinel: 4 bytes, not counted: switch frame, not counted: userspace-local "
+		"data, stack: 1024 bytes)"
 	)

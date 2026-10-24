@@ -38,7 +38,11 @@ from dynamic_call_tree_resolution.points_to import pointer_at
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.programs import build_program
-from tests.toolchains import zephyr_console_cortex_m3, zephyr_stack_pointers_cortex_m3
+from tests.toolchains import (
+	zephyr_console_cortex_m3,
+	zephyr_stack_pointers_cortex_m3,
+	zephyr_word_cortex_r52,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Callable
@@ -369,11 +373,6 @@ def test_the_stack_reservation_follows_the_builds_config(
 			id="userspace-local data",
 		),
 		pytest.param(
-			'CONFIG_ARCH="arm"\nCONFIG_STACK_SENTINEL=y\n',
-			frozenset({Uncounted.STACK_SENTINEL}),
-			id="stack sentinel",
-		),
-		pytest.param(
 			'CONFIG_ARCH="arm"\nCONFIG_USE_SWITCH=y\n',
 			frozenset({Uncounted.SWITCH_FRAME}),
 			id="switch frame",
@@ -391,11 +390,54 @@ def test_zephyrs_thread_rows_leave_out_what_the_builds_config_adds_to_their_stac
 
 @pytest.mark.image
 @pytest.mark.parametrize(
+	("config", "check_symbol", "sentinel"),
+	[
+		pytest.param('CONFIG_ARCH="arm"\n', False, 0, id="without the sentinel"),
+		pytest.param('CONFIG_ARCH="arm"\nCONFIG_STACK_SENTINEL=y\n', False, 4, id="from .config"),
+		pytest.param("", True, 4, id="without .config, from its check"),
+	],
+)
+def test_zephyrs_thread_rows_add_the_stack_sentinel_the_build_writes(
+	hello_program: Program, config: str, check_symbol: bool, sentinel: int
+) -> None:
+	assert (
+		rtos_model(
+			replace(
+				hello_program,
+				symbol_addresses={
+					**hello_program.symbol_addresses,
+					**(
+						{"z_check_stack_sentinel": frozenset({Address(0x1000)})}
+						if check_symbol
+						else {}
+					),
+				},
+			),
+			RtosChoice.ZEPHYR,
+			zephyr.kconfig(config),
+		).stack_sentinel
+		== sentinel
+	)
+
+
+@pytest.mark.image
+def test_zephyr_writes_the_stack_sentinel_in_the_lowest_word_of_a_threads_stack_on_qemu(
+	zephyr_fixtures: Path,
+) -> None:
+	assert (
+		zephyr_word_cortex_r52(
+			zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
+			"thread_b_entry_point",
+			"&_k_thread_stack_thread_b",
+		)
+		== 0xF0F0F0F0
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
 	("symbol", "not_counted"),
 	[
-		pytest.param(
-			"z_check_stack_sentinel", frozenset({Uncounted.STACK_SENTINEL}), id="sentinel check"
-		),
 		pytest.param("arm_m_exc_exit", frozenset({Uncounted.SWITCH_FRAME}), id="Cortex-M switch"),
 		pytest.param("z_arm_context_switch", frozenset({Uncounted.SWITCH_FRAME}), id="A/R switch"),
 	],
@@ -484,7 +526,7 @@ def test_zephyrs_thread_rows_leave_out_the_exception_frames_of_a_core_that_is_no
 		),
 		pytest.param(
 			"synchronization-r52",
-			frozenset({Uncounted.EXCEPTION_FRAMES, Uncounted.STACK_SENTINEL}),
+			frozenset({Uncounted.EXCEPTION_FRAMES}),
 			id="synchronization with the stack sentinel on a Cortex-R52",
 		),
 	],
@@ -524,8 +566,8 @@ def test_without_its_config_a_testbed_still_shows_what_zephyr_adds_to_its_thread
 			["thread_b", "z_idle_threads", "z_main_thread"],
 			[
 				(
-					"thread_b: unbounded, at least 260 bytes (measured: 5, stack reservation: 16 "
-					"bytes, not counted: exception frames, not counted: stack sentinel, stack: 1024 "
+					"thread_b: unbounded, at least 264 bytes (measured: 5, stack reservation: 16 "
+					"bytes, stack sentinel: 4 bytes, not counted: exception frames, stack: 1024 "
 					"bytes)"
 				),
 			],

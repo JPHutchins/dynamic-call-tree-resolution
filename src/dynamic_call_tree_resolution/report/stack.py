@@ -31,6 +31,9 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	``bytes``."""
 	exception_frame_bytes: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
+	stack_sentinel_bytes: int = 0
+	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
+	``bytes``."""
 	assumed_no_recursion: tuple[str, ...] = ()
 	"""Reachable functions assumed never to call themselves."""
 	narrowed_by_field: tuple[str, ...] = ()
@@ -59,6 +62,9 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	exception_frame_bytes: int = 0
 	"""The interrupt frame the RTOS model adds to a thread's depth, included in
 	``at_least_bytes``."""
+	stack_sentinel_bytes: int = 0
+	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
+	``at_least_bytes``."""
 	assumed_no_recursion: tuple[str, ...] = ()
 	"""Reachable functions assumed never to call themselves."""
 	narrowed_by_field: tuple[str, ...] = ()
@@ -81,6 +87,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				measured=tuple(sorted(measured)),
 				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=exception_frame,
+				stack_sentinel_bytes=bound.stack_sentinel,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
@@ -97,6 +104,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				measured=tuple(sorted(bound.measured)),
 				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=bound.exception_frame,
+				stack_sentinel_bytes=bound.stack_sentinel,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
