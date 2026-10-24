@@ -11,6 +11,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Final, assert_never
 
 import pytest
+from salix import Struct
 
 from dynamic_call_tree_resolution import Address, Bounded, StackReport, Unbounded, build_report
 from dynamic_call_tree_resolution.call_sites import own_targets, per_caller_candidates
@@ -113,18 +114,32 @@ def _narrowed_by_field(fixtures: Path, name: str, expansion: Expansion) -> tuple
 	)
 
 
-def _narrowed(
-	fixtures: Path, name: str, expansion: Expansion, narrowing: Narrowing
-) -> tuple[bool, tuple[NarrowedSpan, ...]]:
+class _Narrowings(Struct):
+	"""The narrowings one parametrized run turns on."""
+
+	by_signature: bool
+	by_field: tuple[NarrowedSpan, ...]
+
+
+def _narrowed(fixtures: Path, name: str, expansion: Expansion, narrowing: Narrowing) -> _Narrowings:
 	match narrowing:
 		case Narrowing.NONE:
-			return False, ()
+			return _Narrowings(False, ())
 		case Narrowing.FIELD:
-			return False, _narrowed_by_field(fixtures, name, expansion)
+			return _Narrowings(False, _narrowed_by_field(fixtures, name, expansion))
 		case Narrowing.SIGNATURE:
-			return True, ()
+			return _Narrowings(True, ())
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+class _Named(Struct):
+	"""A target a resolution names for one caller."""
+
+	resolution: str
+	"""``global``, or the thread whose own analysis named it."""
+	caller: str
+	target: str
 
 
 @pytest.mark.parametrize(
@@ -141,44 +156,37 @@ def test_every_target_a_resolution_names_is_in_the_fallback_so_removing_it_never
 ) -> None:
 	expansion = expansions[name]
 	names = stack_names(expansion.program)
-	narrow_by_signature, narrowed_by_field = _narrowed(zephyr_fixtures, name, expansion, narrowing)
+	narrowings = _narrowed(zephyr_fixtures, name, expansion, narrowing)
 	candidates = per_caller_candidates(
 		expansion.program,
 		expansion.resolution.sites,
 		expansion.resolution.assignments,
-		narrow_by_signature=narrow_by_signature,
-		narrowed_by_field=narrowed_by_field,
+		narrow_by_signature=narrowings.by_signature,
+		narrowed_by_field=narrowings.by_field,
 		names=names,
 	)
 	named = [
-		(resolution, caller, target)
-		for resolution, by_caller in (
-			("global", candidates.targets_by_caller),
-			*(
-				(
-					thread,
-					own_targets(
-						expansion.program,
-						sites,
-						expansion.resolution.assignments,
-						names,
-						narrowed_by_field,
-						narrow_by_signature=narrow_by_signature,
-					).targets_by_caller,
-				)
+		_Named(resolution=resolution, caller=caller, target=target)
+		for resolution, by_caller in {
+			"global": candidates.targets_by_caller,
+			**{
+				thread: own_targets(
+					expansion.program,
+					sites,
+					expansion.resolution.assignments,
+					names,
+					narrowings.by_field,
+					narrow_by_signature=narrowings.by_signature,
+				).targets_by_caller
 				for thread, sites in expansion.resolution.threads.items()
-			),
-		)
+			},
+		}.items()
 		for caller, targets in by_caller.items()
 		for target in targets - {INDIRECT_CALLEE, NO_CALLEE}
 	]
 	assert (
 		bool(named),
-		[
-			(resolution, caller, target)
-			for resolution, caller, target in named
-			if target not in candidates.fallback
-		],
+		[found for found in named if found.target not in candidates.fallback],
 	) == (True, [])
 
 

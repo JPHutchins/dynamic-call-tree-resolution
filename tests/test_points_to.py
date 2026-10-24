@@ -33,11 +33,8 @@ if TYPE_CHECKING:
 	from pathlib import Path
 
 
-def _resolved(elf: Path) -> tuple[dict[str, SlotAssignment], Program]:
-	program = load(elf)
-	return {
-		render_path(assignment.path): assignment for assignment in assignments(program)
-	}, program
+def _by_path(program: Program) -> dict[str, SlotAssignment]:
+	return {render_path(assignment.path): assignment for assignment in assignments(program)}
 
 
 def _names(program: Program, assignment: SlotAssignment) -> set[str]:
@@ -45,7 +42,8 @@ def _names(program: Program, assignment: SlotAssignment) -> set[str]:
 
 
 def test_nopie_resolves_every_initialized_slot(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["nopie"])
+	program = load(fixture_elfs["nopie"])
+	resolved = _by_path(program)
 	assert set(resolved) == set(EXPECTED_NOPIE)
 	for path, names in EXPECTED_NOPIE.items():
 		assert _names(program, resolved[path]) == set(names)
@@ -55,7 +53,7 @@ def test_nopie_resolves_every_initialized_slot(fixture_elfs: dict[str, Path]) ->
 def test_nopie_slots_in_writable_objects_are_ram_initializers(
 	fixture_elfs: dict[str, Path],
 ) -> None:
-	resolved, _ = _resolved(fixture_elfs["nopie"])
+	resolved = _by_path(load(fixture_elfs["nopie"]))
 	assert {
 		path
 		for path, assignment in resolved.items()
@@ -76,14 +74,15 @@ def test_other_build_modes_match_nopie(
 	fixture_elfs: dict[str, Path],
 	variant: str,
 ) -> None:
-	resolved, program = _resolved(fixture_elfs[variant])
+	program = load(fixture_elfs[variant])
+	resolved = _by_path(program)
 	assert set(resolved) == set(EXPECTED_NOPIE)
 	for path, names in EXPECTED_NOPIE.items():
 		assert _names(program, resolved[path]) == set(names)
 
 
 def test_pie_resolves_relocations_with_their_slots(fixture_elfs: dict[str, Path]) -> None:
-	resolved, _ = _resolved(fixture_elfs["pie"])
+	resolved = _by_path(load(fixture_elfs["pie"]))
 	assert set(resolved) >= set(EXPECTED_NOPIE)
 	assert resolved["plain_cb"].relocated
 	assert resolved["holder.run"].relocated
@@ -91,7 +90,8 @@ def test_pie_resolves_relocations_with_their_slots(fixture_elfs: dict[str, Path]
 
 
 def test_nodebug_resolves_direct_slots_only(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["nodebug"])
+	program = load(fixture_elfs["nodebug"])
+	resolved = _by_path(program)
 	assert set(resolved) == {
 		"ops_a.[0]",
 		"ops_a.[1]",
@@ -109,13 +109,14 @@ def test_nodebug_resolves_direct_slots_only(fixture_elfs: dict[str, Path]) -> No
 
 
 def test_bss_slots_are_unresolved(fixture_elfs: dict[str, Path]) -> None:
-	resolved, _ = _resolved(fixture_elfs["nopie"])
+	resolved = _by_path(load(fixture_elfs["nopie"]))
 	assert "bss_cb" not in resolved
 	assert "bss_holder.run" not in resolved
 
 
 def test_multi_tu_resolves_via_declared_types(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["multi"])
+	program = load(fixture_elfs["multi"])
+	resolved = _by_path(program)
 	assert set(resolved) == {
 		"dev_x.api.[0]",
 		"dev_x.api.[1]",
@@ -127,7 +128,8 @@ def test_multi_tu_resolves_via_declared_types(fixture_elfs: dict[str, Path]) -> 
 
 
 def test_minimal_pie_resolves_via_relocation(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["minimal.pie"])
+	program = load(fixture_elfs["minimal.pie"])
+	resolved = _by_path(program)
 	assert set(resolved) >= {"ping_cb"}
 	assert resolved["ping_cb"].relocated
 	assert _names(program, resolved["ping_cb"]) == {"ping"}
@@ -212,7 +214,8 @@ def test_declaration_only_struct_dies_do_not_clobber_definitions(
 			signature=FunctionSignature(return_type="int", parameters=()),
 		),
 	)
-	resolved, program = _resolved(fixture_elfs["decl"])
+	program = load(fixture_elfs["decl"])
+	resolved = _by_path(program)
 	assert _names(program, resolved["instance.fn"]) == {"target_fn"}
 	assert _names(program, resolved["second_instance.fn"]) == {"second_fn"}
 	assert _names(program, resolved["second_instance.extra"]) == {"second_fn"}
@@ -224,7 +227,8 @@ def test_nonzero_slot_still_resolves_even_with_a_function_at_zero() -> None:
 
 
 def test_array_globals_descend_each_element(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["arrays"])
+	program = load(fixture_elfs["arrays"])
+	resolved = _by_path(program)
 	assert _names(program, resolved["table.[0].isr"]) == {"handler_a"}
 	assert _names(program, resolved["table.[1].isr"]) == {"handler_b"}
 	assert _names(program, resolved["cbs.[0]"]) == {"handler_a"}
@@ -232,7 +236,8 @@ def test_array_globals_descend_each_element(fixture_elfs: dict[str, Path]) -> No
 
 
 def test_array_members_descend_each_element(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["arrays"])
+	program = load(fixture_elfs["arrays"])
+	resolved = _by_path(program)
 	assert {
 		path: _names(program, assignment)
 		for path, assignment in resolved.items()
@@ -252,7 +257,8 @@ def test_array_members_descend_each_element(fixture_elfs: dict[str, Path]) -> No
 def test_anonymous_types_resolve_through_objects_and_pointers(
 	fixture_elfs: dict[str, Path],
 ) -> None:
-	resolved, program = _resolved(fixture_elfs["anonymous"])
+	program = load(fixture_elfs["anonymous"])
+	resolved = _by_path(program)
 	assert {path: _names(program, assignment) for path, assignment in resolved.items()} == {
 		"anon_ops.run": {"anon_ops_fn"},
 		"anon_ops_holder.ops.run": {"anon_ops_fn"},
@@ -280,7 +286,8 @@ def test_not_enumerated_lists_what_may_hold_code_without_slots(
 
 
 def test_a_typedefd_array_member_is_a_nested_array(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["arrays"])
+	program = load(fixture_elfs["arrays"])
+	resolved = _by_path(program)
 	assert {
 		path: _names(program, assignment)
 		for path, assignment in resolved.items()
@@ -338,6 +345,7 @@ def test_array_globals_report_unresolved_elements(fixture_elfs: dict[str, Path])
 
 
 def test_typeless_vector_table_resolves_element_by_element(fixture_elfs: dict[str, Path]) -> None:
-	resolved, program = _resolved(fixture_elfs["arrays"])
+	program = load(fixture_elfs["arrays"])
+	resolved = _by_path(program)
 	assert _names(program, resolved["vector_table.[0]"]) == {"handler_a"}
 	assert _names(program, resolved["vector_table.[1]"]) == {"handler_b"}

@@ -102,17 +102,19 @@ def test_a_call_takes_the_descriptor_its_own_units_plugin_sites_agree_on(tmp_pat
 
 
 @pytest.fixture(scope="module")
-def sensor_two_impl(zephyr_fixtures: Path) -> tuple[Descriptors, tuple[DescribedCall, ...]]:
-	build_directory = zephyr_fixtures / "sensor-two-impl"
-	descriptors = load_descriptors(build_directory / "zephyr" / "descriptors.txt")
-	return descriptors, described_calls(descriptors, build_directory)
+def descriptors(zephyr_fixtures: Path) -> Descriptors:
+	return load_descriptors(zephyr_fixtures / "sensor-two-impl" / "zephyr" / "descriptors.txt")
+
+
+@pytest.fixture(scope="module")
+def calls(zephyr_fixtures: Path, descriptors: Descriptors) -> tuple[DescribedCall, ...]:
+	return described_calls(descriptors, zephyr_fixtures / "sensor-two-impl")
 
 
 @pytest.mark.image
 def test_every_indirect_call_in_the_ci_joins_exactly_one_plugin_site(
-	sensor_two_impl: tuple[Descriptors, tuple[DescribedCall, ...]],
+	descriptors: Descriptors, calls: tuple[DescribedCall, ...]
 ) -> None:
-	descriptors, calls = sensor_two_impl
 	assert (
 		len(descriptors.sites),
 		Counter((site.unit, frame_key(site.function), site.location) for site in descriptors.sites)
@@ -131,9 +133,8 @@ def test_every_indirect_call_in_the_ci_joins_exactly_one_plugin_site(
 
 @pytest.mark.image
 def test_the_device_api_calls_load_their_callee_from_a_field(
-	sensor_two_impl: tuple[Descriptors, tuple[DescribedCall, ...]],
+	calls: tuple[DescribedCall, ...],
 ) -> None:
-	_, calls = sensor_two_impl
 	assert sorted(
 		(frame_key(call.call.caller), call.call.location.file, call.call.location.line, call.callee)
 		for call in calls
@@ -172,9 +173,8 @@ def test_the_device_api_calls_load_their_callee_from_a_field(
 
 @pytest.mark.image
 def test_a_store_names_what_it_stores_into_and_what_it_stores(
-	sensor_two_impl: tuple[Descriptors, tuple[DescribedCall, ...]],
+	descriptors: Descriptors,
 ) -> None:
-	descriptors, _ = sensor_two_impl
 	assert (
 		len(descriptors.stores),
 		{
