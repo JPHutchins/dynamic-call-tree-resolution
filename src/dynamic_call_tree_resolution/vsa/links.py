@@ -29,22 +29,29 @@ class LinkedCall(Struct):
 	callee: Address
 
 
+class SlotTarget(Struct):
+	"""A slot, and the address the image or its code puts in it."""
+
+	slot: Address
+	target: Address
+
+
 def linked_calls(program: Program) -> frozenset[LinkedCall]:
 	return frozenset(
 		LinkedCall(
-			slot=slot,
+			slot=linked.slot,
 			caller=caller.address if caller is not None else None,
-			callee=callee,
+			callee=linked.target,
 		)
-		for slot, callee in linked_targets(program, ReferenceKind.CALL)
-		for caller in (function_covering(program, slot),)
+		for linked in linked_targets(program, ReferenceKind.CALL)
+		for caller in (function_covering(program, linked.slot),)
 	)
 
 
-def linked_targets(program: Program, kind: ReferenceKind) -> Iterator[tuple[Address, Address]]:
+def linked_targets(program: Program, kind: ReferenceKind) -> Iterator[SlotTarget]:
 	starts = {normalized(address, program.machine): address for address in program.functions}
 	return (
-		(reference.slot, function)
+		SlotTarget(slot=reference.slot, target=function)
 		for reference in program.link_references
 		if reference.kind is kind
 		and reference.symbol
