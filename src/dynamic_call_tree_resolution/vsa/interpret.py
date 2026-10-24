@@ -176,12 +176,12 @@ def block_states(
 		block = by_start[worklist.pop()]
 		states = tuple(accumulate(block.instructions, step, initial=in_states[block.start]))
 		writes = accumulate_writes(writes, [states[-1].globals])
-		for successor, state in successor_states(block, states, step):
-			existing = in_states.get(successor)
-			joined = join_states(existing, state)
+		for edge in successor_states(block, states, step):
+			existing = in_states.get(edge.successor)
+			joined = join_states(existing, edge.state)
 			if joined != existing:
-				in_states[successor] = joined
-				worklist.append(successor)
+				in_states[edge.successor] = joined
+				worklist.append(edge.successor)
 	return in_states, writes
 
 
