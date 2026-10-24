@@ -11,7 +11,7 @@ dependencies = [
     "cyclopts>=5.0.0,<6",
     "msgspec>=0.21.1,<0.22",
     "pyelftools==0.33",
-    "salix",
+    "salix>=0.1.0a2,<0.2",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -197,6 +197,3 @@ exclude_lines = [
     '^\\s*\\.\\.\\.\\s*$',
     "raise AssertionError",
 ]
-
-[tool.uv.sources]
-salix = { git = "https://github.com/JPHutchins/salix", rev = "a25919133e112f00d19477aa9c66bbdc9747899a" }
