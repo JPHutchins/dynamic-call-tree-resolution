@@ -9,6 +9,7 @@ from msgspec import Struct
 
 from dynamic_call_tree_resolution.callgraph import EdgeKind
 from dynamic_call_tree_resolution.linker import Membership
+from dynamic_call_tree_resolution.model import Uncounted
 from dynamic_call_tree_resolution.stack_analysis import (
 	Bounded,
 	LevelSource,
@@ -68,6 +69,8 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
 	assumed_frames: tuple[str, ...] = ()
 	"""Reachable functions whose frames ``--assume-frame`` states."""
+	not_counted: tuple[Uncounted, ...] = ()
+	"""What the RTOS adds to a thread's stack that its model leaves out of ``at_least_bytes``."""
 
 
 def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedStack:
@@ -99,6 +102,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
 				assumed_unwritten=tuple(sorted(bound.assumed_unwritten)),
 				assumed_frames=tuple(sorted(bound.assumed_frames)),
+				not_counted=tuple(sorted(bound.not_counted)),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)

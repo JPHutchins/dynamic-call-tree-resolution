@@ -358,6 +358,15 @@ class ThreadCreation(Struct):
 	"""The entry of every static thread record; none when a record could not be read."""
 
 
+class Uncounted(StrEnum):
+	"""What an RTOS can add to a thread's stack that its model does not count."""
+
+	EXCEPTION_FRAMES = "exception frames"
+	USERSPACE_LOCAL_DATA = "userspace-local data"
+	STACK_SENTINEL = "stack sentinel"
+	SWITCH_FRAME = "switch frame"
+
+
 class RtosModel(Struct):
 	"""What an RTOS adds to the analysis of an image."""
 
@@ -375,6 +384,8 @@ class RtosModel(Struct):
 	system_threads: tuple[SystemThread, ...] = ()
 	interrupt_stack: InterruptStack | None = None
 	dispatches: tuple[Dispatch, ...] = ()
+	not_counted: frozenset[Uncounted] = frozenset()
+	"""What the image shows the RTOS adds to each thread's stack, left out of its rows."""
 
 
 BARE_METAL: Final = RtosModel(name="none", evidence=(), threads=(), trampoline=None)

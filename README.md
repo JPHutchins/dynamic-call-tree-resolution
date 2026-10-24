@@ -748,8 +748,8 @@ contradicts does not hold.
   on the thread's stack when an interrupt arrives: 8 words without an FPU, 26 with one,
   plus a word that may align the stack. It is added once, since handlers run on the
   main stack, whose row is `z_interrupt_stacks`. Zephyr's context switch saves registers
-  in the thread object, not on its stack. Other cores' exception stacking is not
-  modeled.
+  in the thread object, not on its stack, unless the build sets `CONFIG_USE_SWITCH`.
+  Other cores' exception stacking is not modeled.
 - The main stack's row reads no priorities. It assumes any configurable-priority
   exception can nest at any level, so it over-counts where priorities, priority grouping
   or masking keep exceptions from nesting. Reading the image's priorities is a later,
@@ -766,8 +766,25 @@ contradicts does not hold.
   - rounded up to an 8-byte boundary, or a 4-byte one when the `.config` does not set
     `CONFIG_STACK_ALIGN_DOUBLE_WORD`.
 
-  Zephyr can take more, which the model leaves out: userspace-local data, and stack
-  canaries placed with TLS. x86 images get neither this nor the exception frame
+  Zephyr can also take the userspace-local data, which the model leaves out (below).
+  Stack canaries take nothing more on Arm: Zephyr places them in TLS only on x86 and
+  RISC-V, and a frame's canary word is part of its `.su` frame. x86 images get neither
+  this nor the exception frame ([#151]).
+- Under Zephyr, a thread row bounds only from below, `unbounded, at least N bytes`, and
+  names what it leaves out as `not counted`, when the image shows that Zephyr adds to a
+  thread's stack something the model doesn't count yet:
+  - `exception frames`: on an Arm core that isn't M-profile, or one whose build
+    attributes name no profile;
+  - `userspace-local data`: `CONFIG_THREAD_USERSPACE_LOCAL_DATA`, or the
+    `struct _thread_userspace_local_data` type;
+  - `stack sentinel`: `CONFIG_STACK_SENTINEL`, or the `z_check_stack_sentinel` symbol;
+  - `switch frame`: `CONFIG_USE_SWITCH`, or the `arm_m_exc_exit` or
+    `z_arm_context_switch` symbol, since a suspended thread's registers then stay on its
+    stack.
+
+  The `.config` beside the image says whether the build has each, and so does the type
+  or symbol. A build without the `.config` whose symbol is gone, for example because
+  link-time optimization inlined its function, is taken not to have the feature
   ([#151]).
 - A row's `stack` is the size the build declares. Zephyr's usable stack is that size
   rounded up to the stack alignment, so it is at least the declared size, and a `margin`

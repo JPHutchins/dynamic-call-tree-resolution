@@ -93,7 +93,7 @@ def _thread_report(
 
 def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
 	match report.bound:
-		case Bounded(bytes=depth):
+		case Bounded(bytes=depth) if not rtos.not_counted:
 			return replace(
 				report,
 				bound=replace(
@@ -101,6 +101,26 @@ def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
 					bytes=depth + rtos.stack_reservation + rtos.exception_frame,
 					stack_reservation=rtos.stack_reservation,
 					exception_frame=rtos.exception_frame,
+				),
+			)
+		case Bounded(bytes=depth) as bound:
+			return replace(
+				report,
+				bound=Unbounded(
+					at_least=depth + rtos.stack_reservation + rtos.exception_frame,
+					recursion=frozenset(),
+					unmeasured=frozenset(),
+					dynamic=frozenset(),
+					unresolved=frozenset(),
+					measured=bound.measured,
+					stack_reservation=rtos.stack_reservation,
+					exception_frame=rtos.exception_frame,
+					assumed_no_recursion=bound.assumed_no_recursion,
+					narrowed_by_field=bound.narrowed_by_field,
+					narrowed_by_signature=bound.narrowed_by_signature,
+					assumed_unwritten=bound.assumed_unwritten,
+					assumed_frames=bound.assumed_frames,
+					not_counted=rtos.not_counted,
 				),
 			)
 		case Unbounded(at_least=at_least):
@@ -111,6 +131,7 @@ def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
 					at_least=at_least + rtos.stack_reservation + rtos.exception_frame,
 					stack_reservation=rtos.stack_reservation,
 					exception_frame=rtos.exception_frame,
+					not_counted=rtos.not_counted,
 				),
 			)
 		case _ as unreachable:

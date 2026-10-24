@@ -24,11 +24,15 @@ from dynamic_call_tree_resolution import (
 from dynamic_call_tree_resolution.cli import analyze, stack
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
+	ArmCore,
+	ArmProfile,
 	Dispatch,
 	InterruptStack,
 	RtosModel,
+	StructureLayout,
 	SystemThread,
 	ThreadCreation,
+	Uncounted,
 )
 from dynamic_call_tree_resolution.points_to import pointer_at
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
@@ -347,6 +351,127 @@ def test_the_stack_reservation_follows_the_builds_config(
 			zephyr.kconfig(config),
 		).stack_reservation
 		== reservation
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("config", "not_counted"),
+	[
+		pytest.param(
+			'CONFIG_ARCH="arm"\n',
+			frozenset[Uncounted](),
+			id="hello adds nothing the model leaves out",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_THREAD_USERSPACE_LOCAL_DATA=y\n',
+			frozenset({Uncounted.USERSPACE_LOCAL_DATA}),
+			id="userspace-local data",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_STACK_SENTINEL=y\n',
+			frozenset({Uncounted.STACK_SENTINEL}),
+			id="stack sentinel",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_USE_SWITCH=y\n',
+			frozenset({Uncounted.SWITCH_FRAME}),
+			id="switch frame",
+		),
+	],
+)
+def test_zephyrs_thread_rows_leave_out_what_the_builds_config_adds_to_their_stacks(
+	hello_program: Program, config: str, not_counted: frozenset[Uncounted]
+) -> None:
+	assert (
+		rtos_model(hello_program, RtosChoice.ZEPHYR, zephyr.kconfig(config)).not_counted
+		== not_counted
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("symbol", "not_counted"),
+	[
+		pytest.param(
+			"z_check_stack_sentinel", frozenset({Uncounted.STACK_SENTINEL}), id="sentinel check"
+		),
+		pytest.param("arm_m_exc_exit", frozenset({Uncounted.SWITCH_FRAME}), id="Cortex-M switch"),
+		pytest.param("z_arm_context_switch", frozenset({Uncounted.SWITCH_FRAME}), id="A/R switch"),
+	],
+)
+def test_without_a_config_a_symbol_only_its_build_defines_shows_what_zephyr_adds(
+	hello_program: Program, symbol: str, not_counted: frozenset[Uncounted]
+) -> None:
+	assert (
+		rtos_model(
+			replace(
+				hello_program,
+				symbol_addresses={
+					**hello_program.symbol_addresses,
+					symbol: frozenset({Address(0x1000)}),
+				},
+			),
+			RtosChoice.ZEPHYR,
+		).not_counted
+		== not_counted
+	)
+
+
+@pytest.mark.image
+def test_without_a_config_the_userspace_local_data_type_shows_zephyr_reserves_it(
+	hello_program: Program,
+) -> None:
+	assert rtos_model(
+		replace(
+			hello_program,
+			layouts={
+				**hello_program.layouts,
+				"struct _thread_userspace_local_data": StructureLayout(members=(), size=4),
+			},
+		),
+		RtosChoice.ZEPHYR,
+	).not_counted == frozenset({Uncounted.USERSPACE_LOCAL_DATA})
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("machine", "core", "not_counted"),
+	[
+		pytest.param(
+			Machine.EM_ARM,
+			ArmCore(profile=ArmProfile.REAL_TIME, floating_point=True),
+			frozenset({Uncounted.EXCEPTION_FRAMES}),
+			id="R-profile",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			ArmCore(profile=ArmProfile.APPLICATION, floating_point=False),
+			frozenset({Uncounted.EXCEPTION_FRAMES}),
+			id="A-profile",
+		),
+		pytest.param(
+			Machine.EM_ARM,
+			None,
+			frozenset({Uncounted.EXCEPTION_FRAMES}),
+			id="no profile in the build attributes",
+		),
+		pytest.param(
+			Machine.EM_386, None, frozenset[Uncounted](), id="x86 stays outside the model"
+		),
+	],
+)
+def test_zephyrs_thread_rows_leave_out_the_exception_frames_of_a_core_that_is_not_m_profile(
+	hello_program: Program,
+	machine: Machine,
+	core: ArmCore | None,
+	not_counted: frozenset[Uncounted],
+) -> None:
+	assert (
+		rtos_model(
+			replace(hello_program, machine=machine, arm_core=core), RtosChoice.ZEPHYR
+		).not_counted
+		== not_counted
 	)
 
 

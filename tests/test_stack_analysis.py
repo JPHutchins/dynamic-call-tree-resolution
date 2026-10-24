@@ -31,7 +31,7 @@ from dynamic_call_tree_resolution import (
 	stack_reports,
 	worst_case_depths,
 )
-from dynamic_call_tree_resolution.model import Address, RtosModel, SystemThread
+from dynamic_call_tree_resolution.model import Address, RtosModel, SystemThread, Uncounted
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	NO_CALLEE,
@@ -119,6 +119,86 @@ def test_a_system_threads_row_adds_what_the_rtos_model_adds_to_the_whole_images_
 		StackReport(
 			entry="main_thread",
 			bound=Bounded(bytes=16 + 8 + 40 + 36, stack_reservation=16, exception_frame=36),
+		),
+		StackReport(entry="isr", bound=Bounded(bytes=24)),
+	)
+
+
+def test_a_threads_row_bounds_only_from_below_while_the_rtos_model_leaves_out_what_it_adds() -> (
+	None
+):
+	assert thread_reports(
+		(
+			StackReport(
+				entry="main_thread",
+				bound=Bounded(
+					bytes=8 + 40,
+					measured=frozenset({"memset"}),
+					assumed_no_recursion=frozenset({"walk"}),
+					narrowed_by_field=frozenset({"dispatch"}),
+					narrowed_by_signature=frozenset({"notify"}),
+					assumed_unwritten=frozenset({"hook"}),
+					assumed_frames=frozenset({"vector"}),
+				),
+			),
+			StackReport(
+				entry="worker",
+				bound=Unbounded(
+					at_least=24,
+					recursion=frozenset({"loop"}),
+					unmeasured=frozenset(),
+					dynamic=frozenset(),
+					unresolved=frozenset(),
+				),
+			),
+			StackReport(entry="isr", bound=Bounded(bytes=24)),
+		),
+		{},
+		RtosModel(
+			name="test",
+			evidence=(),
+			threads=(),
+			trampoline="trampoline",
+			stack_reservation=16,
+			exception_frame=36,
+			system_threads=(
+				SystemThread(name="main_thread", entry=Address(0x100)),
+				SystemThread(name="worker", entry=Address(0x200)),
+			),
+			not_counted=frozenset({Uncounted.STACK_SENTINEL}),
+		),
+	) == (
+		StackReport(
+			entry="main_thread",
+			bound=Unbounded(
+				at_least=16 + 8 + 40 + 36,
+				recursion=frozenset(),
+				unmeasured=frozenset(),
+				dynamic=frozenset(),
+				unresolved=frozenset(),
+				measured=frozenset({"memset"}),
+				stack_reservation=16,
+				exception_frame=36,
+				assumed_no_recursion=frozenset({"walk"}),
+				narrowed_by_field=frozenset({"dispatch"}),
+				narrowed_by_signature=frozenset({"notify"}),
+				assumed_unwritten=frozenset({"hook"}),
+				assumed_frames=frozenset({"vector"}),
+				not_counted=frozenset({Uncounted.STACK_SENTINEL}),
+			),
+		),
+		StackReport(
+			entry="worker",
+			bound=Unbounded(
+				at_least=16 + 24 + 36,
+				recursion=frozenset({"loop"}),
+				unmeasured=frozenset(),
+				dynamic=frozenset(),
+				unresolved=frozenset(),
+				stack_reservation=16,
+				exception_frame=36,
+				not_counted=frozenset({Uncounted.STACK_SENTINEL}),
+			),
 		),
 		StackReport(entry="isr", bound=Bounded(bytes=24)),
 	)

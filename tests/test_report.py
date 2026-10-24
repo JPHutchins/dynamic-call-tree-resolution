@@ -24,6 +24,7 @@ from dynamic_call_tree_resolution import (
 	extract_call_sites,
 	load,
 )
+from dynamic_call_tree_resolution.model import Uncounted
 from dynamic_call_tree_resolution.report import stack_bound_report
 from tests.expected import EXPECTED_PATHS
 
@@ -160,3 +161,18 @@ def test_an_unbounded_stack_serializes_its_reasons_sorted() -> None:
 		dynamic=(),
 		unresolved=("main",),
 	)
+
+
+def test_an_unbounded_stack_serializes_what_the_rtos_model_leaves_out_sorted() -> None:
+	assert msgspec.json.encode(
+		stack_bound_report(
+			Unbounded(
+				at_least=100,
+				recursion=frozenset(),
+				unmeasured=frozenset(),
+				dynamic=frozenset(),
+				unresolved=frozenset(),
+				not_counted=frozenset({Uncounted.SWITCH_FRAME, Uncounted.STACK_SENTINEL}),
+			)
+		)
+	).endswith(b'"not_counted":["stack sentinel","switch frame"]}')

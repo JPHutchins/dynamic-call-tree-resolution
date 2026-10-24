@@ -85,7 +85,11 @@ def render(report: StackReport) -> str:
 					_Count(reason=Reason.UNRESOLVED, functions=bound.unresolved),
 				),
 				_thread_stack_additions(bound),
-				(*_nesting_notes(report.nesting), *_stack_notes(report)),
+				(
+					*(f"not counted: {uncounted}" for uncounted in sorted(bound.not_counted)),
+					*_nesting_notes(report.nesting),
+					*_stack_notes(report),
+				),
 			)
 			return f"{report.entry}: unbounded, at least {bound.at_least} bytes ({notes})"
 		case _ as unreachable:
