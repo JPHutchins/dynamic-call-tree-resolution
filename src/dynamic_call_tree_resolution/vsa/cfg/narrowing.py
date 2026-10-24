@@ -26,13 +26,19 @@ if TYPE_CHECKING:
 _CLOBBERING: Final = ARM_CALLS | ARM_RETURNING_TRAPS
 
 
+class RegisterCopy(Struct):
+	"""A tested register a move set, and the register it holds a copy of from there on."""
+
+	register: int
+	source: int
+
+
 class Narrowing(Struct):
 	"""Where a branch's outcome narrows the registers its test reads."""
 
 	at: int
 	"""The index of the first instruction from which they hold the values the test reads."""
-	copies: tuple[tuple[int, int], ...] = ()
-	"""Each tested register a move set, with the register it holds a copy of from there on."""
+	copies: tuple[RegisterCopy, ...] = ()
 
 
 def narrowing(instructions: tuple[CsInsn, ...], test: BranchTest) -> Narrowing:
@@ -51,7 +57,7 @@ def _narrowing(preceding: tuple[CsInsn, ...], tested: tuple[int, ...]) -> Narrow
 	return Narrowing(
 		at=at,
 		copies=tuple(
-			(register, source)
+			RegisterCopy(register=register, source=source)
 			for register, index in writers.items()
 			if index is not None
 			for source in (_move_source(preceding[index]),)

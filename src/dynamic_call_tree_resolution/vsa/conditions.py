@@ -102,17 +102,25 @@ class _Equality(Enum):
 
 type _Relation = _Order | _Equality
 
-_ORDERS: Final[Mapping[int, tuple[bool, _Relation]]] = {
-	arm_const.ARM_CC_EQ: (False, _Equality.EQUAL),
-	arm_const.ARM_CC_NE: (False, _Equality.UNEQUAL),
-	arm_const.ARM_CC_HS: (False, _Order.AT_LEAST),
-	arm_const.ARM_CC_LO: (False, _Order.BELOW),
-	arm_const.ARM_CC_HI: (False, _Order.ABOVE),
-	arm_const.ARM_CC_LS: (False, _Order.AT_MOST),
-	arm_const.ARM_CC_GE: (True, _Order.AT_LEAST),
-	arm_const.ARM_CC_LT: (True, _Order.BELOW),
-	arm_const.ARM_CC_GT: (True, _Order.ABOVE),
-	arm_const.ARM_CC_LE: (True, _Order.AT_MOST),
+
+class _Ordering(Struct):
+	"""A condition's comparison, signed or not."""
+
+	signed: bool
+	relation: _Relation
+
+
+_ORDERS: Final[Mapping[int, _Ordering]] = {
+	arm_const.ARM_CC_EQ: _Ordering(False, _Equality.EQUAL),
+	arm_const.ARM_CC_NE: _Ordering(False, _Equality.UNEQUAL),
+	arm_const.ARM_CC_HS: _Ordering(False, _Order.AT_LEAST),
+	arm_const.ARM_CC_LO: _Ordering(False, _Order.BELOW),
+	arm_const.ARM_CC_HI: _Ordering(False, _Order.ABOVE),
+	arm_const.ARM_CC_LS: _Ordering(False, _Order.AT_MOST),
+	arm_const.ARM_CC_GE: _Ordering(True, _Order.AT_LEAST),
+	arm_const.ARM_CC_LT: _Ordering(True, _Order.BELOW),
+	arm_const.ARM_CC_GT: _Ordering(True, _Order.ABOVE),
+	arm_const.ARM_CC_LE: _Ordering(True, _Order.AT_MOST),
 }
 """The conditions a `cmp` decides as a relation of its operands, signed or not."""
 _NEGATED: Final[Mapping[_Relation, _Relation]] = {
@@ -202,28 +210,37 @@ def edge_values(
 			condition=condition,
 		) if left != right and condition in _ORDERS:
 			return _ordered_edges(
-				_keyed(_values(registers, left), _ORDERS[condition][0]),
-				_keyed(_values(registers, right), _ORDERS[condition][0]),
-				(left, right),
-				_ORDERS[condition][1],
+				_keyed(_values(registers, left), _ORDERS[condition].signed),
+				_keyed(_values(registers, right), _ORDERS[condition].signed),
+				left,
+				right,
+				_ORDERS[condition].relation,
 			)
 		case _:
 			return _enumerated_edges(test, registers)
 
 
+class _Holding(Struct):
+	"""The values on each side of a comparison."""
+
+	left: frozenset[Address]
+	right: frozenset[Address]
+
+
 def _ordered_edges(
 	left: Mapping[Address, int],
 	right: Mapping[Address, int],
-	registers: tuple[int, int],
+	left_register: int,
+	right_register: int,
 	relation: _Relation,
 ) -> Mapping[bool, Mapping[int, frozenset[Address]]]:
 	"""Each outcome's values, found against the other side's extreme instead of every pair."""
 	return (
 		{
-			outcome: {registers[0]: kept[0], registers[1]: kept[1]}
-			for outcome, holding in ((True, relation), (False, _NEGATED[relation]))
+			outcome: {left_register: kept.left, right_register: kept.right}
+			for outcome, holding in {True: relation, False: _NEGATED[relation]}.items()
 			for kept in (_holding(left, right, holding),)
-			if kept[0]
+			if kept.left
 		}
 		if left and right
 		else {True: {}, False: {}}
@@ -232,23 +249,23 @@ def _ordered_edges(
 
 def _holding(
 	left: Mapping[Address, int], right: Mapping[Address, int], relation: _Relation
-) -> tuple[frozenset[Address], frozenset[Address]]:
+) -> _Holding:
 	"""The values on each side that the relation holds for with some value on the other."""
 	match relation:
 		case _Equality():
-			return (
-				_kept(left, _matching(relation, frozenset(right.values()))),
-				_kept(right, _matching(relation, frozenset(left.values()))),
+			return _Holding(
+				left=_kept(left, _matching(relation, frozenset(right.values()))),
+				right=_kept(right, _matching(relation, frozenset(left.values()))),
 			)
 		case _Order.BELOW | _Order.AT_MOST:
-			return (
-				_kept(left, _left_of(relation, max(right.values()))),
-				_kept(right, _right_of(relation, min(left.values()))),
+			return _Holding(
+				left=_kept(left, _left_of(relation, max(right.values()))),
+				right=_kept(right, _right_of(relation, min(left.values()))),
 			)
 		case _Order.ABOVE | _Order.AT_LEAST:
-			return (
-				_kept(left, _left_of(relation, min(right.values()))),
-				_kept(right, _right_of(relation, max(left.values()))),
+			return _Holding(
+				left=_kept(left, _left_of(relation, min(right.values()))),
+				right=_kept(right, _right_of(relation, max(left.values()))),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -300,6 +317,13 @@ def _keyed(values: frozenset[Address], signed: bool) -> Mapping[Address, int]:
 	}
 
 
+class _Outcome(Struct):
+	"""Whether the branch is taken under one assignment of the tested registers."""
+
+	taken: bool
+	assignment: Mapping[int, Address]
+
+
 def _enumerated_edges(
 	test: BranchTest, registers: Mapping[int, frozenset[Address]]
 ) -> Mapping[bool, Mapping[int, frozenset[Address]]]:
@@ -307,15 +331,17 @@ def _enumerated_edges(
 		case None:
 			return {True: {}, False: {}}
 		case assignments:
-			outcomes = tuple((_taken(test, assignment), assignment) for assignment in assignments)
+			outcomes = tuple(
+				_Outcome(_taken(test, assignment), assignment) for assignment in assignments
+			)
 			return {
 				outcome: {
 					register: frozenset(
-						assignment[register] for taken, assignment in outcomes if taken == outcome
+						found.assignment[register] for found in outcomes if found.taken == outcome
 					)
 					for register in tested_registers(test)
 				}
-				for outcome in frozenset(taken for taken, _ in outcomes)
+				for outcome in frozenset(found.taken for found in outcomes)
 			}
 
 

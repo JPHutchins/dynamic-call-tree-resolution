@@ -62,12 +62,12 @@ def lookup[K: int, T: Hashable](mapping: Mapping[K, frozenset[T]], key: K) -> La
 	return Known(values=mapping[key]) if key in mapping else Top()
 
 
-def map_entry[K: int, T: Hashable](key: K, value: Lattice[T]) -> tuple[tuple[K, frozenset[T]], ...]:
+def map_entry[K: int, T: Hashable](key: K, value: Lattice[T]) -> Mapping[K, frozenset[T]]:
 	match value:
 		case Top():
-			return ()
+			return {}
 		case Known(values=values):
-			return ((key, values),)
+			return {key: values}
 		case _ as unreachable:
 			assert_never(unreachable)
 
