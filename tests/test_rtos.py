@@ -28,6 +28,7 @@ from dynamic_call_tree_resolution.model import (
 	ArmProfile,
 	Dispatch,
 	InterruptStack,
+	PrivilegedStack,
 	RtosModel,
 	StructureLayout,
 	SystemThread,
@@ -42,7 +43,7 @@ from tests.toolchains import (
 	ZephyrMachine,
 	zephyr_console_cortex_m3,
 	zephyr_stack_pointers,
-	zephyr_word,
+	zephyr_values,
 )
 
 if TYPE_CHECKING:
@@ -199,6 +200,137 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 			Dispatch(function="do_device_init", targets=frozenset({Address(0x1D4F)})),
 		),
 	)
+
+
+@pytest.fixture(scope="module")
+def userspace_program(zephyr_fixtures: Path) -> Program:
+	return load(zephyr_fixtures / "userspace" / "zephyr" / "zephyr.elf")
+
+
+@pytest.mark.image
+def test_zephyrs_syscall_dispatch_goes_to_each_handler_its_table_holds(
+	userspace_program: Program,
+) -> None:
+	model = rtos_model(userspace_program, RtosChoice.AUTO)
+	(targets,) = (
+		dispatch.targets for dispatch in model.dispatches if dispatch.function == "z_arm_do_syscall"
+	)
+	names = {userspace_program.functions[target].name for target in targets}
+	assert (
+		len(names),
+		{"z_mrsh_k_sem_take", "z_mrsh_k_sem_give", "handler_bad_syscall"} <= names,
+		[
+			site.dispatch
+			for site in resolve(userspace_program, model).sites
+			if userspace_program.functions[site.caller_address].name == "z_arm_do_syscall"
+		],
+	) == (89, True, [targets])
+
+
+@pytest.mark.image
+def test_an_m_profile_user_thread_makes_its_system_calls_on_a_privileged_stack(
+	zephyr_fixtures: Path, userspace_program: Program
+) -> None:
+	addresses = {
+		function.name: address for address, function in userspace_program.functions.items()
+	}
+	assert (
+		rtos_model(
+			userspace_program,
+			RtosChoice.AUTO,
+			zephyr.kconfig((zephyr_fixtures / "userspace" / "zephyr" / ".config").read_text()),
+		).privileged_stack,
+		rtos_model(
+			replace(
+				userspace_program,
+				arm_core=ArmCore(profile=ArmProfile.REAL_TIME, floating_point=False),
+			),
+			RtosChoice.AUTO,
+		).privileged_stack,
+	) == (
+		PrivilegedStack(
+			name="priv_stacks",
+			system_call=addresses["z_arm_do_syscall"],
+			user_start=addresses["arch_user_mode_enter"],
+			saved=8,
+			stack_size=1024,
+		),
+		None,
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("function", "below_top"),
+	[
+		pytest.param("arch_user_mode_enter", 0, id="a user thread starts at the top"),
+		pytest.param("z_arm_do_syscall", 8, id="a system call enters two words below it"),
+	],
+)
+def test_where_each_path_on_a_privileged_stack_starts_on_qemu(
+	zephyr_fixtures: Path, function: str, below_top: int
+) -> None:
+	stack_pointer, start = zephyr_values(
+		ZephyrMachine.MPS2_AN385,
+		zephyr_fixtures / "userspace" / "zephyr" / "zephyr.elf",
+		f"*{function}",
+		("$sp", "_kernel.cpus[0].current->arch.priv_stack_start"),
+	)
+	assert start + 1024 - stack_pointer == below_top
+
+
+@pytest.mark.image
+def test_cli_stack_reports_the_privileged_stacks_from_the_system_call_entry(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "userspace"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="priv_stacks")
+	lines = capsys.readouterr().out.splitlines()
+	assert (
+		"stack reservation: 8 bytes, exception frame: 36 bytes, stack: 1024 bytes)" in lines[1],
+		lines[2:4],
+		[line.split(" = ")[0] for line in lines[-2:]],
+	) == (
+		True,
+		[
+			"priv_stacks +0 = 0 bytes",
+			"z_arm_do_syscall +24 = 24 bytes via system call (measured, recursion)",
+		],
+		["(stack reservation) +8", "(exception frame) +36"],
+	)
+
+
+@pytest.mark.image
+def test_the_syscall_dispatch_needs_a_read_only_table_that_holds_only_functions(
+	userspace_program: Program,
+) -> None:
+	(table,) = (
+		data_object
+		for data_object in userspace_program.objects.values()
+		if data_object.name == "_k_syscall_table"
+	)
+	section = max(start for start in userspace_program.sections if start <= table.address)
+	assert [
+		"z_arm_do_syscall"
+		in {dispatch.function for dispatch in rtos_model(program, RtosChoice.AUTO).dispatches}
+		for program in (
+			replace(
+				userspace_program,
+				sections={
+					**userspace_program.sections,
+					section: replace(userspace_program.sections[section], writable=True),
+				},
+			),
+			replace(
+				userspace_program,
+				functions={
+					address: function
+					for address, function in userspace_program.functions.items()
+					if function.name != "handler_bad_syscall"
+				},
+			),
+		)
+	] == [False, False]
 
 
 @pytest.mark.parametrize(
@@ -456,15 +588,12 @@ def test_each_userspace_thread_starts_its_stack_reservation_below_its_stack_top_
 def test_zephyr_writes_the_stack_sentinel_in_the_lowest_word_of_a_threads_stack_on_qemu(
 	zephyr_fixtures: Path,
 ) -> None:
-	assert (
-		zephyr_word(
-			ZephyrMachine.MPS3_AN536,
-			zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
-			"thread_b_entry_point",
-			"&_k_thread_stack_thread_b",
-		)
-		== 0xF0F0F0F0
-	)
+	assert zephyr_values(
+		ZephyrMachine.MPS3_AN536,
+		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
+		"thread_b_entry_point",
+		("*(unsigned int *)&_k_thread_stack_thread_b",),
+	) == (0xF0F0F0F0,)
 
 
 @pytest.mark.image

@@ -33,6 +33,7 @@ from dynamic_call_tree_resolution.cli.measures import (
 	exception_priority_levels,
 	image_function_names,
 	own_thread_graphs,
+	privileged_graph,
 	register_callers,
 	thread_graph,
 	unrecorded_sites,
@@ -173,18 +174,25 @@ def expand_from_elf(
 		(*in_image_edges, *binary, *register.edges),
 		(*artifacts.frames, *register.frames),
 	)
+	privileged = privileged_graph(image, model)
 	code = code_measures(
 		image,
 		measure,
-		(*expanded, *binary, *threads.edges),
-		(*artifacts.frames, *threads.frames, *register.frames),
+		(*expanded, *binary, *threads.edges, *privileged.edges),
+		(*artifacts.frames, *threads.frames, *privileged.frames, *register.frames),
 		hardware_roots | frozenset(exceptions.values()),
 		frozenset(),
 	)
 	return Expansion(
-		expanded=(*expanded, *binary, *code.edges, *threads.edges),
-		in_image_edges=(*in_image_edges, *unrecorded, *threads.edges),
-		frames=(*artifacts.frames, *threads.frames, *register.frames, *code.frames),
+		expanded=(*expanded, *binary, *code.edges, *threads.edges, *privileged.edges),
+		in_image_edges=(*in_image_edges, *unrecorded, *threads.edges, *privileged.edges),
+		frames=(
+			*artifacts.frames,
+			*threads.frames,
+			*privileged.frames,
+			*register.frames,
+			*code.frames,
+		),
 		threads=frozenset(thread.name for thread in model.threads)
 		| frozenset(thread.name for thread in model.system_threads),
 		hardware_roots=hardware_roots,

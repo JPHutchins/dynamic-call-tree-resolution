@@ -31,6 +31,8 @@ class EdgeKind(StrEnum):
 	DISPATCH = "indirect: dispatch"
 	THREAD = "thread record"
 	SYSTEM_THREAD = "system thread"
+	SYSTEM_CALL = "system call"
+	USER_START = "user thread start"
 	BINARY = "binary"
 
 

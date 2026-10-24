@@ -25,6 +25,7 @@ from dynamic_call_tree_resolution.linker import (
 from dynamic_call_tree_resolution.loader import (
 	defined_function_names,
 )
+from dynamic_call_tree_resolution.model import PrivilegedStack
 from dynamic_call_tree_resolution.rtos.zephyr import NO_KCONFIG, Kconfig, kconfig, priority_levels
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
@@ -39,6 +40,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	thread_edges,
 	thread_frames,
 )
+from dynamic_call_tree_resolution.stack_usage import StackUsage
 from dynamic_call_tree_resolution.vsa.abi import normalized
 from dynamic_call_tree_resolution.vsa.frames import (
 	CodeMeasure,
@@ -64,7 +66,6 @@ if TYPE_CHECKING:
 		SystemThread,
 		ThreadRoot,
 	)
-	from dynamic_call_tree_resolution.stack_usage import StackUsage
 
 
 class _CodeMeasures(Struct):
@@ -218,6 +219,30 @@ def thread_graph(
 			return _ThreadGraph(
 				edges=thread_edges(edges, trampoline, entries_by_thread),
 				frames=thread_frames(frames, trampoline, entries_by_thread),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def privileged_graph(image: Image, model: RtosModel) -> _ThreadGraph:
+	match model.privileged_stack:
+		case None:
+			return _ThreadGraph(edges=(), frames=())
+		case PrivilegedStack() as stack:
+			return _ThreadGraph(
+				edges=(
+					CallEdge(
+						caller=stack.name,
+						callee=frame_key(stack_name(image.program, image.names, stack.system_call)),
+						kind=EdgeKind.SYSTEM_CALL,
+					),
+					CallEdge(
+						caller=stack.name,
+						callee=frame_key(stack_name(image.program, image.names, stack.user_start)),
+						kind=EdgeKind.USER_START,
+					),
+				),
+				frames=(StackUsage(function=stack.name, bytes=0, bounded=True),),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)

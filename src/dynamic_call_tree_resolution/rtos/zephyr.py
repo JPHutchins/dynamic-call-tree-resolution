@@ -18,6 +18,7 @@ from dynamic_call_tree_resolution.model import (
 	EmbeddedStructMember,
 	InterruptStack,
 	Machine,
+	PrivilegedStack,
 	RtosModel,
 	SystemThread,
 	ThreadCreation,
@@ -78,9 +79,14 @@ _SYSTEM_THREADS: Final = (
 )
 _INTERRUPT_STACK: Final = "z_interrupt_stacks"
 _INTERRUPT_STACK_SIZE: Final = "CONFIG_ISR_STACK_SIZE"
+_PRIVILEGED_STACKS: Final = "priv_stacks"
+_PRIVILEGED_STACK_SIZE: Final = "CONFIG_PRIVILEGED_STACK_SIZE"
+_SYSCALL_ENTRY: Final = "z_arm_do_syscall"
+_USER_START: Final = "arch_user_mode_enter"
+_SYSCALL_SAVED_WORDS: Final = 2
 
 
-class _DispatchSpec(Struct):
+class _SectionDispatch(Struct):
 	"""A function that calls through a member of each entry of a linker-built table."""
 
 	function: str
@@ -91,21 +97,31 @@ class _DispatchSpec(Struct):
 	end_label: str
 
 
-_DISPATCHES: Final = (
-	_DispatchSpec(
+class _ArrayDispatch(Struct):
+	"""A function that calls through an element of an array of function pointers."""
+
+	function: str
+	array: str
+
+
+type _DispatchSpec = _SectionDispatch | _ArrayDispatch
+
+_DISPATCHES: Final[tuple[_DispatchSpec, ...]] = (
+	_SectionDispatch(
 		function="z_sys_init_run_level",
 		type_name="struct init_entry",
 		member=("init_fn",),
 		start_label="__init_start",
 		end_label="__init_end",
 	),
-	_DispatchSpec(
+	_SectionDispatch(
 		function="do_device_init",
 		type_name="struct device",
 		member=("ops", "init"),
 		start_label="_device_list_start",
 		end_label="_device_list_end",
 	),
+	_ArrayDispatch(function="z_arm_do_syscall", array="_k_syscall_table"),
 )
 _KCONFIG_OPTION: Final = re.compile(r"^(?P<option>CONFIG_\w+)=(?P<value>.*)$", re.MULTILINE)
 _KCONFIG_INTEGER: Final = re.compile(r"0x[0-9a-fA-F]+|[0-9]+")
@@ -214,6 +230,9 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 		interrupt_stack=_interrupt_stack(
 			program, _declared(options, _integer(options, _INTERRUPT_STACK_SIZE))
 		),
+		privileged_stack=_privileged_stack(
+			program, _declared(options, _integer(options, _PRIVILEGED_STACK_SIZE))
+		),
 		dispatches=tuple(
 			dispatch for spec in _DISPATCHES if (dispatch := _dispatch(program, spec)) is not None
 		),
@@ -232,6 +251,16 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 
 
 def _dispatch(program: Program, spec: _DispatchSpec) -> Dispatch | None:
+	match spec:
+		case _SectionDispatch():
+			return _section_dispatch(program, spec)
+		case _ArrayDispatch():
+			return _array_dispatch(program, spec)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _section_dispatch(program: Program, spec: _SectionDispatch) -> Dispatch | None:
 	entries = tuple(
 		data_object
 		for data_object in program.objects.values()
@@ -260,6 +289,31 @@ def _dispatch(program: Program, spec: _DispatchSpec) -> Dispatch | None:
 			for target in (pointer_at(program, Address(entry.address + offset)),)
 			if target is not None and target in program.functions
 		),
+	)
+
+
+def _array_dispatch(program: Program, spec: _ArrayDispatch) -> Dispatch | None:
+	array = next(
+		(data_object for data_object in program.objects.values() if data_object.name == spec.array),
+		None,
+	)
+	if (
+		array is None
+		or spec.function not in program.symbol_addresses
+		or in_writable_memory(program, array.address)
+	):
+		return None
+	slots = tuple(
+		pointer_at(program, Address(array.address + offset))
+		for offset in range(0, array.size, program.pointer_size)
+	)
+	return (
+		Dispatch(
+			function=spec.function,
+			targets=frozenset(target for target in slots if target is not None),
+		)
+		if slots and all(target is not None and target in program.functions for target in slots)
+		else None
 	)
 
 
@@ -305,6 +359,36 @@ def _interrupt_stack(program: Program, stack_size: int | None) -> InterruptStack
 			return None
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _privileged_stack(program: Program, stack_size: int | None) -> PrivilegedStack | None:
+	"""Where an M-profile core starts a user thread and runs its system calls.
+
+	The SVC handler leaves the caller's stack pointer and return address at the top.
+	"""
+	match (
+		program.arm_core,
+		_addresses_of(program, _SYSCALL_ENTRY),
+		_addresses_of(program, _USER_START),
+	):
+		case ArmCore(profile=ArmProfile.MICROCONTROLLER), (system_call,), (user_start,) if any(
+			data_object.name == _PRIVILEGED_STACKS for data_object in program.objects.values()
+		):
+			return PrivilegedStack(
+				name=_PRIVILEGED_STACKS,
+				system_call=system_call,
+				user_start=user_start,
+				saved=_SYSCALL_SAVED_WORDS * program.pointer_size,
+				stack_size=stack_size,
+			)
+		case _:
+			return None
+
+
+def _addresses_of(program: Program, name: str) -> tuple[Address, ...]:
+	return tuple(
+		address for address, function in program.functions.items() if function.name == name
+	)
 
 
 def priority_levels(devicetree: str) -> int | None:

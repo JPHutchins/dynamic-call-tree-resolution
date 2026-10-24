@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
 
 	from dynamic_call_tree_resolution.callgraph import CallEdge
-	from dynamic_call_tree_resolution.model import RtosModel
+	from dynamic_call_tree_resolution.model import RtosModel, Uncounted
 
 
 def worst_case_depths(
@@ -72,7 +72,12 @@ def thread_reports(
 def _stack_sizes(rtos: RtosModel) -> Mapping[str, int]:
 	return {
 		stack.name: stack.stack_size
-		for stack in (*rtos.threads, *rtos.system_threads, rtos.interrupt_stack)
+		for stack in (
+			*rtos.threads,
+			*rtos.system_threads,
+			rtos.interrupt_stack,
+			rtos.privileged_stack,
+		)
 		if stack is not None and stack.stack_size is not None
 	}
 
@@ -82,29 +87,59 @@ def _thread_report(
 ) -> StackReport:
 	match own_graphs.get(report.entry):
 		case StackGraph() as own:
-			return _on_thread_stack(root_report(own, report.entry), rtos)
+			return _on_stack(root_report(own, report.entry), _thread_additions(rtos))
 		case None if any(thread.name == report.entry for thread in rtos.system_threads):
-			return _on_thread_stack(report, rtos)
+			return _on_stack(report, _thread_additions(rtos))
+		case None if (
+			rtos.privileged_stack is not None and report.entry == rtos.privileged_stack.name
+		):
+			return _on_stack(
+				report,
+				_Additions(
+					reservation=rtos.privileged_stack.saved,
+					exception_frame=rtos.exception_frame,
+					sentinel=0,
+					not_counted=rtos.not_counted,
+				),
+			)
 		case None:
 			return report
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
+class _Additions(Struct):
+	"""What a stack holds beyond its entry's deepest path."""
+
+	reservation: int
+	exception_frame: int
+	sentinel: int
+	not_counted: frozenset[Uncounted]
+
+
+def _thread_additions(rtos: RtosModel) -> _Additions:
+	return _Additions(
+		reservation=rtos.stack_reservation,
+		exception_frame=rtos.exception_frame,
+		sentinel=rtos.stack_sentinel,
+		not_counted=rtos.not_counted,
+	)
+
+
+def _on_stack(report: StackReport, additions: _Additions) -> StackReport:
 	match report.bound:
-		case Bounded(bytes=depth) if not rtos.not_counted:
+		case Bounded(bytes=depth) if not additions.not_counted:
 			return replace(
 				report,
 				bound=replace(
 					report.bound,
 					bytes=depth
-					+ rtos.stack_reservation
-					+ rtos.exception_frame
-					+ rtos.stack_sentinel,
-					stack_reservation=rtos.stack_reservation,
-					exception_frame=rtos.exception_frame,
-					stack_sentinel=rtos.stack_sentinel,
+					+ additions.reservation
+					+ additions.exception_frame
+					+ additions.sentinel,
+					stack_reservation=additions.reservation,
+					exception_frame=additions.exception_frame,
+					stack_sentinel=additions.sentinel,
 				),
 			)
 		case Bounded(bytes=depth) as bound:
@@ -112,23 +147,23 @@ def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
 				report,
 				bound=Unbounded(
 					at_least=depth
-					+ rtos.stack_reservation
-					+ rtos.exception_frame
-					+ rtos.stack_sentinel,
+					+ additions.reservation
+					+ additions.exception_frame
+					+ additions.sentinel,
 					recursion=frozenset(),
 					unmeasured=frozenset(),
 					dynamic=frozenset(),
 					unresolved=frozenset(),
 					measured=bound.measured,
-					stack_reservation=rtos.stack_reservation,
-					exception_frame=rtos.exception_frame,
-					stack_sentinel=rtos.stack_sentinel,
+					stack_reservation=additions.reservation,
+					exception_frame=additions.exception_frame,
+					stack_sentinel=additions.sentinel,
 					assumed_no_recursion=bound.assumed_no_recursion,
 					narrowed_by_field=bound.narrowed_by_field,
 					narrowed_by_signature=bound.narrowed_by_signature,
 					assumed_unwritten=bound.assumed_unwritten,
 					assumed_frames=bound.assumed_frames,
-					not_counted=rtos.not_counted,
+					not_counted=additions.not_counted,
 				),
 			)
 		case Unbounded(at_least=at_least):
@@ -137,13 +172,13 @@ def _on_thread_stack(report: StackReport, rtos: RtosModel) -> StackReport:
 				bound=replace(
 					report.bound,
 					at_least=at_least
-					+ rtos.stack_reservation
-					+ rtos.exception_frame
-					+ rtos.stack_sentinel,
-					stack_reservation=rtos.stack_reservation,
-					exception_frame=rtos.exception_frame,
-					stack_sentinel=rtos.stack_sentinel,
-					not_counted=rtos.not_counted,
+					+ additions.reservation
+					+ additions.exception_frame
+					+ additions.sentinel,
+					stack_reservation=additions.reservation,
+					exception_frame=additions.exception_frame,
+					stack_sentinel=additions.sentinel,
+					not_counted=additions.not_counted,
 				),
 			)
 		case _ as unreachable:

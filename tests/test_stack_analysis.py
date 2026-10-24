@@ -31,7 +31,13 @@ from dynamic_call_tree_resolution import (
 	stack_reports,
 	worst_case_depths,
 )
-from dynamic_call_tree_resolution.model import Address, RtosModel, SystemThread, Uncounted
+from dynamic_call_tree_resolution.model import (
+	Address,
+	PrivilegedStack,
+	RtosModel,
+	SystemThread,
+	Uncounted,
+)
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
 	NO_CALLEE,
@@ -210,6 +216,47 @@ def test_a_threads_row_bounds_only_from_below_while_the_rtos_model_leaves_out_wh
 			),
 		),
 		StackReport(entry="isr", bound=Bounded(bytes=24)),
+	)
+
+
+def test_a_privileged_stacks_row_adds_what_the_system_call_keeps_and_not_a_threads_additions() -> (
+	None
+):
+	assert thread_reports(
+		(StackReport(entry="privileged", bound=Bounded(bytes=24)),),
+		{},
+		RtosModel(
+			name="test",
+			evidence=(),
+			threads=(),
+			trampoline="trampoline",
+			stack_reservation=16,
+			exception_frame=36,
+			stack_sentinel=4,
+			privileged_stack=PrivilegedStack(
+				name="privileged",
+				system_call=Address(0x300),
+				user_start=Address(0x400),
+				saved=8,
+				stack_size=1024,
+			),
+			not_counted=frozenset({Uncounted.SWITCH_FRAME}),
+		),
+	) == (
+		StackReport(
+			entry="privileged",
+			bound=Unbounded(
+				at_least=8 + 24 + 36,
+				recursion=frozenset(),
+				unmeasured=frozenset(),
+				dynamic=frozenset(),
+				unresolved=frozenset(),
+				stack_reservation=8,
+				exception_frame=36,
+				not_counted=frozenset({Uncounted.SWITCH_FRAME}),
+			),
+			stack_size=1024,
+		),
 	)
 
 

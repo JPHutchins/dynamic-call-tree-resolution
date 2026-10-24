@@ -597,6 +597,11 @@ contradicts does not hold.
   value-set analysis proves the walk itself ([#185]), `analyze` shows the proven targets
   unmarked, and the stack expansion trusts them as it trusts the dispatch, as long as
   they are among the dispatch's entries.
+- With userspace, the call in `z_arm_do_syscall` goes to every handler in
+  `_k_syscall_table`, with no fallback, also marked `(dispatch, from the RTOS model)`. This
+  assumes that a system call's number indexes that table, as the kernel checks it does,
+  and holds only while the table lies in read-only memory, every element is a function,
+  and the function makes one indirect call. Otherwise the call expands to the fallback ([#151]).
 
 ### Call targets
 
@@ -772,6 +777,15 @@ contradicts does not hold.
   Stack canaries take nothing more on Arm: Zephyr places them in TLS only on x86 and
   RISC-V, and a frame's canary word is part of its `.su` frame. x86 images get neither
   this nor the exception frame ([#151]).
+- With userspace on an M-profile core, the `priv_stacks` row is the stack a user
+  thread starts on and makes its system calls on. Each user thread has its own, of
+  `CONFIG_PRIVILEGED_STACK_SIZE`, and any of them can make any system call, so one row
+  covers them all. Its depth is the deeper of `arch_user_mode_enter`'s, which runs before
+  the thread drops to user mode, and `z_arm_do_syscall`'s, through its dispatch to
+  `_k_syscall_table` (above). It adds the two words the SVC handler keeps at the top for
+  a system call, shown as its stack reservation, which over-counts the start, and one
+  exception frame, since an interrupt during either stacks there. A user thread's own row still counts the direct call each system
+  call wrapper makes when not in user mode, which over-counts ([#151]).
 - Under Zephyr, a thread row also adds the stack sentinel when the build has one: the
   word Zephyr writes at the bottom of each thread's stack and checks for an overflow. The `.config` beside the image says so (`CONFIG_STACK_SENTINEL`), and so does
   the `z_check_stack_sentinel` symbol ([#151]).
