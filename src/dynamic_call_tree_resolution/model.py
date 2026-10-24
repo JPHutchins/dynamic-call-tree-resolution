@@ -362,7 +362,6 @@ class Uncounted(StrEnum):
 	"""What an RTOS can add to a thread's stack that its model does not count."""
 
 	EXCEPTION_FRAMES = "exception frames"
-	USERSPACE_LOCAL_DATA = "userspace-local data"
 	SWITCH_FRAME = "switch frame"
 
 

@@ -762,11 +762,13 @@ contradicts does not hold.
     `.config` beside the image says whether the build has it
     (`CONFIG_THREAD_LOCAL_STORAGE`), and so does the `arch_tls_stack_setup` symbol, when
     link-time optimization has not inlined it;
+  - with userspace, the userspace-local data that holds errno when errno isn't in TLS.
+    The `.config` says so (`CONFIG_THREAD_USERSPACE_LOCAL_DATA`), and so does the
+    `struct _thread_userspace_local_data` type;
   - with `CONFIG_STACK_POINTER_RANDOM`, the largest random offset;
   - rounded up to an 8-byte boundary, or a 4-byte one when the `.config` does not set
     `CONFIG_STACK_ALIGN_DOUBLE_WORD`.
 
-  Zephyr can also take the userspace-local data, which the model leaves out (below).
   Stack canaries take nothing more on Arm: Zephyr places them in TLS only on x86 and
   RISC-V, and a frame's canary word is part of its `.su` frame. x86 images get neither
   this nor the exception frame ([#151]).
@@ -778,8 +780,6 @@ contradicts does not hold.
   thread's stack something the model doesn't count yet:
   - `exception frames`: on an Arm core that isn't M-profile, or one whose build
     attributes name no profile;
-  - `userspace-local data`: `CONFIG_THREAD_USERSPACE_LOCAL_DATA`, or the
-    `struct _thread_userspace_local_data` type;
   - `switch frame`: `CONFIG_USE_SWITCH`, or the `arm_m_exc_exit` or
     `z_arm_context_switch` symbol, since a suspended thread's registers then stay on its
     stack.
@@ -858,7 +858,7 @@ also ships the final link's `gc-sections.txt` next to the ELF, taken from the bu
 ([#150]). `userspace` links without `--emit-relocs`: Zephyr's userspace build reads its
 first link's DWARF with pyelftools, which can't apply the relocations that keeps.
 
-Two testbeds hold what thread rows don't count yet ([#151]): `userspace`, a user
+Two testbeds hold what else Zephyr adds to thread stacks ([#151]): `userspace`, a user
 thread and a supervisor thread on `mps2/an385`, the Cortex-M3 under QEMU with an MPU;
 and `synchronization-r52`, Zephyr's sample on a Cortex-R52 (`mps3/an536/cpu0`) with the
 stack sentinel. A testbed's `EXTRA_ARGS` in `testbeds/builds.json` passes options such as
