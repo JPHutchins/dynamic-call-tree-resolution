@@ -111,52 +111,135 @@ class X86Register(Struct):
 	bits: int
 
 
+class _X86Family(Struct):
+	"""One x86 general-purpose register at each of its widths."""
+
+	wide: int
+	narrow: int
+	word: int
+	bytes: tuple[int, ...]
+
+
 _X86_FAMILIES: Final = (
-	(
-		x86_const.X86_REG_RAX,
-		x86_const.X86_REG_EAX,
-		x86_const.X86_REG_AX,
-		x86_const.X86_REG_AL,
-		x86_const.X86_REG_AH,
+	_X86Family(
+		wide=x86_const.X86_REG_RAX,
+		narrow=x86_const.X86_REG_EAX,
+		word=x86_const.X86_REG_AX,
+		bytes=(
+			x86_const.X86_REG_AL,
+			x86_const.X86_REG_AH,
+		),
 	),
-	(
-		x86_const.X86_REG_RBX,
-		x86_const.X86_REG_EBX,
-		x86_const.X86_REG_BX,
-		x86_const.X86_REG_BL,
-		x86_const.X86_REG_BH,
+	_X86Family(
+		wide=x86_const.X86_REG_RBX,
+		narrow=x86_const.X86_REG_EBX,
+		word=x86_const.X86_REG_BX,
+		bytes=(
+			x86_const.X86_REG_BL,
+			x86_const.X86_REG_BH,
+		),
 	),
-	(
-		x86_const.X86_REG_RCX,
-		x86_const.X86_REG_ECX,
-		x86_const.X86_REG_CX,
-		x86_const.X86_REG_CL,
-		x86_const.X86_REG_CH,
+	_X86Family(
+		wide=x86_const.X86_REG_RCX,
+		narrow=x86_const.X86_REG_ECX,
+		word=x86_const.X86_REG_CX,
+		bytes=(
+			x86_const.X86_REG_CL,
+			x86_const.X86_REG_CH,
+		),
 	),
-	(
-		x86_const.X86_REG_RDX,
-		x86_const.X86_REG_EDX,
-		x86_const.X86_REG_DX,
-		x86_const.X86_REG_DL,
-		x86_const.X86_REG_DH,
+	_X86Family(
+		wide=x86_const.X86_REG_RDX,
+		narrow=x86_const.X86_REG_EDX,
+		word=x86_const.X86_REG_DX,
+		bytes=(
+			x86_const.X86_REG_DL,
+			x86_const.X86_REG_DH,
+		),
 	),
-	(x86_const.X86_REG_RSI, x86_const.X86_REG_ESI, x86_const.X86_REG_SI, x86_const.X86_REG_SIL),
-	(x86_const.X86_REG_RDI, x86_const.X86_REG_EDI, x86_const.X86_REG_DI, x86_const.X86_REG_DIL),
-	(x86_const.X86_REG_RBP, x86_const.X86_REG_EBP, x86_const.X86_REG_BP, x86_const.X86_REG_BPL),
-	(x86_const.X86_REG_RSP, x86_const.X86_REG_ESP, x86_const.X86_REG_SP, x86_const.X86_REG_SPL),
-	(x86_const.X86_REG_R8, x86_const.X86_REG_R8D, x86_const.X86_REG_R8W, x86_const.X86_REG_R8B),
-	(x86_const.X86_REG_R9, x86_const.X86_REG_R9D, x86_const.X86_REG_R9W, x86_const.X86_REG_R9B),
-	(x86_const.X86_REG_R10, x86_const.X86_REG_R10D, x86_const.X86_REG_R10W, x86_const.X86_REG_R10B),
-	(x86_const.X86_REG_R11, x86_const.X86_REG_R11D, x86_const.X86_REG_R11W, x86_const.X86_REG_R11B),
-	(x86_const.X86_REG_R12, x86_const.X86_REG_R12D, x86_const.X86_REG_R12W, x86_const.X86_REG_R12B),
-	(x86_const.X86_REG_R13, x86_const.X86_REG_R13D, x86_const.X86_REG_R13W, x86_const.X86_REG_R13B),
-	(x86_const.X86_REG_R14, x86_const.X86_REG_R14D, x86_const.X86_REG_R14W, x86_const.X86_REG_R14B),
-	(x86_const.X86_REG_R15, x86_const.X86_REG_R15D, x86_const.X86_REG_R15W, x86_const.X86_REG_R15B),
+	_X86Family(
+		wide=x86_const.X86_REG_RSI,
+		narrow=x86_const.X86_REG_ESI,
+		word=x86_const.X86_REG_SI,
+		bytes=(x86_const.X86_REG_SIL,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_RDI,
+		narrow=x86_const.X86_REG_EDI,
+		word=x86_const.X86_REG_DI,
+		bytes=(x86_const.X86_REG_DIL,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_RBP,
+		narrow=x86_const.X86_REG_EBP,
+		word=x86_const.X86_REG_BP,
+		bytes=(x86_const.X86_REG_BPL,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_RSP,
+		narrow=x86_const.X86_REG_ESP,
+		word=x86_const.X86_REG_SP,
+		bytes=(x86_const.X86_REG_SPL,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R8,
+		narrow=x86_const.X86_REG_R8D,
+		word=x86_const.X86_REG_R8W,
+		bytes=(x86_const.X86_REG_R8B,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R9,
+		narrow=x86_const.X86_REG_R9D,
+		word=x86_const.X86_REG_R9W,
+		bytes=(x86_const.X86_REG_R9B,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R10,
+		narrow=x86_const.X86_REG_R10D,
+		word=x86_const.X86_REG_R10W,
+		bytes=(x86_const.X86_REG_R10B,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R11,
+		narrow=x86_const.X86_REG_R11D,
+		word=x86_const.X86_REG_R11W,
+		bytes=(x86_const.X86_REG_R11B,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R12,
+		narrow=x86_const.X86_REG_R12D,
+		word=x86_const.X86_REG_R12W,
+		bytes=(x86_const.X86_REG_R12B,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R13,
+		narrow=x86_const.X86_REG_R13D,
+		word=x86_const.X86_REG_R13W,
+		bytes=(x86_const.X86_REG_R13B,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R14,
+		narrow=x86_const.X86_REG_R14D,
+		word=x86_const.X86_REG_R14W,
+		bytes=(x86_const.X86_REG_R14B,),
+	),
+	_X86Family(
+		wide=x86_const.X86_REG_R15,
+		narrow=x86_const.X86_REG_R15D,
+		word=x86_const.X86_REG_R15W,
+		bytes=(x86_const.X86_REG_R15B,),
+	),
 )
 X86_REGISTERS: Final[Mapping[int, X86Register]] = {
-	register: X86Register(wide=wide, narrow=narrow, bits=bits)
-	for wide, narrow, word, *bytes_ in _X86_FAMILIES
-	for register, bits in ((wide, 64), (narrow, 32), (word, 16), *((byte, 8) for byte in bytes_))
+	register: X86Register(wide=family.wide, narrow=family.narrow, bits=bits)
+	for family in _X86_FAMILIES
+	for bits, registers in {
+		64: (family.wide,),
+		32: (family.narrow,),
+		16: (family.word,),
+		8: family.bytes,
+	}.items()
+	for register in registers
 }
 X86_CALLER_SAVED_64: Final = (
 	x86_const.X86_REG_RAX,

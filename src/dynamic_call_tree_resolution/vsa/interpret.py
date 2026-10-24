@@ -162,10 +162,14 @@ class FunctionResult(Struct):
 	"""Of calls through a site the analysis tracked to known functions."""
 
 
-def block_states(
-	context: Context, blocks: tuple[Block, ...], seed: State
-) -> tuple[Mapping[Address, State], Writes]:
+class BlockStates(Struct):
 	"""The state on entry to each block the seed reaches, and every write on the way."""
+
+	in_states: Mapping[Address, State]
+	writes: Writes
+
+
+def block_states(context: Context, blocks: tuple[Block, ...], seed: State) -> BlockStates:
 	entry = blocks[0].start
 	in_states: dict[Address, State] = {entry: seed}
 	worklist = [entry]
@@ -182,31 +186,40 @@ def block_states(
 			if joined != existing:
 				in_states[edge.successor] = joined
 				worklist.append(edge.successor)
-	return in_states, writes
+	return BlockStates(in_states, writes)
+
+
+class _BlockSite(Struct):
+	"""An indirect call site, with the block it ends."""
+
+	block: Block
+	site: CallSite
 
 
 def analyze_function(
 	context: Context, function: Function, blocks: tuple[Block, ...], seed: State
 ) -> FunctionResult:
-	in_states, writes = block_states(context, blocks, seed)
-	reachable = reachable_blocks(blocks) if len(in_states) < len(blocks) else frozenset[Address]()
+	found = block_states(context, blocks, seed)
+	reachable = (
+		reachable_blocks(blocks) if len(found.in_states) < len(blocks) else frozenset[Address]()
+	)
 	sites = tuple(
-		(block, site)
+		_BlockSite(block, site)
 		for block in blocks
 		if (
 			site := _site_resolution(
-				context, block, function.address, in_states.get(block.start), reachable
+				context, block, function.address, found.in_states.get(block.start), reachable
 			)
 		)
 		is not None
 	)
 	return FunctionResult(
-		sites=tuple(site for _, site in sites),
-		writes=writes,
+		sites=tuple(located.site for located in sites),
+		writes=found.writes,
 		observations=tuple(
 			observation
 			for block in blocks
-			if (state := in_states.get(block.start)) is not None
+			if (state := found.in_states.get(block.start)) is not None
 			and (
 				observation := _call_observation(
 					context, normalized(function.address, context.program.machine), block, state
@@ -216,9 +229,9 @@ def analyze_function(
 		),
 		indirect_observations=tuple(
 			observation
-			for block, site in sites
-			if (state := in_states.get(block.start)) is not None
-			for observation in _indirect_observations(context, block, site, state)
+			for located in sites
+			if (state := found.in_states.get(located.block.start)) is not None
+			for observation in _indirect_observations(context, located.block, located.site, state)
 		),
 	)
 

@@ -106,21 +106,21 @@ def _apply_unconditional(
 		)
 	if instruction_id in ARM_TRACKED_LOAD_WIDTHS:
 		load_destination, load_source = _arm_operands(instruction)[0], instruction.operands[1]
-		value, origin = loaded(
+		word = loaded(
 			context, state, instruction, load_source, ARM_TRACKED_LOAD_WIDTHS[instruction_id]
 		)
 		if len(instruction.operands) == 3:
 			offset = instruction.operands[2]
 			updated = _advance(state, load_source.mem.base, offset.imm)
-			return set_loaded(updated, load_destination.reg, value, origin)
+			return set_loaded(updated, load_destination.reg, word.value, word.origin)
 		if instruction.writeback and load_source.mem.base != load_destination.reg:
 			return set_loaded(
 				_advance(state, load_source.mem.base, load_source.mem.disp),
 				load_destination.reg,
-				value,
-				origin,
+				word.value,
+				word.origin,
 			)
-		return set_loaded(state, load_destination.reg, value, origin)
+		return set_loaded(state, load_destination.reg, word.value, word.origin)
 	if instruction_id == arm_const.ARM_INS_LDRD:
 		return _arm_load_pair(context, instruction, state)
 	if instruction_id in ARM_STORE_WIDTHS:
@@ -227,10 +227,13 @@ def _arm_load_pair(context: Context, instruction: CsInsn, state: State) -> State
 	base = source.mem.base
 	if base == arm_const.ARM_REG_PC:
 		return top_written(instruction, state)
+	first_word = loaded(context, state, instruction, source, 4)
+	second_word = loaded(context, _advance(state, base, 4), instruction, source, 4)
 	pair = set_loaded(
-		set_loaded(state, first.reg, *loaded(context, state, instruction, source, 4)),
+		set_loaded(state, first.reg, first_word.value, first_word.origin),
 		second.reg,
-		*loaded(context, _advance(state, base, 4), instruction, source, 4),
+		second_word.value,
+		second_word.origin,
 	)
 	if base in (first.reg, second.reg):
 		return pair

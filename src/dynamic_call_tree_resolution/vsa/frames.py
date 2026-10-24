@@ -42,11 +42,18 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.vsa.state import State
 
 
+class _Call(Struct):
+	"""A direct call, with the stack depth at it."""
+
+	depth: int
+	callee: Address
+
+
 class _Own(Struct):
 	"""How deep a function's own code takes the stack, and how deep it is at each call."""
 
 	depth: int
-	calls: tuple[tuple[int, Address], ...]
+	calls: tuple[_Call, ...]
 	register_calls: int
 	"""Calls through a register, whose callees the code does not name."""
 
@@ -114,7 +121,7 @@ def code_depths(measure: CodeMeasure, starts: frozenset[Address]) -> Mapping[Add
 def own_frames(measure: CodeMeasure, starts: frozenset[Address]) -> Mapping[Address, OwnCode]:
 	"""Each function's own frame, where its code can say even though a callee is unnamed."""
 	return {
-		start: OwnCode(bytes=own.depth, callees=frozenset(callee for _, callee in own.calls))
+		start: OwnCode(bytes=own.depth, callees=frozenset(call.callee for call in own.calls))
 		for start in starts
 		for own in (measure.own(start),)
 		if own is not None
@@ -142,7 +149,7 @@ def _worst(
 def _deepest(
 	measure: Callable[[Address], _Own | None],
 	deepest: int,
-	calls: tuple[tuple[int, Address], ...],
+	calls: tuple[_Call, ...],
 	visiting: frozenset[Address],
 ) -> int | None:
 	return deepest if not calls else _through(measure, deepest, calls[0], calls[1:], visiting)
@@ -151,16 +158,15 @@ def _deepest(
 def _through(
 	measure: Callable[[Address], _Own | None],
 	deepest: int,
-	call: tuple[int, Address],
-	rest: tuple[tuple[int, Address], ...],
+	call: _Call,
+	rest: tuple[_Call, ...],
 	visiting: frozenset[Address],
 ) -> int | None:
-	at, callee = call
-	match None if callee in visiting else _worst(measure, callee, visiting):
+	match None if call.callee in visiting else _worst(measure, call.callee, visiting):
 		case None:
 			return None
 		case callee_depth:
-			return _deepest(measure, max(deepest, at + callee_depth), rest, visiting)
+			return _deepest(measure, max(deepest, call.depth + callee_depth), rest, visiting)
 
 
 def _own(
@@ -203,21 +209,30 @@ def _measured_blocks(
 		)
 		else _measured(
 			program,
-			_steps(context, blocks, block_states(context, blocks, top_seed(program.machine))[0]),
+			_steps(
+				context, blocks, block_states(context, blocks, top_seed(program.machine)).in_states
+			),
 			addresses,
 			starts,
 		)
 	)
 
 
+class _Step(Struct):
+	"""An instruction, with the state before it."""
+
+	instruction: CsInsn
+	state: State
+
+
 def _steps(
 	context: Context, blocks: tuple[Block, ...], states: Mapping[Address, State]
-) -> tuple[tuple[CsInsn, State], ...]:
+) -> tuple[_Step, ...]:
 	return tuple(
-		step
+		_Step(instruction, state)
 		for block in blocks
 		if block.start in states
-		for step in zip(
+		for instruction, state in zip(
 			block.instructions,
 			accumulate(
 				block.instructions[:-1], partial(transfer, context), initial=states[block.start]
@@ -229,17 +244,17 @@ def _steps(
 
 def _measured(
 	program: Program,
-	steps: tuple[tuple[CsInsn, State], ...],
+	steps: tuple[_Step, ...],
 	addresses: frozenset[int],
 	starts: AbstractSet[Address],
 ) -> _Own | None:
-	offsets = tuple(state.sp_offsets.get(SP_REGISTERS[program.machine][0]) for _, state in steps)
-	exits = tuple(_exit(program, instruction, addresses, starts) for instruction, _ in steps)
+	offsets = tuple(step.state.sp_offsets.get(SP_REGISTERS[program.machine][0]) for step in steps)
+	exits = tuple(_exit(program, step.instruction, addresses, starts) for step in steps)
 	return (
 		_Own(
 			depth=max((_depth(offset) for offset in offsets if offset is not None), default=0),
 			calls=tuple(
-				(_depth(offset), callee)
+				_Call(depth=_depth(offset), callee=callee)
 				for offset, exit_ in zip(offsets, exits, strict=True)
 				if offset is not None
 				for callee in (_called(exit_),)
