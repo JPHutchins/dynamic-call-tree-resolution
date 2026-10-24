@@ -597,6 +597,11 @@ contradicts does not hold.
   value-set analysis proves the walk itself ([#185]), `analyze` shows the proven targets
   unmarked, and the stack expansion trusts them as it trusts the dispatch, as long as
   they are among the dispatch's entries.
+- With userspace, the call in `z_arm_do_syscall` goes to every handler in
+  `_k_syscall_table`, with no fallback, also marked `(dispatch, from the RTOS model)`. This
+  assumes that a system call's number indexes that table, as the kernel checks it does,
+  and holds only while the table lies in read-only memory, every element is a function,
+  and the function makes one indirect call. Otherwise the call expands to the fallback ([#151]).
 
 ### Call targets
 

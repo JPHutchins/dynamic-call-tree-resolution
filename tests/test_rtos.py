@@ -201,6 +201,64 @@ def test_zephyr_is_detected_in_hello_world_which_defines_no_static_thread(
 	)
 
 
+@pytest.fixture(scope="module")
+def userspace_program(zephyr_fixtures: Path) -> Program:
+	return load(zephyr_fixtures / "userspace" / "zephyr" / "zephyr.elf")
+
+
+@pytest.mark.image
+def test_zephyrs_syscall_dispatch_goes_to_each_handler_its_table_holds(
+	userspace_program: Program,
+) -> None:
+	model = rtos_model(userspace_program, RtosChoice.AUTO)
+	(targets,) = (
+		dispatch.targets for dispatch in model.dispatches if dispatch.function == "z_arm_do_syscall"
+	)
+	names = {userspace_program.functions[target].name for target in targets}
+	assert (
+		len(names),
+		{"z_mrsh_k_sem_take", "z_mrsh_k_sem_give", "handler_bad_syscall"} <= names,
+		[
+			site.dispatch
+			for site in resolve(userspace_program, model).sites
+			if userspace_program.functions[site.caller_address].name == "z_arm_do_syscall"
+		],
+	) == (89, True, [targets])
+
+
+@pytest.mark.image
+def test_the_syscall_dispatch_needs_a_read_only_table_that_holds_only_functions(
+	userspace_program: Program,
+) -> None:
+	(table,) = (
+		data_object
+		for data_object in userspace_program.objects.values()
+		if data_object.name == "_k_syscall_table"
+	)
+	section = max(start for start in userspace_program.sections if start <= table.address)
+	assert [
+		"z_arm_do_syscall"
+		in {dispatch.function for dispatch in rtos_model(program, RtosChoice.AUTO).dispatches}
+		for program in (
+			replace(
+				userspace_program,
+				sections={
+					**userspace_program.sections,
+					section: replace(userspace_program.sections[section], writable=True),
+				},
+			),
+			replace(
+				userspace_program,
+				functions={
+					address: function
+					for address, function in userspace_program.functions.items()
+					if function.name != "handler_bad_syscall"
+				},
+			),
+		)
+	] == [False, False]
+
+
 @pytest.mark.parametrize(
 	("name", "sys_init", "device_init"),
 	[
