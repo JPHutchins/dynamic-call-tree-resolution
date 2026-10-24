@@ -534,9 +534,9 @@ def test_a_call_to_a_function_that_only_loops_has_no_fall_through(
 	image: Image, outcomes: Mapping[Image, Outcome]
 ) -> None:
 	assert {
-		function.name
-		for function, blocks in control_flow_graphs(load(outcomes[image].elf)).values()
-		for block in blocks
+		graph.function.name
+		for graph in control_flow_graphs(load(outcomes[image].elf)).values()
+		for block in graph.blocks
 		if isinstance(block.condition, CallsNoReturn)
 	} >= {"run"}
 

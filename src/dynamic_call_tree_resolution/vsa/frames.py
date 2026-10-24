@@ -19,6 +19,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.cfg import (
+	FunctionGraph,
 	branch_target,
 	call_target,
 	function_graph,
@@ -181,7 +182,7 @@ def _own(
 	):
 		case None:
 			return None
-		case (_, blocks):
+		case FunctionGraph(blocks=blocks):
 			return _measured_blocks(program, context, blocks, functions.keys())
 		case _ as unreachable:
 			assert_never(unreachable)

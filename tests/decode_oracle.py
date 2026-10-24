@@ -60,7 +60,7 @@ def decoded(elf: Path) -> Decoded:
 		program=program,
 		listing=_listing(elf),
 		blocks=tuple(
-			block for _, blocks in control_flow_graphs(program).values() for block in blocks
+			block for graph in control_flow_graphs(program).values() for block in graph.blocks
 		),
 		sites=frozenset(
 			site.site_address
