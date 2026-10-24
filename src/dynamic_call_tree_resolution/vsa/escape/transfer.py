@@ -42,6 +42,7 @@ from dynamic_call_tree_resolution.vsa.escape.values import (
 	NOTHING,
 	Held,
 	Registers,
+	RegisterValue,
 	size,
 	union,
 	unknown_offset,
@@ -122,15 +123,22 @@ class Effects(Struct):
 _NO_EFFECTS: Final = Effects()
 
 
+class Step(Struct):
+	"""The registers after an instruction, and what it does to the objects."""
+
+	registers: Registers
+	effects: Effects
+
+
 def step(
 	image: Image,
 	scope: Scope,
 	instruction: CsInsn,
 	registers: Registers,
 	successors: tuple[Address, ...],
-) -> tuple[Registers, Effects]:
+) -> Step:
 	if is_data(instruction) or instruction.id == arm_const.ARM_INS_IT:
-		return registers, _NO_EFFECTS
+		return Step(registers, _NO_EFFECTS)
 	operands = operands_of(instruction)
 	written = frozenset(instruction.regs_access()[1])
 	control = _control(image, scope, instruction, operands, written, successors)
@@ -144,25 +152,30 @@ def step(
 		},
 		written | (frozenset(ARM_CALLER_SAVED) if isinstance(control, _Call) else frozenset[int]()),
 	)
-	return after, Effects(
-		escaped=union(
-			*(
-				registers.held.get(register, NOTHING)
-				for register in _escaping(image, instruction, operands, control, fill, registers)
-			)
+	return Step(
+		after,
+		Effects(
+			escaped=union(
+				*(
+					registers.held.get(register, NOTHING)
+					for register in _escaping(
+						image, instruction, operands, control, fill, registers
+					)
+				)
+			),
+			filled=_walked(image, control, fill, registers),
+			overwritten=frozenset() if fill is None else fill,
+			site=Address(instruction.address) if instruction.id in PLACED_STORES else None,
+			store=store_target(instruction, operands, registers),
+			literal=literal_address(image.program, instruction, operands),
 		),
-		filled=_walked(image, control, fill, registers),
-		overwritten=frozenset() if fill is None else fill,
-		site=Address(instruction.address) if instruction.id in PLACED_STORES else None,
-		store=store_target(instruction, operands, registers),
-		literal=literal_address(image.program, instruction, operands),
 	)
 
 
 def _after(
 	instruction: CsInsn,
 	registers: Registers,
-	new: Mapping[int, tuple[Held, int | None]],
+	new: Mapping[int, RegisterValue],
 	written: frozenset[int],
 ) -> Registers:
 	"""The registers after the instruction; a predicated one may not run, so it only adds."""
@@ -177,9 +190,11 @@ def _after(
 			**kept,
 			**{
 				register: value
-				for register, value in (
-					(register, union(kept.get(register, NOTHING), value) if predicated else value)
-					for register, (value, _) in new.items()
+				for register, written in new.items()
+				for value in (
+					union(kept.get(register, NOTHING), written.held)
+					if predicated
+					else written.held,
 				)
 				if size(value)
 			},
@@ -189,12 +204,16 @@ def _after(
 				register: value
 				for register, value in registers.constants.items()
 				if register not in written
-				or (predicated and register in new and new[register][1] == value)
+				or (predicated and register in new and new[register].constant == value)
 			},
 			**(
 				{}
 				if predicated
-				else {register: value for register, (_, value) in new.items() if value is not None}
+				else {
+					register: written.constant
+					for register, written in new.items()
+					if written.constant is not None
+				}
 			),
 		},
 	)
