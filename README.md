@@ -764,8 +764,15 @@ contradicts does not hold.
   priorities, so it over-counts where priorities keep interrupts from nesting, as the
   main stack's row does (below). With `CONFIG_DYNAMIC_INTERRUPTS`, or a table that is
   writable or missing, the count is unknown, and the rows keep one frame and the mark
-  `not counted: exception frames`. The handlers run on other stacks, which have no rows
-  yet ([#151]).
+  `not counted: exception frames`. The handlers run on other stacks (below) ([#151]).
+- Under Zephyr on an A- or R-profile core, each processor mode's stack has a row of its
+  own, declared at its `CONFIG_ARMV7_*_STACK_SIZE`: `z_arm_sys_stack` holds the reset
+  path, up to `z_prep_c`; `z_arm_fiq_stack` holds `z_arm_nmi`; and `z_arm_abort_stack`
+  and `z_arm_undef_stack` hold the fault handlers, after the frame the fault's entry
+  stacks there, the same size as an interrupt's. With `CONFIG_EXTRA_EXCEPTION_INFO`, that
+  entry stacks more, and those two rows keep `not counted: exception frames`. A build
+  that switches context on the thread's stack (`CONFIG_USE_SWITCH`) gets none of these
+  rows ([#151]).
 - The main stack's row reads no priorities. It assumes any configurable-priority
   exception can nest at any level, so it over-counts where priorities, priority grouping
   or masking keep exceptions from nesting. Reading the image's priorities is a later,

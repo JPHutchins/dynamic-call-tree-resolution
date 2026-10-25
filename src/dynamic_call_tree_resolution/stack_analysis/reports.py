@@ -77,6 +77,7 @@ def _stack_sizes(rtos: RtosModel) -> Mapping[str, int]:
 			*rtos.system_threads,
 			rtos.interrupt_stack,
 			rtos.privileged_stack,
+			*rtos.mode_stacks,
 		)
 		if stack is not None and stack.stack_size is not None
 	}
@@ -101,6 +102,21 @@ def _thread_report(
 					exception_frames=1,
 					sentinel=0,
 					not_counted=rtos.not_counted,
+				),
+			)
+		case None if (
+			mode_stack := next(
+				(stack for stack in rtos.mode_stacks if stack.name == report.entry), None
+			)
+		) is not None:
+			return _on_stack(
+				report,
+				_Additions(
+					reservation=0,
+					exception_frame=mode_stack.exception_frame,
+					exception_frames=1,
+					sentinel=0,
+					not_counted=mode_stack.not_counted,
 				),
 			)
 		case None:
