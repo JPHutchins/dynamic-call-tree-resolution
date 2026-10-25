@@ -66,14 +66,18 @@ pyright = Task(
 )
 
 typecheck = Parallel(mypy, pyright)
-test = Task("uv run pytest -v -m 'not slow'", agent_format=("--junitxml {report}", "junit"))
+test = Task(
+	"uv run pytest -v -m 'not slow' -n logical --dist loadscope",
+	agent_format=("--junitxml {report}", "junit"),
+)
 test_fast = Task(
-	"uv run pytest -m 'not slow and not image'",
+	"uv run pytest -m 'not slow and not image' -n logical --dist loadscope",
 	agent_format=("--junitxml {report}", "junit"),
 	help="the tests minus those analyzing a Zephyr image from `nix build .#fixtures` (marked image)",
 )
 coverage = Task(
-	"uv run pytest -m 'not slow' --cov --cov-report=term-missing --cov-report=xml",
+	"uv run pytest -m 'not slow' -n logical --dist loadscope --cov --cov-report=term-missing "
+	"--cov-report=xml",
 	agent_format=("--junitxml {report}", "junit"),
 )
 
