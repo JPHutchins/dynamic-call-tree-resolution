@@ -78,6 +78,7 @@ def _stack_sizes(rtos: RtosModel) -> Mapping[str, int]:
 			rtos.interrupt_stack,
 			rtos.privileged_stack,
 			*rtos.mode_stacks,
+			rtos.handler_stack,
 		)
 		if stack is not None and stack.stack_size is not None
 	}

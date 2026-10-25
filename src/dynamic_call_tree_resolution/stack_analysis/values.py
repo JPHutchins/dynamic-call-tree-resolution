@@ -87,10 +87,11 @@ class Unbounded(Struct):
 
 
 class LevelSource(StrEnum):
-	"""Where the most configurable-priority exceptions one nesting chain holds comes from."""
+	"""Where the most nested exceptions or interrupts one chain holds comes from."""
 
 	DEVICETREE = "devicetree"
 	VECTOR_TABLE = "vector table"
+	INTERRUPT_TABLE = "interrupt table"
 
 
 class PriorityLevels(Struct):

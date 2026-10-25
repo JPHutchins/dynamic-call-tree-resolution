@@ -3,7 +3,7 @@
 
 """Expanding a build's indirect calls from its image."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.cli.artifacts import (
 	Artifacts,
 	AssumedUnwritten,
 	Expansion,
+	HandlerNames,
 	Image,
 	build_artifacts,
 	loaded,
@@ -46,7 +47,7 @@ from dynamic_call_tree_resolution.identity import (
 from dynamic_call_tree_resolution.loader import (
 	line_spans,
 )
-from dynamic_call_tree_resolution.model import Address
+from dynamic_call_tree_resolution.model import Address, HandlerStack
 from dynamic_call_tree_resolution.points_to import null_slots, unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	slot_counts,
@@ -226,6 +227,7 @@ def expand_from_elf(
 		dropped=artifacts.dropped,
 		phantom_libcalls=artifacts.phantom_libcalls,
 		assumed_unwritten=_assumed_unwritten(image, model, resolution, assume_unwritten),
+		handlers=_handler_names(image, model.handler_stack),
 	)
 
 
@@ -340,3 +342,30 @@ def _binary_edges(
 			key=call_pair,
 		)
 	)
+
+
+def _handler_names(image: Image, stack: HandlerStack | None) -> HandlerNames | None:
+	match stack:
+		case None:
+			return None
+		case HandlerStack():
+			return HandlerNames(
+				interrupts={
+					interrupt.number: frame_key(
+						stack_name(image.program, image.names, interrupt.handler)
+					)
+					for interrupt in stack.interrupts
+				},
+				spurious={
+					interrupt.number: frame_key(
+						stack_name(image.program, image.names, interrupt.handler)
+					)
+					for interrupt in stack.spurious
+				},
+				wrapper_calls=tuple(
+					frame_key(stack_name(image.program, image.names, call))
+					for call in stack.wrapper_calls
+				),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)

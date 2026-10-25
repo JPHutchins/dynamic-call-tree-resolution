@@ -4,7 +4,7 @@
 """What the image's code adds to a build's call graph and frames."""
 
 from collections import Counter
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
@@ -25,7 +25,7 @@ from dynamic_call_tree_resolution.linker import (
 from dynamic_call_tree_resolution.loader import (
 	defined_function_names,
 )
-from dynamic_call_tree_resolution.model import PrivilegedStack
+from dynamic_call_tree_resolution.model import HandlerStack, PrivilegedStack
 from dynamic_call_tree_resolution.rtos.zephyr import NO_KCONFIG, Kconfig, kconfig, priority_levels
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
@@ -231,15 +231,25 @@ class _StackEntry(Struct):
 	kind: EdgeKind
 
 
+class _StackNode(Struct):
+	"""What starts on a stack that is no thread's, or on a path onto one, and its own frame."""
+
+	entries: tuple[_StackEntry, ...]
+	frame: int = 0
+
+
 def stack_nodes(image: Image, model: RtosModel) -> _ThreadGraph:
-	entries = {
-		**_privileged_entries(model.privileged_stack),
+	nodes = {
+		**_privileged_node(model.privileged_stack),
 		**{
-			stack.name: tuple(
-				_StackEntry(function=entry, kind=EdgeKind.EXCEPTION) for entry in stack.entries
+			stack.name: _StackNode(
+				entries=tuple(
+					_StackEntry(function=entry, kind=EdgeKind.EXCEPTION) for entry in stack.entries
+				)
 			)
 			for stack in model.mode_stacks
 		},
+		**_system_call_node(model.handler_stack),
 	}
 	return _ThreadGraph(
 		edges=tuple(
@@ -248,22 +258,48 @@ def stack_nodes(image: Image, model: RtosModel) -> _ThreadGraph:
 				callee=frame_key(stack_name(image.program, image.names, entry.function)),
 				kind=entry.kind,
 			)
-			for name, stack_entries in entries.items()
-			for entry in stack_entries
+			for name, node in nodes.items()
+			for entry in node.entries
 		),
-		frames=tuple(StackUsage(function=name, bytes=0, bounded=True) for name in entries),
+		frames=tuple(
+			StackUsage(function=name, bytes=node.frame, bounded=True)
+			for name, node in nodes.items()
+		),
 	)
 
 
-def _privileged_entries(stack: PrivilegedStack | None) -> Mapping[str, tuple[_StackEntry, ...]]:
+def _privileged_node(stack: PrivilegedStack | None) -> Mapping[str, _StackNode]:
 	match stack:
 		case None:
 			return {}
 		case PrivilegedStack():
 			return {
-				stack.name: (
-					_StackEntry(function=stack.system_call, kind=EdgeKind.SYSTEM_CALL),
-					_StackEntry(function=stack.user_start, kind=EdgeKind.USER_START),
+				stack.name: _StackNode(
+					entries=(
+						_StackEntry(function=stack.system_call, kind=EdgeKind.SYSTEM_CALL),
+						_StackEntry(function=stack.user_start, kind=EdgeKind.USER_START),
+					)
+				)
+			}
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+SYSTEM_CALL_NODE: Final = "SVC"
+
+
+def _system_call_node(stack: HandlerStack | None) -> Mapping[str, _StackNode]:
+	match stack:
+		case None:
+			return {}
+		case HandlerStack():
+			return {
+				SYSTEM_CALL_NODE: _StackNode(
+					entries=tuple(
+						_StackEntry(function=function, kind=EdgeKind.EXCEPTION)
+						for function in stack.system_calls
+					),
+					frame=stack.system_call_frame,
 				)
 			}
 		case _ as unreachable:

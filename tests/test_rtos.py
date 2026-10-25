@@ -27,6 +27,8 @@ from dynamic_call_tree_resolution.model import (
 	ArmCore,
 	ArmProfile,
 	Dispatch,
+	HandlerStack,
+	Interrupt,
 	InterruptStack,
 	ModeStack,
 	PrivilegedStack,
@@ -716,7 +718,7 @@ def r52_program(zephyr_fixtures: Path) -> Program:
 
 
 @pytest.mark.image
-def test_each_connected_interrupt_can_stack_a_frame_on_an_r_profile_threads_stack(
+def test_each_connected_interrupt_a_spurious_one_and_a_system_call_stack_a_frame_on_a_thread(
 	zephyr_fixtures: Path, r52_program: Program
 ) -> None:
 	assert [
@@ -731,7 +733,7 @@ def test_each_connected_interrupt_can_stack_a_frame_on_an_r_profile_threads_stac
 			),
 			rtos_model(r52_program, RtosChoice.AUTO),
 		)
-	] == [(32 + 200, 6, frozenset()), (32 + 200, 6, frozenset())]
+	] == [(32 + 200, 6 + 1 + 1, frozenset()), (32 + 200, 6 + 1 + 1, frozenset())]
 
 
 @pytest.mark.image
@@ -874,9 +876,9 @@ def test_the_reset_path_and_a_fault_start_where_the_mode_stack_rows_say_on_qemu(
 		ZephyrMachine.MPS3_AN536,
 		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
 		(
-			GdbStop("z_prep_c", ("$sp", "&z_arm_sys_stack")),
+			GdbStop("*z_prep_c", ("$sp", "&z_arm_sys_stack")),
 			GdbStop("thread_b_entry_point", ("$pc = &z_arm_fiq_stack",)),
-			GdbStop("z_arm_fault_prefetch", ("$sp", "&z_arm_abort_stack")),
+			GdbStop("*z_arm_fault_prefetch", ("$sp", "&z_arm_abort_stack")),
 		),
 	)
 	frames = {
@@ -912,6 +914,108 @@ def test_cli_stack_reports_each_r_profile_mode_stack_in_place_of_its_handlers(
 			if name in rows
 		],
 	) == (endings, [])
+
+
+@pytest.mark.image
+def test_an_r_profile_core_runs_interrupt_handlers_and_system_calls_on_its_svc_stack(
+	zephyr_fixtures: Path, r52_program: Program
+) -> None:
+	addresses = {function.name: address for address, function in r52_program.functions.items()}
+	(gpio,) = {
+		address
+		for address, function in r52_program.functions.items()
+		if function.name == "gpio_cmsdk_ahb_isr"
+	}
+	assert rtos_model(
+		r52_program,
+		RtosChoice.AUTO,
+		zephyr.kconfig(
+			(zephyr_fixtures / "synchronization-r52" / "zephyr" / ".config").read_text()
+		),
+	).handler_stack == HandlerStack(
+		name="z_arm_svc_stack",
+		interrupts=(
+			Interrupt(number=18, handler=addresses["uart_cmsdk_apb_isr"]),
+			Interrupt(number=27, handler=addresses["arm_arch_timer_compare_isr"]),
+			*(Interrupt(number=number, handler=gpio) for number in range(58, 62)),
+		),
+		spurious=(Interrupt(number=0, handler=addresses["z_irq_spurious"]),),
+		wrapper_calls=(addresses["arm_gic_get_active"], addresses["arm_gic_eoi"]),
+		interrupt_frame=24,
+		system_calls=(addresses["z_arm_do_swap"], addresses["z_do_kernel_oops"]),
+		system_call_frame=16,
+		stack_size=512,
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("config", "interrupt_frame"),
+	[
+		pytest.param("", 24 + 8, id="without .config, tracking the active interrupt too"),
+		pytest.param('CONFIG_ARCH="arm"\nCONFIG_ARM_TRACK_ACTIVE_IRQ=y\n', 24 + 8, id="tracked"),
+		pytest.param('CONFIG_ARCH="arm"\nCONFIG_DYNAMIC_INTERRUPTS=y\n', None, id="uncountable"),
+	],
+)
+def test_the_svc_stack_follows_the_builds_interrupt_options(
+	r52_program: Program, config: str, interrupt_frame: int | None
+) -> None:
+	stack = rtos_model(r52_program, RtosChoice.AUTO, zephyr.kconfig(config)).handler_stack
+	assert (stack.interrupt_frame if stack is not None else None) == interrupt_frame
+
+
+@pytest.mark.image
+def test_a_handler_and_a_system_call_start_where_the_svc_stack_row_says_on_qemu(
+	r52_program: Program, zephyr_fixtures: Path
+) -> None:
+	swap, swap_stack, handler, handler_stack = zephyr_values(
+		ZephyrMachine.MPS3_AN536,
+		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
+		(
+			GdbStop("*z_arm_do_swap", ("$sp", "&z_arm_svc_stack")),
+			GdbStop("*arm_arch_timer_compare_isr", ("$sp", "&z_arm_svc_stack")),
+		),
+	)
+	stack = rtos_model(
+		r52_program,
+		RtosChoice.AUTO,
+		zephyr.kconfig(
+			(zephyr_fixtures / "synchronization-r52" / "zephyr" / ".config").read_text()
+		),
+	).handler_stack
+	assert stack is not None
+	assert (swap_stack + 512 - swap, handler_stack + 512 - handler) == (
+		stack.system_call_frame,
+		stack.interrupt_frame,
+	)
+
+
+@pytest.mark.image
+def test_cli_stack_nests_every_connected_handler_and_a_spurious_one_on_the_svc_stack(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "synchronization-r52"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="z_arm_svc_stack")
+	lines = capsys.readouterr().out.splitlines()
+	assert (
+		lines[1].endswith(
+			"nested exceptions: 7, priority levels: 6 (interrupt table), exception frame: 24 "
+			"bytes each, stack: 512 bytes)"
+		),
+		[line.split(" +")[0] for line in lines[2:]],
+	) == (
+		True,
+		[
+			"(exception 2) SVC",
+			"(exception 27) arm_arch_timer_compare_isr",
+			"(exception 58) gpio_cmsdk_ahb_isr",
+			"(exception 59) gpio_cmsdk_ahb_isr",
+			"(exception 60) gpio_cmsdk_ahb_isr",
+			"(exception 61) gpio_cmsdk_ahb_isr",
+			"(exception 18) uart_cmsdk_apb_isr",
+			"(exception 0) z_irq_spurious",
+		],
+	)
 
 
 @pytest.mark.image
@@ -954,9 +1058,9 @@ def test_an_r_profile_interrupt_frame_is_what_the_isr_wrapper_stacks_on_qemu(
 			[],
 			[
 				(
-					"thread_b: 1656 bytes (measured: 5, stack reservation: 16 bytes, exception "
-					"frames: 6, 232 bytes each, stack sentinel: 4 bytes, stack: 1024 bytes, margin: "
-					"-632 bytes)"
+					"thread_b: 2120 bytes (measured: 5, stack reservation: 16 bytes, exception "
+					"frames: 8, 232 bytes each, stack sentinel: 4 bytes, stack: 1024 bytes, margin: "
+					"-1096 bytes)"
 				),
 			],
 			id="synchronization with the stack sentinel on a Cortex-R52",

@@ -371,6 +371,33 @@ class ModeStack(Struct):
 	"""The stack size the build's configuration declares."""
 
 
+class Interrupt(Struct):
+	"""An interrupt line, by its number, and the handler the image's table holds for it."""
+
+	number: int
+	handler: Address
+
+
+class HandlerStack(Struct):
+	"""The stack an A- or R-profile core runs interrupt handlers and system calls on."""
+
+	name: str
+	interrupts: tuple[Interrupt, ...]
+	"""The interrupts the image connects, each of which can nest once."""
+	spurious: tuple[Interrupt, ...]
+	"""An unconnected line, whose fatal handler can nest once too."""
+	wrapper_calls: tuple[Address, ...]
+	"""What the interrupt entry calls around each handler, on the same stack."""
+	interrupt_frame: int
+	"""What each nested interrupt's entry stacks on it before its handler runs."""
+	system_calls: tuple[Address, ...]
+	"""The functions a system call starts on it."""
+	system_call_frame: int
+	"""What a system call's entry stacks on it before those functions run."""
+	stack_size: int | None = None
+	"""The stack size the build's configuration declares."""
+
+
 class Dispatch(Struct):
 	"""A function an RTOS calls each entry of a linker-built table through."""
 
@@ -414,6 +441,7 @@ class RtosModel(Struct):
 	interrupt_stack: InterruptStack | None = None
 	privileged_stack: PrivilegedStack | None = None
 	mode_stacks: tuple[ModeStack, ...] = ()
+	handler_stack: HandlerStack | None = None
 	dispatches: tuple[Dispatch, ...] = ()
 	not_counted: frozenset[Uncounted] = frozenset()
 	"""What the image shows the RTOS adds to each thread's stack, left out of its rows."""

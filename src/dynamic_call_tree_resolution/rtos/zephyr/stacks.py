@@ -8,10 +8,13 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final, assert_never
 
+from salix import Struct
+
 from dynamic_call_tree_resolution.model import (
 	Address,
 	ArmCore,
 	ArmProfile,
+	Interrupt,
 	InterruptStack,
 	Machine,
 	PrivilegedStack,
@@ -160,42 +163,83 @@ def _floating_point_frame(floating_point: bool, options: Kconfig) -> int:
 
 
 def exception_frames(program: Program, options: Kconfig) -> int | None:
-	"""How many interrupts' frames can stack on a thread's stack at once; none when unknown.
+	"""How many frames can stack on a thread's stack at once; none when unknown.
 
 	On M-profile, handlers run on the main stack. On an A- or R-profile core each nested
-	interrupt stacks its own frame on the thread's stack, and an interrupt nests only
-	while it is not active already, so there are at most as many as the image connects.
+	interrupt stacks its own frame on the thread's stack, and an interrupt nests only while it
+	is not active already: one for each interrupt the image connects, one for an unconnected
+	line's fatal handler, and one for a system call a handler makes.
 	"""
 	match program.arm_core:
 		case ArmCore(profile=ArmProfile.MICROCONTROLLER):
 			return 1
+		case ArmCore() | None:
+			match interrupt_table(program, options):
+				case InterruptTable(connected=connected, spurious=spurious):
+					return len(connected) + len(spurious) + 1
+				case None:
+					return None
+				case _ as unreachable:
+					assert_never(unreachable)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+class InterruptTable(Struct):
+	"""The interrupts an image's table connects, and one line it leaves unconnected."""
+
+	connected: tuple[Interrupt, ...]
+	spurious: tuple[Interrupt, ...]
+
+
+def interrupt_table(program: Program, options: Kconfig) -> InterruptTable | None:
+	"""The interrupts that can nest on an A- or R-profile core; none when they can't be told."""
+	table = next(
+		(data_object for data_object in program.objects.values() if data_object.name == _ISR_TABLE),
+		None,
+	)
+	layout = program.layouts.get(_ISR_ENTRY)
+	match program.arm_core:
 		case ArmCore(profile=ArmProfile.APPLICATION | ArmProfile.REAL_TIME) if not (
-			switches_on_stack(program, options) or options.options.get(_DYNAMIC_INTERRUPTS) == "y"
+			switches_on_stack(program, options)
+			or options.options.get(_DYNAMIC_INTERRUPTS) == "y"
+			or table is None
+			or layout is None
+			or _ISR not in layout.offsets
+			or layout.size == 0
+			or in_writable_memory(program, table.address)
 		):
-			return _connected_interrupts(program)
+			return _interrupts(
+				program,
+				tuple(
+					pointer_at(program, Address(table.address + offset))
+					for offset in range(layout.offsets[_ISR], table.size, layout.size)
+				),
+			)
 		case ArmCore() | None:
 			return None
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def _connected_interrupts(program: Program) -> int | None:
-	table = next(
-		(data_object for data_object in program.objects.values() if data_object.name == _ISR_TABLE),
-		None,
+def _interrupts(program: Program, handlers: tuple[Address | None, ...]) -> InterruptTable | None:
+	interrupts = tuple(
+		Interrupt(number=number, handler=handler)
+		for number, handler in enumerate(handlers)
+		if handler is not None
 	)
-	layout = program.layouts.get(_ISR_ENTRY)
-	if (
-		table is None
-		or layout is None
-		or _ISR not in layout.offsets
-		or layout.size == 0
-		or in_writable_memory(program, table.address)
-	):
-		return None
-	return sum(
-		pointer_at(program, Address(table.address + offset)) not in addresses_of(program, _SPURIOUS)
-		for offset in range(layout.offsets[_ISR], table.size, layout.size)
+	spurious = addresses_of(program, _SPURIOUS)
+	return (
+		InterruptTable(
+			connected=tuple(
+				interrupt for interrupt in interrupts if interrupt.handler not in spurious
+			),
+			spurious=tuple(interrupt for interrupt in interrupts if interrupt.handler in spurious)[
+				:1
+			],
+		)
+		if len(interrupts) == len(handlers)
+		else None
 	)
 
 

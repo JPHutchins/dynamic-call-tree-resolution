@@ -50,6 +50,16 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.stack_usage import StackUsageFile
 
 
+class HandlerNames(Struct):
+	"""The stack-graph names of the handlers an A- or R-profile core's handler stack runs."""
+
+	interrupts: Mapping[int, str]
+	"""Each connected interrupt's handler, by interrupt number."""
+	spurious: Mapping[int, str]
+	"""An unconnected line's fatal handler, by interrupt number."""
+	wrapper_calls: tuple[str, ...]
+
+
 class Expansion(Struct):
 	"""A build's call graph and frames, its indirect calls expanded against its ELF image."""
 
@@ -78,6 +88,7 @@ class Expansion(Struct):
 	phantom_libcalls: frozenset[str]
 	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
 	assumed_unwritten: AssumedUnwritten
+	handlers: HandlerNames | None = None
 
 
 class AssumedUnwritten(Struct):
