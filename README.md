@@ -760,9 +760,10 @@ contradicts does not hold.
   (`CONFIG_FPU_SHARING`, `CONFIG_VFP_FEATURE_REGS_S64_D32`); without one, it is the
   largest the build attributes allow. A nested interrupt stacks another frame, and an
   interrupt never nests within itself, so a thread row adds one frame for each interrupt
-  `_sw_isr_table` connects, as `exception frames: N, M bytes each`. It reads no
-  priorities, so it over-counts where priorities keep interrupts from nesting, as the
-  main stack's row does (below). With `CONFIG_DYNAMIC_INTERRUPTS`, or a table that is
+  `_sw_isr_table` connects, one for an unconnected line's fatal handler, and one for a
+  system call a handler makes (a `k_oops` from an ISR), as
+  `exception frames: N, M bytes each`. It reads no priorities, so it over-counts where
+  priorities keep interrupts from nesting, as the main stack's row does (below). With `CONFIG_DYNAMIC_INTERRUPTS`, or a table that is
   writable or missing, the count is unknown, and the rows keep one frame and the mark
   `not counted: exception frames`. The handlers run on other stacks (below) ([#151]).
 - Under Zephyr on an A- or R-profile core, each processor mode's stack has a row of its
@@ -773,6 +774,15 @@ contradicts does not hold.
   entry stacks more, and those two rows keep `not counted: exception frames`. A build
   that switches context on the thread's stack (`CONFIG_USE_SWITCH`) gets none of these
   rows ([#151]).
+- Under Zephyr on an A- or R-profile core, `z_arm_svc_stack` is the stack interrupt
+  handlers and system calls run on, declared at `CONFIG_ARMV7_SVC_STACK_SIZE`. Its row
+  nests every connected interrupt's handler, each after the entry's pushes there, and an
+  unconnected line's fatal handler once, on top of the system-call path (`SVC`): the
+  entry's pushes and the deepest of `z_arm_do_swap`, `z_do_kernel_oops` and
+  `z_irq_do_offload`. A handler counts the deepest of itself and what the entry calls
+  around it, such as `arm_gic_get_active`. `--path` lists the nesting, the system call as
+  exception 2 and each interrupt by its number in `_sw_isr_table`. Like the thread rows,
+  it reads no priorities ([#151]).
 - The main stack's row reads no priorities. It assumes any configurable-priority
   exception can nest at any level, so it over-counts where priorities, priority grouping
   or masking keep exceptions from nesting. Reading the image's priorities is a later,

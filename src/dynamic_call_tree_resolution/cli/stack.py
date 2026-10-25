@@ -4,7 +4,7 @@
 """The ``stack`` command."""
 
 from pathlib import Path  # noqa: TC003  # cyclopts evaluates Annotated[Path, ...] at runtime
-from typing import TYPE_CHECKING, Annotated, assert_never
+from typing import TYPE_CHECKING, Annotated, Final, assert_never
 
 import msgspec
 from cyclopts import Parameter
@@ -27,6 +27,7 @@ from dynamic_call_tree_resolution.cli.artifacts import (
 from dynamic_call_tree_resolution.cli.expansion import (
 	expand_from_elf,
 )
+from dynamic_call_tree_resolution.cli.measures import SYSTEM_CALL_NODE
 from dynamic_call_tree_resolution.cli.render import (
 	nesting_document,
 	nesting_steps,
@@ -51,12 +52,15 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	AssumedFrame,
 	Frame,
 	Handled,
+	LevelSource,
 	PathStep,
+	PriorityLevels,
 	StackGraph,
 	StackReport,
 	entry_report,
 	frame_key,
 	interrupt_stack_report,
+	report_order,
 	stack_graph,
 	stack_reports,
 	thread_reports,
@@ -86,13 +90,18 @@ def in_image(reports: tuple[StackReport, ...], expansion: Expansion) -> tuple[St
 				expansion.rtos.interrupt_stack,
 				expansion.rtos.privileged_stack,
 				*expansion.rtos.mode_stacks,
+				expansion.rtos.handler_stack,
 			)
 		)
 	)
 
 
 def with_interrupt_stack(expansion: Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
-	return (*stack_reports(graph), *_interrupt_stacks(expansion, graph))
+	return (
+		*stack_reports(graph),
+		*_interrupt_stacks(expansion, graph),
+		*_handler_stacks(expansion, graph),
+	)
 
 
 def _interrupt_stacks(expansion: Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
@@ -124,6 +133,44 @@ def _interrupt_stacks(expansion: Expansion | None, graph: StackGraph) -> tuple[S
 
 def _handled(graph: StackGraph, exceptions: Mapping[int, str], number: int) -> Handled:
 	return Handled(exception=number, report=entry_report(graph, exceptions[number]))
+
+
+def _handler_stacks(expansion: Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
+	return (
+		tuple(
+			interrupt_stack_report(
+				stack.name,
+				Handled(exception=_SVC, report=entry_report(graph, SYSTEM_CALL_NODE)),
+				tuple(
+					_wrapped(graph, number, handler, names.wrapper_calls)
+					for number, handler in names.spurious.items()
+				),
+				tuple(
+					_wrapped(graph, number, handler, names.wrapper_calls)
+					for number, handler in names.interrupts.items()
+				),
+				levels=PriorityLevels(
+					count=len(names.interrupts), source=LevelSource.INTERRUPT_TABLE
+				),
+				exception_frame=stack.interrupt_frame,
+			)
+			for stack in (expansion.rtos.handler_stack,)
+			for names in (expansion.handlers,)
+			if stack is not None and names is not None
+		)
+		if expansion is not None
+		else ()
+	)
+
+
+_SVC: Final = 2
+
+
+def _wrapped(graph: StackGraph, number: int, handler: str, calls: tuple[str, ...]) -> Handled:
+	return Handled(
+		exception=number,
+		report=min((entry_report(graph, name) for name in (handler, *calls)), key=report_order),
+	)
 
 
 @app.command  # type: ignore[misc]

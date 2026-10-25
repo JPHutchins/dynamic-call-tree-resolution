@@ -15,7 +15,7 @@ from dynamic_call_tree_resolution.rtos.zephyr.dispatch import (
 	DISPATCHES,
 	dispatch_of,
 )
-from dynamic_call_tree_resolution.rtos.zephyr.modes import mode_stacks
+from dynamic_call_tree_resolution.rtos.zephyr.modes import handler_stack, mode_stacks
 from dynamic_call_tree_resolution.rtos.zephyr.options import (
 	NO_KCONFIG,
 	Kconfig,
@@ -93,6 +93,7 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 			program, declared(options, integer(options, INTERRUPT_STACK_SIZE))
 		),
 		mode_stacks=mode_stacks(program, options),
+		handler_stack=handler_stack(program, options),
 		privileged_stack=privileged_stack(
 			program, declared(options, integer(options, PRIVILEGED_STACK_SIZE))
 		),

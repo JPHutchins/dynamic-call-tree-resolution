@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.stack_analysis.reports import entry_report as 
 from dynamic_call_tree_resolution.stack_analysis.reports import (
 	interrupt_stack_report as interrupt_stack_report,
 )
+from dynamic_call_tree_resolution.stack_analysis.reports import report_order as report_order
 from dynamic_call_tree_resolution.stack_analysis.reports import stack_reports as stack_reports
 from dynamic_call_tree_resolution.stack_analysis.reports import thread_reports as thread_reports
 from dynamic_call_tree_resolution.stack_analysis.reports import (
