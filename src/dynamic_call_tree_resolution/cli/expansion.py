@@ -33,8 +33,8 @@ from dynamic_call_tree_resolution.cli.measures import (
 	exception_priority_levels,
 	image_function_names,
 	own_thread_graphs,
-	privileged_graph,
 	register_callers,
+	stack_nodes,
 	thread_graph,
 	unrecorded_sites,
 )
@@ -174,22 +174,22 @@ def expand_from_elf(
 		(*in_image_edges, *binary, *register.edges),
 		(*artifacts.frames, *register.frames),
 	)
-	privileged = privileged_graph(image, model)
+	nodes = stack_nodes(image, model)
 	code = code_measures(
 		image,
 		measure,
-		(*expanded, *binary, *threads.edges, *privileged.edges),
-		(*artifacts.frames, *threads.frames, *privileged.frames, *register.frames),
+		(*expanded, *binary, *threads.edges, *nodes.edges),
+		(*artifacts.frames, *threads.frames, *nodes.frames, *register.frames),
 		hardware_roots | frozenset(exceptions.values()),
 		frozenset(),
 	)
 	return Expansion(
-		expanded=(*expanded, *binary, *code.edges, *threads.edges, *privileged.edges),
-		in_image_edges=(*in_image_edges, *unrecorded, *threads.edges, *privileged.edges),
+		expanded=(*expanded, *binary, *code.edges, *threads.edges, *nodes.edges),
+		in_image_edges=(*in_image_edges, *unrecorded, *threads.edges, *nodes.edges),
 		frames=(
 			*artifacts.frames,
 			*threads.frames,
-			*privileged.frames,
+			*nodes.frames,
 			*register.frames,
 			*code.frames,
 		),

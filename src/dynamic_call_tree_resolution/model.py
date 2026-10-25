@@ -351,6 +351,26 @@ class PrivilegedStack(Struct):
 	"""The stack size the build's configuration declares."""
 
 
+class Uncounted(StrEnum):
+	"""What an RTOS can add to a thread's stack that its model does not count."""
+
+	EXCEPTION_FRAMES = "exception frames"
+	SWITCH_FRAME = "switch frame"
+
+
+class ModeStack(Struct):
+	"""A stack an A- or R-profile core runs one processor mode's exceptions on."""
+
+	name: str
+	entries: tuple[Address, ...]
+	"""The functions the mode's exceptions start on it; its depth is the deepest's."""
+	exception_frame: int = 0
+	"""What the mode's exception entry stacks on it before those functions run."""
+	not_counted: frozenset[Uncounted] = frozenset()
+	stack_size: int | None = None
+	"""The stack size the build's configuration declares."""
+
+
 class Dispatch(Struct):
 	"""A function an RTOS calls each entry of a linker-built table through."""
 
@@ -370,13 +390,6 @@ class ThreadCreation(Struct):
 	"""The function that creates each static thread from its record."""
 	static_entries: frozenset[Address] | None
 	"""The entry of every static thread record; none when a record could not be read."""
-
-
-class Uncounted(StrEnum):
-	"""What an RTOS can add to a thread's stack that its model does not count."""
-
-	EXCEPTION_FRAMES = "exception frames"
-	SWITCH_FRAME = "switch frame"
 
 
 class RtosModel(Struct):
@@ -400,6 +413,7 @@ class RtosModel(Struct):
 	system_threads: tuple[SystemThread, ...] = ()
 	interrupt_stack: InterruptStack | None = None
 	privileged_stack: PrivilegedStack | None = None
+	mode_stacks: tuple[ModeStack, ...] = ()
 	dispatches: tuple[Dispatch, ...] = ()
 	not_counted: frozenset[Uncounted] = frozenset()
 	"""What the image shows the RTOS adds to each thread's stack, left out of its rows."""

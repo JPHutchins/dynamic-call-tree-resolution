@@ -82,7 +82,11 @@ def in_image(reports: tuple[StackReport, ...], expansion: Expansion) -> tuple[St
 		or report.entry in expansion.hardware_roots
 		or any(
 			stack is not None and report.entry == stack.name
-			for stack in (expansion.rtos.interrupt_stack, expansion.rtos.privileged_stack)
+			for stack in (
+				expansion.rtos.interrupt_stack,
+				expansion.rtos.privileged_stack,
+				*expansion.rtos.mode_stacks,
+			)
 		)
 	)
 

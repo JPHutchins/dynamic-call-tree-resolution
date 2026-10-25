@@ -230,10 +230,15 @@ def zephyr_stack_pointers(
 	)
 
 
-def zephyr_values(
-	machine: ZephyrMachine, elf: Path, breakpoints: tuple[str, ...], expressions: tuple[str, ...]
-) -> tuple[int, ...]:
-	"""Each expression's value at each breakpoint's first hit, in order, under gdb on QEMU."""
+class GdbStop(Struct):
+	"""A breakpoint, and what gdb evaluates when it first stops there."""
+
+	breakpoint: str
+	expressions: tuple[str, ...]
+
+
+def zephyr_values(machine: ZephyrMachine, elf: Path, stops: tuple[GdbStop, ...]) -> tuple[int, ...]:
+	"""Each stop's expressions' values, in order, under gdb on QEMU."""
 	return tuple(
 		int(line.split()[1], 16)
 		for line in subprocess.run(
@@ -263,17 +268,17 @@ def zephyr_values(
 				),
 				*(
 					argument
-					for breakpoint in breakpoints
+					for stop in stops
 					for argument in (
 						"-ex",
 						"delete",
 						"-ex",
-						f"break {breakpoint}",
+						f"break {stop.breakpoint}",
 						"-ex",
 						"continue",
 						*(
 							argument
-							for expression in expressions
+							for expression in stop.expressions
 							for argument in ("-ex", rf'printf "value %#x\n", {expression}')
 						),
 					)

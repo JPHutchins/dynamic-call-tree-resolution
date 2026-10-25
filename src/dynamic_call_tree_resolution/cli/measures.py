@@ -224,26 +224,48 @@ def thread_graph(
 			assert_never(unreachable)
 
 
-def privileged_graph(image: Image, model: RtosModel) -> _ThreadGraph:
-	match model.privileged_stack:
-		case None:
-			return _ThreadGraph(edges=(), frames=())
-		case PrivilegedStack() as stack:
-			return _ThreadGraph(
-				edges=(
-					CallEdge(
-						caller=stack.name,
-						callee=frame_key(stack_name(image.program, image.names, stack.system_call)),
-						kind=EdgeKind.SYSTEM_CALL,
-					),
-					CallEdge(
-						caller=stack.name,
-						callee=frame_key(stack_name(image.program, image.names, stack.user_start)),
-						kind=EdgeKind.USER_START,
-					),
-				),
-				frames=(StackUsage(function=stack.name, bytes=0, bounded=True),),
+class _StackEntry(Struct):
+	"""A function a stack that is no thread's starts, and how it starts there."""
+
+	function: Address
+	kind: EdgeKind
+
+
+def stack_nodes(image: Image, model: RtosModel) -> _ThreadGraph:
+	entries = {
+		**_privileged_entries(model.privileged_stack),
+		**{
+			stack.name: tuple(
+				_StackEntry(function=entry, kind=EdgeKind.EXCEPTION) for entry in stack.entries
 			)
+			for stack in model.mode_stacks
+		},
+	}
+	return _ThreadGraph(
+		edges=tuple(
+			CallEdge(
+				caller=name,
+				callee=frame_key(stack_name(image.program, image.names, entry.function)),
+				kind=entry.kind,
+			)
+			for name, stack_entries in entries.items()
+			for entry in stack_entries
+		),
+		frames=tuple(StackUsage(function=name, bytes=0, bounded=True) for name in entries),
+	)
+
+
+def _privileged_entries(stack: PrivilegedStack | None) -> Mapping[str, tuple[_StackEntry, ...]]:
+	match stack:
+		case None:
+			return {}
+		case PrivilegedStack():
+			return {
+				stack.name: (
+					_StackEntry(function=stack.system_call, kind=EdgeKind.SYSTEM_CALL),
+					_StackEntry(function=stack.user_start, kind=EdgeKind.USER_START),
+				)
+			}
 		case _ as unreachable:
 			assert_never(unreachable)
 

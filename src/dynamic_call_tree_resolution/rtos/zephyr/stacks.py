@@ -170,7 +170,7 @@ def exception_frames(program: Program, options: Kconfig) -> int | None:
 		case ArmCore(profile=ArmProfile.MICROCONTROLLER):
 			return 1
 		case ArmCore(profile=ArmProfile.APPLICATION | ArmProfile.REAL_TIME) if not (
-			_switches_on_stack(program, options) or options.options.get(_DYNAMIC_INTERRUPTS) == "y"
+			switches_on_stack(program, options) or options.options.get(_DYNAMIC_INTERRUPTS) == "y"
 		):
 			return _connected_interrupts(program)
 		case ArmCore() | None:
@@ -194,8 +194,7 @@ def _connected_interrupts(program: Program) -> int | None:
 	):
 		return None
 	return sum(
-		pointer_at(program, Address(table.address + offset))
-		not in _addresses_of(program, _SPURIOUS)
+		pointer_at(program, Address(table.address + offset)) not in addresses_of(program, _SPURIOUS)
 		for offset in range(layout.offsets[_ISR], table.size, layout.size)
 	)
 
@@ -216,13 +215,13 @@ def not_counted(program: Program, options: Kconfig) -> frozenset[Uncounted]:
 		for uncounted, shown in {
 			Uncounted.EXCEPTION_FRAMES: program.machine is Machine.EM_ARM
 			and exception_frames(program, options) is None,
-			Uncounted.SWITCH_FRAME: _switches_on_stack(program, options),
+			Uncounted.SWITCH_FRAME: switches_on_stack(program, options),
 		}.items()
 		if shown
 	)
 
 
-def _switches_on_stack(program: Program, options: Kconfig) -> bool:
+def switches_on_stack(program: Program, options: Kconfig) -> bool:
 	return options.options.get(_SWITCH) == "y" or any(
 		symbol in program.symbol_addresses for symbol in _SWITCH_CODE
 	)
@@ -247,8 +246,8 @@ def privileged_stack(program: Program, stack_size: int | None) -> PrivilegedStac
 	"""
 	match (
 		program.arm_core,
-		_addresses_of(program, _SYSCALL_ENTRY),
-		_addresses_of(program, _USER_START),
+		addresses_of(program, _SYSCALL_ENTRY),
+		addresses_of(program, _USER_START),
 	):
 		case ArmCore(profile=ArmProfile.MICROCONTROLLER), (system_call,), (user_start,) if any(
 			data_object.name == _PRIVILEGED_STACKS for data_object in program.objects.values()
@@ -264,7 +263,7 @@ def privileged_stack(program: Program, stack_size: int | None) -> PrivilegedStac
 			return None
 
 
-def _addresses_of(program: Program, name: str) -> tuple[Address, ...]:
+def addresses_of(program: Program, name: str) -> tuple[Address, ...]:
 	return tuple(
 		address for address, function in program.functions.items() if function.name == name
 	)

@@ -28,6 +28,7 @@ from dynamic_call_tree_resolution.model import (
 	ArmProfile,
 	Dispatch,
 	InterruptStack,
+	ModeStack,
 	PrivilegedStack,
 	RtosModel,
 	StructureLayout,
@@ -40,6 +41,7 @@ from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model, zephyr
 from dynamic_call_tree_resolution.vsa.fallback import referenced_only_at, referrers
 from tests.programs import build_program
 from tests.toolchains import (
+	GdbStop,
 	ZephyrMachine,
 	zephyr_console_cortex_m3,
 	zephyr_stack_pointers,
@@ -273,8 +275,7 @@ def test_where_each_path_on_a_privileged_stack_starts_on_qemu(
 	stack_pointer, start = zephyr_values(
 		ZephyrMachine.MPS2_AN385,
 		zephyr_fixtures / "userspace" / "zephyr" / "zephyr.elf",
-		(f"*{function}",),
-		("$sp", "_kernel.cpus[0].current->arch.priv_stack_start"),
+		(GdbStop(f"*{function}", ("$sp", "_kernel.cpus[0].current->arch.priv_stack_start")),),
 	)
 	assert start + 1024 - stack_pointer == below_top
 
@@ -591,8 +592,7 @@ def test_zephyr_writes_the_stack_sentinel_in_the_lowest_word_of_a_threads_stack_
 	assert zephyr_values(
 		ZephyrMachine.MPS3_AN536,
 		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
-		("thread_b_entry_point",),
-		("*(unsigned int *)&_k_thread_stack_thread_b",),
+		(GdbStop("thread_b_entry_point", ("*(unsigned int *)&_k_thread_stack_thread_b",)),),
 	) == (0xF0F0F0F0,)
 
 
@@ -797,6 +797,124 @@ def test_an_r_profile_threads_frames_stay_not_counted_where_the_interrupts_canno
 
 
 @pytest.mark.image
+def test_an_r_profile_core_runs_its_reset_faults_and_fast_interrupts_on_their_mode_stacks(
+	zephyr_fixtures: Path, r52_program: Program
+) -> None:
+	addresses = {function.name: address for address, function in r52_program.functions.items()}
+	assert rtos_model(
+		r52_program,
+		RtosChoice.AUTO,
+		zephyr.kconfig(
+			(zephyr_fixtures / "synchronization-r52" / "zephyr" / ".config").read_text()
+		),
+	).mode_stacks == (
+		ModeStack(
+			name="z_arm_sys_stack",
+			entries=(addresses["z_arm_relocate_vector_table"], addresses["z_prep_c"]),
+			stack_size=1024,
+		),
+		ModeStack(name="z_arm_fiq_stack", entries=(addresses["z_arm_nmi"],), stack_size=256),
+		ModeStack(
+			name="z_arm_abort_stack",
+			entries=(addresses["z_arm_fault_data"], addresses["z_arm_fault_prefetch"]),
+			exception_frame=32 + 200,
+			stack_size=256,
+		),
+		ModeStack(
+			name="z_arm_undef_stack",
+			entries=(
+				addresses["z_arm_fault_undef_instruction"],
+				addresses["z_arm_fault_undef_instruction_fp"],
+			),
+			exception_frame=32 + 200,
+			stack_size=256,
+		),
+	)
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("config", "core", "marked"),
+	[
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_EXTRA_EXCEPTION_INFO=y\n',
+			ArmCore(profile=ArmProfile.REAL_TIME, floating_point=True),
+			["z_arm_abort_stack", "z_arm_undef_stack"],
+			id="extra exception info marks the fault stacks",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_USE_SWITCH=y\n',
+			ArmCore(profile=ArmProfile.REAL_TIME, floating_point=True),
+			None,
+			id="no mode stacks when the context switches on the thread's stack",
+		),
+		pytest.param(
+			'CONFIG_ARCH="arm"\n',
+			ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=False),
+			None,
+			id="no mode stacks on M-profile",
+		),
+	],
+)
+def test_mode_stacks_follow_the_core_and_what_the_fault_entry_stacks(
+	r52_program: Program, config: str, core: ArmCore, marked: list[str] | None
+) -> None:
+	stacks = rtos_model(
+		replace(r52_program, arm_core=core), RtosChoice.AUTO, zephyr.kconfig(config)
+	).mode_stacks
+	assert ([stack.name for stack in stacks if stack.not_counted] if stacks else None) == marked
+
+
+@pytest.mark.image
+def test_the_reset_path_and_a_fault_start_where_the_mode_stack_rows_say_on_qemu(
+	r52_program: Program, zephyr_fixtures: Path
+) -> None:
+	"""The fault is a prefetch abort: a jump into a stack, which the MPU keeps from executing."""
+	reset, sys_stack, _, fault, abort_stack = zephyr_values(
+		ZephyrMachine.MPS3_AN536,
+		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
+		(
+			GdbStop("z_prep_c", ("$sp", "&z_arm_sys_stack")),
+			GdbStop("thread_b_entry_point", ("$pc = &z_arm_fiq_stack",)),
+			GdbStop("z_arm_fault_prefetch", ("$sp", "&z_arm_abort_stack")),
+		),
+	)
+	frames = {
+		stack.name: stack.exception_frame
+		for stack in rtos_model(r52_program, RtosChoice.AUTO).mode_stacks
+	}
+	assert (
+		sys_stack + 1024 - reset,
+		frames["z_arm_sys_stack"],
+		abort_stack + 256 - fault,
+		frames["z_arm_abort_stack"],
+	) == (0, 0, 32 + 200, 32 + 200)
+
+
+@pytest.mark.image
+def test_cli_stack_reports_each_r_profile_mode_stack_in_place_of_its_handlers(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "synchronization-r52"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf")
+	rows = {line.split(":")[0]: line for line in capsys.readouterr().out.splitlines()}
+	endings = {
+		"z_arm_sys_stack": "stack: 1024 bytes)",
+		"z_arm_fiq_stack": "stack: 256 bytes)",
+		"z_arm_abort_stack": "exception frame: 232 bytes, stack: 256 bytes)",
+		"z_arm_undef_stack": "exception frame: 232 bytes, stack: 256 bytes)",
+	}
+	assert (
+		{name: rows[name][-len(ending) :] for name, ending in endings.items()},
+		[
+			name
+			for name in ("z_prep_c", "z_arm_nmi", "z_arm_fault_data", "z_arm_fault_prefetch")
+			if name in rows
+		],
+	) == (endings, [])
+
+
+@pytest.mark.image
 def test_an_r_profile_interrupt_frame_is_what_the_isr_wrapper_stacks_on_qemu(
 	r52_program: Program, zephyr_fixtures: Path
 ) -> None:
@@ -805,8 +923,7 @@ def test_an_r_profile_interrupt_frame_is_what_the_isr_wrapper_stacks_on_qemu(
 	after_srsdb, after_reservation = zephyr_values(
 		ZephyrMachine.MPS3_AN536,
 		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
-		("*_isr_wrapper+12", "*_isr_wrapper+20"),
-		("$sp",),
+		(GdbStop("*_isr_wrapper+12", ("$sp",)), GdbStop("*_isr_wrapper+20", ("$sp",))),
 	)
 	assert after_srsdb + 2 * 4 - after_reservation == (
 		rtos_model(r52_program, RtosChoice.AUTO).exception_frame
