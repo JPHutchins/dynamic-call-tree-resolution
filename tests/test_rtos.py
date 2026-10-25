@@ -273,7 +273,7 @@ def test_where_each_path_on_a_privileged_stack_starts_on_qemu(
 	stack_pointer, start = zephyr_values(
 		ZephyrMachine.MPS2_AN385,
 		zephyr_fixtures / "userspace" / "zephyr" / "zephyr.elf",
-		f"*{function}",
+		(f"*{function}",),
 		("$sp", "_kernel.cpus[0].current->arch.priv_stack_start"),
 	)
 	assert start + 1024 - stack_pointer == below_top
@@ -591,7 +591,7 @@ def test_zephyr_writes_the_stack_sentinel_in_the_lowest_word_of_a_threads_stack_
 	assert zephyr_values(
 		ZephyrMachine.MPS3_AN536,
 		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
-		"thread_b_entry_point",
+		("thread_b_entry_point",),
 		("*(unsigned int *)&_k_thread_stack_thread_b",),
 	) == (0xF0F0F0F0,)
 
@@ -653,14 +653,14 @@ def test_without_a_config_the_userspace_local_data_type_shows_zephyr_reserves_it
 		pytest.param(
 			Machine.EM_ARM,
 			ArmCore(profile=ArmProfile.REAL_TIME, floating_point=True),
-			frozenset({Uncounted.EXCEPTION_FRAMES}),
-			id="R-profile",
+			frozenset[Uncounted](),
+			id="R-profile, counted from its interrupt table",
 		),
 		pytest.param(
 			Machine.EM_ARM,
 			ArmCore(profile=ArmProfile.APPLICATION, floating_point=False),
-			frozenset({Uncounted.EXCEPTION_FRAMES}),
-			id="A-profile",
+			frozenset[Uncounted](),
+			id="A-profile, counted from its interrupt table",
 		),
 		pytest.param(
 			Machine.EM_ARM,
@@ -673,7 +673,7 @@ def test_without_a_config_the_userspace_local_data_type_shows_zephyr_reserves_it
 		),
 	],
 )
-def test_zephyrs_thread_rows_leave_out_the_exception_frames_of_a_core_that_is_not_m_profile(
+def test_zephyrs_thread_rows_leave_out_the_exception_frames_of_a_core_with_no_profile(
 	hello_program: Program,
 	machine: Machine,
 	core: ArmCore | None,
@@ -694,7 +694,7 @@ def test_zephyrs_thread_rows_leave_out_the_exception_frames_of_a_core_that_is_no
 		pytest.param("userspace", frozenset[Uncounted](), id="userspace on mps2/an385"),
 		pytest.param(
 			"synchronization-r52",
-			frozenset({Uncounted.EXCEPTION_FRAMES}),
+			frozenset[Uncounted](),
 			id="synchronization with the stack sentinel on a Cortex-R52",
 		),
 	],
@@ -707,6 +707,109 @@ def test_without_its_config_a_testbed_still_shows_what_zephyr_adds_to_its_thread
 			load(zephyr_fixtures / name / "zephyr" / "zephyr.elf"), RtosChoice.AUTO
 		).not_counted
 		== not_counted
+	)
+
+
+@pytest.fixture(scope="module")
+def r52_program(zephyr_fixtures: Path) -> Program:
+	return load(zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf")
+
+
+@pytest.mark.image
+def test_each_connected_interrupt_can_stack_a_frame_on_an_r_profile_threads_stack(
+	zephyr_fixtures: Path, r52_program: Program
+) -> None:
+	assert [
+		(model.exception_frame, model.exception_frames, model.not_counted)
+		for model in (
+			rtos_model(
+				r52_program,
+				RtosChoice.AUTO,
+				zephyr.kconfig(
+					(zephyr_fixtures / "synchronization-r52" / "zephyr" / ".config").read_text()
+				),
+			),
+			rtos_model(r52_program, RtosChoice.AUTO),
+		)
+	] == [(32 + 200, 6, frozenset()), (32 + 200, 6, frozenset())]
+
+
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("config", "frame"),
+	[
+		pytest.param('CONFIG_ARCH="arm"\n', 32, id="no floating-point sharing"),
+		pytest.param('CONFIG_ARCH="arm"\nCONFIG_FPU_SHARING=y\n', 32 + 72, id="sharing s0-s15"),
+		pytest.param(
+			'CONFIG_ARCH="arm"\nCONFIG_FPU_SHARING=y\nCONFIG_VFP_FEATURE_REGS_S64_D32=y\n',
+			32 + 200,
+			id="sharing d16-d31 too",
+		),
+	],
+)
+def test_an_r_profile_interrupt_frame_follows_the_builds_floating_point_sharing(
+	r52_program: Program, config: str, frame: int
+) -> None:
+	assert rtos_model(r52_program, RtosChoice.AUTO, zephyr.kconfig(config)).exception_frame == frame
+
+
+@pytest.mark.image
+def test_an_r_profile_threads_frames_stay_not_counted_where_the_interrupts_cannot_be(
+	r52_program: Program,
+) -> None:
+	(table,) = (
+		data_object
+		for data_object in r52_program.objects.values()
+		if data_object.name == "_sw_isr_table"
+	)
+	section = max(start for start in r52_program.sections if start <= table.address)
+	assert [
+		(model.exception_frames, model.not_counted)
+		for model in (
+			rtos_model(
+				r52_program,
+				RtosChoice.AUTO,
+				zephyr.kconfig('CONFIG_ARCH="arm"\nCONFIG_DYNAMIC_INTERRUPTS=y\n'),
+			),
+			rtos_model(
+				replace(
+					r52_program,
+					objects={
+						address: data_object
+						for address, data_object in r52_program.objects.items()
+						if data_object.name != "_sw_isr_table"
+					},
+				),
+				RtosChoice.AUTO,
+			),
+			rtos_model(
+				replace(
+					r52_program,
+					sections={
+						**r52_program.sections,
+						section: replace(r52_program.sections[section], writable=True),
+					},
+				),
+				RtosChoice.AUTO,
+			),
+		)
+	] == [(1, frozenset({Uncounted.EXCEPTION_FRAMES}))] * 3
+
+
+@pytest.mark.image
+def test_an_r_profile_interrupt_frame_is_what_the_isr_wrapper_stacks_on_qemu(
+	r52_program: Program, zephyr_fixtures: Path
+) -> None:
+	"""The breakpoints sit after ``srsdb``/``cps`` and after the FPU reservation in Zephyr
+	e560c91's ``_isr_wrapper``."""
+	after_srsdb, after_reservation = zephyr_values(
+		ZephyrMachine.MPS3_AN536,
+		zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf",
+		("*_isr_wrapper+12", "*_isr_wrapper+20"),
+		("$sp",),
+	)
+	assert after_srsdb + 2 * 4 - after_reservation == (
+		rtos_model(r52_program, RtosChoice.AUTO).exception_frame
 	)
 
 
@@ -731,12 +834,12 @@ def test_without_its_config_a_testbed_still_shows_what_zephyr_adds_to_its_thread
 		),
 		pytest.param(
 			"synchronization-r52",
-			["thread_b", "z_idle_threads", "z_main_thread"],
+			[],
 			[
 				(
-					"thread_b: unbounded, at least 264 bytes (measured: 5, stack reservation: 16 "
-					"bytes, stack sentinel: 4 bytes, not counted: exception frames, stack: 1024 "
-					"bytes)"
+					"thread_b: 1656 bytes (measured: 5, stack reservation: 16 bytes, exception "
+					"frames: 6, 232 bytes each, stack sentinel: 4 bytes, stack: 1024 bytes, margin: "
+					"-632 bytes)"
 				),
 			],
 			id="synchronization with the stack sentinel on a Cortex-R52",

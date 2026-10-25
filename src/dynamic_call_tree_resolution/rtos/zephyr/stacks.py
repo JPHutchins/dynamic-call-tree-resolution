@@ -17,8 +17,10 @@ from dynamic_call_tree_resolution.model import (
 	PrivilegedStack,
 	Uncounted,
 )
+from dynamic_call_tree_resolution.points_to import in_writable_memory, pointer_at
 from dynamic_call_tree_resolution.rtos.zephyr.options import (
 	Kconfig,
+	configured,
 	random_offset,
 	stack_pointer_alignment,
 )
@@ -41,6 +43,16 @@ _SENTINEL_CHECK: Final = "z_check_stack_sentinel"
 _SENTINEL_BYTES: Final = 4
 _SWITCH: Final = "CONFIG_USE_SWITCH"
 _SWITCH_CODE: Final = ("arm_m_exc_exit", "z_arm_context_switch")
+_SYSTEM_MODE_FRAME: Final = (2 + 6) * 4
+_VFP_FRAME: Final = (16 + 2) * 4
+_VFP_D32_FRAME: Final = _VFP_FRAME + 16 * 8
+_FPU_SHARING: Final = "CONFIG_FPU_SHARING"
+_D32: Final = "CONFIG_VFP_FEATURE_REGS_S64_D32"
+_DYNAMIC_INTERRUPTS: Final = "CONFIG_DYNAMIC_INTERRUPTS"
+_ISR_TABLE: Final = "_sw_isr_table"
+_ISR_ENTRY: Final = "struct _isr_table_entry"
+_ISR: Final = "isr"
+_SPURIOUS: Final = "z_irq_spurious"
 _INTERRUPT_STACK: Final = "z_interrupt_stacks"
 INTERRUPT_STACK_SIZE: Final = "CONFIG_ISR_STACK_SIZE"
 _PRIVILEGED_STACKS: Final = "priv_stacks"
@@ -102,27 +114,90 @@ def _headroom(delta: int, alignment: int) -> int:
 	return (delta + alignment - 1) // alignment * alignment
 
 
-def exception_frame(core: ArmCore | None) -> int:
-	"""What an M-profile core stacks on the thread's stack when an interrupt takes it.
+def exception_frame(core: ArmCore | None, options: Kconfig) -> int:
+	"""What one interrupt stacks on the thread's stack it takes.
 
 	ARMv7-M stacks a basic frame of 8 words, or 26 with a floating-point context, and may
-	pad a word to align the stack to 8 bytes. Handlers then run on the main stack, so a
-	nested interrupt adds nothing more. Other profiles are not modeled.
+	pad a word to align the stack to 8 bytes. On an A- or R-profile core Zephyr's interrupt
+	entry stores the return state and 6 registers on the thread's stack in system mode, and
+	reserves the floating-point frame Zephyr shares there.
 
-	>>> exception_frame(ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=False))
+	>>> exception_frame(ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=False), Kconfig())
 	36
-	>>> exception_frame(ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=True))
+	>>> exception_frame(ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=True), Kconfig())
 	108
-	>>> exception_frame(ArmCore(profile=ArmProfile.APPLICATION, floating_point=True))
+	>>> exception_frame(ArmCore(profile=ArmProfile.REAL_TIME, floating_point=False), Kconfig())
+	32
+	>>> exception_frame(None, Kconfig())
 	0
 	"""
 	match core:
 		case ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=floating_point):
 			return (_EXTENDED_FRAME if floating_point else _BASIC_FRAME) + _ALIGNMENT_PAD
-		case ArmCore() | None:
+		case ArmCore(floating_point=floating_point):
+			return _SYSTEM_MODE_FRAME + _floating_point_frame(floating_point, options)
+		case None:
 			return 0
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _floating_point_frame(floating_point: bool, options: Kconfig) -> int:
+	"""What an A- or R-profile interrupt entry reserves for floating-point state.
+
+	Without a ``.config``, the most the build attributes allow.
+
+	>>> _floating_point_frame(True, Kconfig()), _floating_point_frame(False, Kconfig())
+	(200, 0)
+	"""
+	return (
+		(_VFP_D32_FRAME if floating_point else 0)
+		if not configured(options)
+		else (_VFP_D32_FRAME if options.options.get(_D32) == "y" else _VFP_FRAME)
+		if options.options.get(_FPU_SHARING) == "y"
+		else 0
+	)
+
+
+def exception_frames(program: Program, options: Kconfig) -> int | None:
+	"""How many interrupts' frames can stack on a thread's stack at once; none when unknown.
+
+	On M-profile, handlers run on the main stack. On an A- or R-profile core each nested
+	interrupt stacks its own frame on the thread's stack, and an interrupt nests only
+	while it is not active already, so there are at most as many as the image connects.
+	"""
+	match program.arm_core:
+		case ArmCore(profile=ArmProfile.MICROCONTROLLER):
+			return 1
+		case ArmCore(profile=ArmProfile.APPLICATION | ArmProfile.REAL_TIME) if not (
+			_switches_on_stack(program, options) or options.options.get(_DYNAMIC_INTERRUPTS) == "y"
+		):
+			return _connected_interrupts(program)
+		case ArmCore() | None:
+			return None
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _connected_interrupts(program: Program) -> int | None:
+	table = next(
+		(data_object for data_object in program.objects.values() if data_object.name == _ISR_TABLE),
+		None,
+	)
+	layout = program.layouts.get(_ISR_ENTRY)
+	if (
+		table is None
+		or layout is None
+		or _ISR not in layout.offsets
+		or layout.size == 0
+		or in_writable_memory(program, table.address)
+	):
+		return None
+	return sum(
+		pointer_at(program, Address(table.address + offset))
+		not in _addresses_of(program, _SPURIOUS)
+		for offset in range(layout.offsets[_ISR], table.size, layout.size)
+	)
 
 
 def stack_sentinel(program: Program, options: Kconfig) -> int:
@@ -140,11 +215,16 @@ def not_counted(program: Program, options: Kconfig) -> frozenset[Uncounted]:
 		uncounted
 		for uncounted, shown in {
 			Uncounted.EXCEPTION_FRAMES: program.machine is Machine.EM_ARM
-			and exception_frame(program.arm_core) == 0,
-			Uncounted.SWITCH_FRAME: options.options.get(_SWITCH) == "y"
-			or any(symbol in program.symbol_addresses for symbol in _SWITCH_CODE),
+			and exception_frames(program, options) is None,
+			Uncounted.SWITCH_FRAME: _switches_on_stack(program, options),
 		}.items()
 		if shown
+	)
+
+
+def _switches_on_stack(program: Program, options: Kconfig) -> bool:
+	return options.options.get(_SWITCH) == "y" or any(
+		symbol in program.symbol_addresses for symbol in _SWITCH_CODE
 	)
 
 

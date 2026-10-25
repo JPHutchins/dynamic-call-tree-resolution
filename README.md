@@ -754,7 +754,18 @@ contradicts does not hold.
   plus a word that may align the stack. It is added once, since handlers run on the
   main stack, whose row is `z_interrupt_stacks`. Zephyr's context switch saves registers
   in the thread object, not on its stack, unless the build sets `CONFIG_USE_SWITCH`.
-  Other cores' exception stacking is not modeled.
+- Under Zephyr on an A- or R-profile core, an interrupt's entry stacks its frame on the
+  interrupted thread's stack in system mode: the return state and six registers, and the
+  floating-point frame Zephyr shares there. The `.config` sizes that frame
+  (`CONFIG_FPU_SHARING`, `CONFIG_VFP_FEATURE_REGS_S64_D32`); without one, it is the
+  largest the build attributes allow. A nested interrupt stacks another frame, and an
+  interrupt never nests within itself, so a thread row adds one frame for each interrupt
+  `_sw_isr_table` connects, as `exception frames: N, M bytes each`. It reads no
+  priorities, so it over-counts where priorities keep interrupts from nesting, as the
+  main stack's row does (below). With `CONFIG_DYNAMIC_INTERRUPTS`, or a table that is
+  writable or missing, the count is unknown, and the rows keep one frame and the mark
+  `not counted: exception frames`. The handlers run on other stacks, which have no rows
+  yet ([#151]).
 - The main stack's row reads no priorities. It assumes any configurable-priority
   exception can nest at any level, so it over-counts where priorities, priority grouping
   or masking keep exceptions from nesting. Reading the image's priorities is a later,
@@ -792,8 +803,9 @@ contradicts does not hold.
 - Under Zephyr, a thread row bounds only from below, `unbounded, at least N bytes`, and
   names what it leaves out as `not counted`, when the image shows that Zephyr adds to a
   thread's stack something the model doesn't count yet:
-  - `exception frames`: on an Arm core that isn't M-profile, or one whose build
-    attributes name no profile;
+  - `exception frames`: on an Arm core whose build attributes name no profile, or an
+    A- or R-profile core whose interrupts can't be counted (above) or that switches
+    context on the thread's stack;
   - `switch frame`: `CONFIG_USE_SWITCH`, or the `arm_m_exc_exit` or
     `z_arm_context_switch` symbol, since a suspended thread's registers then stay on its
     stack.

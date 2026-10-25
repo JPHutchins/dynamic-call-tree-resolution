@@ -392,7 +392,9 @@ class RtosModel(Struct):
 	stack_reservation: int = 0
 	"""The bytes the RTOS takes from the top of each thread's stack before the thread's entry runs."""
 	exception_frame: int = 0
-	"""The bytes an interrupt's hardware frame adds to the interrupted thread's stack."""
+	"""The bytes an interrupt's frame adds to the interrupted thread's stack."""
+	exception_frames: int = 1
+	"""How many interrupts' frames can stack on the interrupted thread's stack at once."""
 	stack_sentinel: int = 0
 	"""The bytes the RTOS writes at the bottom of each thread's stack to catch an overflow."""
 	system_threads: tuple[SystemThread, ...] = ()

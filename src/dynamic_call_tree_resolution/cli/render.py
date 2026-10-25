@@ -108,6 +108,8 @@ class _Addition(Struct):
 
 	label: str
 	added: int
+	count: int = 1
+	"""How many equal parts ``added`` holds."""
 
 
 def _notes(
@@ -119,7 +121,9 @@ def _notes(
 		(
 			*(f"{count.reason}: {len(count.functions)}" for count in counts if count.functions),
 			*(
-				f"{addition.label}: {addition.added} bytes"
+				f"{addition.label}s: {addition.count}, {addition.added // addition.count} bytes each"
+				if addition.count > 1
+				else f"{addition.label}: {addition.added} bytes"
 				for addition in additions
 				if addition.added
 			),
@@ -131,7 +135,9 @@ def _notes(
 def _thread_stack_additions(bound: Bounded | Unbounded) -> tuple[_Addition, ...]:
 	return (
 		_Addition(label="stack reservation", added=bound.stack_reservation),
-		_Addition(label="exception frame", added=bound.exception_frame),
+		_Addition(
+			label="exception frame", added=bound.exception_frame, count=bound.exception_frames
+		),
 		_Addition(label="stack sentinel", added=bound.stack_sentinel),
 	)
 
@@ -140,7 +146,8 @@ def thread_stack_steps(
 	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
 ) -> tuple[str, ...]:
 	return tuple(
-		f"({addition.label}) +{addition.added} = {steps[-1].cumulative + total} bytes"
+		f"({addition.label}{'s' if addition.count > 1 else ''}) +{addition.added} "
+		f"= {steps[-1].cumulative + total} bytes"
 		for report in shown[:1]
 		if steps
 		for additions in (_thread_stack_additions(report.bound),)

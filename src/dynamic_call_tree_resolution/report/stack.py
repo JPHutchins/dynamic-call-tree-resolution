@@ -30,7 +30,9 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
 	``bytes``."""
 	exception_frame_bytes: int = 0
-	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
+	"""The interrupt frames the RTOS model adds to a thread's depth, included in ``bytes``."""
+	exception_frames: int = 0
+	"""How many interrupts' frames ``exception_frame_bytes`` holds."""
 	stack_sentinel_bytes: int = 0
 	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
 	``bytes``."""
@@ -60,8 +62,10 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
 	``at_least_bytes``."""
 	exception_frame_bytes: int = 0
-	"""The interrupt frame the RTOS model adds to a thread's depth, included in
+	"""The interrupt frames the RTOS model adds to a thread's depth, included in
 	``at_least_bytes``."""
+	exception_frames: int = 0
+	"""How many interrupts' frames ``exception_frame_bytes`` holds."""
 	stack_sentinel_bytes: int = 0
 	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
 	``at_least_bytes``."""
@@ -87,6 +91,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				measured=tuple(sorted(measured)),
 				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=exception_frame,
+				exception_frames=bound.exception_frames,
 				stack_sentinel_bytes=bound.stack_sentinel,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
@@ -104,6 +109,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				measured=tuple(sorted(bound.measured)),
 				stack_reservation_bytes=bound.stack_reservation,
 				exception_frame_bytes=bound.exception_frame,
+				exception_frames=bound.exception_frames,
 				stack_sentinel_bytes=bound.stack_sentinel,
 				assumed_no_recursion=tuple(sorted(bound.assumed_no_recursion)),
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
