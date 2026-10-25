@@ -98,6 +98,7 @@ def _thread_report(
 				_Additions(
 					reservation=rtos.privileged_stack.saved,
 					exception_frame=rtos.exception_frame,
+					exception_frames=1,
 					sentinel=0,
 					not_counted=rtos.not_counted,
 				),
@@ -113,6 +114,8 @@ class _Additions(Struct):
 
 	reservation: int
 	exception_frame: int
+	"""One interrupt's frame."""
+	exception_frames: int
 	sentinel: int
 	not_counted: frozenset[Uncounted]
 
@@ -121,6 +124,7 @@ def _thread_additions(rtos: RtosModel) -> _Additions:
 	return _Additions(
 		reservation=rtos.stack_reservation,
 		exception_frame=rtos.exception_frame,
+		exception_frames=rtos.exception_frames,
 		sentinel=rtos.stack_sentinel,
 		not_counted=rtos.not_counted,
 	)
@@ -135,10 +139,11 @@ def _on_stack(report: StackReport, additions: _Additions) -> StackReport:
 					report.bound,
 					bytes=depth
 					+ additions.reservation
-					+ additions.exception_frame
+					+ additions.exception_frame * additions.exception_frames
 					+ additions.sentinel,
 					stack_reservation=additions.reservation,
-					exception_frame=additions.exception_frame,
+					exception_frame=additions.exception_frame * additions.exception_frames,
+					exception_frames=additions.exception_frames if additions.exception_frame else 0,
 					stack_sentinel=additions.sentinel,
 				),
 			)
@@ -148,7 +153,7 @@ def _on_stack(report: StackReport, additions: _Additions) -> StackReport:
 				bound=Unbounded(
 					at_least=depth
 					+ additions.reservation
-					+ additions.exception_frame
+					+ additions.exception_frame * additions.exception_frames
 					+ additions.sentinel,
 					recursion=frozenset(),
 					unmeasured=frozenset(),
@@ -156,7 +161,8 @@ def _on_stack(report: StackReport, additions: _Additions) -> StackReport:
 					unresolved=frozenset(),
 					measured=bound.measured,
 					stack_reservation=additions.reservation,
-					exception_frame=additions.exception_frame,
+					exception_frame=additions.exception_frame * additions.exception_frames,
+					exception_frames=additions.exception_frames if additions.exception_frame else 0,
 					stack_sentinel=additions.sentinel,
 					assumed_no_recursion=bound.assumed_no_recursion,
 					narrowed_by_field=bound.narrowed_by_field,
@@ -173,10 +179,11 @@ def _on_stack(report: StackReport, additions: _Additions) -> StackReport:
 					report.bound,
 					at_least=at_least
 					+ additions.reservation
-					+ additions.exception_frame
+					+ additions.exception_frame * additions.exception_frames
 					+ additions.sentinel,
 					stack_reservation=additions.reservation,
-					exception_frame=additions.exception_frame,
+					exception_frame=additions.exception_frame * additions.exception_frames,
+					exception_frames=additions.exception_frames if additions.exception_frame else 0,
 					stack_sentinel=additions.sentinel,
 					not_counted=additions.not_counted,
 				),

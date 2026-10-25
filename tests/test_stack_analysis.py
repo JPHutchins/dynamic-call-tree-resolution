@@ -129,10 +129,32 @@ def test_a_system_threads_row_adds_what_the_rtos_model_adds_to_the_whole_images_
 				bytes=16 + 8 + 40 + 36 + 4,
 				stack_reservation=16,
 				exception_frame=36,
+				exception_frames=1,
 				stack_sentinel=4,
 			),
 		),
 		StackReport(entry="isr", bound=Bounded(bytes=24)),
+	)
+
+
+def test_a_threads_row_stacks_a_frame_for_each_interrupt_that_can_nest_on_it() -> None:
+	assert thread_reports(
+		(StackReport(entry="main_thread", bound=Bounded(bytes=48)),),
+		{},
+		RtosModel(
+			name="test",
+			evidence=(),
+			threads=(),
+			trampoline="trampoline",
+			exception_frame=232,
+			exception_frames=6,
+			system_threads=(SystemThread(name="main_thread", entry=Address(0x100)),),
+		),
+	) == (
+		StackReport(
+			entry="main_thread",
+			bound=Bounded(bytes=48 + 6 * 232, exception_frame=6 * 232, exception_frames=6),
+		),
 	)
 
 
@@ -192,6 +214,7 @@ def test_a_threads_row_bounds_only_from_below_while_the_rtos_model_leaves_out_wh
 				measured=frozenset({"memset"}),
 				stack_reservation=16,
 				exception_frame=36,
+				exception_frames=1,
 				stack_sentinel=4,
 				assumed_no_recursion=frozenset({"walk"}),
 				narrowed_by_field=frozenset({"dispatch"}),
@@ -211,6 +234,7 @@ def test_a_threads_row_bounds_only_from_below_while_the_rtos_model_leaves_out_wh
 				unresolved=frozenset(),
 				stack_reservation=16,
 				exception_frame=36,
+				exception_frames=1,
 				stack_sentinel=4,
 				not_counted=frozenset({Uncounted.EXCEPTION_FRAMES}),
 			),
@@ -253,6 +277,7 @@ def test_a_privileged_stacks_row_adds_what_the_system_call_keeps_and_not_a_threa
 				unresolved=frozenset(),
 				stack_reservation=8,
 				exception_frame=36,
+				exception_frames=1,
 				not_counted=frozenset({Uncounted.SWITCH_FRAME}),
 			),
 			stack_size=1024,

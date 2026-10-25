@@ -271,6 +271,7 @@ def _recursing(measured: tuple[str, ...]) -> UnboundedStack:
 		measured=measured,
 		stack_reservation_bytes=16,
 		exception_frame_bytes=36,
+		exception_frames=1,
 		narrowed_by_field=("i2c_emul_transfer",),
 	)
 
@@ -287,6 +288,7 @@ def _recursing(measured: tuple[str, ...]) -> UnboundedStack:
 					measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 					stack_reservation_bytes=16,
 					exception_frame_bytes=36,
+					exception_frames=1,
 					narrowed_by_field=("spi_emul_io",),
 				),
 				"thermal_tid": _recursing(("__aeabi_ldivmod", "__aeabi_read_tp", "memset")),

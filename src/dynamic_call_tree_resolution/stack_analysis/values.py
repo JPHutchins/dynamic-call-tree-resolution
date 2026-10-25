@@ -30,7 +30,9 @@ class Bounded(Struct):
 	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
 	``bytes``."""
 	exception_frame: int = 0
-	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``bytes``."""
+	"""The interrupt frames the RTOS model adds to a thread's depth, included in ``bytes``."""
+	exception_frames: int = 0
+	"""How many interrupts' frames ``exception_frame`` holds."""
 	stack_sentinel: int = 0
 	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
 	``bytes``."""
@@ -64,7 +66,9 @@ class Unbounded(Struct):
 	"""The top of a thread's stack the RTOS model takes before the thread runs, included in
 	``at_least``."""
 	exception_frame: int = 0
-	"""The interrupt frame the RTOS model adds to a thread's depth, included in ``at_least``."""
+	"""The interrupt frames the RTOS model adds to a thread's depth, included in ``at_least``."""
+	exception_frames: int = 0
+	"""How many interrupts' frames ``exception_frame`` holds."""
 	stack_sentinel: int = 0
 	"""The bottom of a thread's stack the RTOS model takes to catch an overflow, included in
 	``at_least``."""

@@ -44,6 +44,15 @@ def kconfig(text: str) -> Kconfig:
 	)
 
 
+def configured(options: Kconfig) -> bool:
+	r"""Whether a build's ``.config`` was read.
+
+	>>> configured(kconfig('CONFIG_ARCH="arm"\n')), configured(NO_KCONFIG)
+	(True, False)
+	"""
+	return _ARCH in options.options
+
+
 def declared(options: Kconfig, stack_size: int | None) -> int | None:
 	r"""A declared stack size, when the build's ``.config`` shows the thread can use all of it.
 

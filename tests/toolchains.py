@@ -45,6 +45,18 @@ class ZephyrMachine(StrEnum):
 			case _ as unreachable:
 				assert_never(unreachable)
 
+	@property
+	def clock(self) -> tuple[str, ...]:
+		"""How QEMU keeps its time: by counting instructions, except where gdb cannot resume from
+		a breakpoint inside an interrupt handler under that clock."""
+		match self:
+			case ZephyrMachine.LM3S6965EVB | ZephyrMachine.MPS2_AN385:
+				return ("-icount", "shift=6,align=off,sleep=off", "-rtc", "clock=vm")
+			case ZephyrMachine.MPS3_AN536:
+				return ()
+			case _ as unreachable:
+				assert_never(unreachable)
+
 
 def _zephyr_qemu(machine: ZephyrMachine) -> tuple[str, ...]:
 	return (
@@ -55,10 +67,7 @@ def _zephyr_qemu(machine: ZephyrMachine) -> tuple[str, ...]:
 		machine.cpu,
 		"-monitor",
 		"none",
-		"-icount",
-		"shift=6,align=off,sleep=off",
-		"-rtc",
-		"clock=vm",
+		*machine.clock,
 	)
 
 
@@ -179,6 +188,8 @@ def zephyr_stack_pointers(
 		for line in subprocess.run(
 			[
 				"timeout",
+				"-k",
+				"5",
 				"60",
 				"arm-none-eabi-gdb",
 				"-batch",
@@ -220,14 +231,16 @@ def zephyr_stack_pointers(
 
 
 def zephyr_values(
-	machine: ZephyrMachine, elf: Path, breakpoint: str, expressions: tuple[str, ...]
+	machine: ZephyrMachine, elf: Path, breakpoints: tuple[str, ...], expressions: tuple[str, ...]
 ) -> tuple[int, ...]:
-	"""Each expression's value when a breakpoint is first hit, under gdb on QEMU."""
+	"""Each expression's value at each breakpoint's first hit, in order, under gdb on QEMU."""
 	return tuple(
 		int(line.split()[1], 16)
 		for line in subprocess.run(
 			[
 				"timeout",
+				"-k",
+				"5",
 				"60",
 				"arm-none-eabi-gdb",
 				"-batch",
@@ -248,14 +261,22 @@ def zephyr_values(
 						"stdio",
 					)
 				),
-				"-ex",
-				f"break {breakpoint}",
-				"-ex",
-				"continue",
 				*(
 					argument
-					for expression in expressions
-					for argument in ("-ex", rf'printf "value %#x\n", {expression}')
+					for breakpoint in breakpoints
+					for argument in (
+						"-ex",
+						"delete",
+						"-ex",
+						f"break {breakpoint}",
+						"-ex",
+						"continue",
+						*(
+							argument
+							for expression in expressions
+							for argument in ("-ex", rf'printf "value %#x\n", {expression}')
+						),
+					)
 				),
 				"-ex",
 				"kill",

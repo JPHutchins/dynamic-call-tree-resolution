@@ -25,6 +25,7 @@ from dynamic_call_tree_resolution.rtos.zephyr.stacks import (
 	INTERRUPT_STACK_SIZE,
 	PRIVILEGED_STACK_SIZE,
 	exception_frame,
+	exception_frames,
 	interrupt_stack,
 	not_counted,
 	privileged_stack,
@@ -69,7 +70,10 @@ def detect(program: Program, options: Kconfig = NO_KCONFIG) -> RtosModel | None:
 		threads=threads,
 		trampoline=TRAMPOLINE,
 		stack_reservation=stack_reservation(program, options),
-		exception_frame=exception_frame(program.arm_core),
+		exception_frame=exception_frame(program.arm_core, options),
+		exception_frames=frames
+		if (frames := exception_frames(program, options)) is not None
+		else 1,
 		stack_sentinel=stack_sentinel(program, options),
 		system_threads=tuple(
 			system_thread

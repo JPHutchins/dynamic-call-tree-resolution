@@ -95,6 +95,7 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 				measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 				stack_reservation_bytes=16,
 				exception_frame_bytes=36,
+				exception_frames=1,
 				narrowed_by_field=("spi_emul_io",),
 			),
 			76,
@@ -106,6 +107,7 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 				measured=("__aeabi_ldivmod", "__aeabi_read_tp", "memset"),
 				stack_reservation_bytes=16,
 				exception_frame_bytes=36,
+				exception_frames=1,
 				stack_sentinel_bytes=0,
 				narrowed_by_field=("i2c_emul_transfer",),
 				**provenance,
@@ -266,6 +268,7 @@ def test_the_main_and_idle_threads_are_rows_in_place_of_their_entries(
 			measured=("__aeabi_read_tp",),
 			stack_reservation_bytes=16,
 			exception_frame_bytes=36,
+			exception_frames=1,
 		),
 	)
 
