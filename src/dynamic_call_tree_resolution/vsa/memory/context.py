@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
 
 	from dynamic_call_tree_resolution.model import Program
+	from dynamic_call_tree_resolution.vsa.entry_loads import EntryLoad
 	from dynamic_call_tree_resolution.vsa.escape import Escapes
+	from dynamic_call_tree_resolution.vsa.lattice import ValueSet
 
 
 class Context(Struct):
@@ -54,6 +56,10 @@ class Context(Struct):
 	unescaped_starts: tuple[int, ...] = ()
 	store_targets: Mapping[Address, frozenset[Span]] = {}
 	"""The unescaped objects each store, by address, may write when the analysis can't place it."""
+	entry_loads: Mapping[Address, tuple[EntryLoad, ...]] = {}
+	"""Each function's entry loads, by where its code starts."""
+	entry_words: Mapping[Address, ValueSet] = {}
+	"""What every observed caller holds where an entry load reads, by the load's address."""
 
 
 def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
@@ -74,6 +80,8 @@ def context_for(
 	*,
 	assumed_unwritten: tuple[Span, ...] = (),
 	escapes: Escapes = NO_ESCAPES,
+	entry_loads: Mapping[Address, tuple[EntryLoad, ...]] | None = None,
+	entry_words: Mapping[Address, ValueSet] | None = None,
 ) -> Context:
 	spans = tuple(
 		sorted(
@@ -112,4 +120,6 @@ def context_for(
 		unescaped_spans=escapes.unescaped,
 		unescaped_starts=tuple(span.start for span in escapes.unescaped),
 		store_targets=escapes.store_targets,
+		entry_loads=entry_loads or {},
+		entry_words=entry_words or {},
 	)

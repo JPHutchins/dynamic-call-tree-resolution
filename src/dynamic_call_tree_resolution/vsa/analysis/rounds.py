@@ -23,8 +23,10 @@ from dynamic_call_tree_resolution.vsa.analysis.creations import (
 	modeled,
 )
 from dynamic_call_tree_resolution.vsa.analysis.seeds import (
+	next_entry_words,
 	next_round_seeds,
 	next_writes,
+	observed_entry_words,
 	observed_seeds,
 	seed_from_arguments,
 )
@@ -51,7 +53,9 @@ if TYPE_CHECKING:
 		ThreadRoot,
 	)
 	from dynamic_call_tree_resolution.span import Span
+	from dynamic_call_tree_resolution.vsa.entry_loads import EntryLoad
 	from dynamic_call_tree_resolution.vsa.escape import Escapes
+	from dynamic_call_tree_resolution.vsa.lattice import ValueSet
 
 
 class ThreadSites(Struct):
@@ -67,6 +71,8 @@ class Round(Struct):
 
 	seeds: Mapping[Address, State]
 	writes: Writes
+	entry_words: Mapping[Address, ValueSet] = {}
+	"""What every observed caller holds where an entry load reads, by the load's address."""
 
 
 class Rounds(Struct):
@@ -81,6 +87,7 @@ class Rounds(Struct):
 	creation: Creation | None
 	assumed_unwritten: tuple[Span, ...]
 	escapes: Escapes
+	entry_loads: Mapping[Address, tuple[EntryLoad, ...]]
 
 
 def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
@@ -94,25 +101,23 @@ def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
 					current.writes,
 					assumed_unwritten=rounds.assumed_unwritten,
 					escapes=rounds.escapes,
+					entry_loads=rounds.entry_loads,
+					entry_words=current.entry_words,
 				),
 				current.seeds,
 			),
 			_reached(rounds.functions, current.seeds, rounds.program.machine),
 		)
 	)
+	observations = modeled(
+		[observation for result in results for observation in result.observations],
+		rounds.creation,
+	)
 	following = Round(
 		seeds={
 			**next_round_seeds(
 				current.seeds,
-				observed_seeds(
-					modeled(
-						[observation for result in results for observation in result.observations],
-						rounds.creation,
-					),
-					rounds.roots,
-					rounds.entry_seeds,
-					rounds.program,
-				),
+				observed_seeds(observations, rounds.roots, rounds.entry_seeds, rounds.program),
 				rounds.top,
 				round_number,
 			),
@@ -121,6 +126,11 @@ def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
 		writes=next_writes(
 			current.writes,
 			accumulate_writes(current.writes, [result.writes for result in results]),
+			round_number,
+		),
+		entry_words=next_entry_words(
+			current.entry_words,
+			observed_entry_words(observations, rounds.roots, rounds.entry_seeds),
 			round_number,
 		),
 	)
