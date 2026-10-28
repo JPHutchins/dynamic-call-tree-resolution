@@ -15,10 +15,7 @@ from dynamic_call_tree_resolution.model import Address, InstructionFamily
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	ARM_DESCENDING_STORES,
-	ARM_EXCLUSIVE_STORES,
 	ARM_MULTIPLE_STORES,
-	ARM_STORE_WIDTHS,
-	ARM_UNTRACKED_STORES,
 	arm_predicated,
 	normalized,
 )
@@ -75,13 +72,47 @@ def _arm_entry_loads(graph: FunctionGraph) -> tuple[EntryLoad, ...]:
 
 
 _CALLS: Final = frozenset({arm_const.ARM_INS_BL, arm_const.ARM_INS_BLX, arm_const.ARM_INS_SVC})
-_STORES: Final = frozenset(
-	{*ARM_STORE_WIDTHS, *ARM_MULTIPLE_STORES, *ARM_UNTRACKED_STORES, *ARM_EXCLUSIVE_STORES}
+_LOADS: Final = frozenset(
+	{
+		arm_const.ARM_INS_LDR,
+		arm_const.ARM_INS_LDRB,
+		arm_const.ARM_INS_LDRH,
+		arm_const.ARM_INS_LDRSB,
+		arm_const.ARM_INS_LDRSH,
+		arm_const.ARM_INS_LDRD,
+		arm_const.ARM_INS_LDM,
+		arm_const.ARM_INS_LDMDA,
+		arm_const.ARM_INS_LDMDB,
+		arm_const.ARM_INS_LDMIB,
+		arm_const.ARM_INS_POP,
+		arm_const.ARM_INS_VLDR,
+		arm_const.ARM_INS_VLDMIA,
+		arm_const.ARM_INS_VLDMDB,
+		arm_const.ARM_INS_VPOP,
+	}
+)
+_REGISTER_LIST_STORES: Final = frozenset(
+	{
+		*ARM_MULTIPLE_STORES,
+		arm_const.ARM_INS_STMDA,
+		arm_const.ARM_INS_STMIB,
+		arm_const.ARM_INS_SRSDA,
+		arm_const.ARM_INS_SRSDB,
+		arm_const.ARM_INS_SRSIA,
+		arm_const.ARM_INS_SRSIB,
+	}
 )
 
 
 def _leaves_memory_alone(instruction: CsInsn) -> bool:
-	return instruction.id not in _CALLS and (instruction.id not in _STORES or _pushes(instruction))
+	return instruction.id not in _CALLS and (
+		_pushes(instruction)
+		or instruction.id in _LOADS
+		or (
+			instruction.id not in _REGISTER_LIST_STORES
+			and all(operand.type != arm_const.ARM_OP_MEM for operand in instruction.operands)
+		)
+	)
 
 
 def _pushes(instruction: CsInsn) -> bool:
