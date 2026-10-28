@@ -550,6 +550,21 @@ def test_cli_stack_path_with_elf_names_the_indirect_edge(
 	]
 
 
+@pytest.mark.image
+@pytest.mark.parametrize(
+	("build", "image", "row"),
+	[
+		pytest.param("synchronization", "zephyr.elf", "console_out: 16 bytes", id="Arm"),
+		pytest.param("counter-su", "zephyr.exe", "console_out: unbounded", id="x86"),
+	],
+)
+def test_cli_stack_drops_the_fallback_of_a_function_whose_calls_all_resolved_only_on_arm(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str], build: str, image: str, row: str
+) -> None:
+	stack(zephyr_fixtures / build, zephyr_fixtures / build / "zephyr" / image, path="console_out")
+	assert capsys.readouterr().out.splitlines()[1].startswith(row)
+
+
 def test_cli_analyze_names_the_external_function_a_slot_the_dynamic_loader_fills_calls(
 	fixture_elfs: dict[str, Path],
 ) -> None:

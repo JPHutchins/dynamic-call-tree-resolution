@@ -49,6 +49,7 @@ def expand_indirect_calls(
 	*,
 	exact: bool = False,
 	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]] | None = None,
+	complete: frozenset[str] = frozenset(),
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
@@ -61,7 +62,7 @@ def expand_indirect_calls(
 				(narrowed_by_caller or {}).get(frame_key(edge.caller), {}),
 				fallback,
 				graph_targets,
-				exact=exact,
+				exact=exact or frame_key(edge.caller) in complete,
 			)
 			or _unexpanded(
 				targets_by_caller.get(frame_key(edge.caller), frozenset[str]()), edge.kind
@@ -152,11 +153,12 @@ def own_thread_edges(
 	targets_by_caller: Mapping[str, frozenset[str]],
 	fallback: frozenset[str],
 	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]] | None = None,
+	complete: frozenset[str] = frozenset(),
 ) -> tuple[CallEdge, ...]:
 	edges_tuple = tuple(edges)
 	graph_targets = partial(_graph_names, _raw_names_by_key(edges_tuple))
 	node = partial(_thread_node, thread, own.reached)
-	complete = _complete_callers(edges_tuple, own)
+	own_complete = complete_callers(edges_tuple, own.targets_by_caller, own.sites_by_caller)
 	return (
 		*(
 			CallEdge(caller=thread, callee=node(edge.callee), kind=edge.kind)
@@ -187,13 +189,13 @@ def own_thread_edges(
 						for target in own.targets_by_caller[frame_key(edge.caller)] - {NO_CALLEE}
 						for graph_target in graph_targets(target)
 					)
-					if frame_key(edge.caller) in complete
+					if frame_key(edge.caller) in own_complete
 					else _expansion(
 						targets_by_caller.get(frame_key(edge.caller), frozenset[str]()),
 						(narrowed_by_caller or {}).get(frame_key(edge.caller), {}),
 						fallback,
 						graph_targets,
-						exact=False,
+						exact=frame_key(edge.caller) in complete,
 					)
 					or _unexpanded(
 						targets_by_caller.get(frame_key(edge.caller), frozenset[str]()), edge.kind
@@ -206,15 +208,20 @@ def own_thread_edges(
 	)
 
 
-def _complete_callers(edges: tuple[CallEdge, ...], own: ThreadTargets) -> frozenset[str]:
+def complete_callers(
+	edges: Iterable[CallEdge],
+	targets_by_caller: Mapping[str, frozenset[str]],
+	sites_by_caller: Mapping[str, int],
+) -> frozenset[str]:
+	"""The callers whose indirect calls expand to their targets alone, without the fallback."""
 	indirect_edges = Counter(
 		frame_key(edge.caller) for edge in edges if edge.callee == INDIRECT_CALLEE
 	)
 	return frozenset(
 		caller
-		for caller, targets in own.targets_by_caller.items()
+		for caller, targets in targets_by_caller.items()
 		if INDIRECT_CALLEE not in targets
-		and own.sites_by_caller.get(caller, 0) >= indirect_edges[caller]
+		and sites_by_caller.get(caller, 0) >= indirect_edges[caller]
 	)
 
 

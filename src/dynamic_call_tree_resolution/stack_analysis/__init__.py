@@ -5,6 +5,7 @@
 
 from dynamic_call_tree_resolution.stack_analysis.edges import ThreadEntry as ThreadEntry
 from dynamic_call_tree_resolution.stack_analysis.edges import ThreadTargets as ThreadTargets
+from dynamic_call_tree_resolution.stack_analysis.edges import complete_callers as complete_callers
 from dynamic_call_tree_resolution.stack_analysis.edges import (
 	expand_indirect_calls as expand_indirect_calls,
 )

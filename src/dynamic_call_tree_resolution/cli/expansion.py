@@ -35,6 +35,7 @@ from dynamic_call_tree_resolution.cli.measures import (
 	image_function_names,
 	own_thread_graphs,
 	register_callers,
+	resolved_callers,
 	stack_nodes,
 	thread_graph,
 	unrecorded_sites,
@@ -162,11 +163,14 @@ def expand_from_elf(
 	measure = code_measure(image.program)
 	register = register_callers(image, measure, resolution.sites, artifacts.frames)
 	unrecorded = unrecorded_sites(image, resolution.sites, (*in_image_edges, *register.edges))
+	graph_edges = (*artifacts.edges, *register.edges, *unrecorded)
+	complete = resolved_callers(image, resolution.sites, candidates.targets_by_caller, graph_edges)
 	expanded = expand_indirect_calls(
-		(*artifacts.edges, *register.edges, *unrecorded),
+		graph_edges,
 		candidates.targets_by_caller,
 		candidates.fallback,
 		narrowed_by_caller=narrowed_by_caller,
+		complete=complete,
 	)
 	binary = _binary_edges(image, measure, expanded, artifacts.frames)
 	threads = thread_graph(
@@ -211,6 +215,7 @@ def expand_from_elf(
 					narrowed_by_caller=narrowed_by_caller,
 					narrowed_by_field=narrowed_by_field,
 					narrow_by_signature=narrow_by_signature,
+					complete=complete,
 				),
 			).items()
 		},

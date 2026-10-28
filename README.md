@@ -31,10 +31,12 @@ with no target.
    from the image. The dispatch sites that call through them (`z_sys_init_run_level`,
    `do_device_init`) go to those entries, as the Zephyr model assumes.
 3. **Candidate narrowing.** Indirect call sites are narrowed by a value-set analysis
-   over every function's machine code, seeded from observed direct calls. The narrowed
-   sets are refinements, not over-approximations. With `--narrow-by-signature`, a site
-   whose slot the image leaves unset also narrows to the functions of the slot's DWARF
-   signature whose address the image takes. With `--narrow-by-field`, a site that loads its callee from a struct field
+   over every function's machine code, seeded from observed direct calls. On an x86
+   image the narrowed sets are refinements, not over-approximations; on an Arm image,
+   `stack` trusts them where a function's every indirect call has one (below). With
+   `--narrow-by-signature`, a site whose slot the image leaves unset also narrows to the
+   functions of the slot's DWARF signature whose address the image takes. With
+   `--narrow-by-field`, a site that loads its callee from a struct field
    narrows to what that field holds: its initializers in the image and the functions the
    build stores into it. Each RTOS static thread is also analyzed on its own, started
    from its record.
@@ -44,9 +46,11 @@ Stack depths combine the resulting call graph with GCC's
 and the indirect call sites in the code that `.ci` does not record. Each indirect call also
 expands to the fallback: every function whose address the image stores, a non-branch
 instruction computes, or an address relocation kept by `--emit-relocs` names. The exceptions
-are a site inside a thread's tree that the thread's own analysis resolved, and a call through
-a slot the dynamic loader fills with an undefined symbol's address: that call goes to the
-symbol, an external function the graph counts as unmeasured. A call whose target can only
+are a function on an Arm image whose indirect calls the analysis all resolved, at least as
+many as `.ci` records, whose calls go to their candidates alone ([#331]); a site inside a
+thread's tree that the thread's own analysis resolved; and a call through a slot the dynamic
+loader fills with an undefined symbol's address: that call goes to the symbol, an external
+function the graph counts as unmeasured. A call whose target can only
 be address 0 calls nothing, and so does an Arm call that only branches the known values
 decide against, or the fall-through of a call that never returns, lead to. On an
 M-profile image, the
@@ -221,10 +225,10 @@ __ctype_b_loc +0 = 1728 bytes via static (unmeasured)
 - `compare` counts the indirect instructions it extracts; `stack --elf` counts the
   `__indirect_call` edges of the functions in the image. The `stack --elf` header ends
   with the RTOS model when one is detected.
-- `stack --elf` expands every indirect edge to its site candidates plus the fallback,
-  every address-taken function, except inside a thread's tree (below). `z_shell_write`
-  has no candidates, so its edge is the fallback alone, and every function it reaches
-  that way is `indirect: fallback`.
+- On this x86 image, `stack --elf` expands every indirect edge to its site candidates
+  plus the fallback, every address-taken function, except inside a thread's tree
+  (below). `z_shell_write` has no candidates, so its edge is the fallback alone, and
+  every function it reaches that way is `indirect: fallback`.
 - An `unbounded` entry's number is only a lower bound. The counts name what breaks the
   bound anywhere in the entry's subtree:
   - `recursion`: functions on a cycle;
@@ -377,9 +381,9 @@ spi_emul_io@0x3b84: bmi160_emul_io_spi (narrowed by field struct spi_emul_api.io
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf
 resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
-motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
-thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+z_interrupt_stacks: unbounded, at least 10108 bytes (recursion: 46, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
+motion_tid: unbounded, at least 1144 bytes (recursion: 46, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+thermal_tid: unbounded, at least 1132 bytes (recursion: 46, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 ...
 ```
 
@@ -389,37 +393,37 @@ by its exception number:
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path z_interrupt_stacks
 resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
-(exception 1) __start +1036 = 1036 bytes
-(exception 4) z_arm_hard_fault +36 +1072 = 2144 bytes
-(exception 5) z_arm_hard_fault +36 +1072 = 3252 bytes
-(exception 6) z_arm_hard_fault +36 +1072 = 4360 bytes
-(exception 12) z_arm_hard_fault +36 +1072 = 5468 bytes
-(exception 15) sys_clock_isr +36 +1064 = 6568 bytes
-(exception 16) _isr_wrapper +36 +1000 = 7604 bytes
-(exception 17) _isr_wrapper +36 +1000 = 8640 bytes
-(exception 18) _isr_wrapper +36 +1000 = 9676 bytes
-(exception 3) z_arm_hard_fault +36 +1072 = 10784 bytes
-(exception 2) z_arm_nmi +36 +8 = 10828 bytes
+z_interrupt_stacks: unbounded, at least 10108 bytes (recursion: 46, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)
+(exception 1) __start +972 = 972 bytes
+(exception 15) sys_clock_isr +36 +1016 = 2024 bytes
+(exception 4) z_arm_hard_fault +36 +1008 = 3068 bytes
+(exception 5) z_arm_hard_fault +36 +1008 = 4112 bytes
+(exception 6) z_arm_hard_fault +36 +1008 = 5156 bytes
+(exception 12) z_arm_hard_fault +36 +1008 = 6200 bytes
+(exception 11) z_arm_svc +36 +904 = 7140 bytes
+(exception 16) _isr_wrapper +36 +904 = 8080 bytes
+(exception 17) _isr_wrapper +36 +904 = 9020 bytes
+(exception 3) z_arm_hard_fault +36 +1008 = 10064 bytes
+(exception 2) z_arm_nmi +36 +8 = 10108 bytes
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path thermal_tid
 resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+thermal_tid: unbounded, at least 1132 bytes (recursion: 46, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 thermal_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 adt7420_sample_fetch +32 = 72 bytes via indirect: candidate
 i2c_write_read +32 = 104 bytes via static
 i2c_emul_transfer +32 = 136 bytes via indirect: candidate
-adt7420_init +8 = 144 bytes via indirect: fallback (recursion)
+sensor_thread +32 = 168 bytes via indirect: fallback (recursion)
 ...
 ```
 
 ```console
 $ dctr stack $DCTR_FIXTURES/sensor-threads --elf $DCTR_FIXTURES/sensor-threads/zephyr/zephyr.elf --path motion_tid
 resolved slots: 150 | indirect call sites: 26 | not in the image: 337 (discarded: 215, never linked: 122) | membership: linker | rtos: zephyr
-motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
+motion_tid: unbounded, at least 1144 bytes (recursion: 46, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)
 motion_tid +8 = 8 bytes
 sensor_thread +32 = 40 bytes via thread record
 bmi160_sample_fetch +24 = 64 bytes via indirect: candidate
@@ -427,7 +431,7 @@ bmi160_byte_read +0 = 64 bytes via static
 bmi160_read +4 = 68 bytes via static
 bmi160_read_spi +48 = 116 bytes via indirect: candidate
 spi_emul_io +32 = 148 bytes via indirect: candidate
-adt7420_init +8 = 156 bytes via indirect: fallback (recursion)
+sensor_thread +32 = 180 bytes via indirect: fallback (recursion)
 ...
 ```
 
@@ -553,11 +557,11 @@ z_thread_entry@0x244: thread_a_entry_point, thread_b_entry_point, bg_thread_main
 ```console
 $ uv run python -m tests.puncover_comparison
 puncover entry         puncover 0.8.0  dctr entry             dctr stack
-sys_clock_isr          224 bytes       sys_clock_isr          unbounded, at least 1016 bytes
-_isr_wrapper           8 bytes         _isr_wrapper           unbounded, at least 952 bytes
-motion_thread          8 bytes         motion_tid             unbounded, at least 1120 bytes
-thermal_thread         8 bytes         thermal_tid            unbounded, at least 1108 bytes
-main                   40 bytes        z_main_thread          unbounded, at least 996 bytes
+sys_clock_isr          224 bytes       sys_clock_isr          unbounded, at least 968 bytes
+_isr_wrapper           8 bytes         _isr_wrapper           unbounded, at least 880 bytes
+motion_thread          8 bytes         motion_tid             unbounded, at least 1072 bytes
+thermal_thread         8 bytes         thermal_tid            unbounded, at least 1060 bytes
+main                   40 bytes        z_main_thread          unbounded, at least 948 bytes
 sys_clock_driver_init  56 bytes        sys_clock_driver_init  56 bytes
 ```
 
@@ -693,6 +697,13 @@ contradicts does not hold.
   gap in that analysis drops a target there. With `--narrow-by-field`, so does a site
   its field narrowed, and the edge reads `indirect: field`; with `--narrow-by-signature`,
   so does a site its slot's signature narrowed ([#197]).
+- On an Arm image, a function whose indirect calls the analysis all resolved calls its
+  candidates alone in every tree, so a gap in the analysis drops a target there too. The
+  gate is the thread trees': no unresolved site, and at least as many decoded calls as
+  `.ci` records. Code without `.ci` records (assembly, prebuilt libraries) has no record
+  to compare the decoding with, so a call the decoder misses there goes unnoticed. An x86
+  image keeps the fallback on every call, since its analysis has known gaps ([#45],
+  [#113], [#181]) ([#331]).
 - Zephyr's I2C and SPI emulators find their target in a list that init code builds in
   RAM, so their sites stay unresolved, and two threads' trees rejoin below them ([#151],
   [#159]). With `--narrow-by-field`, each narrows to the emulator on its own bus.
@@ -930,6 +941,7 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 - [avstack](https://github.com/JPHutchins/avstack) — avr stack "worst case usage" tooling
 
 [#17]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/17
+[#45]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/45
 [#59]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/59
 [#75]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/75
 [#78]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/78
@@ -943,6 +955,7 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#159]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/159
 [#163]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/163
 [#169]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/169
+[#181]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/181
 [#185]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/185
 [#195]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/195
 [#197]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/197
@@ -956,3 +969,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#242]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/242
 [#259]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/259
 [#260]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/260
+[#331]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/331

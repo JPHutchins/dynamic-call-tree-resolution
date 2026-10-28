@@ -48,6 +48,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	PriorityLevels,
 	ThreadEntry,
 	ThreadTargets,
+	complete_callers,
 	entry_report,
 	frame_key,
 	interrupt_stack_report,
@@ -1202,6 +1203,72 @@ def test_expand_indirect_calls_matches_path_qualified_callers() -> None:
 			caller="/home/jp/zephyr/shell.c:execute", callee="fallback_fn", kind=EdgeKind.FALLBACK
 		),
 	)
+
+
+def test_expand_indirect_calls_drops_the_fallback_only_for_a_complete_caller() -> None:
+	edges = (
+		CallEdge(caller="main", callee=INDIRECT_CALLEE),
+		CallEdge(caller="other", callee=INDIRECT_CALLEE),
+	)
+	assert expand_indirect_calls(
+		edges,
+		{"main": frozenset({"cb"}), "other": frozenset({"cb"})},
+		frozenset({"fb"}),
+		complete=frozenset({"main"}),
+	) == (
+		CallEdge(caller="main", callee="cb", kind=EdgeKind.CANDIDATE),
+		CallEdge(caller="other", callee="cb", kind=EdgeKind.CANDIDATE),
+		CallEdge(caller="other", callee="fb", kind=EdgeKind.FALLBACK),
+	)
+
+
+@pytest.mark.parametrize(
+	("targets", "sites", "complete"),
+	[
+		pytest.param(frozenset({"cb"}), 2, True, id="every call resolved and decoded"),
+		pytest.param(frozenset({"cb", INDIRECT_CALLEE}), 2, False, id="one call unresolved"),
+		pytest.param(frozenset({"cb"}), 1, False, id="fewer calls decoded than recorded"),
+	],
+)
+def test_a_caller_is_complete_only_with_every_recorded_call_decoded_and_resolved(
+	targets: frozenset[str], sites: int, complete: bool
+) -> None:
+	assert (
+		"main"
+		in complete_callers(
+			(
+				CallEdge(caller="/src/main.c:main", callee=INDIRECT_CALLEE),
+				CallEdge(caller="/src/main.c:main", callee=INDIRECT_CALLEE),
+			),
+			{"main": targets},
+			{"main": sites},
+		)
+	) == complete
+
+
+@pytest.mark.parametrize("complete", [False, True], ids=["incomplete", "complete"])
+def test_a_threads_tree_expands_a_call_its_own_analysis_missed_as_the_whole_image_does(
+	complete: bool,
+) -> None:
+	targets = {"entry": frozenset({"cheap"})}
+	assert sorted(
+		edge.callee
+		for edge in own_thread_edges(
+			SHARED_ENTRY_EDGES,
+			"trampoline",
+			"worker_tid",
+			"entry",
+			ThreadTargets(
+				reached=frozenset({"trampoline", "entry"}),
+				targets_by_caller={"trampoline": frozenset({"entry"})},
+				sites_by_caller={"trampoline": 1},
+			),
+			targets,
+			frozenset({"costly"}),
+			complete=frozenset({"entry"}) if complete else frozenset(),
+		)
+		if edge.caller.endswith(":/src/app.c:entry")
+	) == (["cheap"] if complete else ["cheap", "costly"])
 
 
 @pytest.mark.image
