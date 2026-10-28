@@ -182,6 +182,9 @@ ARM_CASES: tuple[tuple[str, str], ...] = (
 	("noreturn_call.c", "run"),
 	("stack_argument.c", "run"),
 	("stack_argument.c", "taken"),
+	("entry_load.c", "run"),
+	("entry_load.c", "late"),
+	("entry_load.c", "taken"),
 )
 
 
@@ -713,6 +716,26 @@ def test_a_stack_passed_argument_resolves_to_what_every_caller_passes(
 ) -> None:
 	sites = {site.caller: site.names for site in outcomes[image].sites}
 	assert (sites["run"], sites["taken"]) == (outcomes[image].observations["run"], frozenset())
+
+
+@pytest.mark.parametrize(
+	"image",
+	[
+		pytest.param(case.image, id=_image_id(case.image))
+		for case, _ in CANDIDATES
+		if case.image.source == "entry_load.c" and case.caller == "run"
+	],
+)
+def test_a_callee_reads_through_its_argument_at_entry_what_every_caller_left_there(
+	image: Image, outcomes: Mapping[Image, Outcome]
+) -> None:
+	"""At -O0 the callee first stores its argument to its own frame, so nothing is read at entry."""
+	sites = {site.caller: site.names for site in outcomes[image].sites}
+	assert (sites["run"], sites["late"], sites["taken"]) == (
+		frozenset() if "-O0" in image.flags else outcomes[image].observations["run"],
+		frozenset(),
+		frozenset(),
+	)
 
 
 @pytest.mark.parametrize(

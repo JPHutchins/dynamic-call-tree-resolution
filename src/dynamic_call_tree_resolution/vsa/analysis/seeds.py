@@ -18,7 +18,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	SP_REGISTERS,
 	X86_64_ARGUMENT_REGISTERS,
 )
-from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet
+from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet, is_top, join
 from dynamic_call_tree_resolution.vsa.state import NO_WRITES, State, Writes, join_states
 
 if TYPE_CHECKING:
@@ -58,6 +58,24 @@ def observed_seeds(
 
 def _callee(observation: CallObservation) -> Address:
 	return observation.callee
+
+
+def observed_entry_words(
+	observations: list[CallObservation],
+	roots: Mapping[Address, State],
+	entry_seeds: Mapping[Address, State],
+) -> dict[Address, ValueSet]:
+	return {
+		site: word
+		for callee, group in groupby(sorted(observations, key=_callee), key=_callee)
+		if callee not in roots and callee not in entry_seeds
+		for observed in (tuple(group),)
+		for site in sorted({site for observation in observed for site in observation.entry_words})
+		for word in (
+			reduce(join, (observation.entry_words.get(site, Top()) for observation in observed)),
+		)
+		if not is_top(word)
+	}
 
 
 def seed_from_arguments(arguments: Mapping[int, ValueSet], program: Program) -> State:
@@ -155,6 +173,16 @@ def _widened(
 			for callee, seed in observed.items()
 		},
 	}
+
+
+def next_entry_words(
+	words: Mapping[Address, ValueSet], observed: Mapping[Address, ValueSet], round_number: int
+) -> Mapping[Address, ValueSet]:
+	return (
+		observed
+		if round_number < _WIDENING_ROUND
+		else {site: word for site, word in observed.items() if words.get(site) == word}
+	)
 
 
 def _widened_writes(previous: Writes, current: Writes) -> Writes:

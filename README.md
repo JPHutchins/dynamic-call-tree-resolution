@@ -46,12 +46,12 @@ Stack depths combine the resulting call graph with GCC's
 and the indirect call sites in the code that `.ci` does not record. Each indirect call also
 expands to the fallback: every function whose address the image stores, a non-branch
 instruction computes, or an address relocation kept by `--emit-relocs` names. The exceptions
-are a function on an Arm image whose indirect calls the analysis all resolved, at least as
-many as `.ci` records, whose calls go to their candidates alone ([#331]); a site inside a
-thread's tree that the thread's own analysis resolved; and a call through a slot the dynamic
-loader fills with an undefined symbol's address: that call goes to the symbol, an external
-function the graph counts as unmeasured. A call whose target can only
-be address 0 calls nothing, and so does an Arm call that only branches the known values
+are a function on an Arm image whose indirect calls the analysis all resolved, decoding at
+least as many indirect calls as `.ci` records, whose calls go to their candidates alone
+([#331]); a site inside a thread's tree that the thread's own analysis resolved; and a call
+through a slot the dynamic loader fills with an undefined symbol's address: that call goes
+to the symbol, an external function the graph counts as unmeasured. A call whose target can
+only be address 0 calls nothing, and so does an Arm call that only branches the known values
 decide against, or the fall-through of a call that never returns, lead to. On an
 M-profile image, the
 fallback also leaves out a handler whose address only the vector table holds: only the
@@ -661,6 +661,13 @@ contradicts does not hold.
   ([#242]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
+- On Arm, a function's word loads through an argument register, before its first call or
+  store into memory, read what its direct callers held there at each call: a word of the
+  caller's frame, or of the image. That rests on the assumption argument seeding makes,
+  that the analysis observes every call to the function, so an address-taken function, a
+  thread's entry, and a function whose first block a branch returns to read through the
+  argument themselves. A tail jump's own frame is gone, so a word it would read from that
+  frame is unknown ([#331]).
 - An unknown store writes only what C's pointer provenance lets it reach: an object whose
   address escapes, and an object the store's own address was derived from ([#260]). An
   address escapes when the code passes, returns, stores or computes with it other than as

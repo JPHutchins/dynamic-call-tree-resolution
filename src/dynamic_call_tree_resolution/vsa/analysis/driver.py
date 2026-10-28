@@ -43,6 +43,7 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 	FunctionGraph,
 	control_flow_graphs,
 )
+from dynamic_call_tree_resolution.vsa.entry_loads import entry_loads
 from dynamic_call_tree_resolution.vsa.escape import escapes
 from dynamic_call_tree_resolution.vsa.fallback import address_taken, referenced_only_at, referrers
 from dynamic_call_tree_resolution.vsa.memory import Context, context_for
@@ -120,6 +121,7 @@ def analyze(
 		- (frozenset({creation.trampoline}) if creation is not None else frozenset()),
 		top,
 	)
+	loads = entry_loads(program, functions)
 	with ThreadPoolExecutor() as executor:
 		found = escapes(program, functions, executor)
 		final = global_fixpoint(
@@ -133,12 +135,18 @@ def analyze(
 				creation=creation,
 				assumed_unwritten=assumed_unwritten,
 				escapes=found,
+				entry_loads=loads,
 			),
 			Round(seeds={**entry_seeds, **roots}, writes=NO_WRITES),
 			1,
 		)
 		final_context = context_for(
-			program, final.writes, assumed_unwritten=assumed_unwritten, escapes=found
+			program,
+			final.writes,
+			assumed_unwritten=assumed_unwritten,
+			escapes=found,
+			entry_loads=loads,
+			entry_words=final.entry_words,
 		)
 		results = tuple(
 			executor.map(partial(final_result, program, final_context, final.seeds), functions)
