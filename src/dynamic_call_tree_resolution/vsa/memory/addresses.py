@@ -131,6 +131,8 @@ def load_value(context: Context, state: State, instruction: CsInsn, operand: CsO
 def loaded(
 	context: Context, state: State, instruction: CsInsn, operand: CsOperand, width: int
 ) -> Loaded:
+	if (word := context.entry_words.get(Address(instruction.address))) is not None:
+		return Loaded(word, None)
 	match _load_addresses(context, state, instruction, operand):
 		case None:
 			return Loaded(

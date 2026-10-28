@@ -48,13 +48,21 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 	is_returning_trap,
 	reachable_blocks,
 )
-from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet, lookup, shift_offsets
+from dynamic_call_tree_resolution.vsa.lattice import (
+	Known,
+	Top,
+	ValueSet,
+	lookup,
+	shift_addresses,
+	shift_offsets,
+)
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
 	accumulate_writes,
 	load_value,
 	memory_addresses,
 )
+from dynamic_call_tree_resolution.vsa.memory.reads import image_value
 from dynamic_call_tree_resolution.vsa.state import (
 	NO_WRITES,
 	State,
@@ -73,6 +81,7 @@ if TYPE_CHECKING:
 	from capstone import CsInsn, CsOperand
 
 	from dynamic_call_tree_resolution.model import Function
+	from dynamic_call_tree_resolution.vsa.entry_loads import EntryLoad
 
 
 class CallObservation(Struct):
@@ -83,6 +92,8 @@ class CallObservation(Struct):
 	"""The call instruction."""
 	arguments: Mapping[int, ValueSet]
 	"""By ABI argument position."""
+	entry_words: Mapping[Address, ValueSet] = {}
+	"""What the callee's entry loads read at this call, by the load's address."""
 
 
 def _clobber_caller_saved(state: State, machine: Machine) -> State:
@@ -249,12 +260,18 @@ def _call_observation(
 				callee=callee,
 				site=Address(block.instructions[-1].address),
 				arguments=_call_arguments(context, state, 0),
+				entry_words=_entry_words(
+					context, state, context.entry_loads.get(callee, ()), frame_kept=True
+				),
 			)
 		case TailJump(target=callee):
 			return CallObservation(
 				callee=callee,
 				site=Address(block.instructions[-1].address),
 				arguments=_call_arguments(context, state, 1),
+				entry_words=_entry_words(
+					context, state, context.entry_loads.get(callee, ()), frame_kept=False
+				),
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -327,6 +344,29 @@ def _call_arguments(
 			}
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _entry_words(
+	context: Context, state: State, loads: tuple[EntryLoad, ...], *, frame_kept: bool
+) -> Mapping[Address, ValueSet]:
+	return {load.site: _entry_word(context, state, load, frame_kept=frame_kept) for load in loads}
+
+
+def _entry_word(context: Context, state: State, load: EntryLoad, *, frame_kept: bool) -> ValueSet:
+	if load.register in state.sp_offsets:
+		return (
+			stack_read(
+				state.stack, shift_offsets(lookup(state.sp_offsets, load.register), load.offset)
+			)
+			if frame_kept
+			else Top()
+		)
+	return image_value(
+		context,
+		state,
+		shift_addresses(lookup(state.registers, load.register), load.offset),
+		context.program.pointer_size,
+	)
 
 
 def _stack_argument_offset(position: int, pushed_return_addresses: int, pointer_size: int) -> int:

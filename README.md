@@ -657,6 +657,13 @@ contradicts does not hold.
   ([#242]).
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
+- On Arm, a function's word loads through an argument register, before its first call or
+  store into memory, read what its direct callers held there at each call: a word of the
+  caller's frame, or of the image. That rests on the assumption argument seeding makes,
+  that the analysis observes every call to the function, so an address-taken function, a
+  thread's entry, and a function whose first block a branch returns to read through the
+  argument themselves. A tail jump's own frame is gone, so a word it would read from that
+  frame is unknown ([#331]).
 - An unknown store writes only what C's pointer provenance lets it reach: an object whose
   address escapes, and an object the store's own address was derived from ([#260]). An
   address escapes when the code passes, returns, stores or computes with it other than as
