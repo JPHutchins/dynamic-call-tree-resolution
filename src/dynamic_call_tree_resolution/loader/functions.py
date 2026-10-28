@@ -149,13 +149,13 @@ def never_returns(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Addres
 		if die.tag == "DW_TAG_subprogram"
 		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
 		if int_value(low_pc) & ~1
-		if _noreturn(die)
+		if noreturn(die)
 	)
 
 
-def _noreturn(die: DIE) -> bool:
+def noreturn(die: DIE) -> bool:
 	origin = die_origin(die)
-	return "DW_AT_noreturn" in die.attributes or (origin is not None and _noreturn(origin))
+	return "DW_AT_noreturn" in die.attributes or (origin is not None and noreturn(origin))
 
 
 def parameterless(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Address]:

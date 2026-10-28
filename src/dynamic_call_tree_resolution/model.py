@@ -273,6 +273,8 @@ class Program(Struct):
 	"""Each function's declaration, by where its code starts; a clone has its origin's."""
 	never_returns: frozenset[Address] = frozenset()
 	"""Where the code of each function DWARF declares never returns starts."""
+	noreturn_inlines: tuple[tuple[Span, ...], ...] = ()
+	"""The code spans of each inlined copy of a function DWARF declares never returns."""
 	parameterless: frozenset[Address] = frozenset()
 	"""Where the code of each function a DWARF prototype gives no parameters starts: ``(void)``,
 	not an old-style ``()`` and not ``...``."""

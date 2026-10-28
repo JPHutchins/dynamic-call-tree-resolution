@@ -659,6 +659,12 @@ contradicts does not hold.
   `arch_switch_to_main_thread` tail-jumps into `z_thread_entry`, so `z_cstart`'s walk of
   the empty `k_kernel_init_pre_entry` section, which GCC places after that call, is dead
   ([#242]).
+- An inlined copy of a function DWARF declares never returns has no fall-through out of
+  its code either: a block whose only way on leaves the copy's address ranges leads
+  nowhere, on the same trust in DWARF ([#331]). On `synchronization-r52`, `z_cstart`'s
+  inlined `switch_to_main_thread` swaps to the main thread through `z_arm_cortex_r_svc`,
+  which returns as far as the analysis can tell, so this rule is what makes the
+  `k_kernel_init_pre_entry` walk GCC places after it dead.
 - *Exact* means one candidate in the image as linked, not the only function the site
   can call at runtime.
 - On Arm, a function's word loads through an argument register, before its first call or

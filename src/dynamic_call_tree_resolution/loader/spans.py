@@ -20,6 +20,7 @@ from dynamic_call_tree_resolution.loader.dwarf import (
 )
 from dynamic_call_tree_resolution.loader.functions import (
 	file_names,
+	noreturn,
 	subprogram_size,
 )
 from dynamic_call_tree_resolution.model import (
@@ -128,6 +129,19 @@ def inlined(dwarf: DWARFInfo | None) -> dict[str, tuple[Span, ...]]:
 			key=_span_name,
 		)
 	}
+
+
+def noreturn_inlines(dwarf: DWARFInfo | None) -> tuple[tuple[Span, ...], ...]:
+	"""The code spans of each inlined copy of a function DWARF declares never returns."""
+	if dwarf is None:
+		return ()
+	return tuple(
+		spans
+		for unit in dwarf.iter_CUs()
+		for die in iter_dies(unit.get_top_DIE())
+		if die.tag == "DW_TAG_inlined_subroutine" and noreturn(die)
+		if (spans := _die_spans(dwarf, unit, die))
+	)
 
 
 def _span_name(named_span: _NamedSpan) -> str:

@@ -52,6 +52,7 @@ from dynamic_call_tree_resolution.loader.sections import (
 )
 from dynamic_call_tree_resolution.loader.spans import (
 	inlined,
+	noreturn_inlines,
 )
 from dynamic_call_tree_resolution.model import (
 	Address,
@@ -126,6 +127,7 @@ def _load(stream: BinaryIO) -> Program:
 		inlined=inlined(dwarf),
 		declarations=declarations(dwarf),
 		never_returns=never_returns(dwarf, machine),
+		noreturn_inlines=noreturn_inlines(dwarf),
 		parameterless=parameterless(dwarf, machine),
 		symbol_addresses=symbol_addresses(symtab, machine),
 		labels=labels(symtab),

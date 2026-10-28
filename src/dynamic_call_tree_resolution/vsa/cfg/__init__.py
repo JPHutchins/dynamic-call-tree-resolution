@@ -6,6 +6,9 @@
 from dynamic_call_tree_resolution.vsa.cfg.blocks import Block as Block
 from dynamic_call_tree_resolution.vsa.cfg.blocks import CallsNoReturn as CallsNoReturn
 from dynamic_call_tree_resolution.vsa.cfg.blocks import FunctionGraph as FunctionGraph
+from dynamic_call_tree_resolution.vsa.cfg.blocks import (
+	LeavesNoReturnInline as LeavesNoReturnInline,
+)
 from dynamic_call_tree_resolution.vsa.cfg.blocks import function_graph as function_graph
 from dynamic_call_tree_resolution.vsa.cfg.blocks import predecessors as predecessors
 from dynamic_call_tree_resolution.vsa.cfg.blocks import reachable_blocks as reachable_blocks

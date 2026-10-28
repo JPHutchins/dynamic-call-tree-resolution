@@ -23,6 +23,7 @@ def build_program(
 	data_in_code: tuple[tuple[int, int], ...] = (),
 	arm_code: tuple[tuple[int, int], ...] = (),
 	never_returns: frozenset[int] = frozenset(),
+	noreturn_inlines: tuple[tuple[tuple[int, int], ...], ...] = (),
 ) -> Program:
 	return Program(
 		byte_order="little",
@@ -49,6 +50,9 @@ def build_program(
 		data_in_code=tuple(span(low, high) for low, high in data_in_code),
 		arm_code=tuple(sorted(span(low, high) for low, high in arm_code)),
 		never_returns=frozenset(map(Address, never_returns)),
+		noreturn_inlines=tuple(
+			tuple(span(low, high) for low, high in spans) for spans in noreturn_inlines
+		),
 		sections={
 			Address(address): Section(data=data, writable=address in writable)
 			for address, data in (
