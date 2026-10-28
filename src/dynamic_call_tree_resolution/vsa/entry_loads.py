@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_DESCENDING_STORES,
 	ARM_MULTIPLE_STORES,
 	arm_predicated,
+	is_data,
 	normalized,
 )
 from dynamic_call_tree_resolution.vsa.cfg import predecessors
@@ -105,12 +106,16 @@ _REGISTER_LIST_STORES: Final = frozenset(
 
 
 def _leaves_memory_alone(instruction: CsInsn) -> bool:
-	return instruction.id not in _CALLS and (
-		_pushes(instruction)
-		or instruction.id in _LOADS
-		or (
-			instruction.id not in _REGISTER_LIST_STORES
-			and all(operand.type != arm_const.ARM_OP_MEM for operand in instruction.operands)
+	return (
+		not is_data(instruction)
+		and instruction.id not in _CALLS
+		and (
+			_pushes(instruction)
+			or instruction.id in _LOADS
+			or (
+				instruction.id not in _REGISTER_LIST_STORES
+				and all(operand.type != arm_const.ARM_OP_MEM for operand in instruction.operands)
+			)
 		)
 	)
 
