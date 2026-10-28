@@ -25,7 +25,7 @@ from dynamic_call_tree_resolution.linker import (
 from dynamic_call_tree_resolution.loader import (
 	defined_function_names,
 )
-from dynamic_call_tree_resolution.model import HandlerStack, PrivilegedStack
+from dynamic_call_tree_resolution.model import HandlerStack, InstructionFamily, PrivilegedStack
 from dynamic_call_tree_resolution.rtos.zephyr import NO_KCONFIG, Kconfig, kconfig, priority_levels
 from dynamic_call_tree_resolution.stack_analysis import (
 	INDIRECT_CALLEE,
@@ -35,6 +35,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 	OwnFrame,
 	PriorityLevels,
 	ThreadEntry,
+	complete_callers,
 	frame_key,
 	own_thread_edges,
 	thread_edges,
@@ -132,6 +133,28 @@ def unrecorded_sites(
 		)
 		for _ in range(found - recorded[frame_key(caller)])
 	)
+
+
+def resolved_callers(
+	image: Image,
+	sites: tuple[CallSite, ...],
+	targets_by_caller: Mapping[str, frozenset[str]],
+	edges: tuple[CallEdge, ...],
+) -> frozenset[str]:
+	match image.program.machine.family:
+		case InstructionFamily.ARM:
+			return complete_callers(
+				edges,
+				targets_by_caller,
+				Counter(
+					frame_key(stack_name(image.program, image.names, site.caller_address))
+					for site in sites
+				),
+			)
+		case InstructionFamily.X86:
+			return frozenset()
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _direct_edges(image: Image, start: Address, own: OwnCode) -> tuple[CallEdge, ...]:
@@ -326,6 +349,8 @@ class Targets(Struct):
 	"""Reached only through a narrowing, with its edge."""
 	narrowed_by_field: tuple[NarrowedSpan, ...]
 	narrow_by_signature: bool
+	complete: frozenset[str]
+	"""The callers whose indirect calls drop the fallback across the whole image."""
 
 
 def own_thread_graphs(
@@ -358,6 +383,7 @@ def own_thread_graphs(
 					targets.candidates.targets_by_caller,
 					targets.candidates.fallback,
 					targets.narrowed_by_caller,
+					targets.complete,
 				)
 				for thread, sites in resolution.threads.items()
 			}

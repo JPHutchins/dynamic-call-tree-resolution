@@ -207,16 +207,16 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="motion_tid")
 	assert (thermal, capsys.readouterr().out.splitlines()[1:10]) == (
 		[
-			"thermal_tid: unbounded, at least 1180 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
+			"thermal_tid: unbounded, at least 1132 bytes (recursion: 46, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"thermal_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"adt7420_sample_fetch +32 = 72 bytes via indirect: candidate",
 			"i2c_write_read +32 = 104 bytes via static",
 			"i2c_emul_transfer +32 = 136 bytes via indirect: candidate",
-			"adt7420_init +8 = 144 bytes via indirect: fallback (recursion)",
+			"sensor_thread +32 = 168 bytes via indirect: fallback (recursion)",
 		],
 		[
-			"motion_tid: unbounded, at least 1192 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
+			"motion_tid: unbounded, at least 1144 bytes (recursion: 46, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"motion_tid +8 = 8 bytes",
 			"sensor_thread +32 = 40 bytes via thread record",
 			"bmi160_sample_fetch +24 = 64 bytes via indirect: candidate",
@@ -224,7 +224,7 @@ def test_each_threads_stack_follows_its_own_driver_until_its_bus_emulator(
 			"bmi160_read +4 = 68 bytes via static",
 			"bmi160_read_spi +48 = 116 bytes via indirect: candidate",
 			"spi_emul_io +32 = 148 bytes via indirect: candidate",
-			"adt7420_init +8 = 156 bytes via indirect: fallback (recursion)",
+			"sensor_thread +32 = 180 bytes via indirect: fallback (recursion)",
 		],
 	)
 
@@ -281,11 +281,11 @@ def test_the_main_threads_path_starts_in_the_trampoline_and_ends_with_what_the_r
 	lines = capsys.readouterr().out.splitlines()
 	assert (lines[1:4], lines[-2:]) == (
 		[
-			"z_main_thread: unbounded, at least 1044 bytes (recursion: 50, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
+			"z_main_thread: unbounded, at least 980 bytes (recursion: 46, measured: 8, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes)",
 			"z_main_thread +8 = 8 bytes",
 			"bg_thread_main +40 = 48 bytes via system thread (recursion)",
 		],
-		["(stack reservation) +16 = 1008 bytes", "(exception frame) +36 = 1044 bytes"],
+		["(stack reservation) +16 = 944 bytes", "(exception frame) +36 = 980 bytes"],
 	)
 
 

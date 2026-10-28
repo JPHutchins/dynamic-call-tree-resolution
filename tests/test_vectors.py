@@ -85,11 +85,11 @@ def test_each_handler_only_the_hardware_calls_is_a_row_of_its_own(
 	) == (
 		True,
 		{
-			"__start": (1036, ()),
-			"z_arm_hard_fault": (1072, ()),
+			"__start": (972, ()),
+			"z_arm_hard_fault": (1008, ()),
 			"z_arm_nmi": BoundedStack(bytes=8, measured=("z_SysNmiOnReset",)),
 			"z_arm_pendsv": BoundedStack(bytes=0, measured=("z_arm_pendsv",)),
-			"z_arm_svc": (968, ()),
+			"z_arm_svc": (904, ()),
 		},
 	)
 
@@ -111,18 +111,18 @@ def test_the_main_stack_nests_on_the_reset_path_at_most_one_exception_per_priori
 	artifacts = zephyr_fixtures / "sensor-threads"
 	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", path="z_interrupt_stacks")
 	assert capsys.readouterr().out.splitlines()[1:] == [
-		"z_interrupt_stacks: unbounded, at least 10828 bytes (recursion: 50, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)",
-		"(exception 1) __start +1036 = 1036 bytes",
-		"(exception 4) z_arm_hard_fault +36 +1072 = 2144 bytes",
-		"(exception 5) z_arm_hard_fault +36 +1072 = 3252 bytes",
-		"(exception 6) z_arm_hard_fault +36 +1072 = 4360 bytes",
-		"(exception 12) z_arm_hard_fault +36 +1072 = 5468 bytes",
-		"(exception 15) sys_clock_isr +36 +1064 = 6568 bytes",
-		"(exception 16) _isr_wrapper +36 +1000 = 7604 bytes",
-		"(exception 17) _isr_wrapper +36 +1000 = 8640 bytes",
-		"(exception 18) _isr_wrapper +36 +1000 = 9676 bytes",
-		"(exception 3) z_arm_hard_fault +36 +1072 = 10784 bytes",
-		"(exception 2) z_arm_nmi +36 +8 = 10828 bytes",
+		"z_interrupt_stacks: unbounded, at least 10108 bytes (recursion: 46, measured: 13, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes)",
+		"(exception 1) __start +972 = 972 bytes",
+		"(exception 15) sys_clock_isr +36 +1016 = 2024 bytes",
+		"(exception 4) z_arm_hard_fault +36 +1008 = 3068 bytes",
+		"(exception 5) z_arm_hard_fault +36 +1008 = 4112 bytes",
+		"(exception 6) z_arm_hard_fault +36 +1008 = 5156 bytes",
+		"(exception 12) z_arm_hard_fault +36 +1008 = 6200 bytes",
+		"(exception 11) z_arm_svc +36 +904 = 7140 bytes",
+		"(exception 16) _isr_wrapper +36 +904 = 8080 bytes",
+		"(exception 17) _isr_wrapper +36 +904 = 9020 bytes",
+		"(exception 3) z_arm_hard_fault +36 +1008 = 10064 bytes",
+		"(exception 2) z_arm_nmi +36 +8 = 10108 bytes",
 	]
 
 
