@@ -51,7 +51,7 @@
 		"TOOLCHAIN": "zephyr",
 		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da",
 		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections",
-		"EXTRA_ARGS": ""
+		"EXTRA_ARGS": "-DCONFIG_INIT_STACKS=y"
 	},
 	{
 		"NAME": "userspace",
