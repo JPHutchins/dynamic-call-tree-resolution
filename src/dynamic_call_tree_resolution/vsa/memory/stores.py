@@ -40,10 +40,12 @@ from dynamic_call_tree_resolution.vsa.state import (
 	Store,
 	Writes,
 	agreed_facts,
+	frame_after_escape,
 	frame_based,
-	frame_copies_lost,
 	frame_write,
 	image_write,
+	join_escapes,
+	lost_unless_anywhere,
 )
 
 if TYPE_CHECKING:
@@ -142,7 +144,7 @@ def _image_store(
 		case Top():
 			return replace(
 				state,
-				stack={} if state.escaped else state.stack,
+				stack=frame_after_escape(state),
 				globals=_unknown_writes(context, state.globals, site),
 			)
 		case Known(values=starts):
@@ -211,9 +213,12 @@ def weakened(context: Context, before: State, after: State) -> State:
 			unknown_store=after.globals.unknown_store,
 			clobbered=before.globals.clobbered | after.globals.clobbered,
 		),
-		escaped=before.escaped
-		or after.escaped
-		or frame_copies_lost(before.sp_offsets, after.sp_offsets, sp_offsets),
+		escaped=lost_unless_anywhere(
+			join_escapes(before.escaped, after.escaped),
+			before.sp_offsets,
+			after.sp_offsets,
+			sp_offsets,
+		),
 		loaded_from=agreed_facts(before.loaded_from, after.loaded_from),
 		strided=agreed_facts(before.strided, after.strided),
 	)

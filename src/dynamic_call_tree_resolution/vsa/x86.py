@@ -80,7 +80,7 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 			case (x86_const.X86_OP_MEM, x86_const.X86_OP_REG):
 				return store_value(
 					context,
-					escaping(state, (source.reg,)),
+					escaping(state, (source.reg,), lowest_tracked=context.upward_frame_writes),
 					instruction,
 					destination,
 					Store(words=(lookup(state.registers, source.reg),), width=destination.size),
@@ -146,7 +146,11 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 		)
 		return _push(
 			context,
-			escaping(state, (operand.reg,) if operand.type == x86_const.X86_OP_REG else ()),
+			escaping(
+				state,
+				(operand.reg,) if operand.type == x86_const.X86_OP_REG else (),
+				lowest_tracked=context.upward_frame_writes,
+			),
 			SP_REGISTERS[machine][0],
 			value,
 		)
@@ -175,6 +179,7 @@ def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
 			escaping(
 				state,
 				tuple(operand.reg for operand in operands if operand.type == x86_const.X86_OP_REG),
+				lowest_tracked=context.upward_frame_writes,
 			),
 			anywhere(destination)
 			if prefixes_and_name[0] in X86_REPEATS or prefixes_and_name[-1] in X86_UNBOUNDED_STORES
