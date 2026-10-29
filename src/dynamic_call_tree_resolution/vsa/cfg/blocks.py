@@ -53,11 +53,15 @@ class Block(Struct):
 	start: Address
 	instructions: tuple[CsInsn, ...]
 	successors: tuple[Address, ...]
-	condition: Conditional | CallsNoReturn | None
+	condition: Conditional | CallsNoReturn | LeavesNoReturnInline | None
 
 
 class CallsNoReturn(Struct):
 	"""A block-ending direct call to a function that never returns."""
+
+
+class LeavesNoReturnInline(Struct):
+	"""A block whose fall-through leaves an inlined copy of a function that never returns."""
 
 
 class FunctionGraph(Struct):

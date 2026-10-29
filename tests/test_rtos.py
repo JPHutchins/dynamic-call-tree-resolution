@@ -26,6 +26,7 @@ from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
 	ArmCore,
 	ArmProfile,
+	Dead,
 	Dispatch,
 	HandlerStack,
 	Interrupt,
@@ -715,6 +716,17 @@ def test_without_its_config_a_testbed_still_shows_what_zephyr_adds_to_its_thread
 @pytest.fixture(scope="module")
 def r52_program(zephyr_fixtures: Path) -> Program:
 	return load(zephyr_fixtures / "synchronization-r52" / "zephyr" / "zephyr.elf")
+
+
+@pytest.mark.image
+def test_r52s_z_cstart_never_falls_out_of_its_inlined_switch_to_main_thread(
+	r52_program: Program,
+) -> None:
+	assert {
+		f"{site.site_address:#x}": isinstance(site.target, Dead)
+		for site in resolve(r52_program, rtos_model(r52_program, RtosChoice.AUTO)).sites
+		if r52_program.functions[site.caller_address].name == "z_cstart"
+	} == {"0x10003090": True}
 
 
 @pytest.mark.image

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, assert_never
 from salix import Struct, replace
 
 from dynamic_call_tree_resolution.vsa.abi import arm_predicated
-from dynamic_call_tree_resolution.vsa.cfg import CallsNoReturn
+from dynamic_call_tree_resolution.vsa.cfg import CallsNoReturn, LeavesNoReturnInline
 from dynamic_call_tree_resolution.vsa.conditions import Conditional, edge_values
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ def successor_states(
 					block, states, step, narrowing, edges.get(True), taken, len(states) - 1
 				),
 			)
-		case CallsNoReturn():
+		case CallsNoReturn() | LeavesNoReturnInline():
 			return ()
 		case _ as unreachable:
 			assert_never(unreachable)

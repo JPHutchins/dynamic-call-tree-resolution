@@ -268,6 +268,34 @@ def test_the_fall_through_of_a_call_that_never_returns_is_dead(
 
 
 @pytest.mark.parametrize(
+	("spans", "dead"),
+	[
+		pytest.param(((0x1000, 0x1004),), True, id="the fall-through leaves the inlined copy"),
+		pytest.param(((0x1000, 0x1006),), False, id="the fall-through stays in the copy"),
+		pytest.param(((0x1000, 0x1004), (0x1004, 0x1008)), False, id="into the copy's next range"),
+		pytest.param(
+			((0x1000, 0x1004), (0x1006, 0x1008)), False, id="past a gap the copy resumes after"
+		),
+		pytest.param((), False, id="no inlined copy"),
+	],
+)
+def test_a_site_only_the_fall_through_out_of_an_inlined_noreturn_copy_reaches_is_dead(
+	spans: tuple[tuple[int, int], ...], dead: bool
+) -> None:
+	code = bytes.fromhex("00bf 00bf 9847 7047")
+	program = build_program(
+		Machine.EM_ARM,
+		(("caller", 0x1000, len(code)),),
+		sections={0x1000: code},
+		pointer_size=4,
+		noreturn_inlines=(spans,) if spans else (),
+	)
+	assert [
+		(site.site_address, isinstance(site.target, Dead)) for site in extract_call_sites(program)
+	] == [(0x1004, dead)]
+
+
+@pytest.mark.parametrize(
 	("code", "targets"),
 	[
 		pytest.param("43f20103 c0f20103 9bb2 9847", {0x3001}, id="uxth"),

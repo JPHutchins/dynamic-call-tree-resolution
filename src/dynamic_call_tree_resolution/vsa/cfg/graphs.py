@@ -23,6 +23,7 @@ from dynamic_call_tree_resolution.vsa.cfg.blocks import (
 	Block,
 	CallsNoReturn,
 	FunctionGraph,
+	LeavesNoReturnInline,
 	conditional_exit,
 	function_graph,
 	predecessors,
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 	from capstone import Cs, CsInsn
 
 	from dynamic_call_tree_resolution.model import Function, InstructionSet, Program
+	from dynamic_call_tree_resolution.span import Span
 
 
 def _function_address(function: Function) -> Address:
@@ -60,21 +62,24 @@ def _function_address(function: Function) -> Address:
 def control_flow_graphs(program: Program) -> dict[Address, FunctionGraph]:
 	decoders = disassemblers(program.arm_core)
 	by_start = functions_by_start(program)
-	return _cut_calls_that_never_return(
+	return _cut_noreturn_inline_exits(
 		program,
-		{
-			start: graph
-			for start, functions in groupby(
-				sorted(program.functions.values(), key=_function_address),
-				key=partial(_code_start, program.machine),
-			)
-			if (
-				graph := _first_graph(
-					program, decoders, start, _with_extent(program, by_start, start, functions)
+		_cut_calls_that_never_return(
+			program,
+			{
+				start: graph
+				for start, functions in groupby(
+					sorted(program.functions.values(), key=_function_address),
+					key=partial(_code_start, program.machine),
 				)
-			)
-			is not None
-		},
+				if (
+					graph := _first_graph(
+						program, decoders, start, _with_extent(program, by_start, start, functions)
+					)
+				)
+				is not None
+			},
+		),
 	)
 
 
@@ -107,6 +112,42 @@ def _first_graph(
 		),
 		None,
 	)
+
+
+def _cut_noreturn_inline_exits(
+	program: Program, graphs: dict[Address, FunctionGraph]
+) -> dict[Address, FunctionGraph]:
+	if not program.noreturn_inlines:
+		return graphs
+	return {
+		start: FunctionGraph(
+			graph.function,
+			tuple(
+				replace(block, condition=LeavesNoReturnInline())
+				if _leaves_noreturn_inline(program.noreturn_inlines, block)
+				else block
+				for block in graph.blocks
+			),
+		)
+		for start, graph in graphs.items()
+	}
+
+
+def _leaves_noreturn_inline(inlines: tuple[tuple[Span, ...], ...], block: Block) -> bool:
+	last = block.instructions[-1]
+	following = Address(last.address + last.size)
+	return (
+		block.condition is None
+		and block.successors == (following,)
+		and any(
+			_covers(spans, Address(last.address)) and following >= max(span.end for span in spans)
+			for spans in inlines
+		)
+	)
+
+
+def _covers(spans: tuple[Span, ...], address: Address) -> bool:
+	return any(span.start <= address < span.end for span in spans)
 
 
 class _Exits(Struct):
