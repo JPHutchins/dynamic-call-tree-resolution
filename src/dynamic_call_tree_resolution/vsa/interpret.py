@@ -68,6 +68,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	State,
 	Writes,
 	escaping,
+	frame_after_escape,
 	frame_based,
 	join_states,
 	stack_read,
@@ -114,7 +115,7 @@ def _called(state: State, machine: Machine) -> State:
 		State(
 			registers=passed.registers,
 			sp_offsets=passed.sp_offsets,
-			stack={} if passed.escaped else passed.stack,
+			stack=frame_after_escape(passed),
 			globals=Writes(
 				values={},
 				unknown_store=passed.globals.unknown_store,

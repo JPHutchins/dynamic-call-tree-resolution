@@ -19,7 +19,13 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	X86_64_ARGUMENT_REGISTERS,
 )
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, ValueSet, is_top, join
-from dynamic_call_tree_resolution.vsa.state import NO_WRITES, State, Writes, join_states
+from dynamic_call_tree_resolution.vsa.state import (
+	NO_WRITES,
+	UNESCAPED,
+	State,
+	Writes,
+	join_states,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
@@ -138,7 +144,7 @@ def _argument_state(
 		sp_offsets={SP_REGISTERS[program.machine][0]: frozenset({0})},
 		stack=stack,
 		globals=NO_WRITES,
-		escaped=False,
+		escaped=UNESCAPED,
 		loaded_from={},
 		strided={},
 	)
