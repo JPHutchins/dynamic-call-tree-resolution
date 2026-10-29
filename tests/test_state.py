@@ -7,9 +7,13 @@ import pytest
 from capstone import arm_const
 from salix import replace
 
-from dynamic_call_tree_resolution.model import Machine
+from dynamic_call_tree_resolution.model import Address, Machine
+from dynamic_call_tree_resolution.vsa.cfg import control_flow_graphs
+from dynamic_call_tree_resolution.vsa.interpret import block_states
+from dynamic_call_tree_resolution.vsa.memory import context_for
 from dynamic_call_tree_resolution.vsa.state import (
 	ESCAPED_ANYWHERE,
+	NO_WRITES,
 	UNESCAPED,
 	EscapedFrom,
 	FrameEscape,
@@ -17,6 +21,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	join_escapes,
 	top_seed,
 )
+from tests.programs import build_program
 
 
 @pytest.mark.parametrize(
@@ -70,3 +75,33 @@ def test_without_tracking_the_lowest_address_any_frame_escape_is_anywhere() -> N
 		escaping(state, (arm_const.ARM_REG_R0,), lowest_tracked=False).escaped,
 		escaping(state, (arm_const.ARM_REG_R1,), lowest_tracked=False).escaped,
 	) == (ESCAPED_ANYWHERE, UNESCAPED)
+
+
+@pytest.mark.parametrize(
+	("tracked", "escaped"),
+	[
+		pytest.param(False, ESCAPED_ANYWHERE, id="the default"),
+		pytest.param(True, EscapedFrom(-8), id="tracked"),
+	],
+)
+def test_a_call_passing_a_frame_address_records_where_it_escaped_only_when_tracked(
+	tracked: bool, escaped: FrameEscape
+) -> None:
+	"""``sub sp, #16; add r0, sp, #8; bl callee; add sp, #16; bx lr``."""
+	code = bytes.fromhex("84b0 02a8 00f002f8 04b0 7047 7047")
+	program = build_program(
+		Machine.EM_ARM,
+		(("caller", 0x1000, 12), ("callee", 0x100C, 2)),
+		sections={0x1000: code},
+		pointer_size=4,
+	)
+	assert (
+		block_states(
+			context_for(program, NO_WRITES, upward_frame_writes=tracked),
+			control_flow_graphs(program)[Address(0x1000)].blocks,
+			top_seed(Machine.EM_ARM),
+		)
+		.in_states[Address(0x1008)]
+		.escaped
+		== escaped
+	)
