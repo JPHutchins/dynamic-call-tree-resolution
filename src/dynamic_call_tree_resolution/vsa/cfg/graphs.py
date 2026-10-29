@@ -140,7 +140,7 @@ def _leaves_noreturn_inline(inlines: tuple[tuple[Span, ...], ...], block: Block)
 		block.condition is None
 		and block.successors == (following,)
 		and any(
-			_covers(spans, Address(last.address)) and not _covers(spans, following)
+			_covers(spans, Address(last.address)) and following >= max(span.end for span in spans)
 			for spans in inlines
 		)
 	)

@@ -273,6 +273,9 @@ def test_the_fall_through_of_a_call_that_never_returns_is_dead(
 		pytest.param(((0x1000, 0x1004),), True, id="the fall-through leaves the inlined copy"),
 		pytest.param(((0x1000, 0x1006),), False, id="the fall-through stays in the copy"),
 		pytest.param(((0x1000, 0x1004), (0x1004, 0x1008)), False, id="into the copy's next range"),
+		pytest.param(
+			((0x1000, 0x1004), (0x1006, 0x1008)), False, id="past a gap the copy resumes after"
+		),
 		pytest.param((), False, id="no inlined copy"),
 	],
 )
