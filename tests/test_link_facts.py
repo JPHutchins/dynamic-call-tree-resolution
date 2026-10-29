@@ -281,10 +281,11 @@ def _addresses_by_name(program: Program, elf: Path) -> dict[str, frozenset[int]]
 		),
 		pytest.param(
 			"synchronization",
-			170,
+			171,
 			[
 				("__l_vfprintf", "__ultoa_invert"),
 				("__l_vfprintf", "strnlen"),
+				("__start", "arch_early_memset"),
 				("__start", "z_prep_c"),
 				("hello_loop", "__aeabi_read_tp"),
 				("z_SysNmiOnReset", "z_SysNmiOnReset"),
