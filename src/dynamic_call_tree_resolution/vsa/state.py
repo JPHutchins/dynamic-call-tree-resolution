@@ -191,6 +191,8 @@ def frame_copies_lost(
 ) -> bool:
 	"""Whether ``joined``, the ``join_maps`` of the two, dropped a register either one held.
 
+	The answer means nothing for a ``joined`` that is not their ``join_maps``.
+
 	>>> frame_copies_lost({13: frozenset({0})}, {13: frozenset({-8})}, {13: frozenset({0, -8})})
 	False
 	>>> frame_copies_lost({13: frozenset({0}), 0: frozenset({-8})}, {13: frozenset({0})}, {13: frozenset({0})})
@@ -289,20 +291,30 @@ def frame_based(state: State, machine: Machine, register: int) -> bool:
 	return register == SP_REGISTERS[machine][0] or register in state.sp_offsets
 
 
-def escaping(state: State, registers: Iterable[int]) -> State:
+def escaping(state: State, registers: Iterable[int], *, lowest_tracked: bool) -> State:
 	frame_registers = [register for register in registers if register in state.sp_offsets]
-	if not frame_registers:
-		return state
+	match state.escaped:
+		case _ if not frame_registers:
+			return state
+		case EscapedAnywhere():
+			return state
+		case Unescaped() | EscapedFrom() if not lowest_tracked:
+			return replace(state, escaped=ESCAPED_ANYWHERE)
+		case (Unescaped() | EscapedFrom()) as escaped:
+			return _lowered(state, escaped, frame_registers)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _lowered(state: State, escaped: Unescaped | EscapedFrom, frame_registers: list[int]) -> State:
 	lowest = min(
 		(offset for register in frame_registers for offset in state.sp_offsets[register]),
 		default=None,
 	)
 	if lowest is None:
 		return state
-	match state.escaped:
-		case EscapedAnywhere():
-			return state
-		case EscapedFrom(lowest=escaped) if escaped <= lowest:
+	match escaped:
+		case EscapedFrom(lowest=current) if current <= lowest:
 			return state
 		case Unescaped() | EscapedFrom():
 			return replace(state, escaped=EscapedFrom(lowest))

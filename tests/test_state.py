@@ -58,4 +58,15 @@ def test_a_frame_address_escapes_from_the_lowest_offset_its_register_holds(
 		},
 		escaped=escaped,
 	)
-	assert escaping(state, registers).escaped == after
+	assert escaping(state, registers, lowest_tracked=True).escaped == after
+
+
+def test_without_tracking_the_lowest_address_any_frame_escape_is_anywhere() -> None:
+	state = replace(
+		top_seed(Machine.EM_ARM),
+		sp_offsets={arm_const.ARM_REG_SP: frozenset({0}), arm_const.ARM_REG_R0: frozenset({-8})},
+	)
+	assert (
+		escaping(state, (arm_const.ARM_REG_R0,), lowest_tracked=False).escaped,
+		escaping(state, (arm_const.ARM_REG_R1,), lowest_tracked=False).escaped,
+	) == (ESCAPED_ANYWHERE, UNESCAPED)

@@ -109,8 +109,8 @@ def _clobber_caller_saved(state: State, machine: Machine) -> State:
 			assert_never(unreachable)
 
 
-def _called(state: State, machine: Machine) -> State:
-	passed = escaping(state, REGISTER_ARGUMENTS[machine])
+def _called(state: State, machine: Machine, lowest_tracked: bool) -> State:
+	passed = escaping(state, REGISTER_ARGUMENTS[machine], lowest_tracked=lowest_tracked)
 	return _clobber_caller_saved(
 		State(
 			registers=passed.registers,
@@ -135,7 +135,7 @@ def transfer(context: Context, state: State, instruction: CsInsn) -> State:
 	if _calls(instruction, context.program.machine) or is_returning_trap(
 		instruction, context.program.machine
 	):
-		return _called(state, context.program.machine)
+		return _called(state, context.program.machine, context.upward_frame_writes)
 	match context.program.machine:
 		case Machine.EM_386:
 			return _x86_transfer(context, instruction, state, x86_const.X86_REG_ECX)

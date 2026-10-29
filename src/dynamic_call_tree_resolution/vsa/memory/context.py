@@ -60,6 +60,9 @@ class Context(Struct):
 	"""Each function's entry loads, by where its code starts."""
 	entry_words: Mapping[Address, ValueSet] = {}
 	"""What every observed caller holds where an entry load reads, by the load's address."""
+	upward_frame_writes: bool = False
+	"""Whether a call or an unknown store writes a caller's frame only at or above the lowest
+	frame address that escaped, so the analysis tracks that address."""
 
 
 def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
@@ -82,6 +85,7 @@ def context_for(
 	escapes: Escapes = NO_ESCAPES,
 	entry_loads: Mapping[Address, tuple[EntryLoad, ...]] | None = None,
 	entry_words: Mapping[Address, ValueSet] | None = None,
+	upward_frame_writes: bool = False,
 ) -> Context:
 	spans = tuple(
 		sorted(
@@ -122,4 +126,5 @@ def context_for(
 		store_targets=escapes.store_targets,
 		entry_loads=entry_loads or {},
 		entry_words=entry_words or {},
+		upward_frame_writes=upward_frame_writes,
 	)

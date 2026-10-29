@@ -135,6 +135,7 @@ def _apply_unconditional(
 					for operand in _arm_operands(instruction)
 					if operand.type == arm_const.ARM_OP_REG
 				),
+				lowest_tracked=context.upward_frame_writes,
 			),
 		)
 	if instruction_id in ARM_MOVES:
@@ -257,6 +258,7 @@ def _arm_store(context: Context, instruction: CsInsn, instruction_id: int, state
 					1 if instruction_id in ARM_EXCLUSIVE_STORES else 0 : memory_index
 				]
 			),
+			lowest_tracked=context.upward_frame_writes,
 		),
 		instruction,
 		instruction.operands[memory_index],
@@ -295,7 +297,11 @@ def _arm_store_multiple(
 	descending = instruction_id in ARM_DESCENDING_STORES
 	stored = store_at(
 		context,
-		escaping(state, tuple(operand.reg for operand in listed)),
+		escaping(
+			state,
+			tuple(operand.reg for operand in listed),
+			lowest_tracked=context.upward_frame_writes,
+		),
 		register_destination(context, state, base_register, -width if descending else 0),
 		Store(
 			words=()
