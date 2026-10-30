@@ -3,7 +3,7 @@
 
 """A build's call graph and frames, and the image they come from."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
@@ -88,7 +88,19 @@ class Expansion(Struct):
 	phantom_libcalls: frozenset[str]
 	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
 	assumed_unwritten: AssumedUnwritten
+	assumed_upward_frame_writes: AssumedCallers
 	handlers: HandlerNames | None = None
+
+
+class AssumedCallers(Struct):
+	"""The callers whose indirect calls the assumptions changed, by frame key."""
+
+	callers: frozenset[str]
+	thread_callers: Mapping[str, frozenset[str]]
+	"""The same, in each thread's own analysis."""
+
+
+NO_ASSUMED_CALLERS: Final = AssumedCallers(callers=frozenset(), thread_callers={})
 
 
 class AssumedUnwritten(Struct):
@@ -97,10 +109,7 @@ class AssumedUnwritten(Struct):
 	objects: tuple[str, ...]
 	contradicted: tuple[str, ...]
 	"""The objects a tracked store writes after all."""
-	callers: frozenset[str]
-	"""The callers whose indirect calls it changed, by frame key."""
-	thread_callers: Mapping[str, frozenset[str]]
-	"""The same, in each thread's own analysis."""
+	changed: AssumedCallers
 
 
 class Artifacts(Struct):

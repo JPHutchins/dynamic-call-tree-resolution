@@ -19,7 +19,9 @@ from dynamic_call_tree_resolution.callgraph import (
 	call_pair,
 )
 from dynamic_call_tree_resolution.cli.artifacts import (
+	NO_ASSUMED_CALLERS,
 	Artifacts,
+	AssumedCallers,
 	AssumedUnwritten,
 	Expansion,
 	HandlerNames,
@@ -48,7 +50,7 @@ from dynamic_call_tree_resolution.identity import (
 from dynamic_call_tree_resolution.loader import (
 	line_spans,
 )
-from dynamic_call_tree_resolution.model import Address, HandlerStack
+from dynamic_call_tree_resolution.model import Address, HandlerStack, InstructionFamily
 from dynamic_call_tree_resolution.points_to import null_slots, unresolved_slots
 from dynamic_call_tree_resolution.report import (
 	slot_counts,
@@ -98,6 +100,7 @@ def elf_expansion(
 	narrow_by_field: bool,
 	rtos: RtosChoice,
 	assume_unwritten: tuple[str, ...] = (),
+	assume_upward_frame_writes: bool = False,
 ) -> Expansion:
 	"""Expand a build directory's indirect calls against its ELF image."""
 	image = loaded(elf)
@@ -108,6 +111,7 @@ def elf_expansion(
 		narrow_by_field=narrow_by_field,
 		rtos=rtos,
 		assume_unwritten=assume_unwritten,
+		assume_upward_frame_writes=assume_upward_frame_writes,
 	)
 
 
@@ -119,6 +123,7 @@ def expand_from_elf(
 	narrow_by_field: bool,
 	rtos: RtosChoice,
 	assume_unwritten: tuple[str, ...] = (),
+	assume_upward_frame_writes: bool = False,
 ) -> Expansion:
 	image_functions = image_function_names(artifacts, image)
 	in_image_edges = tuple(
@@ -127,7 +132,17 @@ def expand_from_elf(
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
 	model = rtos_model(image.program, rtos, build_kconfig(image.elf))
 	spans = _unwritten_spans(image.program, assume_unwritten)
-	resolution = resolve(image.program, model, assumed_unwritten=spans)
+	resolution = resolve(
+		image.program,
+		model,
+		assumed_unwritten=spans,
+		upward_frame_writes=_upward_frame_writes(image.program, assume_upward_frame_writes),
+	)
+	changed = (
+		_assumed_callers(image, model, resolution)
+		if assume_unwritten or assume_upward_frame_writes
+		else NO_ASSUMED_CALLERS
+	)
 	narrowed_by_field = field_narrowed_spans(image.elf, image.program) if narrow_by_field else ()
 	hardware_roots = frozenset(
 		stack_name(image.program, image.names, handler)
@@ -231,7 +246,8 @@ def expand_from_elf(
 		membership=artifacts.membership,
 		dropped=artifacts.dropped,
 		phantom_libcalls=artifacts.phantom_libcalls,
-		assumed_unwritten=_assumed_unwritten(image, model, resolution, assume_unwritten),
+		assumed_unwritten=_assumed_unwritten(image, resolution, assume_unwritten, changed),
+		assumed_upward_frame_writes=changed if assume_upward_frame_writes else NO_ASSUMED_CALLERS,
 		handlers=_handler_names(image, model.handler_stack),
 	)
 
@@ -253,12 +269,39 @@ def _unwritten_span(program: Program, name: str) -> Span:
 			)
 
 
+def _upward_frame_writes(program: Program, assumed: bool) -> bool:
+	match program.machine.family:
+		case InstructionFamily.ARM:
+			return assumed
+		case InstructionFamily.X86 if assumed:
+			raise ValueError(
+				f"--assume-upward-frame-writes: only Arm images are supported, not {program.machine.name}"
+			)
+		case InstructionFamily.X86:
+			return False
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _assumed_callers(
+	image: Image, model: RtosModel, resolution: ProgramResolution
+) -> AssumedCallers:
+	"""The callers whose indirect calls differ from the analysis without any assumption."""
+	baseline = resolve(image.program, model)
+	return AssumedCallers(
+		callers=_changed_callers(image, baseline.sites, resolution.sites),
+		thread_callers={
+			thread: _changed_callers(image, baseline.threads[thread].sites, own.sites)
+			for thread, own in resolution.threads.items()
+		},
+	)
+
+
 def _assumed_unwritten(
-	image: Image, model: RtosModel, resolution: ProgramResolution, names: tuple[str, ...]
+	image: Image, resolution: ProgramResolution, names: tuple[str, ...], changed: AssumedCallers
 ) -> AssumedUnwritten:
 	if not names:
-		return AssumedUnwritten(objects=(), contradicted=(), callers=frozenset(), thread_callers={})
-	baseline = resolve(image.program, model)
+		return AssumedUnwritten(objects=(), contradicted=(), changed=NO_ASSUMED_CALLERS)
 	return AssumedUnwritten(
 		objects=names,
 		contradicted=tuple(
@@ -270,11 +313,7 @@ def _assumed_unwritten(
 				for key in resolution.written
 			)
 		),
-		callers=_changed_callers(image, baseline.sites, resolution.sites),
-		thread_callers={
-			thread: _changed_callers(image, baseline.threads[thread].sites, own.sites)
-			for thread, own in resolution.threads.items()
-		},
+		changed=changed,
 	)
 
 

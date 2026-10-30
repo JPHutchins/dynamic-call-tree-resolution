@@ -185,6 +185,7 @@ def _on_stack(report: StackReport, additions: _Additions) -> StackReport:
 					narrowed_by_field=bound.narrowed_by_field,
 					narrowed_by_signature=bound.narrowed_by_signature,
 					assumed_unwritten=bound.assumed_unwritten,
+					assumed_upward_frame_writes=bound.assumed_upward_frame_writes,
 					assumed_frames=bound.assumed_frames,
 					not_counted=additions.not_counted,
 				),
@@ -265,6 +266,7 @@ _NOTED: Final = frozenset(
 		Reason.NARROWED_BY_FIELD,
 		Reason.NARROWED_BY_SIGNATURE,
 		Reason.ASSUMED_UNWRITTEN,
+		Reason.ASSUMED_UPWARD_FRAME_WRITES,
 		Reason.ASSUMED_FRAME,
 	}
 )
@@ -283,6 +285,7 @@ def _bound(depth: int, reasons: Reasons) -> Bounded | Unbounded:
 			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
 			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
 			assumed_unwritten=_names(reasons, Reason.ASSUMED_UNWRITTEN),
+			assumed_upward_frame_writes=_names(reasons, Reason.ASSUMED_UPWARD_FRAME_WRITES),
 			assumed_frames=_names(reasons, Reason.ASSUMED_FRAME),
 		)
 		if any(function_reason.reason not in _NOTED for function_reason in reasons)
@@ -293,6 +296,7 @@ def _bound(depth: int, reasons: Reasons) -> Bounded | Unbounded:
 			narrowed_by_field=_names(reasons, Reason.NARROWED_BY_FIELD),
 			narrowed_by_signature=_names(reasons, Reason.NARROWED_BY_SIGNATURE),
 			assumed_unwritten=_names(reasons, Reason.ASSUMED_UNWRITTEN),
+			assumed_upward_frame_writes=_names(reasons, Reason.ASSUMED_UPWARD_FRAME_WRITES),
 			assumed_frames=_names(reasons, Reason.ASSUMED_FRAME),
 		)
 	)
@@ -399,5 +403,9 @@ def _noted_sets(bound: Bounded | Unbounded) -> tuple[_ReasonFunctions, ...]:
 			reason=Reason.NARROWED_BY_SIGNATURE, functions=bound.narrowed_by_signature
 		),
 		_ReasonFunctions(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
+		_ReasonFunctions(
+			reason=Reason.ASSUMED_UPWARD_FRAME_WRITES,
+			functions=bound.assumed_upward_frame_writes,
+		),
 		_ReasonFunctions(reason=Reason.ASSUMED_FRAME, functions=bound.assumed_frames),
 	)

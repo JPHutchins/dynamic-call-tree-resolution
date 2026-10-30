@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from functools import reduce
+from functools import partial, reduce
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
@@ -45,6 +45,8 @@ def observed_seeds(
 	roots: Mapping[Address, State],
 	entry_seeds: Mapping[Address, State],
 	program: Program,
+	*,
+	lowest_tracked: bool,
 ) -> dict[Address, State]:
 	return {
 		**entry_seeds,
@@ -52,9 +54,10 @@ def observed_seeds(
 			callee: join_states(
 				entry_seeds.get(callee),
 				reduce(
-					join_states,
+					partial(join_states, lowest_tracked=lowest_tracked),
 					(seed_from_arguments(observation.arguments, program) for observation in group),
 				),
+				lowest_tracked=lowest_tracked,
 			)
 			for callee, group in groupby(sorted(observations, key=_callee), key=_callee)
 			if callee not in roots

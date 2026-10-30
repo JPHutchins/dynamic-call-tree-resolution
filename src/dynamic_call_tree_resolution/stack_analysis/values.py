@@ -44,6 +44,8 @@ class Bounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_upward_frame_writes: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect calls rest on ``--assume-upward-frame-writes``."""
 	assumed_frames: frozenset[str] = frozenset()
 	"""Reachable functions whose frames ``--assume-frame`` states."""
 
@@ -80,6 +82,8 @@ class Unbounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_upward_frame_writes: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect calls rest on ``--assume-upward-frame-writes``."""
 	assumed_frames: frozenset[str] = frozenset()
 	"""Reachable functions whose frames ``--assume-frame`` states."""
 	not_counted: frozenset[Uncounted] = frozenset()
@@ -150,6 +154,7 @@ class Reason(StrEnum):
 	NARROWED_BY_FIELD = "narrowed by field"
 	NARROWED_BY_SIGNATURE = "narrowed by signature"
 	ASSUMED_UNWRITTEN = "assumed unwritten"
+	ASSUMED_UPWARD_FRAME_WRITES = "assumed upward frame writes"
 	ASSUMED_FRAME = "assumed frame"
 
 

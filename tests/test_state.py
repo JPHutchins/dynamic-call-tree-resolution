@@ -3,6 +3,8 @@
 
 """Where a frame address escapes, as the analysis tracks it."""
 
+from typing import Final
+
 import pytest
 from capstone import arm_const
 from salix import replace
@@ -17,7 +19,9 @@ from dynamic_call_tree_resolution.vsa.state import (
 	UNESCAPED,
 	EscapedFrom,
 	FrameEscape,
+	escape_after_join,
 	escaping,
+	frame_after_escape,
 	join_escapes,
 	top_seed,
 )
@@ -103,5 +107,127 @@ def test_a_call_passing_a_frame_address_records_where_it_escaped_only_when_track
 		)
 		.in_states[Address(0x1008)]
 		.escaped
+		== escaped
+	)
+
+
+@pytest.mark.parametrize(
+	("escaped", "kept"),
+	[
+		pytest.param(UNESCAPED, (-20, -16, -12, -11, -8), id="unescaped"),
+		pytest.param(EscapedFrom(-12), (-20, -16), id="the words wholly below"),
+		pytest.param(ESCAPED_ANYWHERE, (), id="anywhere"),
+	],
+)
+def test_after_an_escape_only_the_words_below_the_lowest_escaped_address_stay_known(
+	escaped: FrameEscape, kept: tuple[int, ...]
+) -> None:
+	state = replace(
+		top_seed(Machine.EM_ARM),
+		stack={offset: frozenset({Address(5)}) for offset in (-20, -16, -12, -11, -8)},
+		escaped=escaped,
+	)
+	assert tuple(frame_after_escape(state, 4)) == kept
+
+
+_SPILLED: Final = "00b5 84b0 0521 0091 0191 0291 02a8"
+"""``push {lr}; sub sp, #16; movs r1, #5``, stored at entry - 20, - 16 and - 12, then
+``add r0, sp, #8``."""
+
+
+@pytest.mark.parametrize(
+	"escape",
+	[
+		pytest.param("00f002f8 04b0 00bd 7047", id="passed to a call"),
+		pytest.param("1060 ffe7 04b0 00bd 7047", id="stored through an unknown pointer"),
+	],
+)
+@pytest.mark.parametrize(
+	("upward", "stack"),
+	[
+		pytest.param(False, {}, id="the default"),
+		pytest.param(
+			True,
+			{-20: frozenset({Address(5)}), -16: frozenset({Address(5)})},
+			id="upward frame writes",
+		),
+	],
+)
+def test_a_frame_address_escaping_keeps_the_slots_below_it_only_with_upward_frame_writes(
+	escape: str, upward: bool, stack: dict[int, frozenset[Address]]
+) -> None:
+	code = bytes.fromhex(f"{_SPILLED} {escape}")
+	program = build_program(
+		Machine.EM_ARM,
+		(("caller", 0x1000, 22), ("callee", 0x1016, 2)),
+		sections={0x1000: code},
+		pointer_size=4,
+	)
+	assert (
+		block_states(
+			context_for(program, NO_WRITES, upward_frame_writes=upward),
+			control_flow_graphs(program)[Address(0x1000)].blocks,
+			top_seed(Machine.EM_ARM),
+		)
+		.in_states[Address(0x1012)]
+		.stack
+		== stack
+	)
+
+
+@pytest.mark.parametrize(
+	("instruction", "upward", "escaped"),
+	[
+		pytest.param("4140", False, ESCAPED_ANYWHERE, id="eors r1, r0"),
+		pytest.param("4140", True, EscapedFrom(-8), id="eors r1, r0, upward"),
+		pytest.param("1118", False, ESCAPED_ANYWHERE, id="adds r1, r2, r0"),
+		pytest.param("1118", True, EscapedFrom(-8), id="adds r1, r2, r0, upward"),
+		pytest.param("111a", False, ESCAPED_ANYWHERE, id="subs r1, r2, r0"),
+		pytest.param("111a", True, UNESCAPED, id="subs r1, r2, r0, upward: a difference"),
+		pytest.param("811a", False, ESCAPED_ANYWHERE, id="subs r1, r0, r2"),
+		pytest.param("811a", True, ESCAPED_ANYWHERE, id="subs r1, r0, r2, upward: below r0"),
+	],
+)
+def test_a_value_computed_from_a_frame_address_escapes_from_it_with_upward_frame_writes(
+	instruction: str, upward: bool, escaped: FrameEscape
+) -> None:
+	"""``sub sp, #16; add r0, sp, #8``, the instruction, then a branch to the next block."""
+	code = bytes.fromhex(f"84b0 02a8 {instruction} ffe7 04b0 7047")
+	program = build_program(
+		Machine.EM_ARM, (("caller", 0x1000, 12),), sections={0x1000: code}, pointer_size=4
+	)
+	assert (
+		block_states(
+			context_for(program, NO_WRITES, upward_frame_writes=upward),
+			control_flow_graphs(program)[Address(0x1000)].blocks,
+			top_seed(Machine.EM_ARM),
+		)
+		.in_states[Address(0x1008)]
+		.escaped
+		== escaped
+	)
+
+
+@pytest.mark.parametrize(
+	("incoming", "lowest_tracked", "escaped"),
+	[
+		pytest.param({13: frozenset({-16})}, False, ESCAPED_ANYWHERE, id="a copy lost"),
+		pytest.param({13: frozenset({-16})}, True, EscapedFrom(-8), id="a copy lost, tracked"),
+		pytest.param(
+			{13: frozenset({-16}), 0: frozenset({-24})}, True, UNESCAPED, id="no copy lost"
+		),
+	],
+)
+def test_a_frame_copy_a_join_drops_escapes_from_its_offsets_when_tracked(
+	incoming: dict[int, frozenset[int]], lowest_tracked: bool, escaped: FrameEscape
+) -> None:
+	current = {13: frozenset({-16}), 0: frozenset({-8})}
+	joined = {
+		register: current[register] | offsets
+		for register, offsets in incoming.items()
+		if register in current
+	}
+	assert (
+		escape_after_join(UNESCAPED, current, incoming, joined, lowest_tracked=lowest_tracked)
 		== escaped
 	)

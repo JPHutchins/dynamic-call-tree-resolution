@@ -39,6 +39,7 @@ def stack_graph(
 	entry_edges: Iterable[CallEdge] | None = None,
 	assumed_no_recursion: frozenset[str] = frozenset(),
 	assumed_unwritten: frozenset[str] = frozenset(),
+	assumed_upward_frame_writes: frozenset[str] = frozenset(),
 	hardware_roots: frozenset[str] = frozenset(),
 ) -> StackGraph:
 	given = tuple(edges)
@@ -57,7 +58,13 @@ def stack_graph(
 	components = strongly_connected_components(adjacency)
 	root_callees = all_callees(root_adjacency)
 	root_graph_nodes = {frame_key(node) for node in set(root_adjacency) | root_callees}
-	narrowings = _narrowings(edges_tuple, assumed_unwritten)
+	narrowings = _narrowings(
+		edges_tuple,
+		{
+			Reason.ASSUMED_UNWRITTEN: assumed_unwritten,
+			Reason.ASSUMED_UPWARD_FRAME_WRITES: assumed_upward_frame_writes,
+		},
+	)
 	return StackGraph(
 		adjacency=adjacency,
 		frame_by_name=frame_by_name,
@@ -95,7 +102,7 @@ _NARROWED: Final = {
 
 
 def _narrowings(
-	edges: tuple[CallEdge, ...], assumed_unwritten: frozenset[str]
+	edges: tuple[CallEdge, ...], assumed: Mapping[Reason, frozenset[str]]
 ) -> Mapping[str, frozenset[Reason]]:
 	narrowed = {
 		caller: reasons
@@ -109,13 +116,14 @@ def _narrowings(
 		{
 			**narrowed,
 			**{
-				node: narrowed.get(node, frozenset[Reason]()) | {Reason.ASSUMED_UNWRITTEN}
+				node: narrowed.get(node, frozenset[Reason]())
+				| {reason for reason, callers in assumed.items() if frame_key(node) in callers}
 				for edge in edges
 				for node in (edge.caller, edge.callee)
-				if frame_key(node) in assumed_unwritten
+				if any(frame_key(node) in callers for callers in assumed.values())
 			},
 		}
-		if assumed_unwritten
+		if any(assumed.values())
 		else narrowed
 	)
 

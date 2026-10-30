@@ -14,12 +14,14 @@ from dynamic_call_tree_resolution.cli.app import (
 	ASSUME_FRAME,
 	ASSUME_NO_RECURSION,
 	ASSUME_UNWRITTEN,
+	ASSUME_UPWARD_FRAME_WRITES,
 	NARROW_BY_FIELD,
 	NARROW_BY_SIGNATURE,
 	RTOS,
 	app,
 )
 from dynamic_call_tree_resolution.cli.artifacts import (
+	AssumedCallers,
 	Expansion,
 	build_artifacts,
 	optional_image,
@@ -189,6 +191,7 @@ def stack(
 	narrow_by_field: Annotated[bool, NARROW_BY_FIELD] = False,
 	assume_no_recursion: Annotated[tuple[str, ...], ASSUME_NO_RECURSION] = (),
 	assume_unwritten: Annotated[tuple[str, ...], ASSUME_UNWRITTEN] = (),
+	assume_upward_frame_writes: Annotated[bool, ASSUME_UPWARD_FRAME_WRITES] = False,
 	assume_frame: Annotated[tuple[str, ...], ASSUME_FRAME] = (),
 	rtos: Annotated[RtosChoice, RTOS] = RtosChoice.AUTO,
 	path: Annotated[
@@ -211,6 +214,7 @@ def stack(
 				narrow_by_field=narrow_by_field,
 				rtos=rtos,
 				assume_unwritten=assume_unwritten,
+				assume_upward_frame_writes=assume_upward_frame_writes,
 			),
 			assume_frame,
 		)
@@ -227,7 +231,10 @@ def stack(
 		),
 		entry_edges=expansion.in_image_edges if expansion is not None else None,
 		assumed_no_recursion=frozenset(assume_no_recursion),
-		assumed_unwritten=expansion.assumed_unwritten.callers
+		assumed_unwritten=expansion.assumed_unwritten.changed.callers
+		if expansion is not None
+		else frozenset(),
+		assumed_upward_frame_writes=expansion.assumed_upward_frame_writes.callers
 		if expansion is not None
 		else frozenset(),
 		hardware_roots=expansion.hardware_roots if expansion is not None else frozenset(),
@@ -255,6 +262,7 @@ def stack(
 			f"{f' | assumed no recursion: {", ".join(sorted(assume_no_recursion))}' if assume_no_recursion else ''}"
 			f"{f' | assumed unwritten: {", ".join(sorted(assume_unwritten))}' if assume_unwritten else ''}"
 			f"{f' | yet tracked stores write: {", ".join(expansion.assumed_unwritten.contradicted)}' if expansion.assumed_unwritten.contradicted else ''}"
+			f"{' | assumed upward frame writes' if assume_upward_frame_writes else ''}"
 			f"{f' | assumed frames: {", ".join(sorted(assume_frame))}' if assume_frame else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
 		)
@@ -322,14 +330,20 @@ def own_stack_graphs(
 				edges,
 				expansion.frames,
 				assumed_no_recursion=assumed_no_recursion,
-				assumed_unwritten=expansion.assumed_unwritten.callers
-				| expansion.assumed_unwritten.thread_callers.get(thread, frozenset()),
+				assumed_unwritten=_in_thread(expansion.assumed_unwritten.changed, thread),
+				assumed_upward_frame_writes=_in_thread(
+					expansion.assumed_upward_frame_writes, thread
+				),
 			)
 			for thread, edges in expansion.own_edges.items()
 		}
 		if expansion is not None
 		else {}
 	)
+
+
+def _in_thread(assumed: AssumedCallers, thread: str) -> frozenset[str]:
+	return assumed.callers | assumed.thread_callers.get(thread, frozenset())
 
 
 def _stack_document(

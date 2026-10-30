@@ -82,6 +82,7 @@ def analyze(
 	rtos: RtosModel = BARE_METAL,
 	*,
 	assumed_unwritten: tuple[Span, ...] = (),
+	upward_frame_writes: bool = False,
 ) -> Analysis:
 	blocks_by_function = control_flow_graphs(program)
 	functions = tuple(blocks_by_function.values())
@@ -110,7 +111,8 @@ def analyze(
 	)
 	entry_seeds = {
 		normalized(entry, program.machine): reduce(
-			join_states, (seed_from_thread(thread, program) for thread in threads_by_entry[entry])
+			partial(join_states, lowest_tracked=upward_frame_writes),
+			(seed_from_thread(thread, program) for thread in threads_by_entry[entry]),
 		)
 		for entry in seeded_entries
 	}
@@ -134,6 +136,7 @@ def analyze(
 				top=top,
 				creation=creation,
 				assumed_unwritten=assumed_unwritten,
+				upward_frame_writes=upward_frame_writes,
 				escapes=found,
 				entry_loads=loads,
 			),
@@ -144,6 +147,7 @@ def analyze(
 			program,
 			final.writes,
 			assumed_unwritten=assumed_unwritten,
+			upward_frame_writes=upward_frame_writes,
 			escapes=found,
 			entry_loads=loads,
 			entry_words=final.entry_words,

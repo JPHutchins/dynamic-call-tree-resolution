@@ -539,6 +539,22 @@ z_thread_entry@0x244: thread_a_entry_point, thread_b_entry_point, bg_thread_main
 ...
 ```
 
+Its threads print through picolibc's `vfprintf`, which the toolchain ships without
+DWARF. `vfprintf` keeps the stream's `put` callback in its frame, below a buffer whose
+address it passes to `__ultoa_invert`. After that call the analysis can't tell what the
+callee wrote, so it loses the callback, and every row that prints reaches each function
+whose address is taken. Assuming that code writes through a frame address only at or
+above it keeps the callback, and every row is bounded:
+
+```console
+$ dctr stack $DCTR_FIXTURES/synchronization --elf $DCTR_FIXTURES/synchronization/zephyr/zephyr.elf --assume-upward-frame-writes
+resolved slots: 105 | indirect call sites: 11 | not in the image: 325 (discarded: 203, never linked: 122) | membership: linker | assumed upward frame writes | rtos: zephyr
+z_interrupt_stacks: 3156 bytes (measured: 12, assumed upward frame writes: 1, nested exceptions: 10, priority levels: 8 (devicetree), exception frame: 36 bytes each, stack: 2048 bytes, margin: -1108 bytes)
+...
+z_main_thread: 332 bytes (measured: 7, assumed upward frame writes: 1, stack reservation: 16 bytes, exception frame: 36 bytes, stack: 1024 bytes, margin: 692 bytes)
+...
+```
+
 ## Related tools
 
 - [puncover](https://github.com/HBehrens/puncover) 0.8.0 reads `-fstack-usage` but not
@@ -740,6 +756,18 @@ contradicts does not hold.
   that Zephyr's init code builds in RAM look empty, and drop the emulator call that
   `thermal_tid` really makes. When a store the analysis does track writes a named object
   anyway, the header says so (`yet tracked stores write: _stdout_hook`).
+- `--assume-upward-frame-writes` states that once the analysis loses track of a frame
+  address, the program writes through it only at or above that address. An address is
+  lost when it is passed to a call, stored, combined with an unknown value, or held on
+  only one of two joining paths. The frame below the lowest such address then stays known
+  across calls and stores through unknown pointers. A frame address subtracted from
+  another value gives a difference, not an address; one with a value subtracted from it
+  still loses the whole frame. Code that fills a buffer backwards from a pointer to its
+  end breaks the assumption, as Zephyr's `encode_uint` does. It is for code without
+  DWARF, such as a prebuilt C library, and only for Arm images. Nothing checks the
+  assumption; the header names it, and so does every row that reaches a caller whose
+  indirect calls differ from the analysis without assumptions. Finding those callers
+  analyzes the image twice ([#331]).
 - `--assume-frame FUNCTION=BYTES`, repeated for each function, states the frame of a
   function nothing measures: one with neither a `.su` record nor code the analysis can
   measure, such as host code in a native_sim image (`nsi_vprint_error_and_exit` on
