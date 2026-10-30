@@ -16,7 +16,14 @@ from dynamic_call_tree_resolution import build_report, load, resolve
 from dynamic_call_tree_resolution.cli import stack
 from dynamic_call_tree_resolution.report import BoundedStack, StackEntryReport
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
-from tests.toolchains import ZephyrMachine, zephyr_console_cortex_m3, zephyr_stack_pointers
+from tests.toolchains import (
+	GdbStop,
+	PaintedStack,
+	ZephyrMachine,
+	zephyr_console_cortex_m3,
+	zephyr_stack_pointers,
+	zephyr_used_stacks,
+)
 
 if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
@@ -38,6 +45,23 @@ def test_each_thread_reports_its_own_stack_high_water_on_qemu(zephyr_fixtures: P
 		zephyr_console_cortex_m3(zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf", 4)
 		== QEMU_CONSOLE
 	)
+
+
+def test_reading_each_painted_stack_under_gdb_finds_what_the_thread_reports(
+	zephyr_fixtures: Path,
+) -> None:
+	assert zephyr_used_stacks(
+		ZephyrMachine.LM3S6965EVB,
+		zephyr_fixtures / "sensor-threads" / "zephyr" / "zephyr.elf",
+		GdbStop("k_thread_stack_space_get", ()),
+		tuple(
+			PaintedStack(
+				f"_k_thread_obj_{thread}.stack_info.start",
+				f"_k_thread_obj_{thread}.stack_info.size",
+			)
+			for thread in ("thermal_tid", "motion_tid")
+		),
+	) == (1024 - 840, 1024 - 864)
 
 
 @pytest.mark.parametrize(

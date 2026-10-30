@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import tempfile
 from enum import StrEnum
 from itertools import islice
 from pathlib import Path
@@ -231,10 +232,16 @@ def zephyr_stack_pointers(
 
 
 class GdbStop(Struct):
-	"""A breakpoint, and what gdb evaluates when it first stops there."""
+	"""A breakpoint, and what gdb evaluates when it stops there."""
 
 	breakpoint: str
 	expressions: tuple[str, ...]
+	ignore: int = 0
+	"""How many hits gdb passes before it stops."""
+
+
+def _passed(stop: GdbStop) -> tuple[str, ...]:
+	return (f"ignore $bpnum {stop.ignore}",) if stop.ignore else ()
 
 
 def zephyr_values(machine: ZephyrMachine, elf: Path, stops: tuple[GdbStop, ...]) -> tuple[int, ...]:
@@ -274,6 +281,7 @@ def zephyr_values(machine: ZephyrMachine, elf: Path, stops: tuple[GdbStop, ...])
 						"delete",
 						"-ex",
 						f"break {stop.breakpoint}",
+						*(argument for command in _passed(stop) for argument in ("-ex", command)),
 						"-ex",
 						"continue",
 						*(
@@ -292,6 +300,84 @@ def zephyr_values(machine: ZephyrMachine, elf: Path, stops: tuple[GdbStop, ...])
 			text=True,
 		).stdout.splitlines()
 		if line.startswith("value ")
+	)
+
+
+class PaintedStack(Struct):
+	"""A stack Zephyr fills with 0xaa when it creates it (``CONFIG_INIT_STACKS``)."""
+
+	start: str
+	"""A gdb expression for its lowest address."""
+	size: str
+	"""A gdb expression for its size in bytes."""
+
+
+def zephyr_used_stacks(
+	machine: ZephyrMachine, elf: Path, stop: GdbStop, stacks: tuple[PaintedStack, ...]
+) -> tuple[int, ...]:
+	"""How many bytes of each stack, down from its top, are no longer painted at the stop, under
+	gdb on QEMU."""
+	with tempfile.NamedTemporaryFile("w", suffix=".gdb") as script:
+		script.write(
+			"\n".join(
+				(
+					"target remote | "
+					+ shlex.join(
+						(
+							*_zephyr_qemu(machine),
+							"-display",
+							"none",
+							"-serial",
+							"null",
+							"-kernel",
+							str(elf),
+							"-S",
+							"-gdb",
+							"stdio",
+						)
+					),
+					f"break {stop.breakpoint}",
+					*_passed(stop),
+					"continue",
+					*(line for stack in stacks for line in _painted_words(stack)),
+					"kill",
+				)
+			)
+			+ "\n"
+		)
+		script.flush()
+		return tuple(
+			int(line.split()[1], 16)
+			for line in subprocess.run(
+				[
+					"timeout",
+					"-k",
+					"5",
+					"120",
+					"arm-none-eabi-gdb",
+					"-batch",
+					"-nx",
+					"-x",
+					script.name,
+					str(elf),
+				],
+				check=False,
+				capture_output=True,
+				text=True,
+			).stdout.splitlines()
+			if line.startswith("value ")
+		)
+
+
+def _painted_words(stack: PaintedStack) -> tuple[str, ...]:
+	return (
+		f"set $start = (unsigned int *) ({stack.start})",
+		f"set $end = (unsigned int *) ((char *) $start + ({stack.size}))",
+		"set $word = $start",
+		"while $word < $end && *$word == 0xaaaaaaaa",
+		"set $word = $word + 1",
+		"end",
+		r'printf "value %#x\n", (char *) $end - (char *) $word',
 	)
 
 
