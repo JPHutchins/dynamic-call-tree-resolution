@@ -86,6 +86,7 @@ class Rounds(Struct):
 	top: State
 	creation: Creation | None
 	assumed_unwritten: tuple[Span, ...]
+	upward_frame_writes: bool
 	escapes: Escapes
 	entry_loads: Mapping[Address, tuple[EntryLoad, ...]]
 
@@ -100,6 +101,7 @@ def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
 					rounds.program,
 					current.writes,
 					assumed_unwritten=rounds.assumed_unwritten,
+					upward_frame_writes=rounds.upward_frame_writes,
 					escapes=rounds.escapes,
 					entry_loads=rounds.entry_loads,
 					entry_words=current.entry_words,
@@ -117,7 +119,13 @@ def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
 		seeds={
 			**next_round_seeds(
 				current.seeds,
-				observed_seeds(observations, rounds.roots, rounds.entry_seeds, rounds.program),
+				observed_seeds(
+					observations,
+					rounds.roots,
+					rounds.entry_seeds,
+					rounds.program,
+					lowest_tracked=rounds.upward_frame_writes,
+				),
 				rounds.top,
 				round_number,
 			),
@@ -215,6 +223,7 @@ def _thread_fixpoint(
 		{},
 		start,
 		program,
+		lowest_tracked=context.upward_frame_writes,
 	)
 	next_seeds = next_round_seeds(seeds, observed, top_seed(program.machine), round_number)
 	return (

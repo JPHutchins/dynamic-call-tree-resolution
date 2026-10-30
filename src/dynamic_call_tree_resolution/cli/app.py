@@ -43,6 +43,14 @@ ASSUME_UNWRITTEN: Final = Parameter(
 )
 
 
+ASSUME_UPWARD_FRAME_WRITES: Final = Parameter(
+	help="assume a frame address the analysis loses track of (passed to a call, stored, or "
+	"combined with an unknown value) is written through only at or above itself, so the "
+	"frame below it stays known; Arm images only. Nothing checks it, the rows that rest on "
+	"it say so, and finding those rows analyzes the image twice"
+)
+
+
 ASSUME_FRAME: Final = Parameter(
 	help="assume FUNCTION=BYTES is the frame of a function nothing measures; repeat it for "
 	"each function. Nothing checks it, and the rows that rest on it say so"

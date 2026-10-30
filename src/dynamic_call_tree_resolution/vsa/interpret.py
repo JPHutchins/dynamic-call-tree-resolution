@@ -109,13 +109,17 @@ def _clobber_caller_saved(state: State, machine: Machine) -> State:
 			assert_never(unreachable)
 
 
-def _called(state: State, machine: Machine, lowest_tracked: bool) -> State:
-	passed = escaping(state, REGISTER_ARGUMENTS[machine], lowest_tracked=lowest_tracked)
+def _called(context: Context, state: State) -> State:
+	passed = escaping(
+		state,
+		REGISTER_ARGUMENTS[context.program.machine],
+		lowest_tracked=context.upward_frame_writes,
+	)
 	return _clobber_caller_saved(
 		State(
 			registers=passed.registers,
 			sp_offsets=passed.sp_offsets,
-			stack=frame_after_escape(passed),
+			stack=frame_after_escape(passed, context.program.pointer_size),
 			globals=Writes(
 				values={},
 				unknown_store=passed.globals.unknown_store,
@@ -125,7 +129,7 @@ def _called(state: State, machine: Machine, lowest_tracked: bool) -> State:
 			loaded_from=passed.loaded_from,
 			strided=passed.strided,
 		),
-		machine,
+		context.program.machine,
 	)
 
 
@@ -135,7 +139,7 @@ def transfer(context: Context, state: State, instruction: CsInsn) -> State:
 	if _calls(instruction, context.program.machine) or is_returning_trap(
 		instruction, context.program.machine
 	):
-		return _called(state, context.program.machine, context.upward_frame_writes)
+		return _called(context, state)
 	match context.program.machine:
 		case Machine.EM_386:
 			return _x86_transfer(context, instruction, state, x86_const.X86_REG_ECX)
@@ -194,7 +198,7 @@ def block_states(context: Context, blocks: tuple[Block, ...], seed: State) -> Bl
 		writes = accumulate_writes(writes, [states[-1].globals])
 		for edge in successor_states(block, states, step):
 			existing = in_states.get(edge.successor)
-			joined = join_states(existing, edge.state)
+			joined = join_states(existing, edge.state, lowest_tracked=context.upward_frame_writes)
 			if joined != existing:
 				in_states[edge.successor] = joined
 				worklist.append(edge.successor)

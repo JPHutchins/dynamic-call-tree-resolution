@@ -80,8 +80,14 @@ def resolve(
 	rtos: RtosModel = BARE_METAL,
 	*,
 	assumed_unwritten: tuple[Span, ...] = (),
+	upward_frame_writes: bool = False,
 ) -> ProgramResolution:
-	analysis = analyze(program, rtos, assumed_unwritten=assumed_unwritten)
+	analysis = analyze(
+		program,
+		rtos,
+		assumed_unwritten=assumed_unwritten,
+		upward_frame_writes=upward_frame_writes,
+	)
 	return ProgramResolution(
 		sites=_dispatched(program, rtos, analysis.sites),
 		seeded=analysis.seeded,

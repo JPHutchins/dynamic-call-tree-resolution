@@ -99,3 +99,10 @@ def test_assume_frame_states_a_size_for_a_function_without_one(
 ) -> None:
 	with pytest.raises(ValueError, match=message):
 		stack(artifacts, executable, assume_frame=(statement,))
+
+
+def test_assume_upward_frame_writes_is_for_arm_images_only(
+	artifacts: Path, executable: Path
+) -> None:
+	with pytest.raises(ValueError, match="only Arm images are supported, not EM_386"):
+		stack(artifacts, executable, assume_upward_frame_writes=True)

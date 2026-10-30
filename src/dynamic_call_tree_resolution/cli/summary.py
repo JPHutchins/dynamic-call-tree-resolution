@@ -14,6 +14,7 @@ from dynamic_call_tree_resolution.cli.app import (
 	ASSUME_FRAME,
 	ASSUME_NO_RECURSION,
 	ASSUME_UNWRITTEN,
+	ASSUME_UPWARD_FRAME_WRITES,
 	NARROW_BY_FIELD,
 	NARROW_BY_SIGNATURE,
 	RTOS,
@@ -59,6 +60,7 @@ def summary(
 	narrow_by_field: Annotated[bool, NARROW_BY_FIELD] = False,
 	assume_no_recursion: Annotated[tuple[str, ...], ASSUME_NO_RECURSION] = (),
 	assume_unwritten: Annotated[tuple[str, ...], ASSUME_UNWRITTEN] = (),
+	assume_upward_frame_writes: Annotated[bool, ASSUME_UPWARD_FRAME_WRITES] = False,
 	assume_frame: Annotated[tuple[str, ...], ASSUME_FRAME] = (),
 	rtos: Annotated[RtosChoice, RTOS] = RtosChoice.AUTO,
 ) -> None:
@@ -71,6 +73,7 @@ def summary(
 			narrow_by_field=narrow_by_field,
 			rtos=rtos,
 			assume_unwritten=assume_unwritten,
+			assume_upward_frame_writes=assume_upward_frame_writes,
 		),
 		assume_frame,
 	)
@@ -81,7 +84,8 @@ def summary(
 			expansion.frames,
 			entry_edges=expansion.in_image_edges,
 			assumed_no_recursion=frozenset(assume_no_recursion),
-			assumed_unwritten=expansion.assumed_unwritten.callers,
+			assumed_unwritten=expansion.assumed_unwritten.changed.callers,
+			assumed_upward_frame_writes=expansion.assumed_upward_frame_writes.callers,
 			hardware_roots=expansion.hardware_roots,
 		),
 	)

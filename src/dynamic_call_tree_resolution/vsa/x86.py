@@ -96,8 +96,13 @@ def apply_x86(context: Context, instruction: CsInsn, state: State) -> State:
 						width=destination.size,
 					),
 				)
-			case _:
-				return top_written(instruction, state, _ROOT_IDS[machine])  # pragma: no cover
+			case _:  # pragma: no cover
+				return top_written(
+					instruction,
+					state,
+					_ROOT_IDS[machine],
+					lowest_tracked=context.upward_frame_writes,
+				)
 	if instruction.mnemonic == "lea":
 		destination, source = _x86_operands(instruction)
 		memory = source.mem
@@ -170,7 +175,12 @@ def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
 		or operands[0].type != x86_const.X86_OP_MEM
 		or prefixes_and_name[-1] in X86_MEMORY_READERS
 	):
-		return top_written(instruction, state, _ROOT_IDS[context.program.machine])
+		return top_written(
+			instruction,
+			state,
+			_ROOT_IDS[context.program.machine],
+			lowest_tracked=context.upward_frame_writes,
+		)
 	destination = memory_destination(context, state, instruction, operands[0])
 	return top_written(
 		instruction,
@@ -188,6 +198,7 @@ def _clobbered(context: Context, instruction: CsInsn, state: State) -> State:
 			Address(instruction.address),
 		),
 		_ROOT_IDS[context.program.machine],
+		lowest_tracked=context.upward_frame_writes,
 	)
 
 

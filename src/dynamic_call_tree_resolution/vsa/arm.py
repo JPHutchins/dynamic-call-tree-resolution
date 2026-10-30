@@ -95,7 +95,9 @@ def _apply_unconditional(
 	if instruction_id == arm_const.ARM_INS_MOVT:
 		destination, source = _arm_operands(instruction)
 		if source.type != arm_const.ARM_OP_IMM:  # pragma: no branch
-			return top_written(instruction, state)  # pragma: no cover
+			return top_written(
+				instruction, state, lowest_tracked=context.upward_frame_writes
+			)  # pragma: no cover
 		return set_register(
 			state,
 			destination.reg,
@@ -137,6 +139,7 @@ def _apply_unconditional(
 				),
 				lowest_tracked=context.upward_frame_writes,
 			),
+			lowest_tracked=context.upward_frame_writes,
 		)
 	if instruction_id in ARM_MOVES:
 		destination, source = _arm_operands(instruction)
@@ -147,22 +150,22 @@ def _apply_unconditional(
 				return set_register(
 					state, destination.reg, Known(values=frozenset({Address(source.imm)}))
 				)
-			case _:
-				return top_written(instruction, state)  # pragma: no cover
+			case _:  # pragma: no cover
+				return top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 	if instruction_id in ARM_ADDITION_SIGNS:
 		return _arm_arithmetic(context, instruction, state, ARM_ADDITION_SIGNS[instruction_id])
 	if instruction_id in ARM_ZERO_EXTEND_MASKS:
-		return _arm_zero_extend(instruction, state, ARM_ZERO_EXTEND_MASKS[instruction_id])
+		return _arm_zero_extend(context, instruction, state, ARM_ZERO_EXTEND_MASKS[instruction_id])
 	if instruction_id in _Shift:
-		return _arm_shift(instruction, state, _Shift(instruction_id))
-	return top_written(instruction, state)
+		return _arm_shift(context, instruction, state, _Shift(instruction_id))
+	return top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 
 
-def _arm_shift(instruction: CsInsn, state: State, shift: _Shift) -> State:
+def _arm_shift(context: Context, instruction: CsInsn, state: State, shift: _Shift) -> State:
 	operands = _arm_operands(instruction)
 	match _shift_amount(operands, shift):
 		case None:
-			return top_written(instruction, state)
+			return top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 		case int() as amount:
 			return set_register(
 				state,
@@ -208,7 +211,7 @@ def _operand_shift(shift: _Shift) -> int:
 			assert_never(unreachable)
 
 
-def _arm_zero_extend(instruction: CsInsn, state: State, mask: int) -> State:
+def _arm_zero_extend(context: Context, instruction: CsInsn, state: State, mask: int) -> State:
 	destination, source = _arm_operands(instruction)[:2]
 	return (
 		set_register(
@@ -217,7 +220,7 @@ def _arm_zero_extend(instruction: CsInsn, state: State, mask: int) -> State:
 			map_set(lookup(state.registers, source.reg), lambda value: Address(value & mask)),
 		)
 		if len(instruction.operands) == 2 and source.shift.type == arm_const.ARM_SFT_INVALID
-		else top_written(instruction, state)
+		else top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 	)
 
 
@@ -227,7 +230,7 @@ def _arm_load_pair(context: Context, instruction: CsInsn, state: State) -> State
 	source = instruction.operands[2]
 	base = source.mem.base
 	if base == arm_const.ARM_REG_PC:
-		return top_written(instruction, state)
+		return top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 	first_word = loaded(context, state, instruction, source, 4)
 	second_word = loaded(context, _advance(state, base, 4), instruction, source, 4)
 	pair = set_loaded(
@@ -334,7 +337,9 @@ def _arm_arithmetic(context: Context, instruction: CsInsn, state: State, sign: i
 	if len(operands) == 2:
 		source = operands[1]
 		if source.type != arm_const.ARM_OP_IMM:  # pragma: no branch
-			return top_written(instruction, state)  # pragma: no cover
+			return top_written(
+				instruction, state, lowest_tracked=context.upward_frame_writes
+			)  # pragma: no cover
 		return _arm_shift_destination(state, destination.reg, destination.reg, sign * source.imm)
 	register_operand, value_operand = operands[1], operands[2]
 	if value_operand.type == arm_const.ARM_OP_IMM:
@@ -346,10 +351,12 @@ def _arm_arithmetic(context: Context, instruction: CsInsn, state: State, sign: i
 			frame_based(state, context.program.machine, operand.reg)
 			for operand in (register_operand, value_operand)
 		):
-			return set_offsets(state, destination.reg, Top())
+			return _frame_arithmetic(
+				context, state, destination.reg, register_operand.reg, value_operand.reg, sign
+			)
 		scale = _arm_shift_scale(value_operand)
 		if scale is None:
-			return top_written(instruction, state)
+			return top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 		return _arm_indexed(
 			state,
 			destination.reg,
@@ -357,7 +364,21 @@ def _arm_arithmetic(context: Context, instruction: CsInsn, state: State, sign: i
 			lookup(state.registers, value_operand.reg),
 			sign * scale,
 		)
-	return top_written(instruction, state)  # pragma: no cover
+	return top_written(
+		instruction, state, lowest_tracked=context.upward_frame_writes
+	)  # pragma: no cover
+
+
+def _frame_arithmetic(
+	context: Context, state: State, destination: int, register: int, value: int, sign: int
+) -> State:
+	if not context.upward_frame_writes or (
+		sign < 0 and frame_based(state, context.program.machine, register)
+	):
+		return set_offsets(state, destination, Top())
+	if sign < 0:
+		return set_register(state, destination, Top())
+	return set_register(escaping(state, (register, value), lowest_tracked=True), destination, Top())
 
 
 def _arm_indexed(

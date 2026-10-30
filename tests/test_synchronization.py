@@ -27,24 +27,15 @@ _STACK_BUFFERS: Final = {
 }
 
 
-def test_each_bounded_stack_row_holds_what_its_painted_stack_shows_used(
-	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+@pytest.fixture(scope="module")
+def used(zephyr_fixtures: Path) -> dict[str, int]:
 	"""Both threads have run their loop several times by the sixth sleep."""
-	artifacts = zephyr_fixtures / "synchronization"
-	elf = artifacts / "zephyr" / "zephyr.elf"
-	stack(artifacts, elf, json=True)
-	bounded = {
-		row.entry: row.bound.bytes
-		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
-		if row.entry in _STACK_BUFFERS and isinstance(row.bound, BoundedStack)
-	}
-	used = dict(
+	return dict(
 		zip(
 			_STACK_BUFFERS,
 			zephyr_used_stacks(
 				ZephyrMachine.LM3S6965EVB,
-				elf,
+				zephyr_fixtures / "synchronization" / "zephyr" / "zephyr.elf",
 				GdbStop("z_impl_k_sleep_ticks", (), ignore=5),
 				tuple(
 					PaintedStack(f"&{buffer}", f"sizeof({buffer})")
@@ -54,7 +45,39 @@ def test_each_bounded_stack_row_holds_what_its_painted_stack_shows_used(
 			strict=True,
 		)
 	)
+
+
+@pytest.mark.parametrize(
+	("assume_upward_frame_writes", "expected"),
+	[
+		pytest.param(False, ["thread_b", "z_idle_threads"], id="by default"),
+		pytest.param(
+			True,
+			["thread_b", "z_idle_threads", "z_interrupt_stacks", "z_main_thread"],
+			id="assuming upward frame writes",
+		),
+	],
+)
+def test_each_bounded_stack_row_holds_what_its_painted_stack_shows_used(
+	zephyr_fixtures: Path,
+	used: dict[str, int],
+	capsys: pytest.CaptureFixture[str],
+	assume_upward_frame_writes: bool,
+	expected: list[str],
+) -> None:
+	artifacts = zephyr_fixtures / "synchronization"
+	stack(
+		artifacts,
+		artifacts / "zephyr" / "zephyr.elf",
+		json=True,
+		assume_upward_frame_writes=assume_upward_frame_writes,
+	)
+	bounded = {
+		row.entry: row.bound.bytes
+		for row in msgspec.json.decode(capsys.readouterr().out, type=tuple[StackEntryReport, ...])
+		if row.entry in _STACK_BUFFERS and isinstance(row.bound, BoundedStack)
+	}
 	assert (
 		sorted(bounded),
 		[entry for entry, depth in bounded.items() if used[entry] > depth],
-	) == (["thread_b", "z_idle_threads"], [])
+	) == (expected, [])

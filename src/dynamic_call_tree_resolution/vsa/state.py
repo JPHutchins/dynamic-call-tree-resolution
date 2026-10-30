@@ -106,12 +106,18 @@ def join_escapes(current: FrameEscape, incoming: FrameEscape) -> FrameEscape:
 			assert_never(unreachable)
 
 
-def frame_after_escape(state: State) -> Mapping[int, frozenset[Address]]:
+def frame_after_escape(state: State, pointer_size: int) -> Mapping[int, frozenset[Address]]:
 	"""The frame slots a call or an unknown store leaves the analysis knowing."""
 	match state.escaped:
 		case Unescaped():
 			return state.stack
-		case EscapedFrom() | EscapedAnywhere():
+		case EscapedFrom(lowest=lowest):
+			return {
+				offset: values
+				for offset, values in state.stack.items()
+				if offset + pointer_size <= lowest
+			}
+		case EscapedAnywhere():
 			return {}
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -147,7 +153,7 @@ def top_seed(machine: Machine) -> State:
 	)
 
 
-def join_states(current: State | None, incoming: State) -> State:
+def join_states(current: State | None, incoming: State, *, lowest_tracked: bool) -> State:
 	if current is None:
 		return incoming
 	sp_offsets = join_maps(current.sp_offsets, incoming.sp_offsets)
@@ -156,11 +162,12 @@ def join_states(current: State | None, incoming: State) -> State:
 		sp_offsets=sp_offsets,
 		stack=join_maps(current.stack, incoming.stack),
 		globals=_join_writes(current.globals, incoming.globals),
-		escaped=lost_unless_anywhere(
+		escaped=escape_after_join(
 			join_escapes(current.escaped, incoming.escaped),
 			current.sp_offsets,
 			incoming.sp_offsets,
 			sp_offsets,
+			lowest_tracked=lowest_tracked,
 		),
 		loaded_from=agreed_facts(current.loaded_from, incoming.loaded_from),
 		strided=agreed_facts(current.strided, incoming.strided),
@@ -171,17 +178,35 @@ def agreed_facts[T](current: Mapping[int, T], incoming: Mapping[int, T]) -> dict
 	return {register: fact for register, fact in current.items() if incoming.get(register) == fact}
 
 
-def lost_unless_anywhere(
+def escape_after_join(
 	escaped: FrameEscape,
 	current: Mapping[int, frozenset[int]],
 	incoming: Mapping[int, frozenset[int]],
 	joined: Mapping[int, frozenset[int]],
+	*,
+	lowest_tracked: bool,
 ) -> FrameEscape:
-	return (
-		ESCAPED_ANYWHERE
-		if not isinstance(escaped, EscapedAnywhere) and frame_copies_lost(current, incoming, joined)
-		else escaped
-	)
+	"""A frame copy the join drops escapes, as a frame address passed to a call does."""
+	match escaped:
+		case EscapedAnywhere():
+			return escaped
+		case _ if not frame_copies_lost(current, incoming, joined):
+			return escaped
+		case Unescaped() | EscapedFrom() if not lowest_tracked:
+			return ESCAPED_ANYWHERE
+		case Unescaped() | EscapedFrom():
+			return _lowest_of(
+				escaped,
+				(
+					offset
+					for side in (current, incoming)
+					for register, offsets in side.items()
+					if register not in joined
+					for offset in offsets
+				),
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def frame_copies_lost(
@@ -307,22 +332,32 @@ def escaping(state: State, registers: Iterable[int], *, lowest_tracked: bool) ->
 
 
 def _lowered(state: State, escaped: Unescaped | EscapedFrom, frame_registers: list[int]) -> State:
-	lowest = min(
-		(offset for register in frame_registers for offset in state.sp_offsets[register]),
-		default=None,
+	lowered = _lowest_of(
+		escaped, (offset for register in frame_registers for offset in state.sp_offsets[register])
 	)
+	return state if lowered is escaped else replace(state, escaped=lowered)
+
+
+def _lowest_of(escaped: Unescaped | EscapedFrom, offsets: Iterable[int]) -> FrameEscape:
+	lowest = min(offsets, default=None)
 	if lowest is None:
-		return state
+		return escaped
 	match escaped:
 		case EscapedFrom(lowest=current) if current <= lowest:
-			return state
+			return escaped
 		case Unescaped() | EscapedFrom():
-			return replace(state, escaped=EscapedFrom(lowest))
+			return EscapedFrom(lowest)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
-def top_written(instruction: CsInsn, state: State, roots: Mapping[int, int] | None = None) -> State:
+def top_written(
+	instruction: CsInsn,
+	state: State,
+	roots: Mapping[int, int] | None = None,
+	*,
+	lowest_tracked: bool,
+) -> State:
 	read, written = instruction.regs_access()
 	dropped = (
 		written
@@ -342,19 +377,16 @@ def top_written(instruction: CsInsn, state: State, roots: Mapping[int, int] | No
 		},
 		stack=state.stack,
 		globals=state.globals,
-		escaped=ESCAPED_ANYWHERE
-		if isinstance(state.escaped, EscapedAnywhere)
-		or (
-			any(
-				operand.type == CS_OP_REG
-				and operand.reg in read
-				and operand.reg in state.sp_offsets
+		escaped=escaping(
+			state,
+			(
+				operand.reg
 				for operand in instruction.operands
-			)
-			and any(
-				instruction.reg_name(register) not in FLAG_REGISTER_NAMES for register in written
-			)
-		)
+				if operand.type == CS_OP_REG and operand.reg in read
+			),
+			lowest_tracked=lowest_tracked,
+		).escaped
+		if any(instruction.reg_name(register) not in FLAG_REGISTER_NAMES for register in written)
 		else state.escaped,
 		loaded_from=without_facts(state.loaded_from, dropped),
 		strided=without_facts(state.strided, dropped),

@@ -60,6 +60,10 @@ def render(report: StackReport) -> str:
 						reason=Reason.NARROWED_BY_SIGNATURE, functions=bound.narrowed_by_signature
 					),
 					_Count(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
+					_Count(
+						reason=Reason.ASSUMED_UPWARD_FRAME_WRITES,
+						functions=bound.assumed_upward_frame_writes,
+					),
 					_Count(reason=Reason.ASSUMED_FRAME, functions=bound.assumed_frames),
 				),
 				_thread_stack_additions(bound),
@@ -80,6 +84,10 @@ def render(report: StackReport) -> str:
 						reason=Reason.NARROWED_BY_SIGNATURE, functions=bound.narrowed_by_signature
 					),
 					_Count(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
+					_Count(
+						reason=Reason.ASSUMED_UPWARD_FRAME_WRITES,
+						functions=bound.assumed_upward_frame_writes,
+					),
 					_Count(reason=Reason.ASSUMED_FRAME, functions=bound.assumed_frames),
 					_Count(reason=Reason.DYNAMIC, functions=bound.dynamic),
 					_Count(reason=Reason.UNRESOLVED, functions=bound.unresolved),
