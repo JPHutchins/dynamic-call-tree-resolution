@@ -91,6 +91,34 @@ def array_slots(context: Context, base: Address, start: Address, stride: int) ->
 	)
 
 
+def within_base_section(context: Context, base: ValueSet, addresses: ValueSet) -> ValueSet:
+	match base, addresses:
+		case Known(values=bases), Known(values=values) if len(bases) == 1:
+			section = _section_at(context, next(iter(bases)))
+			inside = frozenset(
+				address for address in values if section is not None and address in section
+			)
+			return Known(values=inside) if inside else addresses
+		case _:
+			return addresses
+
+
+def past_base_section(context: Context, base: Address, addresses: frozenset[Address]) -> bool:
+	section = _section_at(context, base)
+	return section is not None and any(
+		not section.start <= address <= section.end for address in addresses
+	)
+
+
+def _section_at(context: Context, address: Address) -> Span | None:
+	index = bisect_right(context.section_starts, address) - 1
+	return (
+		context.section_spans[index]
+		if index >= 0 and address in context.section_spans[index]
+		else None
+	)
+
+
 def section_slots(context: Context, start: Address, stride: int) -> ValueSet:
 	index = bisect_right(context.section_starts, start) - 1
 	if index < 0 or stride <= 0 or _span_at(context, start) is None:

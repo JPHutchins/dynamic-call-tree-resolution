@@ -33,6 +33,7 @@ from dynamic_call_tree_resolution.vsa.memory.reads import (
 	image_value,
 	low_bytes,
 	section_slots,
+	within_base_section,
 )
 from dynamic_call_tree_resolution.vsa.state import (
 	State,
@@ -82,7 +83,7 @@ def scaled_addresses(
 				),
 			)
 		case Known():
-			return indexed(base, index, scale, disp)
+			return within_base_section(context, base, indexed(base, index, scale, disp))
 		case _ as unreachable:
 			assert_never(unreachable)
 

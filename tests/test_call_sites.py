@@ -772,6 +772,78 @@ def test_a_load_pair_reads_two_consecutive_words(
 	)
 
 
+@pytest.mark.parametrize(
+	("code", "arm_code"),
+	[
+		pytest.param("42f200064ff00050b0fa80f39b00f35898477047", (), id="clz of a known value"),
+		pytest.param(
+			"42f20006042090faa0f3b3fa83f39b00f35898477047",
+			(),
+			id="a Thumb rbit then clz finds the lowest set bit",
+		),
+		pytest.param(
+			"006002e30400a0e3303fffe6133f6fe10331a0e1033096e733ff2fe11eff2fe1",
+			((0x1000, 0x1020),),
+			id="an A32 rbit then clz finds the lowest set bit",
+		),
+	],
+)
+def test_a_bit_scan_of_a_known_value_indexes_one_entry(
+	code: str, arm_code: tuple[tuple[int, int], ...]
+) -> None:
+	caller = bytes.fromhex(code)
+	(site,) = extract_call_sites(
+		_handler_table_program(
+			(("caller", 0x1000, len(caller)),), {0x1000: caller}, arm_code=arm_code
+		)
+	)
+	assert tracked_values(site) == {0x3021}
+
+
+def test_rbit_of_an_unknown_value_stays_unknown() -> None:
+	caller = bytes.fromhex("42f2000690faa0f39b00f35898477047")
+	(site,) = extract_call_sites(
+		_handler_table_program((("caller", 0x1000, len(caller)),), {0x1000: caller})
+	)
+	assert tracked_values(site) == set()
+
+
+def _table_then_handler_program(caller: bytes) -> Program:
+	"""The handler table at 0x2000, and past its section, at 0x2040, a word holding handler_3."""
+	return build_program(
+		Machine.EM_ARM,
+		(
+			("caller", 0x1000, len(caller)),
+			*((f"handler_{index}", 0x3000 + 0x10 * index, 2) for index in range(4)),
+		),
+		objects=(
+			("table", 0x2000, b"".join(_pointer(0x3001 + 0x10 * index, 4) for index in range(3))),
+			("past", 0x2040, _pointer(0x3031, 4)),
+		),
+		sections={0x1000: caller, 0x3000: bytes.fromhex("7047" + "00" * 14) * 4},
+		pointer_size=4,
+	)
+
+
+@pytest.mark.parametrize(
+	"code",
+	[
+		pytest.param("42f20006b0fa80f39b00f35898477047", id="through the load's index register"),
+		pytest.param("42f20005b0fa80f005eb8006336898477047", id="through an add"),
+	],
+)
+def test_clz_of_an_unknown_value_indexes_only_its_table_section(code: str) -> None:
+	(site,) = extract_call_sites(_table_then_handler_program(bytes.fromhex(code)))
+	assert tracked_values(site) == {0x3001, 0x3011, 0x3021}
+
+
+def test_a_known_index_past_its_base_section_still_reads_where_it_points() -> None:
+	(site,) = extract_call_sites(
+		_table_then_handler_program(bytes.fromhex("42f200064023f35898477047"))
+	)
+	assert tracked_values(site) == {0x3031}
+
+
 def test_a_store_through_a_shifted_index_writes_the_word_it_names() -> None:
 	writer = bytes.fromhex("42f20006022443f2310346f824307047")
 	caller = bytes.fromhex("42f20806336898477047")
