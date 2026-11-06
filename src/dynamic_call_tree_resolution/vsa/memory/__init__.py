@@ -12,6 +12,7 @@ from dynamic_call_tree_resolution.vsa.memory.addresses import stack_offsets as s
 from dynamic_call_tree_resolution.vsa.memory.context import Context as Context
 from dynamic_call_tree_resolution.vsa.memory.context import accumulate_writes as accumulate_writes
 from dynamic_call_tree_resolution.vsa.memory.context import context_for as context_for
+from dynamic_call_tree_resolution.vsa.memory.reads import past_base_section as past_base_section
 from dynamic_call_tree_resolution.vsa.memory.reads import runtime_value as runtime_value
 from dynamic_call_tree_resolution.vsa.memory.stores import Destination as Destination
 from dynamic_call_tree_resolution.vsa.memory.stores import Frame as Frame

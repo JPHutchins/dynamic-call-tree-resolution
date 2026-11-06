@@ -42,6 +42,7 @@ from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
 	after_unknown_store,
 	loaded,
+	past_base_section,
 	register_destination,
 	store_at,
 	store_value,
@@ -74,6 +75,13 @@ class _Shift(IntEnum):
 
 	LEFT = arm_const.ARM_INS_LSL
 	RIGHT = arm_const.ARM_INS_LSR
+
+
+class _BitScan(IntEnum):
+	"""A bit-order instruction, by its capstone instruction id."""
+
+	LEADING_ZEROS = arm_const.ARM_INS_CLZ
+	REVERSED = arm_const.ARM_INS_RBIT
 
 
 def _arm_operands(instruction: CsInsn) -> tuple[ArmCsOperand, ...]:
@@ -158,6 +166,8 @@ def _apply_unconditional(
 		return _arm_zero_extend(context, instruction, state, ARM_ZERO_EXTEND_MASKS[instruction_id])
 	if instruction_id in _Shift:
 		return _arm_shift(context, instruction, state, _Shift(instruction_id))
+	if instruction_id in _BitScan:
+		return _arm_bit_scan(instruction, state, _BitScan(instruction_id))
 	return top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 
 
@@ -207,6 +217,41 @@ def _operand_shift(shift: _Shift) -> int:
 			return arm_const.ARM_SFT_LSL
 		case _Shift.RIGHT:
 			return arm_const.ARM_SFT_LSR
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _arm_bit_scan(instruction: CsInsn, state: State, scan: _BitScan) -> State:
+	destination, source = _arm_operands(instruction)
+	return set_register(state, destination.reg, _scanned(scan, lookup(state.registers, source.reg)))
+
+
+def _scanned(scan: _BitScan, source: ValueSet) -> ValueSet:
+	match source:
+		case Known():
+			return map_set(source, lambda value: _scanned_word(scan, value))
+		case Top():
+			return _unknown_scanned(scan)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _scanned_word(scan: _BitScan, value: int) -> Address:
+	match scan:
+		case _BitScan.LEADING_ZEROS:
+			return Address(ARM_WORD_MASK.bit_length() - (value & ARM_WORD_MASK).bit_length())
+		case _BitScan.REVERSED:
+			return Address(int(format(value & ARM_WORD_MASK, "032b")[::-1], 2))
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _unknown_scanned(scan: _BitScan) -> ValueSet:
+	match scan:
+		case _BitScan.LEADING_ZEROS:
+			return Known(values=frozenset(map(Address, range(ARM_WORD_MASK.bit_length() + 1))))
+		case _BitScan.REVERSED:
+			return Top()
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -358,6 +403,7 @@ def _arm_arithmetic(context: Context, instruction: CsInsn, state: State, sign: i
 		if scale is None:
 			return top_written(instruction, state, lowest_tracked=context.upward_frame_writes)
 		return _arm_indexed(
+			context,
 			state,
 			destination.reg,
 			lookup(state.registers, register_operand.reg),
@@ -382,14 +428,38 @@ def _frame_arithmetic(
 
 
 def _arm_indexed(
-	state: State, destination: int, base: ValueSet, index: ValueSet, stride: int
+	context: Context,
+	state: State,
+	destination: int,
+	base: ValueSet,
+	index: ValueSet,
+	stride: int,
 ) -> State:
-	"""An unknown index into one array waits for the access that picks its slots."""
-	match base, index:
-		case Known(values=bases), Top() if len(bases) == 1 and stride > 0:
+	"""An unknown index into one array waits for the access that picks its slots.
+
+	So does a known index that runs past the array's section.
+	"""
+	match base:
+		case Known(values=bases) if (
+			len(bases) == 1
+			and stride > 0
+			and _waits_for_access(context, next(iter(bases)), index, stride)
+		):
 			return set_strided(state, destination, Strided(base=next(iter(bases)), stride=stride))
 		case _:
 			return set_register(state, destination, indexed(base, index, stride, 0))
+
+
+def _waits_for_access(context: Context, base: Address, index: ValueSet, stride: int) -> bool:
+	match index:
+		case Top():
+			return True
+		case Known(values=indexes):
+			return past_base_section(
+				context, base, frozenset(Address(base + offset * stride) for offset in indexes)
+			)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _arm_shift_destination(state: State, destination: int, source: int, delta: int) -> State:

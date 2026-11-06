@@ -716,6 +716,15 @@ contradicts does not hold.
   - Code under no function symbol is not scanned ([#96]).
 
   On x86, an unknown store still makes every writable address unknown.
+- An index's known values keep an access to one known address inside that address's
+  section: C keeps pointer arithmetic inside its object, and no object crosses a section.
+  A load through the index register reads only the addresses in the section, when any
+  lie there. On Arm, an address added from it that runs past the section waits, like an
+  unknown index, for the access that picks the section's slots. On Arm, `clz` of an
+  unknown value counts 0 to 32, and `clz` and `rbit` of a known value are exact. So
+  Zephyr's `activate_foreach_backend`, which takes a backend's index from a mask's
+  lowest set bit (`rbit`, then `clz`) and reads `__log_backends_start[index]`, reads
+  only the log backends, whichever way the compiler computes the address ([#341]).
 - Value-set analysis per-site sets are refinements, not over-approximations: its
   control-flow graph misses x86 `notrack` switches, and it does not model a few kinds of
   x86 write ([#113]). An x86 register write reaches its whole family: a 32-bit write on
@@ -1014,3 +1023,4 @@ uv run camas descriptors --NAME=hello   # after `camas testbeds`, into .camas/bu
 [#259]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/259
 [#260]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/260
 [#331]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/331
+[#341]: https://github.com/JPHutchins/dynamic-call-tree-resolution/issues/341
