@@ -80,12 +80,14 @@ def resolve(
 	rtos: RtosModel = BARE_METAL,
 	*,
 	assumed_unwritten: tuple[Span, ...] = (),
+	only_tracked_writes: tuple[Span, ...] = (),
 	upward_frame_writes: bool = False,
 ) -> ProgramResolution:
 	analysis = analyze(
 		program,
 		rtos,
 		assumed_unwritten=assumed_unwritten,
+		only_tracked_writes=only_tracked_writes,
 		upward_frame_writes=upward_frame_writes,
 	)
 	return ProgramResolution(

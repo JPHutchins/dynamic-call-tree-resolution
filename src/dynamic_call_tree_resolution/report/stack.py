@@ -44,6 +44,8 @@ class BoundedStack(Struct, tag="bounded", tag_field="kind"):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: tuple[str, ...] = ()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_only_tracked_writes: tuple[str, ...] = ()
+	"""Reachable callers whose indirect calls rest on ``--assume-only-tracked-writes``."""
 	assumed_upward_frame_writes: tuple[str, ...] = ()
 	"""Reachable callers whose indirect calls rest on ``--assume-upward-frame-writes``."""
 	assumed_frames: tuple[str, ...] = ()
@@ -79,6 +81,8 @@ class UnboundedStack(Struct, tag="unbounded", tag_field="kind"):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: tuple[str, ...] = ()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_only_tracked_writes: tuple[str, ...] = ()
+	"""Reachable callers whose indirect calls rest on ``--assume-only-tracked-writes``."""
 	assumed_upward_frame_writes: tuple[str, ...] = ()
 	"""Reachable callers whose indirect calls rest on ``--assume-upward-frame-writes``."""
 	assumed_frames: tuple[str, ...] = ()
@@ -101,6 +105,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
 				assumed_unwritten=tuple(sorted(bound.assumed_unwritten)),
+				assumed_only_tracked_writes=tuple(sorted(bound.assumed_only_tracked_writes)),
 				assumed_upward_frame_writes=tuple(sorted(bound.assumed_upward_frame_writes)),
 				assumed_frames=tuple(sorted(bound.assumed_frames)),
 			)
@@ -120,6 +125,7 @@ def stack_bound_report(bound: Bounded | Unbounded) -> BoundedStack | UnboundedSt
 				narrowed_by_field=tuple(sorted(bound.narrowed_by_field)),
 				narrowed_by_signature=tuple(sorted(bound.narrowed_by_signature)),
 				assumed_unwritten=tuple(sorted(bound.assumed_unwritten)),
+				assumed_only_tracked_writes=tuple(sorted(bound.assumed_only_tracked_writes)),
 				assumed_upward_frame_writes=tuple(sorted(bound.assumed_upward_frame_writes)),
 				assumed_frames=tuple(sorted(bound.assumed_frames)),
 				not_counted=tuple(sorted(bound.not_counted)),

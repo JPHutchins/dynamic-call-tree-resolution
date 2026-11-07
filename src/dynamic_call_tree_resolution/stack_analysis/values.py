@@ -44,6 +44,8 @@ class Bounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_only_tracked_writes: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect calls rest on ``--assume-only-tracked-writes``."""
 	assumed_upward_frame_writes: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-upward-frame-writes``."""
 	assumed_frames: frozenset[str] = frozenset()
@@ -82,6 +84,8 @@ class Unbounded(Struct):
 	"""Reachable callers whose indirect call ``--narrow-by-signature`` narrowed."""
 	assumed_unwritten: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-unwritten``."""
+	assumed_only_tracked_writes: frozenset[str] = frozenset()
+	"""Reachable callers whose indirect calls rest on ``--assume-only-tracked-writes``."""
 	assumed_upward_frame_writes: frozenset[str] = frozenset()
 	"""Reachable callers whose indirect calls rest on ``--assume-upward-frame-writes``."""
 	assumed_frames: frozenset[str] = frozenset()
@@ -154,6 +158,7 @@ class Reason(StrEnum):
 	NARROWED_BY_FIELD = "narrowed by field"
 	NARROWED_BY_SIGNATURE = "narrowed by signature"
 	ASSUMED_UNWRITTEN = "assumed unwritten"
+	ASSUMED_ONLY_TRACKED_WRITES = "assumed only tracked writes"
 	ASSUMED_UPWARD_FRAME_WRITES = "assumed upward frame writes"
 	ASSUMED_FRAME = "assumed frame"
 

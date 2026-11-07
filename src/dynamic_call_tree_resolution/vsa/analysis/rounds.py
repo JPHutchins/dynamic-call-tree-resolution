@@ -86,6 +86,7 @@ class Rounds(Struct):
 	top: State
 	creation: Creation | None
 	assumed_unwritten: tuple[Span, ...]
+	only_tracked_writes: tuple[Span, ...]
 	upward_frame_writes: bool
 	escapes: Escapes
 	entry_loads: Mapping[Address, tuple[EntryLoad, ...]]
@@ -101,6 +102,7 @@ def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
 					rounds.program,
 					current.writes,
 					assumed_unwritten=rounds.assumed_unwritten,
+					only_tracked_writes=rounds.only_tracked_writes,
 					upward_frame_writes=rounds.upward_frame_writes,
 					escapes=rounds.escapes,
 					entry_loads=rounds.entry_loads,

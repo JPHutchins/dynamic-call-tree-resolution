@@ -46,13 +46,23 @@ def _assumed_unwritten(context: Context, address: Address, width: int) -> bool:
 
 
 def kept(context: Context, clobbered: frozenset[Span], address: Address, width: int) -> bool:
-	"""Whether the bytes lie in one unescaped object no unknown store derived from it has written."""
+	"""Whether the bytes lie in one unescaped object no unknown store derived from it has written.
+
+	Or in an object or field the user asserts only stores the analysis places write.
+	"""
+	if context.only_tracked_starts and _assumed_only_tracked(context, address, width):
+		return True
 	index = bisect_right(context.unescaped_starts, address) - 1
 	return (
 		index >= 0
 		and address + width <= context.unescaped_spans[index].end
 		and context.unescaped_spans[index] not in clobbered
 	)
+
+
+def _assumed_only_tracked(context: Context, address: Address, width: int) -> bool:
+	index = bisect_right(context.only_tracked_starts, address) - 1
+	return index >= 0 and address + width <= context.only_tracked_spans[index].end
 
 
 def _read_only(context: Context, address: Address) -> bool:

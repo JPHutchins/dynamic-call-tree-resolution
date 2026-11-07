@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from functools import reduce
 from typing import TYPE_CHECKING
 
 from salix import Struct
@@ -50,6 +51,10 @@ class Context(Struct):
 	unwritten_spans: tuple[Span, ...] = ()
 	"""The objects the user asserts the program never writes, by address span."""
 	unwritten_starts: tuple[int, ...] = ()
+	only_tracked_spans: tuple[Span, ...] = ()
+	"""The objects and fields the user asserts only stores the analysis places write, by address
+	span."""
+	only_tracked_starts: tuple[int, ...] = ()
 	unescaped_spans: tuple[Span, ...] = ()
 	"""The objects only the code that names them can reach, which an unknown store writes only
 	through an address derived from them."""
@@ -82,6 +87,7 @@ def context_for(
 	global_writes: Writes,
 	*,
 	assumed_unwritten: tuple[Span, ...] = (),
+	only_tracked_writes: tuple[Span, ...] = (),
 	escapes: Escapes = NO_ESCAPES,
 	entry_loads: Mapping[Address, tuple[EntryLoad, ...]] | None = None,
 	entry_words: Mapping[Address, ValueSet] | None = None,
@@ -119,8 +125,10 @@ def context_for(
 			for relocation in program.relocations
 			if relocation.symbol is not None
 		},
-		unwritten_spans=tuple(sorted(assumed_unwritten)),
-		unwritten_starts=tuple(span.start for span in sorted(assumed_unwritten)),
+		unwritten_spans=_disjoint(assumed_unwritten),
+		unwritten_starts=tuple(span.start for span in _disjoint(assumed_unwritten)),
+		only_tracked_spans=_disjoint(only_tracked_writes),
+		only_tracked_starts=tuple(span.start for span in _disjoint(only_tracked_writes)),
 		unescaped_spans=escapes.unescaped,
 		unescaped_starts=tuple(span.start for span in escapes.unescaped),
 		store_targets=escapes.store_targets,
@@ -128,3 +136,15 @@ def context_for(
 		entry_words=entry_words or {},
 		upward_frame_writes=upward_frame_writes,
 	)
+
+
+def _disjoint(spans: tuple[Span, ...]) -> tuple[Span, ...]:
+	return reduce(_merged_into, sorted(spans), tuple[Span, ...]())
+
+
+def _merged_into(merged: tuple[Span, ...], span: Span) -> tuple[Span, ...]:
+	match merged:
+		case (*earlier, last) if span.start <= last.end:
+			return (*earlier, Span(start=last.start, end=Address(max(last.end, span.end))))
+		case _:
+			return (*merged, span)
