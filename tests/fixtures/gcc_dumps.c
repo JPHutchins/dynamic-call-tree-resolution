@@ -159,3 +159,45 @@ void static_record_store(void) {
 int through_array_pointer(struct api(*apis)[3], int i, int x) {
 	return (*apis)[i].run(x);
 }
+
+struct api api_0;
+int (*hook_1)(int);
+extern int (*pick(int))(int);
+extern int dev_1(int);
+
+void suffixed_stores(void) {
+	api_0.run = put_char;
+	hook_1 = put_char;
+}
+
+int through_suffixed(int x) {
+	return api_0.run(x) + hook_1(x);
+}
+
+void call_stores(struct api * api) {
+	api->run = pick(1);
+	hook_1 = pick(2);
+}
+
+int through_direct_suffix(int (*dev)(int), int x) {
+	return dev_1(x) + dev(x);
+}
+
+struct big {
+	int words[4];
+};
+
+typedef struct big(*big_maker)(int);
+
+void through_return_slot(big_maker make) {
+	struct big made = make(1);
+	escape(&made);
+}
+
+struct big through_returned_slot(big_maker make) {
+	return make(2);
+}
+
+void through_stored_result(big_maker make, void * buffer) {
+	*(struct big *) buffer = make(3);
+}

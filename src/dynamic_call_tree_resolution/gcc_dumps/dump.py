@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 _HEADER: Final = re.compile(r"^;; Function (\S+) \((\S+?),", re.MULTILINE)
 _LOCATION: Final = re.compile(r"\[([^\[\]]+?):(\d+):(\d+)(?: discrim \d+)?\] ")
+_CALL_FLAGS: Final = re.compile(r";(?: \[[^\[\]]*\])*$")
+_LABEL: Final = re.compile(r"^<(?:bb \d+|L\d+)>")
 
 
 class Statement(Struct):
@@ -83,7 +85,9 @@ def _function(name: str, symbol: str, text: str) -> DumpFunction:
 		parameters=_parameters(name, next(line for line in reversed(lines[:opening]) if line)),
 		declarations={declared.name: declared.type for declared in map(_declaration, declared)},
 		statements=tuple(
-			statement for line in body if (statement := _statement(line.strip())) is not None
+			statement
+			for line in body[len(_leading(body)) :]
+			if (statement := _statement(line.strip())) is not None
 		),
 	)
 
@@ -137,8 +141,11 @@ def _declaration(text: str) -> _Declared:
 
 
 def _statement(line: str) -> Statement | None:
+	"""A statement, at ``<unknown>:0:0`` where GCC gave it no location, as the plugin writes it."""
 	located = _LOCATION.match(line)
-	body = _LOCATION.sub("", line).removesuffix(";").replace(" ={v} ", " = ")
+	body = _CALL_FLAGS.sub("", _LOCATION.sub("", line)).replace(" ={v} ", " = ")
+	if not body or body.startswith("#") or _LABEL.match(body) is not None:
+		return None
 	return (
 		Statement(
 			file=located.group(1),
@@ -146,6 +153,6 @@ def _statement(line: str) -> Statement | None:
 			column=int(located.group(3)),
 			body=body,
 		)
-		if located is not None and not body.startswith("#")
-		else None
+		if located is not None
+		else Statement(file="<unknown>", line=0, column=0, body=body)
 	)

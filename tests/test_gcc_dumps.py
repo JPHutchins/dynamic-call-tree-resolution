@@ -53,6 +53,7 @@ _PLUGIN_RECORDS: Final = tuple(
 			"site\tthrough_array_pointer\t160\t10\tfield\tstruct api\trun",
 			"site\tthrough_cast\t90\t10\tother\tint (*<Txxxx>) (int)",
 			"site\tthrough_deref\t94\t10\tother\tint (*<Txxxx>) (int)",
+			"site\tthrough_direct_suffix\t183\t20\tparameter\tdev",
 			"site\tthrough_element\t52\t9\tarray\ttable",
 			"site\tthrough_field\t40\t9\tfield\tstruct api\trun",
 			"site\tthrough_local_array\t138\t9\tfield\tstruct api\trun",
@@ -60,16 +61,25 @@ _PLUGIN_RECORDS: Final = tuple(
 			"site\tthrough_member_table\t130\t9\tarray\t<expression>",
 			"site\tthrough_nested\t56\t9\tfield\tstruct <anonymous>\tfn",
 			"site\tthrough_parameter\t44\t9\tparameter\tcb",
+			"site\tthrough_return_slot\t193\t20\tparameter\tmake",
+			"site\tthrough_returned_slot\t198\t9\tparameter\tmake",
+			"site\tthrough_stored_result\t202\t27\tparameter\tmake",
 			"site\tthrough_struct_element\t98\t9\tfield\tstruct api\trun",
+			"site\tthrough_suffixed\t174\t24\tvariable\thook_1",
+			"site\tthrough_suffixed\t174\t9\tfield\tstruct api\trun",
 			"site\tthrough_unsized_element\t102\t9\tfield\tstruct api\trun",
 			"site\tthrough_variable\t48\t9\tvariable\thook",
 			"site\tthrough_volatile\t64\t2\tfield\tstruct boot\tfn",
 			"store\tarray_member_store\t126\t21\tfield\tstruct api\trun\tfunction\tput_char",
+			"store\tcall_stores\t178\t11\tfield\tstruct api\trun\tother\tint (*<Txxxx>) (int)",
+			"store\tcall_stores\t179\t9\tvariable\thook_1\tother\tint (*<Txxxx>) (int)",
 			"store\tdata_stores\t107\t19\tfield\tstruct <anonymous>\tfn\tfunction\tput_char",
 			"store\tfield_stores\t81\t19\tfield\tstruct <anonymous>\tfn\tparameter\tfn",
 			"store\tfield_stores\t82\t16\tfield\tunion <anonymous>\tfirst\tnull\t0",
 			"store\tinstall\t72\t7\tvariable\thook\tparameter\tfn",
 			"store\tstatic_record_store\t155\t16\tfield\tstruct api\trun\tfunction\tput_char",
+			"store\tsuffixed_stores\t169\t12\tfield\tstruct api\trun\tfunction\tput_char",
+			"store\tsuffixed_stores\t170\t9\tvariable\thook_1\tfunction\tput_char",
 			"store\tthrough_local_array\t136\t17\tfield\tstruct api\trun\tfunction\tput_char",
 			"store\tthrough_local_static\t149\t8\tvariable\tsaved.1\tparameter\tnext",
 			"store\ttypedef_store\t76\t9\tfield\tstruct stream\tput\tfunction\tput_char",
@@ -330,6 +340,21 @@ _ANONYMOUS_TYPES: Final = UnitTypes(
 )
 
 
+_CALLBACK_LAYOUT: Final = StructureLayout(
+	members=(FunctionPointerMember(kind="function_pointer", name="cb", offset=0, signature=None),),
+	size=4,
+	extents={"cb": MemberExtent(offset=0, size=4, layout=None)},
+)
+_TAGGED_TYPES: Final = UnitTypes(
+	layouts={"struct foo": _CALLBACK_LAYOUT, "struct bar": _CALLBACK_LAYOUT},
+	typedefs={"foo": Record(name="struct foo_impl", key="struct foo_impl")},
+	variables={},
+	functions=frozenset({"g"}),
+	statics={},
+)
+"""``struct foo`` is both a tag and a typedef of another record, which a dump prints alike."""
+
+
 def _function(parameters: str, declarations: str, *statements: str) -> str:
 	return (
 		f";; Function f (f, funcdef_no=0)\n\nint f ({parameters})\n{{\n{declarations}\n"
@@ -447,6 +472,21 @@ def _function(parameters: str, declarations: str, *statements: str) -> str:
 			("site\tu\tf\ta.c\t1\t1\tfield\tstruct outer\tinner",),
 			(),
 			id="an element of an array MEM is of the array's type, not the address's cast",
+		),
+		pytest.param(
+			_TAGGED_TYPES,
+			_function("struct foo * f", "", "f_2(D)->cb = g"),
+			(),
+			("f_2(D)->cb = g",),
+			id="a store into a tag a typedef of another record shares a name with",
+		),
+		pytest.param(
+			_TAGGED_TYPES,
+			";; Function f (f, funcdef_no=0)\n\nvoid f (struct bar * b)\n{\n\n  <bb 2> :\n"
+			"  b_1(D)->cb = g;\n}\n",
+			("store\tu\tf\t<unknown>\t0\t0\tfield\tstruct bar\tcb\tfunction\tg",),
+			(),
+			id="a store GCC gave no location",
 		),
 		pytest.param(
 			_ANONYMOUS_TYPES,

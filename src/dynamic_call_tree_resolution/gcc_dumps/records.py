@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 _TEMPORARY: Final = re.compile(r"^_\d+$")
 _NAMED_SSA: Final = re.compile(r"^([A-Za-z_][\w.$]*)_\d+(\(D\))?$")
 _IDENTIFIER: Final = re.compile(r"^[A-Za-z_][\w.$]*$")
-_CALL: Final = re.compile(r"^(?:\S+ = )?(\S+) \((.*)\)$")
+_CALL: Final = re.compile(r"^(?:.+? = )?(\S+) \((.*)\)$")
 _ASSIGNMENT: Final = re.compile(r"^(.+?) = (.+)$")
 _MEMORY: Final = re.compile(r"^MEM(?: <.+?>)? ?\[\((.+?) \*\)(.+)\]$")
 _ARRAY_MEMORY: Final = re.compile(r"^MEM <(.+?)\[.*?\]> ?\[\(")
@@ -107,6 +107,8 @@ class _Scope(Struct):
 	function: DumpFunction
 	definitions: Mapping[str, str]
 	"""Each name's defining assignment, where it is not a call."""
+	locals: frozenset[str]
+	"""The names the function declares, its parameters among them."""
 
 
 def unit_records(
@@ -154,6 +156,7 @@ def _scope(types: UnitTypes, function: DumpFunction) -> _Scope:
 			for match in (_ASSIGNMENT.match(statement.body),)
 			if match is not None
 		},
+		locals=frozenset(function.declarations.keys() | function.parameters.keys()),
 	)
 
 
@@ -181,15 +184,25 @@ def _records(scope: _Scope, at: Located, body: str) -> tuple[DumpRecord, ...]:
 
 
 def _indirect(scope: _Scope, callee: str) -> bool:
-	"""Whether a call goes through a value: a temporary, or an SSA version of a local or parameter."""
-	named = _NAMED_SSA.match(callee)
-	locals_ = scope.function.declarations.keys() | scope.function.parameters.keys()
-	return _TEMPORARY.match(callee) is not None or (
-		named is not None and (callee in locals_ or named.group(1) in locals_)
+	"""Whether a call goes through a value: a name of the unit's functions is called directly."""
+	return _ssa(scope, callee) and callee not in scope.types.functions
+
+
+def _ssa(scope: _Scope, token: str) -> bool:
+	"""Whether a name is an SSA name here: a temporary, or a version of a local or parameter.
+
+	A file-scope ``api_0`` is no version of anything the function declares.
+	"""
+	named = _NAMED_SSA.match(token)
+	return _TEMPORARY.match(token) is not None or (
+		named is not None and (token in scope.locals or named.group(1) in scope.locals)
 	)
 
 
 def _store(scope: _Scope, at: Located, target: str, value: str) -> tuple[DumpRecord, ...]:
+	"""The record of an assignment that stores a function pointer: a clobber stores nothing."""
+	if value.startswith("{CLOBBER"):
+		return ()
 	member = _split_member(target)
 	if member is not None:
 		record = _member_record(scope, member)
@@ -388,10 +401,12 @@ def _type_record(scope: _Scope, type_text: str | None) -> Record | None:
 	if type_text is None:
 		return None
 	text = _DECLARATOR_SUFFIX.sub("", _QUALIFIER.sub("", type_text).strip())
-	bare = text.split(" ", 1)[1] if text.startswith(("struct ", "union ")) else text
-	return scope.types.typedefs.get(bare) or (
-		Record(name=text, key=text) if text.startswith(("struct ", "union ")) else None
-	)
+	tagged = text.startswith(("struct ", "union "))
+	typedef = scope.types.typedefs.get(text.split(" ", 1)[1] if tagged else text)
+	tag = Record(name=text, key=text) if tagged else None
+	if typedef is None or tag is None:
+		return typedef or tag
+	return typedef if typedef.name == tag.name or tag.key not in scope.types.layouts else None
 
 
 def _key_record(scope: _Scope, key: str) -> Record:
@@ -413,7 +428,7 @@ def _function_pointer_member(layout: StructureLayout, member: str) -> bool:
 def _declared(scope: _Scope, token: str) -> str | None:
 	"""A name's type: as a local or SSA name, as a parameter, or as a file-scope variable."""
 	named = _NAMED_SSA.match(token)
-	base = named.group(1) if named is not None else token
+	base = named.group(1) if named is not None and _ssa(scope, token) else token
 	declarations = scope.function.declarations
 	return (
 		declarations.get(token)
@@ -426,8 +441,7 @@ def _declared(scope: _Scope, token: str) -> str | None:
 def _variable(scope: _Scope, text: str) -> bool:
 	return (
 		_IDENTIFIER.match(text) is not None
-		and _NAMED_SSA.match(text) is None
-		and _TEMPORARY.match(text) is None
+		and not _ssa(scope, text)
 		and text not in scope.function.parameters
 	)
 
