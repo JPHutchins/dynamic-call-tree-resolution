@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.image
 
-IMAGES: Final = ["hello", "sensor-threads", "sensor-two-impl", "synchronization"]
+IMAGES: Final = ["hello", "sensor-threads", "sensor-two-impl", "synchronization", "logger"]
 _GDB_REGISTERS: Final = {"ip": "r12", "sb": "r9", "sl": "r10", "fp": "r11"}
 _GDB_REGISTER: Final = re.compile(r"r[0-9]|r1[0-2]")
 

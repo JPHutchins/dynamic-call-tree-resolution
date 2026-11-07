@@ -44,6 +44,7 @@ FIXTURES: Final = {
 	"sensor-threads": "zephyr.elf",
 	"sensor-two-impl": "zephyr.elf",
 	"synchronization": "zephyr.elf",
+	"logger": "zephyr.elf",
 	"counter-su": "zephyr.exe",
 }
 

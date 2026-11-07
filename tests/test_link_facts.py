@@ -36,7 +36,13 @@ pytestmark = pytest.mark.image
 
 @pytest.mark.parametrize(
 	("name", "removed"),
-	[("hello", 632), ("sensor-two-impl", 615), ("sensor-threads", 616), ("synchronization", 602)],
+	[
+		("hello", 632),
+		("sensor-two-impl", 615),
+		("sensor-threads", 616),
+		("synchronization", 602),
+		("logger", 625),
+	],
 )
 def test_each_cortex_m3_fixture_ships_its_map_and_its_final_links_gc_listing(
 	zephyr_fixtures: Path, name: str, removed: int
@@ -63,7 +69,13 @@ def test_sensor_two_impl_keeps_its_static_relocations_and_loads_the_same_address
 
 @pytest.mark.parametrize(
 	("name", "taken"),
-	[("hello", 26), ("sensor-two-impl", 55), ("sensor-threads", 57), ("synchronization", 28)],
+	[
+		("hello", 26),
+		("sensor-two-impl", 55),
+		("sensor-threads", 57),
+		("synchronization", 28),
+		("logger", 49),
+	],
 )
 def test_the_linked_address_taken_set_equals_the_byte_scans_on_each_cortex_m3_fixture(
 	zephyr_fixtures: Path, name: str, taken: int
