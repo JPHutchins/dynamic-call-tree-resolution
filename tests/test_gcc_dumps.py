@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 from importlib import import_module
 from pathlib import Path
@@ -46,21 +47,30 @@ _PLUGIN_RECORDS: Final = tuple(
 	for kind, function, *rest in (
 		line.split("\t")
 		for line in (
+			"site\tthrough_address_taken\t143\t9\tother\tint (*<Txxxx>) (int)",
 			"site\tthrough_anonymous\t60\t9\tfield\tunion <anonymous>\tfirst",
+			"site\tthrough_array_member\t122\t9\tfield\tstruct api\trun",
 			"site\tthrough_cast\t90\t10\tother\tint (*<Txxxx>) (int)",
 			"site\tthrough_deref\t94\t10\tother\tint (*<Txxxx>) (int)",
 			"site\tthrough_element\t52\t9\tarray\ttable",
 			"site\tthrough_field\t40\t9\tfield\tstruct api\trun",
+			"site\tthrough_local_array\t138\t9\tfield\tstruct api\trun",
+			"site\tthrough_local_static\t150\t9\tvariable\tsaved.1",
+			"site\tthrough_member_table\t130\t9\tarray\t<expression>",
 			"site\tthrough_nested\t56\t9\tfield\tstruct <anonymous>\tfn",
 			"site\tthrough_parameter\t44\t9\tparameter\tcb",
 			"site\tthrough_struct_element\t98\t9\tfield\tstruct api\trun",
 			"site\tthrough_unsized_element\t102\t9\tfield\tstruct api\trun",
 			"site\tthrough_variable\t48\t9\tvariable\thook",
 			"site\tthrough_volatile\t64\t2\tfield\tstruct boot\tfn",
+			"store\tarray_member_store\t126\t21\tfield\tstruct api\trun\tfunction\tput_char",
 			"store\tdata_stores\t107\t19\tfield\tstruct <anonymous>\tfn\tfunction\tput_char",
 			"store\tfield_stores\t81\t19\tfield\tstruct <anonymous>\tfn\tparameter\tfn",
 			"store\tfield_stores\t82\t16\tfield\tunion <anonymous>\tfirst\tnull\t0",
 			"store\tinstall\t72\t7\tvariable\thook\tparameter\tfn",
+			"store\tstatic_record_store\t155\t16\tfield\tstruct api\trun\tfunction\tput_char",
+			"store\tthrough_local_array\t136\t17\tfield\tstruct api\trun\tfunction\tput_char",
+			"store\tthrough_local_static\t149\t8\tvariable\tsaved.1\tparameter\tnext",
 			"store\ttypedef_store\t76\t9\tfield\tstruct stream\tput\tfunction\tput_char",
 		)
 	)
@@ -156,6 +166,75 @@ def test_a_dump_older_than_its_source_fails_and_a_missing_source_is_not_checked(
 	assert len(dump_descriptors(build, tmp_path).lines) == len(_PLUGIN_RECORDS)
 
 
+def test_a_function_compiled_without_optimization_has_no_dump_and_fails(tmp_path: Path) -> None:
+	build = _build(tmp_path / "build", (FIXTURES / "gcc_dumps.c",), "-O0", "-g", DUMP_FLAG)
+	with pytest.raises(ValueError, match="functions have no alias dump, such as "):
+		dump_descriptors(build, REPOSITORY_ROOT)
+
+
+def test_a_dump_of_functions_its_object_lacks_fails(tmp_path: Path) -> None:
+	data = tmp_path / "data.c"
+	data.write_text("int data_only;\n")
+	build = _dumped(tmp_path / "build")
+	subprocess.run(
+		cortex_m3_unit("-O2", "-g", str(data), "-o", "CMakeFiles/app.dir/gcc_dumps.c.obj"),
+		cwd=build,
+		check=True,
+	)
+	with pytest.raises(ValueError, match="dumped functions are not in their objects"):
+		dump_descriptors(build, REPOSITORY_ROOT)
+
+
+def test_two_dumps_of_one_object_fail(tmp_path: Path) -> None:
+	build = _dumped(tmp_path / "build")
+	(dump,) = build.glob("CMakeFiles/app.dir/*.alias")
+	shutil.copy(dump, dump.with_name("gcc_dumps.c.c.999t.alias"))
+	with pytest.raises(
+		ValueError, match=re.escape("2 alias dumps match CMakeFiles/app.dir/gcc_dumps.c.obj")
+	):
+		dump_descriptors(build, REPOSITORY_ROOT)
+
+
+def test_a_moved_build_names_its_units_from_where_it_compiled(tmp_path: Path) -> None:
+	moved = _dumped(tmp_path / "build").rename(tmp_path / "moved")
+	assert dump_descriptors(moved, REPOSITORY_ROOT).lines == _PLUGIN_RECORDS
+
+
+def test_a_unit_the_build_never_compiled_is_not_checked(tmp_path: Path) -> None:
+	data = tmp_path / "data.c"
+	data.write_text("int data_only;\n")
+	build = _dumped(tmp_path / "build", FIXTURES / "gcc_dumps.c", data)
+	(build / "CMakeFiles" / "app.dir" / "data.c.obj").unlink()
+	described = dump_descriptors(build, REPOSITORY_ROOT)
+	assert (described.units, described.dumps, described.lines) == (2, 1, _PLUGIN_RECORDS)
+
+
+def test_function_scope_statics_that_share_a_name_keep_it_without_gccs_number(
+	tmp_path: Path,
+) -> None:
+	source = tmp_path / "statics.c"
+	source.write_text(
+		"".join(
+			f"int {name}(int x, int (*next)(int)) {{\n"
+			"\tstatic int (*hook)(int);\n"
+			"\tint (*const previous)(int) = hook;\n"
+			"\thook = next;\n"
+			"\treturn previous(x);\n"
+			"}\n"
+			for name in ("first", "second")
+		)
+	)
+	assert tuple(
+		line.split("\t", 6)[6]
+		for line in dump_descriptors(_dumped(tmp_path / "build", source), tmp_path).lines
+	) == (
+		"variable\thook",
+		"variable\thook",
+		"variable\thook\tparameter\tnext",
+		"variable\thook\tparameter\tnext",
+	)
+
+
 def test_the_command_writes_where_narrow_by_field_reads(
 	tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -171,14 +250,18 @@ def test_the_command_writes_where_narrow_by_field_reads(
 	)
 
 
-def test_the_command_reports_each_statement_it_cannot_place(
+def test_the_command_reports_each_store_it_cannot_place_and_writes_nothing(
 	tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
 	monkeypatch.setattr(
 		import_module("dynamic_call_tree_resolution.cli.descriptors"), "dump_descriptors", _one_gap
 	)
-	descriptors(tmp_path, output=tmp_path / "out.txt")
-	assert capsys.readouterr().err.splitlines()[1] == "no record for a.c:3:4 in f: x_1(D)->fn = g"
+	with pytest.raises(ValueError, match="1 stores of a function have no record"):
+		descriptors(tmp_path, output=tmp_path / "out.txt")
+	assert (capsys.readouterr().err, (tmp_path / "out.txt").exists()) == (
+		"no record for a.c:3:4 in f: x_1(D)->fn = g\n",
+		False,
+	)
 
 
 def _one_gap(_build_directory: Path, _root: Path) -> DumpDescriptors:
@@ -195,7 +278,9 @@ def _one_gap(_build_directory: Path, _root: Path) -> DumpDescriptors:
 	)
 
 
-_NO_TYPES: Final = UnitTypes(layouts={}, typedefs={}, variables={}, functions=frozenset({"g"}))
+_NO_TYPES: Final = UnitTypes(
+	layouts={}, typedefs={}, variables={}, functions=frozenset({"g"}), statics={}
+)
 _ANONYMOUS_TYPES: Final = UnitTypes(
 	layouts={
 		"struct outer": StructureLayout(
@@ -228,6 +313,7 @@ _ANONYMOUS_TYPES: Final = UnitTypes(
 	typedefs={"outer_t": Record(name="struct outer", key="struct outer")},
 	variables={"counter": "int"},
 	functions=frozenset({"g"}),
+	statics={},
 )
 
 
@@ -324,6 +410,18 @@ def _function(parameters: str, declarations: str, *statements: str) -> str:
 			("site\tu\tf\ta.c\t1\t1\tother\tint (*<Txxxx>) (int)",),
 			(),
 			id="a member of a member that is no record",
+		),
+		pytest.param(
+			_ANONYMOUS_TYPES,
+			_function(
+				"struct outer * o",
+				"  int (*<T1>) (int) _2;\n  int _3;",
+				"_2 = o_1(D)->inner[i_4(D)].fn",
+				"_3 = _2 (0)",
+			),
+			("site\tu\tf\ta.c\t1\t1\tother\tint (*<Txxxx>) (int)",),
+			(),
+			id="a member of an element of a member that is no array of records",
 		),
 		pytest.param(
 			_ANONYMOUS_TYPES,

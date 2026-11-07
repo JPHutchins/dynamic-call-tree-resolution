@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 from glob import escape
+from itertools import groupby
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -21,16 +23,19 @@ from dynamic_call_tree_resolution.loader.layouts import (
 	strip_qualifiers,
 	structure_layouts,
 )
+from dynamic_call_tree_resolution.loader.sections import elf_symbol_table
 from dynamic_call_tree_resolution.model import ANONYMOUS
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Mapping
 
 	from elftools.dwarf.die import DIE
+	from elftools.elf.sections import Symbol, SymbolTableSection
 
 	from dynamic_call_tree_resolution.model import StructureLayout
 
 DUMP_FLAG: Final = "-fdump-tree-alias-lineno"
+_NUMBERED: Final = re.compile(r"^([A-Za-z_]\w*)\.\d+$")
 
 
 class Record(Struct):
@@ -49,6 +54,8 @@ class UnitTypes(Struct):
 	variables: Mapping[str, str]
 	"""Each file-scope variable's type, as ``DataObject.type_name`` names it."""
 	functions: frozenset[str]
+	statics: Mapping[str, str]
+	"""The symbol of each function-scope static whose name no other one in the unit shares."""
 
 
 class DumpedUnit(Struct):
@@ -62,7 +69,7 @@ class DumpedUnit(Struct):
 	"""None for a unit without a function, for which GCC writes no dump."""
 
 
-class _CompileCommand(msgspec.Struct):
+class _CompileCommand(Struct):
 	"""One entry of a CMake compile_commands.json."""
 
 	directory: str
@@ -71,20 +78,47 @@ class _CompileCommand(msgspec.Struct):
 	output: str
 
 
+class _SymbolAddress(Struct, order=True):
+	"""Where a symbol is in its object."""
+
+	section: str
+	address: int
+
+
+class _FunctionSymbol(Struct, order=True):
+	"""A defined function's symbol: a function's aliases share its address."""
+
+	at: _SymbolAddress
+	name: str
+
+
+class _NumberedSymbol(Struct, order=True):
+	"""A function-scope static's symbol, as GCC numbers it: ``hook.0`` for ``hook``."""
+
+	name: str
+	symbol: str
+
+
 def dumped_units(build_directory: Path) -> tuple[DumpedUnit, ...]:
 	"""The build's C units, each paired with its alias dump.
 
 	Raises:
-		ValueError: when a unit was compiled without the dump flag, or its dump is older than its
-			source, so that it was written before the source last changed.
+		ValueError: when a unit was compiled without the dump flag, when its dump is older than its
+			source, so that it was written before the source last changed, or when several dumps
+			match its object.
 	"""
 	commands = tuple(
-		command
-		for command in msgspec.json.decode(
-			(build_directory / "compile_commands.json").read_bytes(),
-			type=tuple[_CompileCommand, ...],
+		_CompileCommand(
+			directory=entry["directory"],
+			command=entry["command"],
+			file=entry["file"],
+			output=entry["output"],
 		)
-		if command.file.endswith(".c")
+		for entry in msgspec.json.decode(
+			(build_directory / "compile_commands.json").read_bytes(),
+			type=tuple[dict[str, str], ...],
+		)
+		if entry["file"].endswith(".c")
 	)
 	undumped = tuple(
 		command.file for command in commands if DUMP_FLAG not in shlex.split(command.command)
@@ -110,18 +144,63 @@ def dumped_units(build_directory: Path) -> tuple[DumpedUnit, ...]:
 
 
 def _dumped_unit(build_directory: Path, command: _CompileCommand) -> DumpedUnit:
-	output = (Path(command.directory) / command.output).relative_to(command.directory)
-	dumps = sorted(
-		(build_directory / output.parent).glob(
-			f"{escape(output.stem)}{escape(Path(command.file).suffix)}.*.alias"
+	"""One unit, by its object's path in the build, or in its entry's directory if the build moved.
+
+	Raises:
+		ValueError: when several dumps match the unit's object.
+	"""
+	recorded = Path(command.directory) / command.output
+	output = (
+		recorded.relative_to(build_directory.resolve())
+		if recorded.is_relative_to(build_directory.resolve())
+		else recorded.relative_to(command.directory)
+	)
+	dumps = tuple(
+		sorted(
+			(build_directory / output.parent).glob(
+				f"{escape(output.stem)}{escape(Path(command.file).suffix)}.*.alias"
+			)
 		)
 	)
+	if len(dumps) > 1:
+		raise ValueError(
+			f"{len(dumps)} alias dumps match {output}, such as {dumps[0]}: remove all but one"
+		)
 	return DumpedUnit(
 		unit=output.with_suffix("").as_posix(),
 		source=Path(command.directory) / command.file,
 		object=build_directory / output,
-		dump=dumps[-1] if dumps else None,
+		dump=dumps[0] if dumps else None,
 	)
+
+
+def defined_functions(object_path: Path) -> tuple[frozenset[str], ...]:
+	"""The functions an object defines, each as the names of the symbols at its address."""
+	with object_path.open("rb") as stream:
+		return tuple(
+			frozenset(symbol.name for symbol in group)
+			for _, group in groupby(
+				sorted(
+					_FunctionSymbol(
+						at=_SymbolAddress(
+							section=str(symbol["st_shndx"]), address=symbol["st_value"]
+						),
+						name=symbol.name,
+					)
+					for symbol in _symbols(elf_symbol_table(ELFFile(stream)))
+					if symbol["st_info"]["type"] == "STT_FUNC" and symbol["st_shndx"] != "SHN_UNDEF"
+				),
+				key=_symbol_address,
+			)
+		)
+
+
+def _symbol_address(symbol: _FunctionSymbol) -> _SymbolAddress:
+	return symbol.at
+
+
+def _symbols(symtab: SymbolTableSection | None) -> Iterable[Symbol]:
+	return symtab.iter_symbols() if symtab is not None else ()
 
 
 def unit_types(object_path: Path) -> UnitTypes:
@@ -134,7 +213,9 @@ def unit_types(object_path: Path) -> UnitTypes:
 		elf = ELFFile(stream)
 		if not elf.has_dwarf_info():
 			raise ValueError(f"{object_path} has no debug information: build with -g")
-		dwarf = elf.get_dwarf_info(relocate_dwarf_sections=False)
+		dwarf = elf.get_dwarf_info(
+			relocate_dwarf_sections=elf.get_section_by_name(".rela.debug_info") is not None
+		)
 		dies = tuple(
 			die
 			for compilation_unit in dwarf.iter_CUs()
@@ -165,7 +246,32 @@ def unit_types(object_path: Path) -> UnitTypes:
 				for die in dies
 				if die.tag == "DW_TAG_subprogram" and "DW_AT_name" in die.attributes
 			),
+			statics=_statics(elf_symbol_table(elf)),
 		)
+
+
+def _statics(symtab: SymbolTableSection | None) -> Mapping[str, str]:
+	"""Each function-scope static's symbol, by its name: GCC numbers the symbol, ``hook.0``."""
+	return {
+		name: symbols[0]
+		for name, group in groupby(
+			sorted(
+				_NumberedSymbol(name=named.group(1), symbol=symbol.name)
+				for symbol in _symbols(symtab)
+				if symbol["st_info"]["type"] == "STT_OBJECT"
+				and symbol["st_info"]["bind"] == "STB_LOCAL"
+				for named in (_NUMBERED.match(symbol.name),)
+				if named is not None
+			),
+			key=_static_name,
+		)
+		for symbols in (tuple(numbered.symbol for numbered in group),)
+		if len(symbols) == 1
+	}
+
+
+def _static_name(numbered: _NumberedSymbol) -> str:
+	return numbered.name
 
 
 def _record(typedef: DIE) -> Record | None:

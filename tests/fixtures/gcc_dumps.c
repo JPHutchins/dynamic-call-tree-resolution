@@ -110,3 +110,48 @@ void data_stores(struct holder * holder) {
 typedef int count_t;
 
 count_t counted;
+
+struct driver {
+	struct api ops[2];
+	int (*handlers[2])(int);
+};
+
+extern void escape(void * object);
+
+int through_array_member(struct driver * driver, int i, int x) {
+	return driver->ops[i].run(x);
+}
+
+void array_member_store(struct driver * driver, int i) {
+	driver->ops[i].run = put_char;
+}
+
+int through_member_table(struct driver * driver, int i, int x) {
+	return driver->handlers[i](x);
+}
+
+int through_local_array(int i, int j, int x) {
+	struct api grid[2][3];
+	escape(grid);
+	grid[i][j].run = put_char;
+	escape(grid);
+	return grid[i][j].run(x);
+}
+
+int through_address_taken(int (*fn)(int), int x) {
+	escape(&fn);
+	return fn(x);
+}
+
+int through_local_static(int x, int (*next)(int)) {
+	static int (*saved)(int);
+	int ( * const previous)(int) = saved;
+	saved = next;
+	return previous(x);
+}
+
+void static_record_store(void) {
+	static struct api local_api;
+	local_api.run = put_char;
+	escape(&local_api);
+}

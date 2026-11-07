@@ -24,6 +24,7 @@ from dynamic_call_tree_resolution.descriptors import (
 from dynamic_call_tree_resolution.gcc_dumps.units import Record, anonymous_name
 from dynamic_call_tree_resolution.model import (
 	FUNCTION_POINTER,
+	ArrayMember,
 	EmbeddedStructMember,
 	Field,
 	FunctionPointerMember,
@@ -46,9 +47,10 @@ _ASSIGNMENT: Final = re.compile(r"^(.+?) = (.+)$")
 _MEMORY: Final = re.compile(r"^MEM(?: <.+?>)? ?\[\((.+?) \*\)(.+)\]$")
 _ARRAY_MEMORY: Final = re.compile(r"^MEM <(.+?)\[.*?\]> ?\[\(")
 _ELEMENT: Final = re.compile(r"^(.+)\[[^\[\]]+\]$")
+_MEMORY_PREFIX: Final = re.compile(r"^MEM(?: <.+>)? ?$")
 _ANONYMOUS_MEMBER: Final = re.compile(r"^(.+?)(?:(->)|\.)(D\.\d+)$")
 _OPERATION: Final = re.compile(r" [-+*/%&|^<>=!]+ |^\(.+\) ")
-_QUALIFIER: Final = re.compile(r"\b(?:const|volatile)\b ?")
+_QUALIFIER: Final = re.compile(r"\b(?:const|volatile|static)\b ?")
 _UID: Final = re.compile(r"<([TD])[0-9a-f]+>")
 
 
@@ -204,8 +206,12 @@ def _store(scope: _Scope, at: Located, target: str, value: str) -> tuple[DumpRec
 			else ()
 		)
 	return (
-		(StoreRecord(at=at, place=Variable(symbol=target), value=_describe(scope, value)),)
-		if _variable(target) and _function_pointer_type(_declared(scope, target))
+		(
+			StoreRecord(
+				at=at, place=Variable(symbol=_symbol(scope, target)), value=_describe(scope, value)
+			),
+		)
+		if _variable(scope, target) and _function_pointer_type(_declared(scope, target))
 		else ()
 	)
 
@@ -236,7 +242,7 @@ def _other(scope: _Scope, value: str) -> Other:
 def _loaded(scope: _Scope, value: str, source: str) -> Descriptor:
 	"""What a single load reads: a field, a variable or an array element."""
 	member = _split_member(source)
-	element = _ELEMENT.match(source)
+	array = _array(source)
 	if member is not None:
 		record = _member_record(scope, member)
 		return (
@@ -244,11 +250,23 @@ def _loaded(scope: _Scope, value: str, source: str) -> Descriptor:
 			if record is not None
 			else _other(scope, value)
 		)
-	if _variable(source):
-		return Variable(symbol=source)
-	if element is not None and _IDENTIFIER.match(element.group(1)):
-		return Element(array=element.group(1))
+	if _variable(scope, source):
+		return Variable(symbol=_symbol(scope, source))
+	if array is not None:
+		return Element(array=array)
 	return _other(scope, value)
+
+
+def _array(expression: str) -> str | None:
+	"""The array an element is read from, by its name: the brackets of a ``MEM`` hold an address.
+
+	>>> _array("table[i_2(D)]"), _array("d_3(D)->tbl[i_4(D)]"), _array("MEM[(int *)p_1(D)]")
+	('table', '<expression>', None)
+	"""
+	element = _ELEMENT.match(expression)
+	if element is None or _MEMORY_PREFIX.match(element.group(1)):
+		return None
+	return element.group(1) if _IDENTIFIER.match(element.group(1)) else "<expression>"
 
 
 def _split_member(expression: str) -> _Member | None:
@@ -290,14 +308,38 @@ def _base_record(scope: _Scope, base: str, arrow: bool) -> Record | None:
 	if memory is not None:
 		return _type_record(scope, memory.group(1))
 	if element is not None:
-		array_memory = _ARRAY_MEMORY.match(element.group(1))
-		return _type_record(
-			scope,
-			array_memory.group(1)
-			if array_memory is not None
-			else _declared(scope, element.group(1)),
-		)
+		return _array_record(scope, element.group(1))
 	return _nested_record(scope, nested)
+
+
+def _array_record(scope: _Scope, array: str) -> Record | None:
+	"""The record of an array's elements: of a ``MEM``, a member, an element, or a declared name."""
+	array_memory = _ARRAY_MEMORY.match(array)
+	member = _split_member(array)
+	element = _ELEMENT.match(array)
+	if array_memory is not None:
+		return _type_record(scope, array_memory.group(1))
+	if member is not None:
+		return _element_record(scope, member)
+	if element is not None:
+		return _array_record(scope, element.group(1))
+	return _type_record(scope, _declared(scope, array))
+
+
+def _element_record(scope: _Scope, array: _Member) -> Record | None:
+	"""The record of an element of an array member."""
+	layout = _layout(scope, _member_record(scope, array))
+	match tuple(
+		candidate.element.type_name
+		for candidate in (layout.members if layout is not None else ())
+		if isinstance(candidate, ArrayMember)
+		and candidate.name == array.member
+		and isinstance(candidate.element, EmbeddedStructMember)
+	):
+		case (key,):
+			return _key_record(scope, key)
+		case _:
+			return None
 
 
 def _nested_record(scope: _Scope, nested: _Member | None) -> Record | None:
@@ -341,7 +383,7 @@ def _type_record(scope: _Scope, type_text: str | None) -> Record | None:
 	"""The record a type names, through a pointer, an array or a typedef."""
 	if type_text is None:
 		return None
-	text = re.sub(r"\s*\[[^\]]*\]$", "", _QUALIFIER.sub("", type_text).strip()).rstrip(" *")
+	text = re.sub(r"(?:\s*\[[^\]]*\])+$", "", _QUALIFIER.sub("", type_text).strip()).rstrip(" *")
 	bare = text.split(" ", 1)[1] if text.startswith(("struct ", "union ")) else text
 	return scope.types.typedefs.get(bare) or (
 		Record(name=text, key=text) if text.startswith(("struct ", "union ")) else None
@@ -377,11 +419,22 @@ def _declared(scope: _Scope, token: str) -> str | None:
 	)
 
 
-def _variable(text: str) -> bool:
+def _variable(scope: _Scope, text: str) -> bool:
 	return (
 		_IDENTIFIER.match(text) is not None
 		and _NAMED_SSA.match(text) is None
 		and _TEMPORARY.match(text) is None
+		and text not in scope.function.parameters
+	)
+
+
+def _symbol(scope: _Scope, variable: str) -> str:
+	"""A variable's symbol: a function-scope static's is numbered, ``hook.0``."""
+	declared = scope.function.declarations.get(variable)
+	return (
+		scope.types.statics.get(variable, variable)
+		if declared is not None and declared.startswith("static ")
+		else variable
 	)
 
 

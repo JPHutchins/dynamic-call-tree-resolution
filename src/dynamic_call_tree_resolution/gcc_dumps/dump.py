@@ -124,13 +124,16 @@ def _top_level_parts(text: str) -> tuple[str, ...]:
 
 
 def _declaration(text: str) -> _Declared:
-	"""A declared name and its type: GCC prints the name last.
+	"""A declared name and its type: GCC prints the name last, an array's bounds after it.
 
 	>>> _declaration("  int (*<T9f7>) (int) _char_out.0_1;")
 	_Declared(name='_char_out.0_1', type='int (*<T9f7>) (int)')
+	>>> _declaration("  struct api local[2][3];")
+	_Declared(name='local', type='struct api[2][3]')
 	"""
-	type_text, _, name = text.strip().removesuffix(";").rpartition(" ")
-	return _Declared(name=name, type=type_text)
+	type_text, _, declarator = text.strip().removesuffix(";").rpartition(" ")
+	name, bracket, bounds = declarator.partition("[")
+	return _Declared(name=name, type=f"{type_text}{bracket}{bounds}")
 
 
 def _statement(line: str) -> Statement | None:
