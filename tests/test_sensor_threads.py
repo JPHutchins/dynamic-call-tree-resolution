@@ -190,6 +190,21 @@ def test_the_header_names_each_member_assumed_written_only_by_tracked_stores(
 	) in capsys.readouterr().out.splitlines()[0]
 
 
+def test_the_header_names_each_member_a_store_derived_from_its_object_writes_anyway(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(
+		artifacts,
+		artifacts / "zephyr" / "zephyr.elf",
+		assume_only_tracked_writes=("slice_expired", "i2c_emul_cfg_0.forward_list"),
+	)
+	assert (
+		" | assumed only tracked writes: i2c_emul_cfg_0.forward_list, slice_expired"
+		" | yet stores derived from their objects write: slice_expired | "
+	) in capsys.readouterr().out.splitlines()[0]
+
+
 @pytest.mark.parametrize(
 	("name", "message"),
 	[

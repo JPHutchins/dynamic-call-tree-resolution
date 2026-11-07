@@ -956,12 +956,12 @@ def test_a_store_derived_from_an_unescaped_object_still_writes_it_past_the_assum
 		pointer_size=4,
 		data_in_code=((0x1008, 0x100C), (0x1108, 0x110C)),
 	)
-	(site,) = (
-		site
-		for site in resolve(program, only_tracked_writes=(span(0x2000_0000, 0x2000_0200),)).sites
-		if site.caller_address == 0x1100
+	resolution = resolve(program, only_tracked_writes=(span(0x2000_0000, 0x2000_0200),))
+	(site,) = (site for site in resolution.sites if site.caller_address == 0x1100)
+	assert (tracked_values(site), resolution.clobbered) == (
+		frozenset[Address](),
+		frozenset({span(0x2000_0000, 0x2000_0200)}),
 	)
-	assert tracked_values(site) == set()
 
 
 def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:

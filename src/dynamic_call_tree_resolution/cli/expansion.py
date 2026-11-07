@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.cli.artifacts import (
 	NO_ASSUMED_CALLERS,
 	Artifacts,
 	AssumedCallers,
+	AssumedOnlyTrackedWrites,
 	AssumedUnwritten,
 	Expansion,
 	HandlerNames,
@@ -252,7 +253,9 @@ def expand_from_elf(
 		dropped=artifacts.dropped,
 		phantom_libcalls=artifacts.phantom_libcalls,
 		assumed_unwritten=_assumed_unwritten(image, resolution, assume_unwritten, changed),
-		assumed_only_tracked_writes=changed if assume_only_tracked_writes else NO_ASSUMED_CALLERS,
+		assumed_only_tracked_writes=_assumed_only_tracked_writes(
+			image, resolution, assume_only_tracked_writes, changed
+		),
 		assumed_upward_frame_writes=changed if assume_upward_frame_writes else NO_ASSUMED_CALLERS,
 		handlers=_handler_names(image, model.handler_stack),
 	)
@@ -393,6 +396,23 @@ def _assumed_unwritten(
 			)
 		),
 		changed=changed,
+	)
+
+
+def _assumed_only_tracked_writes(
+	image: Image, resolution: ProgramResolution, names: tuple[str, ...], changed: AssumedCallers
+) -> AssumedOnlyTrackedWrites:
+	return AssumedOnlyTrackedWrites(
+		derived_writes=tuple(
+			name
+			for name in names
+			for span in (named_span(image.program, "--assume-only-tracked-writes", name),)
+			if any(
+				span.start < clobbered.end and clobbered.start < span.end
+				for clobbered in resolution.clobbered
+			)
+		),
+		changed=changed if names else NO_ASSUMED_CALLERS,
 	)
 
 

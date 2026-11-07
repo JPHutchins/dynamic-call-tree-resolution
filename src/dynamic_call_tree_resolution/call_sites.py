@@ -65,6 +65,9 @@ class ProgramResolution(Struct):
 	fallback: frozenset[Address]
 	written: frozenset[Address] = frozenset()
 	"""Where in the image a tracked store writes a word."""
+	clobbered: frozenset[Span] = frozenset()
+	"""The objects only the code that names them can reach, which a store the analysis can't
+	place, derived from their own address, may write."""
 
 
 class CallerCandidates(Struct):
@@ -104,6 +107,7 @@ def resolve(
 			if (runtime := _at_runtime(program, analysis, assignment)) is not None
 		),
 		written=frozenset(analysis.context.global_writes.values),
+		clobbered=analysis.context.global_writes.clobbered,
 	)
 
 
