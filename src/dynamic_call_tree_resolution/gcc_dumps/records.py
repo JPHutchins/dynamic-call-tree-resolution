@@ -21,14 +21,12 @@ from dynamic_call_tree_resolution.descriptors import (
 	Variable,
 	descriptor_fields,
 )
-from dynamic_call_tree_resolution.gcc_dumps.places import (
+from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	ASSIGNMENT,
 	CALL,
-	ELEMENT,
-	IDENTIFIER,
-	MEMORY_PREFIX,
 	NAMED_SSA,
 	Scope,
+	array_name,
 	declared_type,
 	function_scope,
 	is_ssa,
@@ -210,7 +208,7 @@ def _other(scope: Scope, value: str) -> Other:
 def _loaded(scope: Scope, value: str, source: str) -> Descriptor:
 	"""What a single load reads: a field, a variable or an array element."""
 	member = split_member(source)
-	array = _array(source)
+	array = array_name(source)
 	if member is not None:
 		record = member_record(scope, member)
 		return (
@@ -223,18 +221,6 @@ def _loaded(scope: Scope, value: str, source: str) -> Descriptor:
 	if array is not None:
 		return Element(array=array)
 	return _other(scope, value)
-
-
-def _array(expression: str) -> str | None:
-	"""The array an element is read from, by its name: the brackets of a ``MEM`` hold an address.
-
-	>>> _array("table[i_2(D)]"), _array("d_3(D)->tbl[i_4(D)]"), _array("MEM[(int *)p_1(D)]")
-	('table', '<expression>', None)
-	"""
-	element = ELEMENT.match(expression)
-	if element is None or MEMORY_PREFIX.match(element.group(1)):
-		return None
-	return element.group(1) if IDENTIFIER.match(element.group(1)) else "<expression>"
 
 
 def _function_pointer_member(layout: StructureLayout, member: str) -> bool:

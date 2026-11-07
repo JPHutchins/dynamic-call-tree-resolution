@@ -1,7 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""What a dump's expressions name: records, members and variables, through the unit's types."""
+"""What a dump's expressions refer to: records, members, arrays and variables, by the unit's types."""
 
 from __future__ import annotations
 
@@ -22,16 +22,17 @@ if TYPE_CHECKING:
 
 _TEMPORARY: Final = re.compile(r"^_\d+$")
 NAMED_SSA: Final = re.compile(r"^([A-Za-z_][\w.$]*)_\d+(\(D\))?$")
-IDENTIFIER: Final = re.compile(r"^[A-Za-z_][\w.$]*$")
+_IDENTIFIER: Final = re.compile(r"^[A-Za-z_][\w.$]*$")
 CALL: Final = re.compile(r"^(?:.+? = )?(\S+) \((.*)\)$")
 ASSIGNMENT: Final = re.compile(r"^(.+?) = (.+)$")
 _MEMORY: Final = re.compile(r"^MEM(?: <.+?>)? ?\[\((.+?) \*\)(.+)\]$")
 _ARRAY_MEMORY: Final = re.compile(r"^MEM <(.+?)\[.*?\]> ?\[\(")
-ELEMENT: Final = re.compile(r"^(.+)\[[^\[\]]+\]$")
-MEMORY_PREFIX: Final = re.compile(r"^MEM(?: <.+>)? ?$")
+_ELEMENT: Final = re.compile(r"^(.+)\[[^\[\]]+\]$")
+_MEMORY_PREFIX: Final = re.compile(r"^MEM(?: <.+>)? ?$")
 _DEREFERENCE: Final = re.compile(r"^\(\*(.+)\)$")
 _DECLARATOR_SUFFIX: Final = re.compile(r"(?:\s*(?:\*|\[[^\]]*\]))+$")
 _ANONYMOUS_MEMBER: Final = re.compile(r"^(.+?)(?:(->)|\.)(D\.\d+)$")
+_MEMBER: Final = re.compile(r"^(.*?)(?:(->)|\.)([A-Za-z_]\w*)$")
 _QUALIFIER: Final = re.compile(r"\b(?:const|volatile|static)\b ?")
 
 
@@ -78,6 +79,10 @@ def member_record(scope: Scope, member: Member) -> Record | None:
 	return _base_record(scope, member.base, member.arrow)
 
 
+def record_layout(scope: Scope, record: Record | None) -> StructureLayout | None:
+	return scope.types.layouts.get(record.key) if record is not None else None
+
+
 def declared_type(scope: Scope, token: str) -> str | None:
 	"""A name's type: as a local or SSA name, as a parameter, or as a file-scope variable."""
 	named = NAMED_SSA.match(token)
@@ -93,7 +98,7 @@ def declared_type(scope: Scope, token: str) -> str | None:
 
 def is_variable(scope: Scope, text: str) -> bool:
 	return (
-		IDENTIFIER.match(text) is not None
+		_IDENTIFIER.match(text) is not None
 		and not is_ssa(scope, text)
 		and text not in scope.function.parameters
 	)
@@ -128,12 +133,26 @@ def split_member(expression: str) -> Member | None:
 	>>> split_member("timer_2(D)->expiry_fn"), split_member("_5")
 	(Member(base='timer_2(D)', member='expiry_fn', arrow=True), None)
 	"""
-	match = re.match(r"^(.*?)(?:(->)|\.)([A-Za-z_]\w*)$", expression)
+	match = _MEMBER.match(expression)
 	return (
 		Member(base=match.group(1), member=match.group(3), arrow=match.group(2) is not None)
 		if match is not None and _balanced(match.group(1))
 		else None
 	)
+
+
+def array_name(expression: str) -> str | None:
+	"""The array an element is read from, by its name: the brackets of a ``MEM`` hold an address.
+
+	>>> array_name("table[i_2(D)]"), array_name("d_3(D)->tbl[i_4(D)]")
+	('table', '<expression>')
+	>>> array_name("MEM[(int *)p_1(D)]") is None
+	True
+	"""
+	element = _ELEMENT.match(expression)
+	if element is None or _MEMORY_PREFIX.match(element.group(1)):
+		return None
+	return element.group(1) if _IDENTIFIER.match(element.group(1)) else "<expression>"
 
 
 def _balanced(text: str) -> bool:
@@ -143,8 +162,8 @@ def _balanced(text: str) -> bool:
 def _base_record(scope: Scope, base: str, arrow: bool) -> Record | None:
 	"""The record of what a member is taken from."""
 	memory = _MEMORY.match(base)
-	element = ELEMENT.match(base)
-	indexed = element is not None and MEMORY_PREFIX.match(element.group(1)) is None
+	element = _ELEMENT.match(base)
+	indexed = element is not None and _MEMORY_PREFIX.match(element.group(1)) is None
 	nested = split_member(base)
 	if arrow or (memory is None and element is None and nested is None):
 		return _type_record(scope, declared_type(scope, base))
@@ -159,7 +178,7 @@ def _array_record(scope: Scope, array: str) -> Record | None:
 	"""The record of an array's elements: of a ``MEM``, a member, an element, or a declared name."""
 	array_memory = _ARRAY_MEMORY.match(array)
 	member = split_member(array)
-	element = ELEMENT.match(array)
+	element = _ELEMENT.match(array)
 	pointed = _DEREFERENCE.match(array)
 	if array_memory is not None:
 		return _type_record(scope, array_memory.group(1))
@@ -241,7 +260,3 @@ def _type_record(scope: Scope, type_text: str | None) -> Record | None:
 def _key_record(scope: Scope, key: str) -> Record:
 	"""A layout key as a record: a typedef's key names the typedef's record."""
 	return scope.types.typedefs.get(key) or Record(name=anonymous_name(key), key=key)
-
-
-def record_layout(scope: Scope, record: Record | None) -> StructureLayout | None:
-	return scope.types.layouts.get(record.key) if record is not None else None
