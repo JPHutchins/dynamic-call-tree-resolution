@@ -36,7 +36,12 @@ def descriptors(
 	a function. Each unit's object supplies the types its dump names. A function without a dump,
 	or a store of a function this cannot place, fails rather than leave a target out. Checked
 	against GCC 14.3: the Zephyr SDK 1.0.1's 14.3.0 and Arm GNU 14.3.1, whose descriptors plugin
-	writes the same records.
+	writes the same site and store records.
+
+	The file also records what every store writes: a field, a variable, every member of a record,
+	nothing named, or, where the types can't tell, anything. A builtin that writes through an
+	argument, such as memcpy or an atomic, counts as a store. Each pointer a call hands a function
+	no dump defines, an unknown callee, or inline assembly is recorded with the argument it is.
 
 	Raises:
 		ValueError: for a store of a function into a record the unit's types do not describe.
@@ -54,10 +59,10 @@ def descriptors(
 			"would leave their targets out: none was written"
 		)
 	(output or build_directory / "zephyr" / "descriptors.txt").write_text(
-		"".join(f"{line}\n" for line in described.lines)
+		"".join(f"{line}\n" for line in (*described.lines, *described.writes))
 	)
 	print(
-		f"{len(described.lines)} records from the alias dumps of {described.dumps} of "
-		f"{described.units} C units",
+		f"{len(described.lines)} records and {len(described.writes) - 1} writes from the alias "
+		f"dumps of {described.dumps} of {described.units} C units",
 		file=sys.stderr,
 	)

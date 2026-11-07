@@ -25,7 +25,7 @@ NAMED_SSA: Final = re.compile(r"^([A-Za-z_][\w.$]*)_\d+(\(D\))?$")
 _IDENTIFIER: Final = re.compile(r"^[A-Za-z_][\w.$]*$")
 CALL: Final = re.compile(r"^(?:.+? = )?(\S+) \((.*)\)$")
 ASSIGNMENT: Final = re.compile(r"^(.+?) = (.+)$")
-_MEMORY: Final = re.compile(r"^MEM(?: <.+?>)? ?\[\((.+?) \*\)(.+)\]$")
+_MEMORY: Final = re.compile(r"^MEM(?: <(.+?)>)? ?\[\((.+?) \*(?: \{ref-all\})?\)(.+)\]$")
 _ARRAY_MEMORY: Final = re.compile(r"^MEM <(.+?)\[.*?\]> ?\[\(")
 _ELEMENT: Final = re.compile(r"^(.+)\[[^\[\]]+\]$")
 _MEMORY_PREFIX: Final = re.compile(r"^MEM(?: <.+>)? ?$")
@@ -88,12 +88,27 @@ def declared_type(scope: Scope, token: str) -> str | None:
 	named = NAMED_SSA.match(token)
 	base = named.group(1) if named is not None and is_ssa(scope, token) else token
 	declarations = scope.function.declarations
+	if token == "<retval>":
+		return scope.function.result
 	return (
 		declarations.get(token)
 		or declarations.get(base)
 		or scope.function.parameters.get(base)
 		or scope.types.variables.get(base)
 	)
+
+
+def type_record(scope: Scope, type_text: str | None) -> Record | None:
+	"""The record a type names, through a pointer, an array or a typedef."""
+	if type_text is None:
+		return None
+	text = _DECLARATOR_SUFFIX.sub("", _QUALIFIER.sub("", type_text).strip())
+	tagged = text.startswith(("struct ", "union "))
+	typedef = scope.types.typedefs.get(text.split(" ", 1)[1] if tagged else text)
+	tag = Record(name=text, key=text) if tagged else None
+	if typedef is None or tag is None:
+		return typedef or tag
+	return typedef if typedef.name == tag.name or tag.key not in scope.types.layouts else None
 
 
 def is_variable(scope: Scope, text: str) -> bool:
@@ -149,10 +164,40 @@ def array_name(expression: str) -> str | None:
 	>>> array_name("MEM[(int *)p_1(D)]") is None
 	True
 	"""
+	array = indexed_array(expression)
+	if array is None:
+		return None
+	return array if _IDENTIFIER.match(array) else "<expression>"
+
+
+def indexed_array(expression: str) -> str | None:
+	"""What an element is indexed from, unless it is a ``MEM``, whose brackets hold an address.
+
+	>>> indexed_array("d_3(D)->tbl[i_4(D)]"), indexed_array("MEM[(int *)p_1(D)]")
+	('d_3(D)->tbl', None)
+	"""
 	element = _ELEMENT.match(expression)
 	if element is None or _MEMORY_PREFIX.match(element.group(1)):
 		return None
-	return element.group(1) if _IDENTIFIER.match(element.group(1)) else "<expression>"
+	return element.group(1)
+
+
+def named_member(member: Member) -> Member:
+	"""The member as its nearest named record holds it, through anonymous structs and unions.
+
+	>>> named_member(Member(base="prev_25->D.4736", member="next", arrow=False))
+	Member(base='prev_25', member='next', arrow=True)
+	"""
+	anonymous = _ANONYMOUS_MEMBER.match(member.base)
+	return (
+		named_member(
+			Member(
+				base=anonymous.group(1), member=member.member, arrow=anonymous.group(2) is not None
+			)
+		)
+		if anonymous is not None
+		else member
+	)
 
 
 def _balanced(text: str) -> bool:
@@ -166,12 +211,21 @@ def _base_record(scope: Scope, base: str, arrow: bool) -> Record | None:
 	indexed = element is not None and _MEMORY_PREFIX.match(element.group(1)) is None
 	nested = split_member(base)
 	if arrow or (memory is None and element is None and nested is None):
-		return _type_record(scope, declared_type(scope, base))
+		return type_record(scope, declared_type(scope, base))
 	if element is not None and indexed:
 		return _array_record(scope, element.group(1))
 	if memory is not None:
-		return _type_record(scope, memory.group(1))
+		return type_record(scope, _accessed(memory.group(1), memory.group(2)))
 	return _nested_record(scope, nested)
+
+
+def _accessed(access: str | None, cast: str) -> str:
+	"""The type a ``MEM`` accesses: its own, which a member is taken from, else its address's cast.
+
+	>>> _accessed("struct z_heap", "struct z_heap_bucket"), _accessed(None, "struct k_timer")
+	('struct z_heap', 'struct k_timer')
+	"""
+	return access if access is not None else cast
 
 
 def _array_record(scope: Scope, array: str) -> Record | None:
@@ -181,12 +235,12 @@ def _array_record(scope: Scope, array: str) -> Record | None:
 	element = _ELEMENT.match(array)
 	pointed = _DEREFERENCE.match(array)
 	if array_memory is not None:
-		return _type_record(scope, array_memory.group(1))
+		return type_record(scope, array_memory.group(1))
 	if member is not None:
 		return _element_record(scope, member)
 	if element is not None:
 		return _array_record(scope, element.group(1))
-	return _type_record(
+	return type_record(
 		scope, declared_type(scope, pointed.group(1) if pointed is not None else array)
 	)
 
@@ -242,19 +296,6 @@ def _anonymous(scope: Scope, outer: Record | None, member: str) -> Record | None
 def _has_member(scope: Scope, key: str, member: str) -> bool:
 	layout = scope.types.layouts.get(key)
 	return layout is not None and member in layout.extents
-
-
-def _type_record(scope: Scope, type_text: str | None) -> Record | None:
-	"""The record a type names, through a pointer, an array or a typedef."""
-	if type_text is None:
-		return None
-	text = _DECLARATOR_SUFFIX.sub("", _QUALIFIER.sub("", type_text).strip())
-	tagged = text.startswith(("struct ", "union "))
-	typedef = scope.types.typedefs.get(text.split(" ", 1)[1] if tagged else text)
-	tag = Record(name=text, key=text) if tagged else None
-	if typedef is None or tag is None:
-		return typedef or tag
-	return typedef if typedef.name == tag.name or tag.key not in scope.types.layouts else None
 
 
 def _key_record(scope: Scope, key: str) -> Record:

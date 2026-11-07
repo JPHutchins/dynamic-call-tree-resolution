@@ -18,6 +18,8 @@ _HEADER: Final = re.compile(r"^;; Function (\S+) \((\S+?),", re.MULTILINE)
 _LOCATION: Final = re.compile(r"\[([^\[\]]+?):(\d+):(\d+)(?: discrim \d+)?\] ")
 _CALL_FLAGS: Final = re.compile(r";(?: \[[^\[\]]*\])*$")
 _LABEL: Final = re.compile(r"^<(?:bb \d+|L\d+)>")
+_LOGICAL_LINE: Final = re.compile(r'(?:[^"\n]|"(?:[^"\\]|\\.)*")+')
+"""A line of a dump, or several where a string literal spans them, as an asm template can."""
 
 
 class Statement(Struct):
@@ -41,6 +43,8 @@ class DumpFunction(Struct):
 
 	symbol: str
 	"""Its assembler name."""
+	result: str
+	"""Its return type, which ``<retval>`` has."""
 	parameters: Mapping[str, str]
 	"""Each parameter's type, by its name."""
 	declarations: Mapping[str, str]
@@ -56,7 +60,7 @@ def dump_functions(text: str) -> tuple[DumpFunction, ...]:
 	...     "  int _2;\n\n  <bb 2> :\n  [a.c:3:9] # DEBUG BEGIN_STMT\n"
 	...     "  [a.c:3:9] _2 = [a.c:3:9] g_1(D) (x_3(D));\n  [a.c:4:1] return _2;\n}\n"
 	... )  # doctest: +NORMALIZE_WHITESPACE
-	(DumpFunction(symbol='f', parameters={'g': 'int (*) (int)', 'x': 'int'},
+	(DumpFunction(symbol='f', result='int', parameters={'g': 'int (*) (int)', 'x': 'int'},
 	              declarations={'_2': 'int'},
 	              statements=(Statement(file='a.c', line=3, column=9, body='_2 = g_1(D) (x_3(D))'),
 	                          Statement(file='a.c', line=4, column=1, body='return _2'))),)
@@ -80,14 +84,16 @@ def _function(name: str, symbol: str, text: str) -> DumpFunction:
 	declared = tuple(
 		line for line in _leading(body) if line.strip() and not line.strip().startswith("<bb")
 	)
+	signature = next(line for line in reversed(lines[:opening]) if line)
 	return DumpFunction(
 		symbol=symbol,
-		parameters=_parameters(name, next(line for line in reversed(lines[:opening]) if line)),
+		result=signature[: signature.index(f"{name} (")].strip(),
+		parameters=_parameters(name, signature),
 		declarations={declared.name: declared.type for declared in map(_declaration, declared)},
 		statements=tuple(
 			statement
-			for line in body[len(_leading(body)) :]
-			if (statement := _statement(line.strip())) is not None
+			for line in _LOGICAL_LINE.finditer("\n".join(body[len(_leading(body)) :]))
+			if (statement := _statement(line.group())) is not None
 		),
 	)
 
@@ -106,16 +112,16 @@ def _parameters(name: str, signature: str) -> dict[str, str]:
 	start = signature.index(f"{name} (") + len(name) + 2
 	return {
 		declared.name: declared.type
-		for part in _top_level_parts(signature[start : signature.rindex(")")])
+		for part in top_level_parts(signature[start : signature.rindex(")")])
 		if part and part != "void"
 		for declared in (_declaration(part),)
 	}
 
 
-def _top_level_parts(text: str) -> tuple[str, ...]:
+def top_level_parts(text: str) -> tuple[str, ...]:
 	"""The comma-separated parts of a list, not splitting inside parentheses.
 
-	>>> _top_level_parts("int a, void (*) (int, char) b, char c")
+	>>> top_level_parts("int a, void (*) (int, char) b, char c")
 	('int a', 'void (*) (int, char) b', 'char c')
 	"""
 	depths = tuple(accumulate((character == "(") - (character == ")") for character in text))
@@ -140,8 +146,9 @@ def _declaration(text: str) -> _Declared:
 	return _Declared(name=name, type=f"{type_text}{bracket}{bounds}")
 
 
-def _statement(line: str) -> Statement | None:
+def _statement(text: str) -> Statement | None:
 	"""A statement, at ``<unknown>:0:0`` where GCC gave it no location, as the plugin writes it."""
+	line = text.strip()
 	located = _LOCATION.match(line)
 	body = _CALL_FLAGS.sub("", _LOCATION.sub("", line)).replace(" ={v} ", " = ")
 	if not body or body.startswith("#") or _LABEL.match(body) is not None:

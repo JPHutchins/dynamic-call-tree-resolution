@@ -1,7 +1,7 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""What each indirect call loads its callee from, and every store of a function pointer (#158)."""
+"""What indirect calls load their callees from and what stores write (#158, #341)."""
 
 from __future__ import annotations
 
@@ -58,6 +58,25 @@ type Descriptor = Field | Variable | Parameter | Element | Function | Null | Oth
 type Place = Field | Variable
 
 
+class EveryMember(Struct):
+	"""Every member of a record, as a whole-record store or a write through a pointer to it writes."""
+
+	record: str
+
+
+class Unnamed(Struct):
+	"""What a store that names no field or variable writes, such as ``*out = v`` through an ``int *``."""
+
+
+class Unknown(Struct):
+	"""What a store the unit's types can't place may write: anything."""
+
+
+type WriteTarget = Field | Variable | EveryMember | Unnamed | Unknown
+"""A ``variable`` is a symbol, except that a function-scope static sharing its name with another
+keeps the bare name (#347): it stands for each ``name.N``."""
+
+
 class Site(Struct):
 	"""An indirect call as the descriptors plugin saw it."""
 
@@ -79,11 +98,41 @@ class Store(Struct):
 	value: Descriptor
 
 
+class Write(Struct):
+	"""A store a statement makes, or a builtin's write through an argument."""
+
+	unit: str
+	function: str
+	location: SourceLocation
+	target: WriteTarget
+
+
+class Pass(Struct):
+	"""A pointer a call hands a callee without a dump, an unknown callee, or inline assembly."""
+
+	unit: str
+	function: str
+	location: SourceLocation
+	callee: str
+	"""The callee's name, ``<indirect>`` or ``<asm>``."""
+	argument: int
+	target: WriteTarget
+
+
 class Descriptors(Struct):
-	"""One build's sites and stores."""
+	"""One build's sites and stores, and what its stores write."""
 
 	sites: tuple[Site, ...]
 	stores: tuple[Store, ...]
+	writes: tuple[Write, ...] = ()
+	passes: tuple[Pass, ...] = ()
+	every_store: bool = False
+	"""Whether the file records every store, as ``dctr descriptors`` writes it, and not only the
+	plugin's stores of a function pointer."""
+
+
+class _EveryStore(Struct):
+	"""The record that marks a file as recording every store."""
 
 
 class DescribedCall(Struct):
@@ -115,12 +164,16 @@ def parse_descriptors(text: str) -> Descriptors:
 	                        callee=Field(record='struct device_ops', member='init')),),
 	            stores=(Store(unit='lib/os/printk.c', function='__printk_hook_install',
 	                          location=SourceLocation(file='printk.c', line=59, column=12),
-	                          place=Variable(symbol='_char_out'), value=Parameter(name='fn')),))
+	                          place=Variable(symbol='_char_out'), value=Parameter(name='fn')),),
+	            writes=(), passes=(), every_store=False)
 	"""
 	records = tuple(_record(line.split("\t")) for line in text.splitlines() if line)
 	return Descriptors(
 		sites=tuple(record for record in records if isinstance(record, Site)),
 		stores=tuple(record for record in records if isinstance(record, Store)),
+		writes=tuple(record for record in records if isinstance(record, Write)),
+		passes=tuple(record for record in records if isinstance(record, Pass)),
+		every_store=any(isinstance(record, _EveryStore) for record in records),
 	)
 
 
@@ -170,7 +223,7 @@ def _agreed(callees: frozenset[Descriptor]) -> Descriptor | None:
 			return None
 
 
-def _record(fields: list[str]) -> Site | Store:
+def _record(fields: list[str]) -> Site | Store | Write | Pass | _EveryStore:
 	"""One plugin record.
 
 	>>> _record(["call", "a.c", "f", "a.c", "1", "2", "null", "0"])
@@ -204,6 +257,24 @@ def _record(fields: list[str]) -> Site | Store:
 				place=Variable(symbol=symbol),
 				value=_descriptor(value),
 			)
+		case ["write", unit, function, file, line, column, *target]:
+			return Write(
+				unit=unit,
+				function=function,
+				location=_location(file, line, column),
+				target=_write_target(target),
+			)
+		case ["pass", unit, function, file, line, column, callee, argument, *target]:
+			return Pass(
+				unit=unit,
+				function=function,
+				location=_location(file, line, column),
+				callee=callee,
+				argument=int(argument),
+				target=_write_target(target),
+			)
+		case ["writes", "complete"]:
+			return _EveryStore()
 		case _:
 			raise ValueError(f"unknown descriptor record {fields}")
 
@@ -279,3 +350,58 @@ def _descriptor(fields: list[str]) -> Descriptor:
 			return Other(type=type_)
 		case _:
 			raise ValueError(f"unknown descriptor {fields}")
+
+
+def write_target_fields(target: WriteTarget) -> tuple[str, ...]:
+	"""A write target as ``dctr descriptors`` writes it, which the parser reads back.
+
+	>>> all(
+	...     _write_target(list(write_target_fields(target))) == target
+	...     for target in (
+	...         Field(record="struct ops", member="run"),
+	...         Variable(symbol="hook.0"),
+	...         EveryMember(record="struct k_thread"),
+	...         Unnamed(),
+	...         Unknown(),
+	...     )
+	... )
+	True
+	"""
+	match target:
+		case Field(record=record, member=member):
+			return ("field", record, member)
+		case Variable(symbol=symbol):
+			return ("variable", symbol)
+		case EveryMember(record=record):
+			return ("record", record)
+		case Unnamed():
+			return ("none",)
+		case Unknown():
+			return ("unknown",)
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _write_target(fields: list[str]) -> WriteTarget:
+	"""What a store writes.
+
+	>>> _write_target(["array", "handlers"])
+	Traceback (most recent call last):
+	ValueError: unknown write target ['array', 'handlers']
+
+	Raises:
+		ValueError: for a target ``dctr descriptors`` does not write.
+	"""
+	match fields:
+		case ["field", record, member]:
+			return Field(record=record, member=member)
+		case ["variable", symbol]:
+			return Variable(symbol=symbol)
+		case ["record", record]:
+			return EveryMember(record=record)
+		case ["none"]:
+			return Unnamed()
+		case ["unknown"]:
+			return Unknown()
+		case _:
+			raise ValueError(f"unknown write target {fields}")
