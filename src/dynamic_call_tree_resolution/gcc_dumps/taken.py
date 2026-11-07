@@ -28,7 +28,7 @@ from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	record_layout,
 	type_record,
 )
-from dynamic_call_tree_resolution.gcc_dumps.writes import pointed_member, written
+from dynamic_call_tree_resolution.gcc_dumps.writes import assembly_operands, pointed_member, written
 from dynamic_call_tree_resolution.model import Field
 
 if TYPE_CHECKING:
@@ -41,7 +41,6 @@ _RETURN: Final = re.compile(r"^return (.+)$")
 _ARITHMETIC: Final = re.compile(r"^(\S+) \+ (\S+)$")
 _CAST: Final = re.compile(r"^\((?:[^()]|\([^()]*\))*\) ")
 _CONDITION: Final = re.compile(r"^if \(")
-_OPERAND: Final = re.compile(r"\"[^\"]*\" ([^,:)]*[^,:)\s])")
 _PHI_ARGUMENTS: Final = re.compile(r"PHI <(.*)>$")
 _PREDECESSOR: Final = re.compile(r"\(\d+\)$")
 _VARIABLE: Final = re.compile(r"^[A-Za-z_][\w.$]*")
@@ -58,7 +57,20 @@ def unit_taken(functions: tuple[DumpFunction, ...], types: UnitTypes) -> tuple[W
 		target
 		for function in functions
 		for scope in (function_scope(types, function),)
-		for target in (*_addressed(scope, function), *_interior(scope, function))
+		for target in (
+			*_addressed(scope, function),
+			*_interior(scope, function),
+			*_unreadable(function),
+		)
+	)
+
+
+def _unreadable(function: DumpFunction) -> tuple[WriteTarget, ...]:
+	"""Inline assembly whose operands can't be read may take any address."""
+	return tuple(
+		Unknown()
+		for statement in function.statements
+		if statement.body.startswith("__asm__") and assembly_operands(statement.body) is None
 	)
 
 
@@ -134,7 +146,7 @@ def _statement_values(body: str) -> tuple[str, ...]:
 	assignment = ASSIGNMENT.match(body)
 	returned = _RETURN.match(body)
 	if body.startswith("__asm__"):
-		return tuple(operand.group(1) for operand in _OPERAND.finditer(body))
+		return assembly_operands(body) or ()
 	if call is not None and _CONDITION.match(body) is not None:
 		return _operands(call.group(2))
 	if call is not None:

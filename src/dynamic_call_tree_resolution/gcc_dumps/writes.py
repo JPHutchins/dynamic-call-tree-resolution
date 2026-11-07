@@ -88,7 +88,7 @@ _NON_STORING: Final = frozenset(
 """The instructions an asm template may hold without storing: barriers, special registers, moves,
 hints and the supervisor call, whose handler is code without a dump."""
 _WRAP: Final = 1 << 32
-_ARRAY_POINTEE: Final = re.compile(r"^(.+)\[(\d+)\]\s*\*$")
+_ARRAY_POINTEE: Final = re.compile(r"^.+\[\d+\]\s*\*$")
 """GCC prints a negative ``MEM`` offset as its 32-bit unsigned wrap."""
 
 
@@ -304,6 +304,23 @@ def _may_store(template: str) -> bool:
 	)
 
 
+def assembly_operands(body: str) -> tuple[str, ...] | None:
+	"""The expressions of an inline asm statement's outputs and inputs; none when unreadable."""
+	assembly = _ASSEMBLY.match(body)
+	if assembly is None:
+		return None
+	operands = tuple(
+		operand
+		for listed in _OPERAND_LISTS.split(assembly.group(2))[1:3]
+		for operand in _operands(listed)
+	)
+	return (
+		None
+		if None in operands
+		else tuple(operand.group(2) for operand in operands if operand is not None)
+	)
+
+
 def _operands(text: str) -> tuple[re.Match[str] | None, ...]:
 	return tuple(_OPERAND.match(operand) for operand in top_level_parts(text) if operand)
 
@@ -339,8 +356,8 @@ def pointed_member(
 ) -> WriteTarget | None:
 	"""What the bytes at an offset from a pointer lie in, by the record it points to.
 
-	None when it points to no record. An offset into an array the pointer points to lands in one of
-	its elements.
+	None when it points to no record. An offset from a pointer to an array of records lands in one
+	of their elements, in that array or a later row of the array holding it.
 	"""
 	declared = declared_type(scope, pointer)
 	array = _ARRAY_POINTEE.match(declared.strip()) if declared is not None else None
@@ -355,10 +372,7 @@ def pointed_member(
 		_Span(
 			offset=(
 				signed % layout.size
-				if array is not None
-				and layout is not None
-				and layout.size > 0
-				and 0 <= signed <= int(array.group(2)) * layout.size
+				if array is not None and layout is not None and layout.size > 0 and signed >= 0
 				else signed
 			),
 			width=width,

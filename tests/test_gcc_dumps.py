@@ -713,12 +713,14 @@ _WRITE_TYPES: Final = UnitTypes(
 				"",
 				"MEM[(short int *)rows_1(D) + 12B] = 0",
 				"MEM[(short int *)one_2(D) + 12B] = 0",
+				"MEM[(short int *)rows_1(D) + 20B] = 0",
 			),
 			(
 				"write\tu\tf\ta.c\t0\t1\tfield\tstruct dev\ttag",
 				"write\tu\tf\ta.c\t1\t1\tunknown",
+				"write\tu\tf\ta.c\t2\t1\tfield\tstruct dev\ttag",
 			),
-			id="an offset into an array a pointer points to, and past one record",
+			id="an offset into an array a pointer points to or a later row, and past one record",
 		),
 		pytest.param(
 			_function(
@@ -825,6 +827,8 @@ def test_only_scalar_fields_and_variables_whose_address_is_used_or_computed_are_
 		"  [a.c:10:1] _8 = d_1(D) + _6;\n"
 		"  [a.c:11:1] next_9 = d_1(D) + 8;\n"
 		"  [a.c:12:1] _10 = rows_2(D) + 12;\n"
+		'  [a.c:13:1] __asm__ __volatile__("" :  : "r" &d_1(D)->flags);\n'
+		'  [a.c:14:1] __asm__ goto("b %l0" :  :  :  : lab);\n'
 		"}\n"
 	)
 	assert tuple(
@@ -839,10 +843,12 @@ def test_only_scalar_fields_and_variables_whose_address_is_used_or_computed_are_
 		"taken\tfield\tstruct dev\tundescribed",
 		"taken\tunknown",
 		"taken\tvariable\tcast_flag",
+		"taken\tfield\tstruct dev\tflags",
 		"taken\tvariable\tcounter",
 		"taken\tfield\tstruct dev\ttag",
 		"taken\trecord\tstruct dev",
 		"taken\tfield\tstruct dev\ttag",
+		"taken\tunknown",
 	)
 
 
