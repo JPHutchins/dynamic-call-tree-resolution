@@ -1,7 +1,8 @@
 # Copyright (c) 2026 JP Hutchins
 # SPDX-License-Identifier: MIT
 
-"""Descriptor records from the alias dumps a build's own GCC wrote, as the plugin writes them (#205)."""
+"""Descriptor records from the alias dumps a build's own GCC wrote, as the plugin writes them (#205),
+and what every store writes (#341)."""
 
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ import pytest
 from salix import Struct
 
 from dynamic_call_tree_resolution.cli import descriptors
+from dynamic_call_tree_resolution.descriptors import load_descriptors, parse_descriptors
 from dynamic_call_tree_resolution.gcc_dumps import DUMP_FLAG, DumpDescriptors, dump_descriptors
 from dynamic_call_tree_resolution.gcc_dumps.dump import dump_functions
 from dynamic_call_tree_resolution.gcc_dumps.records import (
@@ -31,6 +33,7 @@ from dynamic_call_tree_resolution.gcc_dumps.records import (
 	unit_records,
 )
 from dynamic_call_tree_resolution.gcc_dumps.units import Record, UnitTypes, unit_types
+from dynamic_call_tree_resolution.gcc_dumps.writes import EVERY_STORE, unit_writes, write_line
 from dynamic_call_tree_resolution.model import (
 	EmbeddedStructMember,
 	FunctionPointerMember,
@@ -87,6 +90,47 @@ _PLUGIN_RECORDS: Final = tuple(
 	)
 )
 """What the descriptors plugin, on Arm GNU 14.3.1, writes for gcc_dumps.c at -O2."""
+_WRITES_UNIT: Final = "CMakeFiles/app.dir/gcc_dump_writes.c"
+_WRITES_SOURCE: Final = "tests/fixtures/gcc_dump_writes.c"
+_WRITE_RECORDS: Final = tuple(
+	"\t".join((kind, _WRITES_UNIT, function, _WRITES_SOURCE, *rest))
+	for kind, function, *rest in (
+		line.split("\t")
+		for line in (
+			"pass\tassembly\t102\t2\t<asm>\t0\trecord\tstruct dev",
+			"pass\tfills\t75\t2\tmemcpy\t0\tvariable\tconfig",
+			"pass\tfills\t75\t2\tmemcpy\t1\tnone",
+			"pass\tfills\t76\t2\tmemset\t0\trecord\tstruct dev",
+			"pass\thanded\t87\t2\tsink\t0\trecord\tstruct dev",
+			"pass\thanded\t87\t2\tsink\t1\tvariable\tcounter",
+			"pass\thanded\t88\t2\t<indirect>\t0\trecord\tstruct dev",
+			"pass\tlocal_handed\t107\t2\ttake_pair\t0\trecord\tstruct pair",
+			"write\tanonymous_store\t50\t10\tfield\tstruct node\tnext",
+			"write\tassembly\t101\t2\tfield\tstruct dev\tcount",
+			"write\tatomics\t81\t2\tfield\tstruct dev\tcount",
+			"write\tatomics\t82\t2\tvariable\tword",
+			"write\tatomics\t83\t10\tvariable\tcounter",
+			"write\telement_stores\t66\t11\tvariable\ttable",
+			"write\telement_stores\t67\t13\tfield\tstruct dev\tregs",
+			"write\tfield_store\t36\t11\tfield\tstruct dev\tcount",
+			"write\tfills\t75\t2\tvariable\tconfig",
+			"write\tfills\t76\t2\trecord\tstruct dev",
+			"write\tlocal_handed\t106\t14\tfield\tstruct pair\ta",
+			"write\tlocal_handed\t106\t14\tfield\tstruct pair\tb",
+			"write\tmake_pair\t97\t9\tfield\tstruct pair\ta",
+			"write\tmake_pair\t97\t9\tfield\tstruct pair\tb",
+			"write\toffset_store\t62\t39\tfield\tstruct dev\tflags",
+			"write\tout_parameter\t58\t7\tnone",
+			"write\tpointer_to_pointer\t71\t6\tnone",
+			"write\trecord_copy\t54\t5\trecord\tstruct dev",
+			"write\tresult_store\t92\t11\tfield\tstruct dev\tcount",
+			"write\tstatic_store\t45\t8\tvariable\tcalls.0",
+			"write\tvariable_store\t40\t10\tvariable\tcounter",
+		)
+	)
+)
+"""What every store of gcc_dump_writes.c at -O2 writes, checked by hand against its source: no plugin
+writes these."""
 
 
 class _Compile(Struct):
@@ -137,8 +181,29 @@ def _dumped(directory: Path, *sources: Path) -> Path:
 
 
 def test_a_builds_dumps_give_the_records_the_plugin_writes(tmp_path: Path) -> None:
-	assert dump_descriptors(_dumped(tmp_path / "build"), REPOSITORY_ROOT) == DumpDescriptors(
-		lines=_PLUGIN_RECORDS, gaps=(), units=1, dumps=1
+	described = dump_descriptors(_dumped(tmp_path / "build"), REPOSITORY_ROOT)
+	assert (described.lines, described.gaps, described.units, described.dumps) == (
+		_PLUGIN_RECORDS,
+		(),
+		1,
+		1,
+	)
+
+
+def test_every_store_of_a_build_is_recorded_by_what_it_writes(tmp_path: Path) -> None:
+	assert dump_descriptors(
+		_dumped(tmp_path / "build", FIXTURES / "gcc_dump_writes.c"), REPOSITORY_ROOT
+	).writes == (EVERY_STORE, *_WRITE_RECORDS)
+
+
+def test_only_a_file_that_marks_it_records_every_store() -> None:
+	unmarked = parse_descriptors("".join(f"{line}\n" for line in _PLUGIN_RECORDS))
+	marked = parse_descriptors("".join(f"{line}\n" for line in (EVERY_STORE, *_WRITE_RECORDS)))
+	assert (unmarked.every_store, marked.every_store, len(marked.writes), len(marked.passes)) == (
+		False,
+		True,
+		21,
+		8,
 	)
 
 
@@ -261,15 +326,20 @@ def test_an_object_with_rela_relocations_names_its_types_through_them(tmp_path: 
 def test_the_command_writes_where_narrow_by_field_reads(
 	tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-	build = _dumped(tmp_path / "build")
+	build = _dumped(tmp_path / "build", FIXTURES / "gcc_dump_writes.c")
 	(build / "zephyr").mkdir()
 	descriptors(build, root=REPOSITORY_ROOT)
+	written = load_descriptors(build / "zephyr" / "descriptors.txt")
 	assert (
-		(build / "zephyr" / "descriptors.txt").read_text().splitlines(),
+		len(written.sites),
+		len(written.writes) + len(written.passes),
+		written.every_store,
 		capsys.readouterr().err,
 	) == (
-		list(_PLUGIN_RECORDS),
-		f"{len(_PLUGIN_RECORDS)} records from the alias dumps of 1 of 1 C units\n",
+		1,
+		len(_WRITE_RECORDS),
+		True,
+		f"1 records and {len(_WRITE_RECORDS)} writes from the alias dumps of 1 of 1 C units\n",
 	)
 
 
@@ -290,6 +360,7 @@ def test_the_command_reports_each_store_it_cannot_place_and_writes_nothing(
 def _one_gap(_build_directory: Path, _root: Path) -> DumpDescriptors:
 	return DumpDescriptors(
 		lines=(),
+		writes=(),
 		gaps=(
 			Gap(
 				at=Located(unit="u", function="f", file="a.c", line=3, column=4),
@@ -509,6 +580,169 @@ def test_a_record_names_only_what_the_units_types_place(
 		),
 		tuple(record.statement for record in records if isinstance(record, Gap)),
 	) == (lines, gaps)
+
+
+_DEVICE_LAYOUT: Final = StructureLayout(
+	members=(),
+	size=8,
+	extents={
+		"count": MemberExtent(offset=0, size=4, layout=None),
+		"tag": MemberExtent(offset=4, size=2, layout=None),
+		"flags": MemberExtent(offset=6, size=2, layout=None),
+	},
+)
+_WRITE_TYPES: Final = UnitTypes(
+	layouts={
+		"struct dev": _DEVICE_LAYOUT,
+		"struct outer": StructureLayout(
+			members=(),
+			size=8,
+			extents={
+				"head": MemberExtent(offset=0, size=4, layout=None),
+				"inner": MemberExtent(offset=4, size=4, layout="struct in"),
+			},
+		),
+		"struct in": StructureLayout(
+			members=(), size=4, extents={"lo": MemberExtent(offset=0, size=2, layout=None)}
+		),
+		"struct empty": StructureLayout(members=(), size=0),
+	},
+	typedefs={},
+	variables={"counter": "int"},
+	functions=frozenset({"g"}),
+	statics={},
+)
+
+
+@pytest.mark.parametrize(
+	("dump", "writes"),
+	[
+		pytest.param(
+			_function("struct dev * p", "", "MEM[(short int *)p_1(D) + 4294967292B] = 0"),
+			("write\tu\tf\ta.c\t0\t1\tfield\tstruct dev\ttag",),
+			id="a negative offset, in the element before",
+		),
+		pytest.param(
+			_function(
+				"struct outer * o",
+				"",
+				"MEM[(short int *)o_1(D) + 4B] = 0",
+				"MEM[(short int *)o_1(D) + 6B] = 0",
+				"MEM[(int *)o_1(D) + 12B] = 0",
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\tfield\tstruct in\tlo",
+				"write\tu\tf\ta.c\t1\t1\tfield\tstruct outer\tinner",
+				"write\tu\tf\ta.c\t2\t1\tfield\tstruct in\tlo",
+			),
+			id="an offset into a nested record, at a member or between them",
+		),
+		pytest.param(
+			_function(
+				"struct dev * d, struct unknown * u, struct empty * e, int * x",
+				"",
+				"MEM[(char *)d_1(D) + 3B] = 0",
+				"MEM[(int *)u_2(D) + 4B] = 0",
+				"MEM[(int *)e_3(D)] = 0",
+				"MEM[(int *)x_4(D)] = 0",
+				"MEM[(int *)&counter + 4B] = 0",
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\tfield\tstruct dev\tcount",
+				"write\tu\tf\ta.c\t1\t1\trecord\tstruct unknown",
+				"write\tu\tf\ta.c\t2\t1\trecord\tstruct empty",
+				"write\tu\tf\ta.c\t3\t1\tnone",
+				"write\tu\tf\ta.c\t4\t1\tvariable\tcounter",
+			),
+			id="offsets a layout can't place, a pointer to no record, and a named object's address",
+		),
+		pytest.param(
+			_function(
+				"struct dev[2] * rows, int[4] * cells",
+				"  int _3;",
+				"(*rows_1(D))[_3] = 0",
+				"(*cells_2(D))[_3] = 0",
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\trecord\tstruct dev",
+				"write\tu\tf\ta.c\t1\t1\tnone",
+			),
+			id="an element through a pointer to an array",
+		),
+		pytest.param(
+			_function(
+				"int n, struct dev s",
+				"  struct dev * p;\n  int _3;",
+				"n = 1",
+				"s = {}",
+				"p = _3",
+				"undeclared->count = 0",
+				"REALPART_EXPR <c> = 0",
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\tnone",
+				"write\tu\tf\ta.c\t1\t1\trecord\tstruct dev",
+				"write\tu\tf\ta.c\t2\t1\tnone",
+				"write\tu\tf\ta.c\t3\t1\tvariable\tundeclared",
+				"write\tu\tf\ta.c\t4\t1\tunknown",
+			),
+			id="parameters, a local pointer, a member of nothing declared, a complex part",
+		),
+		pytest.param(
+			_function(
+				"int * q",
+				"  int * _2;\n  int _3;\n  int _4;",
+				"_2 = &counter",
+				"__atomic_store_4 (_2, 1, 5)",
+				"__sync_synchronize ()",
+				"_3 = __atomic_load_4 (&counter, 5)",
+				"_4 = __atomic_compare_exchange_4 (&counter, q_1(D), 1, 0, 5, 5)",
+				"counter = g ()",
+				"if (_3 != 0)",
+				"undeclared_5 = {CLOBBER(eos)}",
+				"sink (q_1(D), _3, unknown_9)",
+				'__builtin_puts (&"exit"[0])',
+			),
+			(
+				"write\tu\tf\ta.c\t1\t1\tvariable\tcounter",
+				"write\tu\tf\ta.c\t4\t1\tvariable\tcounter",
+				"write\tu\tf\ta.c\t4\t1\tnone",
+				"write\tu\tf\ta.c\t5\t1\tvariable\tcounter",
+				"pass\tu\tf\ta.c\t8\t1\tsink\t0\tnone",
+				"write\tu\tf\ta.c\t9\t1\tnone",
+			),
+			id="builtins, a call's result, a condition, undumped code and a string",
+		),
+		pytest.param(
+			_function(
+				"struct dev * d",
+				"",
+				'__asm__ goto("b %l0" :  :  :  : lab)',
+				'__asm__ __volatile__("x" :  : weird)',
+				'__asm__ __volatile__("str %1, %0" : "=m" counter : "r" d_1(D))',
+				'__asm__ __volatile__("nop")',
+				'__asm__ __volatile__("mrs %0, basepri" : "=r" counter)',
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\tunknown",
+				"write\tu\tf\ta.c\t1\t1\tunknown",
+				"write\tu\tf\ta.c\t2\t1\tvariable\tcounter",
+				"pass\tu\tf\ta.c\t2\t1\t<asm>\t1\trecord\tstruct dev",
+			),
+			id="inline assembly whose operands can't be read, and one that can",
+		),
+	],
+)
+def test_a_write_names_what_its_store_writes(dump: str, writes: tuple[str, ...]) -> None:
+	assert (
+		tuple(
+			write_line(record)
+			for record in unit_writes(
+				"u", dump_functions(dump), _WRITE_TYPES, REPOSITORY_ROOT, frozenset({"f", "g"})
+			)
+		)
+		== writes
+	)
 
 
 @pytest.mark.image

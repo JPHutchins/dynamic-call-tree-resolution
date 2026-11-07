@@ -94,7 +94,7 @@ def unit_records(
 		for function in functions
 		for scope in (function_scope(types, function),)
 		for statement in function.statements
-		for record in _records(scope, _located(unit, function, statement, root), statement.body)
+		for record in _records(scope, located(unit, function, statement, root), statement.body)
 	)
 
 
@@ -102,12 +102,12 @@ def record_line(record: SiteRecord | StoreRecord) -> str:
 	"""The record as the plugin's replay writes it."""
 	match record:
 		case SiteRecord(at=at, callee=callee):
-			return "\t".join(("site", *_location_fields(at), *descriptor_fields(callee)))
+			return "\t".join(("site", *location_fields(at), *descriptor_fields(callee)))
 		case StoreRecord(at=at, place=place, value=value):
 			return "\t".join(
 				(
 					"store",
-					*_location_fields(at),
+					*location_fields(at),
 					*descriptor_fields(place),
 					*descriptor_fields(value),
 				)
@@ -116,11 +116,11 @@ def record_line(record: SiteRecord | StoreRecord) -> str:
 			assert_never(unreachable)
 
 
-def _location_fields(at: Located) -> tuple[str, ...]:
+def location_fields(at: Located) -> tuple[str, ...]:
 	return (at.unit, at.function, at.file, str(at.line), str(at.column))
 
 
-def _located(unit: str, function: DumpFunction, statement: Statement, root: Path) -> Located:
+def located(unit: str, function: DumpFunction, statement: Statement, root: Path) -> Located:
 	path = os.path.normpath(statement.file)
 	return Located(
 		unit=unit,
