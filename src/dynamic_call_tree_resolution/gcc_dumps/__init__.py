@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.gcc_dumps.records import (
 	record_line,
 	unit_records,
 )
+from dynamic_call_tree_resolution.gcc_dumps.taken import taken_line, unit_taken
 from dynamic_call_tree_resolution.gcc_dumps.units import DUMP_FLAG as DUMP_FLAG
 from dynamic_call_tree_resolution.gcc_dumps.units import (
 	DumpedUnit,
@@ -24,9 +25,12 @@ from dynamic_call_tree_resolution.gcc_dumps.units import (
 	dumped_units,
 	unit_types,
 )
+from dynamic_call_tree_resolution.gcc_dumps.writes import EVERY_STORE, unit_writes, write_line
 
 if TYPE_CHECKING:
 	from pathlib import Path
+
+	from dynamic_call_tree_resolution.gcc_dumps.units import UnitTypes
 
 
 class DumpDescriptors(Struct):
@@ -34,6 +38,10 @@ class DumpDescriptors(Struct):
 
 	lines: tuple[str, ...]
 	"""Sorted, as the plugin's replay writes ``descriptors.txt``."""
+	writes: tuple[str, ...]
+	"""What every store writes, what calls hand code without a dump, and the scalar fields and
+	variables whose address is taken, each sorted, then the line that marks the file as recording
+	every store: a file cut short lacks it."""
 	gaps: tuple[Gap, ...]
 	units: int
 	"""The build's C units."""
@@ -48,6 +56,13 @@ class _ParsedUnit(Struct):
 	functions: tuple[DumpFunction, ...]
 	defined: tuple[frozenset[str], ...]
 	"""Each function as the names of its aliases; none for a unit the build never compiled."""
+
+
+class _TypedUnit(Struct):
+	"""A dumped unit, with the types its object describes."""
+
+	parsed: _ParsedUnit
+	types: UnitTypes
 
 
 def dump_descriptors(build_directory: Path, root: Path) -> DumpDescriptors:
@@ -65,23 +80,50 @@ def dump_descriptors(build_directory: Path, root: Path) -> DumpDescriptors:
 		for unit in dumped_units(build_directory)
 	)
 	_check_functions(units)
-	records = tuple(
-		record
+	dumped = frozenset(
+		name
+		for unit in units
+		for symbols in (frozenset(function.symbol for function in unit.functions),)
+		for aliases in (*unit.defined, symbols)
+		if not aliases.isdisjoint(symbols)
+		for name in aliases
+	)
+	typed = tuple(
+		_TypedUnit(parsed=unit, types=unit_types(unit.dumped.object))
 		for unit in units
 		if unit.dumped.dump is not None
-		for record in unit_records(
-			unit.dumped.unit, unit.functions, unit_types(unit.dumped.object), root
-		)
+	)
+	records = tuple(
+		record
+		for unit in typed
+		for record in unit_records(unit.parsed.dumped.unit, unit.parsed.functions, unit.types, root)
 	)
 	return DumpDescriptors(
 		units=len(units),
-		dumps=sum(unit.dumped.dump is not None for unit in units),
+		dumps=len(typed),
 		lines=tuple(
 			sorted(
 				record_line(record)
 				for record in records
 				if isinstance(record, SiteRecord | StoreRecord)
 			)
+		),
+		writes=(
+			*sorted(
+				write_line(record)
+				for unit in typed
+				for record in unit_writes(
+					unit.parsed.dumped.unit, unit.parsed.functions, unit.types, root, dumped
+				)
+			),
+			*sorted(
+				{
+					taken_line(target)
+					for unit in typed
+					for target in unit_taken(unit.parsed.functions, unit.types)
+				}
+			),
+			EVERY_STORE,
 		),
 		gaps=tuple(record for record in records if isinstance(record, Gap)),
 	)
