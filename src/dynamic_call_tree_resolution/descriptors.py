@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from itertools import groupby
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
@@ -210,6 +210,42 @@ def _record(fields: list[str]) -> Site | Store:
 
 def _location(file: str, line: str, column: str) -> SourceLocation:
 	return SourceLocation(file=PurePosixPath(file).name, line=int(line), column=int(column))
+
+
+def descriptor_fields(descriptor: Descriptor) -> tuple[str, ...]:
+	"""A descriptor as the plugin's records write it, which the parser reads back.
+
+	>>> all(
+	...     _descriptor(list(descriptor_fields(descriptor))) == descriptor
+	...     for descriptor in (
+	...         Field(record="struct ops", member="run"),
+	...         Variable(symbol="hook"),
+	...         Parameter(name="fn"),
+	...         Element(array="handlers"),
+	...         Function(symbol="char_out"),
+	...         Null(),
+	...         Other(type="void (*<T1>) (void)"),
+	...     )
+	... )
+	True
+	"""
+	match descriptor:
+		case Field(record=record, member=member):
+			return ("field", record, member)
+		case Variable(symbol=symbol):
+			return ("variable", symbol)
+		case Parameter(name=name):
+			return ("parameter", name)
+		case Element(array=array):
+			return ("array", array)
+		case Function(symbol=symbol):
+			return ("function", symbol)
+		case Null():
+			return ("null", "0")
+		case Other(type=type_):
+			return ("other", type_)
+		case _ as unreachable:
+			assert_never(unreachable)
 
 
 def _descriptor(fields: list[str]) -> Descriptor:
