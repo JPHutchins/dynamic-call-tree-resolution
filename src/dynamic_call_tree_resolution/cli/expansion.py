@@ -3,6 +3,7 @@
 
 """Expanding a build's indirect calls from its image."""
 
+from functools import partial
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
@@ -76,6 +77,7 @@ from dynamic_call_tree_resolution.vsa.vectors import (
 )
 
 if TYPE_CHECKING:
+	from collections.abc import Callable
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.call_sites import ProgramResolution
@@ -135,13 +137,13 @@ def expand_from_elf(
 	)
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
 	model = rtos_model(image.program, rtos, build_kconfig(image.elf))
+	unwritten = _named(image.program, "--assume-unwritten", assume_unwritten)
+	only_tracked = _named(image.program, "--assume-only-tracked-writes", assume_only_tracked_writes)
 	resolution = resolve(
 		image.program,
 		model,
-		assumed_unwritten=named_spans(image.program, "--assume-unwritten", assume_unwritten),
-		only_tracked_writes=named_spans(
-			image.program, "--assume-only-tracked-writes", assume_only_tracked_writes
-		),
+		assumed_unwritten=tuple(named.span for named in unwritten),
+		only_tracked_writes=tuple(named.span for named in only_tracked),
 		upward_frame_writes=_upward_frame_writes(image.program, assume_upward_frame_writes),
 	)
 	changed = (
@@ -252,17 +254,22 @@ def expand_from_elf(
 		membership=artifacts.membership,
 		dropped=artifacts.dropped,
 		phantom_libcalls=artifacts.phantom_libcalls,
-		assumed_unwritten=_assumed_unwritten(image, resolution, assume_unwritten, changed),
-		assumed_only_tracked_writes=_assumed_only_tracked_writes(
-			image, resolution, assume_only_tracked_writes, changed
-		),
+		assumed_unwritten=_assumed_unwritten(image, resolution, unwritten, changed),
+		assumed_only_tracked_writes=_assumed_only_tracked_writes(resolution, only_tracked, changed),
 		assumed_upward_frame_writes=changed if assume_upward_frame_writes else NO_ASSUMED_CALLERS,
 		handlers=_handler_names(image, model.handler_stack),
 	)
 
 
-def named_spans(program: Program, flag: str, names: tuple[str, ...]) -> tuple[Span, ...]:
-	return tuple(named_span(program, flag, name) for name in names)
+class _NamedSpan(Struct):
+	"""A name an assumption flag was given, and the bytes it covers."""
+
+	name: str
+	span: Span
+
+
+def _named(program: Program, flag: str, names: tuple[str, ...]) -> tuple[_NamedSpan, ...]:
+	return tuple(_NamedSpan(name=name, span=named_span(program, flag, name)) for name in names)
 
 
 def named_span(program: Program, flag: str, name: str) -> Span:
@@ -380,40 +387,44 @@ def _assumed_callers(
 
 
 def _assumed_unwritten(
-	image: Image, resolution: ProgramResolution, names: tuple[str, ...], changed: AssumedCallers
+	image: Image,
+	resolution: ProgramResolution,
+	unwritten: tuple[_NamedSpan, ...],
+	changed: AssumedCallers,
 ) -> AssumedUnwritten:
-	if not names:
+	if not unwritten:
 		return AssumedUnwritten(objects=(), contradicted=(), changed=NO_ASSUMED_CALLERS)
 	return AssumedUnwritten(
-		objects=names,
-		contradicted=tuple(
-			name
-			for name in names
-			for span in (named_span(image.program, "--assume-unwritten", name),)
-			if any(
-				span.start - image.program.pointer_size < key < span.end
-				for key in resolution.written
-			)
+		objects=tuple(named.name for named in unwritten),
+		contradicted=_hit_names(
+			unwritten,
+			partial(_tracked_store_writes, resolution.written, image.program.pointer_size),
 		),
 		changed=changed,
 	)
 
 
 def _assumed_only_tracked_writes(
-	image: Image, resolution: ProgramResolution, names: tuple[str, ...], changed: AssumedCallers
+	resolution: ProgramResolution, only_tracked: tuple[_NamedSpan, ...], changed: AssumedCallers
 ) -> AssumedOnlyTrackedWrites:
 	return AssumedOnlyTrackedWrites(
-		derived_writes=tuple(
-			name
-			for name in names
-			for span in (named_span(image.program, "--assume-only-tracked-writes", name),)
-			if any(
-				span.start < clobbered.end and clobbered.start < span.end
-				for clobbered in resolution.clobbered
-			)
+		derived_writes=_hit_names(
+			only_tracked, partial(_derived_store_writes, resolution.clobbered)
 		),
-		changed=changed if names else NO_ASSUMED_CALLERS,
+		changed=changed if only_tracked else NO_ASSUMED_CALLERS,
 	)
+
+
+def _hit_names(named: tuple[_NamedSpan, ...], hit: Callable[[Span], bool]) -> tuple[str, ...]:
+	return tuple(sorted({entry.name for entry in named if hit(entry.span)}))
+
+
+def _tracked_store_writes(written: frozenset[Address], pointer_size: int, span: Span) -> bool:
+	return any(span.start - pointer_size < key < span.end for key in written)
+
+
+def _derived_store_writes(clobbered: frozenset[Span], span: Span) -> bool:
+	return any(other.overlaps(span) for other in clobbered)
 
 
 def _changed_callers(

@@ -66,8 +66,7 @@ class ProgramResolution(Struct):
 	written: frozenset[Address] = frozenset()
 	"""Where in the image a tracked store writes a word."""
 	clobbered: frozenset[Span] = frozenset()
-	"""The objects only the code that names them can reach, which a store the analysis can't
-	place, derived from their own address, may write."""
+	"""The objects the escape analysis tracks that an unknown store may write anyway."""
 
 
 class CallerCandidates(Struct):
