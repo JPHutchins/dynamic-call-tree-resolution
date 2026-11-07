@@ -129,10 +129,10 @@ def _array_dispatch(program: Program, spec: _ArrayDispatch) -> Dispatch | None:
 
 def _member_offset(program: Program, type_name: str, member: tuple[str, ...]) -> int | None:
 	layout = program.layouts.get(type_name)
-	if layout is None or member[0] not in layout.offsets:
+	if layout is None or member[0] not in layout.extents:
 		return None
 	if len(member) == 1:
-		return layout.offsets[member[0]]
+		return layout.extents[member[0]].offset
 	nested = next(
 		(
 			embedded.type_name
@@ -142,4 +142,4 @@ def _member_offset(program: Program, type_name: str, member: tuple[str, ...]) ->
 		None,
 	)
 	inner = _member_offset(program, nested, member[1:]) if nested is not None else None
-	return layout.offsets[member[0]] + inner if inner is not None else None
+	return layout.extents[member[0]].offset + inner if inner is not None else None

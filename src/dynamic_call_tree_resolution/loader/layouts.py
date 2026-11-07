@@ -28,6 +28,7 @@ from dynamic_call_tree_resolution.model import (
 	EmbeddedStructMember,
 	FunctionPointerMember,
 	FunctionSignature,
+	MemberExtent,
 	SkippedMember,
 	SkipReason,
 	StructPointerMember,
@@ -312,7 +313,7 @@ def structure_layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 			layout = StructureLayout(
 				members=tuple(_layout_members(aggregate)),
 				size=_byte_size(aggregate) or 0,
-				offsets=_member_offsets(aggregate),
+				extents=_member_extents(aggregate),
 			)
 			existing = layouts.get(key)
 			if existing is None or len(layout.members) > len(existing.members):
@@ -347,14 +348,28 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 			yield member
 
 
-def _member_offsets(struct_die: DIE) -> dict[str, int]:
+def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:
 	return {
-		name: offset
+		name: MemberExtent(
+			offset=offset,
+			size=_byte_size(strip_qualifiers(die_type(child))),
+			layout=_own_layout(die_type(child)),
+		)
 		for child in struct_die.iter_children()
 		if child.tag == "DW_TAG_member"
 		and (name := _member_name(child)) is not None
 		and (offset := _member_offset(child)) is not None
 	}
+
+
+def _own_layout(type_die: DIE | None) -> str | None:
+	unqualified = strip_qualifiers(type_die)
+	return (
+		layout_name(type_die)
+		if unqualified is not None
+		and unqualified.tag in ("DW_TAG_structure_type", "DW_TAG_union_type")
+		else None
+	)
 
 
 def _member_name(member_die: DIE) -> str | None:

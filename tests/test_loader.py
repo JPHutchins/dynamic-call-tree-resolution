@@ -43,6 +43,7 @@ from dynamic_call_tree_resolution.model import (
 	ArmCore,
 	ArmProfile,
 	InstructionSet,
+	MemberExtent,
 	aligned,
 	render_path,
 )
@@ -136,11 +137,11 @@ def test_a_dwarf_2_image_places_its_struct_members_as_dwarf_4_does(
 	fixture_elfs: dict[str, Path],
 ) -> None:
 	assert {
-		name: layout.offsets
+		name: {member: extent.offset for member, extent in layout.extents.items()}
 		for name, layout in load(fixture_elfs["dwarf2"]).layouts.items()
 		if "<anonymous>@" not in name
 	} == {
-		name: layout.offsets
+		name: {member: extent.offset for member, extent in layout.extents.items()}
 		for name, layout in load(fixture_elfs["dwarf4"]).layouts.items()
 		if "<anonymous>@" not in name
 	}
@@ -231,6 +232,18 @@ def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
 		),
 	)
 	assert program.layouts["struct bitpacked"].members == ()
+	assert program.layouts["struct device"].extents == {
+		"api": MemberExtent(offset=0, size=8, layout=None),
+		"context": MemberExtent(offset=8, size=8, layout=None),
+		"ops": MemberExtent(offset=16, size=8, layout="struct device_ops"),
+	}
+	assert program.layouts["struct embedded_holder"].extents == {
+		"inner": MemberExtent(offset=0, size=16, layout=inner_type)
+	}
+	assert program.layouts["union un"].extents == {
+		"a": MemberExtent(offset=0, size=4, layout=None),
+		"b": MemberExtent(offset=0, size=4, layout=None),
+	}
 
 
 def test_load_declaration_types_attach_to_symtab_objects(fixture_elfs: dict[str, Path]) -> None:

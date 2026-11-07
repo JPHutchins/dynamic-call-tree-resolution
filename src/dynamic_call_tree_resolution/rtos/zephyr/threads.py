@@ -71,7 +71,14 @@ def thread_of(
 				entry_slot=Address(record.address + offsets[_ENTRY]),
 				arguments=(Address(p1), Address(p2), Address(p3)),
 				stack_size=declared(
-					options, _word(program, record, layout.offsets.get(_STACK_SIZE))
+					options,
+					_word(
+						program,
+						record,
+						extent.offset
+						if (extent := layout.extents.get(_STACK_SIZE)) is not None
+						else None,
+					),
 				),
 			)
 		case _:
