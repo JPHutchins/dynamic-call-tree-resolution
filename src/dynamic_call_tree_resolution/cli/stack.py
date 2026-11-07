@@ -237,7 +237,7 @@ def stack(
 		assumed_unwritten=expansion.assumed_unwritten.changed.callers
 		if expansion is not None
 		else frozenset(),
-		assumed_only_tracked_writes=expansion.assumed_only_tracked_writes.callers
+		assumed_only_tracked_writes=expansion.assumed_only_tracked_writes.changed.callers
 		if expansion is not None
 		else frozenset(),
 		assumed_upward_frame_writes=expansion.assumed_upward_frame_writes.callers
@@ -269,6 +269,7 @@ def stack(
 			f"{f' | assumed unwritten: {", ".join(sorted(assume_unwritten))}' if assume_unwritten else ''}"
 			f"{f' | yet tracked stores write: {", ".join(expansion.assumed_unwritten.contradicted)}' if expansion.assumed_unwritten.contradicted else ''}"
 			f"{f' | assumed only tracked writes: {", ".join(sorted(assume_only_tracked_writes))}' if assume_only_tracked_writes else ''}"
+			f"{f' | yet stores derived from their objects write: {", ".join(expansion.assumed_only_tracked_writes.derived_writes)}' if expansion.assumed_only_tracked_writes.derived_writes else ''}"
 			f"{' | assumed upward frame writes' if assume_upward_frame_writes else ''}"
 			f"{f' | assumed frames: {", ".join(sorted(assume_frame))}' if assume_frame else ''}"
 			f"{f' | rtos: {expansion.rtos.name}' if expansion.rtos.evidence else ''}"
@@ -339,7 +340,7 @@ def own_stack_graphs(
 				assumed_no_recursion=assumed_no_recursion,
 				assumed_unwritten=_in_thread(expansion.assumed_unwritten.changed, thread),
 				assumed_only_tracked_writes=_in_thread(
-					expansion.assumed_only_tracked_writes, thread
+					expansion.assumed_only_tracked_writes.changed, thread
 				),
 				assumed_upward_frame_writes=_in_thread(
 					expansion.assumed_upward_frame_writes, thread

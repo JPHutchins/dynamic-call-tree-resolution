@@ -88,7 +88,7 @@ class Expansion(Struct):
 	phantom_libcalls: frozenset[str]
 	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
 	assumed_unwritten: AssumedUnwritten
-	assumed_only_tracked_writes: AssumedCallers
+	assumed_only_tracked_writes: AssumedOnlyTrackedWrites
 	assumed_upward_frame_writes: AssumedCallers
 	handlers: HandlerNames | None = None
 
@@ -102,6 +102,14 @@ class AssumedCallers(Struct):
 
 
 NO_ASSUMED_CALLERS: Final = AssumedCallers(callers=frozenset(), thread_callers={})
+
+
+class AssumedOnlyTrackedWrites(Struct):
+	"""What ``--assume-only-tracked-writes`` changed."""
+
+	derived_writes: tuple[str, ...]
+	"""The names a store derived from their object's own address writes after all."""
+	changed: AssumedCallers
 
 
 class AssumedUnwritten(Struct):

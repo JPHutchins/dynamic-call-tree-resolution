@@ -88,7 +88,7 @@ def summary(
 			entry_edges=expansion.in_image_edges,
 			assumed_no_recursion=frozenset(assume_no_recursion),
 			assumed_unwritten=expansion.assumed_unwritten.changed.callers,
-			assumed_only_tracked_writes=expansion.assumed_only_tracked_writes.callers,
+			assumed_only_tracked_writes=expansion.assumed_only_tracked_writes.changed.callers,
 			assumed_upward_frame_writes=expansion.assumed_upward_frame_writes.callers,
 			hardware_roots=expansion.hardware_roots,
 		),

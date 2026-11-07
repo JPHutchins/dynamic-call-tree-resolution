@@ -28,3 +28,16 @@ class Span(Struct, order=True):
 
 	def __contains__(self, address: int) -> bool:
 		return self.start <= address < self.end
+
+	def overlaps(self, other: Span) -> bool:
+		"""Whether an address lies in both.
+
+		>>> from dynamic_call_tree_resolution.model import Address
+		>>> whole = Span(start=Address(0x10), end=Address(0x20))
+		>>> [
+		...     whole.overlaps(Span(start=Address(start), end=Address(end)))
+		...     for start, end in ((0x14, 0x18), (0x08, 0x11), (0x20, 0x24), (0x00, 0x10))
+		... ]
+		[True, True, False, False]
+		"""
+		return self.start < other.end and other.start < self.end
