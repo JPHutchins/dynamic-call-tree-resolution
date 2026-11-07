@@ -30,14 +30,14 @@ from dynamic_call_tree_resolution.gcc_dumps.records import (
 	record_line,
 	unit_records,
 )
-from dynamic_call_tree_resolution.gcc_dumps.units import Record, UnitTypes
+from dynamic_call_tree_resolution.gcc_dumps.units import Record, UnitTypes, unit_types
 from dynamic_call_tree_resolution.model import (
 	EmbeddedStructMember,
 	FunctionPointerMember,
 	MemberExtent,
 	StructureLayout,
 )
-from tests.toolchains import FIXTURES, cortex_m3_unit
+from tests.toolchains import FIXTURES, cortex_m3_unit, host_cc
 
 REPOSITORY_ROOT: Final = FIXTURES.parent.parent
 _UNIT: Final = "CMakeFiles/app.dir/gcc_dumps.c"
@@ -234,6 +234,18 @@ def test_function_scope_statics_that_share_a_name_keep_it_without_gccs_number(
 		"variable\thook\tparameter\tnext",
 		"variable\thook\tparameter\tnext",
 	)
+
+
+def test_an_object_with_rela_relocations_names_its_types_through_them(tmp_path: Path) -> None:
+	subprocess.run(
+		host_cc("-c", "-O2", "-g", str(FIXTURES / "gcc_dumps.c"), "-o", str(tmp_path / "x.o")),
+		check=True,
+	)
+	types = unit_types(tmp_path / "x.o")
+	assert (
+		{"put_char", "install"} <= types.functions,
+		{"struct api", "struct driver"} <= types.layouts.keys(),
+	) == (True, True)
 
 
 def test_the_command_writes_where_narrow_by_field_reads(
