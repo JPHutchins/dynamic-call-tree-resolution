@@ -155,3 +155,7 @@ void static_record_store(void) {
 	local_api.run = put_char;
 	escape(&local_api);
 }
+
+int through_array_pointer(struct api(*apis)[3], int i, int x) {
+	return (*apis)[i].run(x);
+}

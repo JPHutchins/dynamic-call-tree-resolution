@@ -48,6 +48,8 @@ _MEMORY: Final = re.compile(r"^MEM(?: <.+?>)? ?\[\((.+?) \*\)(.+)\]$")
 _ARRAY_MEMORY: Final = re.compile(r"^MEM <(.+?)\[.*?\]> ?\[\(")
 _ELEMENT: Final = re.compile(r"^(.+)\[[^\[\]]+\]$")
 _MEMORY_PREFIX: Final = re.compile(r"^MEM(?: <.+>)? ?$")
+_DEREFERENCE: Final = re.compile(r"^\(\*(.+)\)$")
+_DECLARATOR_SUFFIX: Final = re.compile(r"(?:\s*(?:\*|\[[^\]]*\]))+$")
 _ANONYMOUS_MEMBER: Final = re.compile(r"^(.+?)(?:(->)|\.)(D\.\d+)$")
 _OPERATION: Final = re.compile(r" [-+*/%&|^<>=!]+ |^\(.+\) ")
 _QUALIFIER: Final = re.compile(r"\b(?:const|volatile|static)\b ?")
@@ -302,13 +304,14 @@ def _base_record(scope: _Scope, base: str, arrow: bool) -> Record | None:
 	"""The record of what a member is taken from."""
 	memory = _MEMORY.match(base)
 	element = _ELEMENT.match(base)
+	indexed = element is not None and _MEMORY_PREFIX.match(element.group(1)) is None
 	nested = _split_member(base)
 	if arrow or (memory is None and element is None and nested is None):
 		return _type_record(scope, _declared(scope, base))
+	if element is not None and indexed:
+		return _array_record(scope, element.group(1))
 	if memory is not None:
 		return _type_record(scope, memory.group(1))
-	if element is not None:
-		return _array_record(scope, element.group(1))
 	return _nested_record(scope, nested)
 
 
@@ -317,13 +320,14 @@ def _array_record(scope: _Scope, array: str) -> Record | None:
 	array_memory = _ARRAY_MEMORY.match(array)
 	member = _split_member(array)
 	element = _ELEMENT.match(array)
+	pointed = _DEREFERENCE.match(array)
 	if array_memory is not None:
 		return _type_record(scope, array_memory.group(1))
 	if member is not None:
 		return _element_record(scope, member)
 	if element is not None:
 		return _array_record(scope, element.group(1))
-	return _type_record(scope, _declared(scope, array))
+	return _type_record(scope, _declared(scope, pointed.group(1) if pointed is not None else array))
 
 
 def _element_record(scope: _Scope, array: _Member) -> Record | None:
@@ -383,7 +387,7 @@ def _type_record(scope: _Scope, type_text: str | None) -> Record | None:
 	"""The record a type names, through a pointer, an array or a typedef."""
 	if type_text is None:
 		return None
-	text = re.sub(r"(?:\s*\[[^\]]*\])+$", "", _QUALIFIER.sub("", type_text).strip()).rstrip(" *")
+	text = _DECLARATOR_SUFFIX.sub("", _QUALIFIER.sub("", type_text).strip())
 	bare = text.split(" ", 1)[1] if text.startswith(("struct ", "union ")) else text
 	return scope.types.typedefs.get(bare) or (
 		Record(name=text, key=text) if text.startswith(("struct ", "union ")) else None

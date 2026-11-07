@@ -50,6 +50,7 @@ _PLUGIN_RECORDS: Final = tuple(
 			"site\tthrough_address_taken\t143\t9\tother\tint (*<Txxxx>) (int)",
 			"site\tthrough_anonymous\t60\t9\tfield\tunion <anonymous>\tfirst",
 			"site\tthrough_array_member\t122\t9\tfield\tstruct api\trun",
+			"site\tthrough_array_pointer\t160\t10\tfield\tstruct api\trun",
 			"site\tthrough_cast\t90\t10\tother\tint (*<Txxxx>) (int)",
 			"site\tthrough_deref\t94\t10\tother\tint (*<Txxxx>) (int)",
 			"site\tthrough_element\t52\t9\tarray\ttable",
@@ -422,6 +423,18 @@ def _function(parameters: str, declarations: str, *statements: str) -> str:
 			("site\tu\tf\ta.c\t1\t1\tother\tint (*<Txxxx>) (int)",),
 			(),
 			id="a member of an element of a member that is no array of records",
+		),
+		pytest.param(
+			_ANONYMOUS_TYPES,
+			_function(
+				"int i",
+				"  int (*<T1>) (int) _2;\n  int _3;",
+				"_2 = MEM <outer_t[2]> [(void *)&o][i_4(D)].inner",
+				"_3 = _2 (0)",
+			),
+			("site\tu\tf\ta.c\t1\t1\tfield\tstruct outer\tinner",),
+			(),
+			id="an element of an array MEM is of the array's type, not the address's cast",
 		),
 		pytest.param(
 			_ANONYMOUS_TYPES,
