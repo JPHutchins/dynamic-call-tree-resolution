@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.image
 
-IMAGES: Final = ["hello", "sensor-threads", "sensor-two-impl", "synchronization"]
+IMAGES: Final = ["hello", "sensor-threads", "sensor-two-impl", "synchronization", "logger"]
 
 
 @pytest.fixture(scope="module")
