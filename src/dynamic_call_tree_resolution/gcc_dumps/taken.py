@@ -28,7 +28,7 @@ from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	record_layout,
 	type_record,
 )
-from dynamic_call_tree_resolution.gcc_dumps.writes import written
+from dynamic_call_tree_resolution.gcc_dumps.writes import pointed_member, written
 from dynamic_call_tree_resolution.model import Field
 
 if TYPE_CHECKING:
@@ -38,6 +38,8 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.gcc_dumps.units import UnitTypes
 
 _RETURN: Final = re.compile(r"^return (.+)$")
+_ARITHMETIC: Final = re.compile(r"^(\S+) \+ (\S+)$")
+_CAST: Final = re.compile(r"^\((?:[^()]|\([^()]*\))*\) ")
 _CONDITION: Final = re.compile(r"^if \(")
 _OPERAND: Final = re.compile(r"\"[^\"]*\" ([^,:)]*[^,:)\s])")
 _PHI_ARGUMENTS: Final = re.compile(r"PHI <(.*)>$")
@@ -56,10 +58,53 @@ def unit_taken(functions: tuple[DumpFunction, ...], types: UnitTypes) -> tuple[W
 		target
 		for function in functions
 		for scope in (function_scope(types, function),)
+		for target in (*_addressed(scope, function), *_interior(scope, function))
+	)
+
+
+def _addressed(scope: Scope, function: DumpFunction) -> tuple[WriteTarget, ...]:
+	return tuple(
+		target
 		for value in _values(function)
-		if value.startswith("&")
-		for target in (written(scope, value[1:]),)
-		if _scalar(scope, target, value[1:])
+		for address in (_CAST.sub("", value),)
+		if address.startswith("&")
+		for target in (written(scope, address[1:]),)
+		if _scalar(scope, target, address[1:])
+	)
+
+
+def _interior(scope: Scope, function: DumpFunction) -> tuple[WriteTarget, ...]:
+	"""What pointer arithmetic on a record pointer reaches, when its result points to no record.
+
+	A variable offset reaches every member of the record.
+	"""
+	return tuple(
+		target
+		for statement in function.statements
+		for assignment in (ASSIGNMENT.match(statement.body),)
+		if assignment is not None and not _points_to_record(scope, assignment.group(1))
+		for arithmetic in (_ARITHMETIC.match(assignment.group(2)),)
+		if arithmetic is not None
+		for target in (_reached(scope, arithmetic.group(1), arithmetic.group(2)),)
+		if target is not None
+	)
+
+
+def _reached(scope: Scope, pointer: str, offset: str) -> WriteTarget | None:
+	"""The member a constant byte offset from a pointer reaches, or every member for a variable one."""
+	return (
+		pointed_member(scope, pointer, int(offset), 1)
+		if offset.isdigit()
+		else pointed_member(scope, pointer, 0, None)
+	)
+
+
+def _points_to_record(scope: Scope, name: str) -> bool:
+	declared = declared_type(scope, name)
+	return (
+		declared is not None
+		and declared.count("*") == 1
+		and type_record(scope, declared) is not None
 	)
 
 

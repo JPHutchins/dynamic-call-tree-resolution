@@ -88,6 +88,7 @@ _NON_STORING: Final = frozenset(
 """The instructions an asm template may hold without storing: barriers, special registers, moves,
 hints and the supervisor call, whose handler is code without a dump."""
 _WRAP: Final = 1 << 32
+_ARRAY_POINTEE: Final = re.compile(r"^(.+)\[(\d+)\]\s*\*$")
 """GCC prints a negative ``MEM`` offset as its 32-bit unsigned wrap."""
 
 
@@ -322,12 +323,52 @@ def _memory(scope: Scope, access: _Access) -> WriteTarget:
 	"""
 	if access.base.startswith("&"):
 		return written(scope, access.base[1:])
-	record = _pointee(scope, access.base) or type_record(scope, access.cast)
+	width = _width(scope, access.type)
+	pointed = pointed_member(scope, access.base, access.offset, width)
+	cast = type_record(scope, access.cast)
 	accessed = type_record(scope, access.type)
+	if pointed is not None:
+		return pointed
+	if cast is not None:
+		return _at_offset(scope, cast, _Span(offset=_signed(access.offset), width=width))
+	return EveryMember(record=accessed.name) if accessed is not None else Unnamed()
+
+
+def pointed_member(
+	scope: Scope, pointer: str, offset: int, width: int | None
+) -> WriteTarget | None:
+	"""What the bytes at an offset from a pointer lie in, by the record it points to.
+
+	None when it points to no record. An offset into an array the pointer points to lands in one of
+	its elements.
+	"""
+	declared = declared_type(scope, pointer)
+	array = _ARRAY_POINTEE.match(declared.strip()) if declared is not None else None
+	record = _pointee(scope, pointer)
+	layout = record_layout(scope, record)
+	signed = _signed(offset)
 	if record is None:
-		return EveryMember(record=accessed.name) if accessed is not None else Unnamed()
-	offset = access.offset - _WRAP if access.offset >= _WRAP // 2 else access.offset
-	return _at_offset(scope, record, _Span(offset=offset, width=_width(scope, access.type)))
+		return None
+	return _at_offset(
+		scope,
+		record,
+		_Span(
+			offset=(
+				signed % layout.size
+				if array is not None
+				and layout is not None
+				and layout.size > 0
+				and 0 <= signed <= int(array.group(2)) * layout.size
+				else signed
+			),
+			width=width,
+		),
+	)
+
+
+def _signed(offset: int) -> int:
+	"""A ``MEM`` or pointer offset, which GCC prints as its 32-bit unsigned wrap when negative."""
+	return offset - _WRAP if offset >= _WRAP // 2 else offset
 
 
 def _at_offset(scope: Scope, record: Record, span: _Span) -> WriteTarget:

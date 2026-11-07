@@ -128,7 +128,8 @@ class Descriptors(Struct):
 	passes: tuple[Pass, ...] = ()
 	taken: tuple[WriteTarget, ...] = ()
 	"""The scalar fields and variables whose address the build takes: all a store that names no
-	field can reach."""
+	field can reach. A ``record`` is one pointer arithmetic with a variable offset reaches into, so
+	every member of it."""
 	every_store: bool = False
 	"""Whether the file records every store, as ``dctr descriptors`` writes it, and not only the
 	plugin's stores of a function pointer."""

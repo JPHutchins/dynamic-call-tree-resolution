@@ -106,3 +106,9 @@ void local_handed(int const a) {
 	struct pair local = {.a = a, .b = 2};
 	take_pair(&local);
 }
+
+extern void sink_int(int * p, int v);
+
+void interior(struct dev * const d, int const v) {
+	sink_int((int *) ((char *) d + 8), v);
+}

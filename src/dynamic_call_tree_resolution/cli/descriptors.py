@@ -41,7 +41,9 @@ def descriptors(
 	The file also records what every store writes: a field, a variable, every member of a record,
 	nothing named, or, where the types can't tell, anything. A builtin that writes through an
 	argument, such as memcpy or an atomic, counts as a store. Each pointer a call hands a function
-	no dump defines, an unknown callee, or inline assembly is recorded with the argument it is.
+	no dump defines, an unknown callee, or inline assembly is recorded with the argument it is. So is
+	each scalar field and variable whose address a function takes or computes, which alone a store
+	naming no field can reach. The file ends with a line marking it as recording every store.
 
 	Raises:
 		ValueError: for a store of a function into a record the unit's types do not describe.
@@ -61,8 +63,9 @@ def descriptors(
 	(output or build_directory / "zephyr" / "descriptors.txt").write_text(
 		"".join(f"{line}\n" for line in (*described.lines, *described.writes))
 	)
+	taken = sum(line.startswith("taken\t") for line in described.writes)
 	print(
-		f"{len(described.lines)} records and {len(described.writes) - 1} writes from the alias "
-		f"dumps of {described.dumps} of {described.units} C units",
+		f"{len(described.lines)} records, {len(described.writes) - 1 - taken} writes and {taken} "
+		f"addresses taken from the alias dumps of {described.dumps} of {described.units} C units",
 		file=sys.stderr,
 	)

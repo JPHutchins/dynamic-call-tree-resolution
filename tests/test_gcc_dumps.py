@@ -105,6 +105,7 @@ _WRITE_RECORDS: Final = tuple(
 			"pass\thanded\t87\t2\tsink\t0\trecord\tstruct dev",
 			"pass\thanded\t87\t2\tsink\t1\tvariable\tcounter",
 			"pass\thanded\t88\t2\t<indirect>\t0\trecord\tstruct dev",
+			"pass\tinterior\t113\t2\tsink_int\t0\tnone",
 			"pass\tlocal_handed\t107\t2\ttake_pair\t0\trecord\tstruct pair",
 			"write\tanonymous_store\t50\t10\tfield\tstruct node\tnext",
 			"write\tassembly\t101\t2\tfield\tstruct dev\tcount",
@@ -134,11 +135,12 @@ _WRITE_RECORDS: Final = tuple(
 writes these."""
 _TAKEN_RECORDS: Final = (
 	"taken\tfield\tstruct dev\tcount",
+	"taken\tfield\tstruct dev\tregs",
 	"taken\tvariable\tcounter",
 	"taken\tvariable\tword",
 )
-"""The scalar fields and variables gcc_dump_writes.c takes the address of: ``&config`` and ``&local``
-are records, and ``&expected`` is a local."""
+"""The scalar fields and variables gcc_dump_writes.c takes the address of, ``regs`` through pointer
+arithmetic: ``&config`` and ``&local`` are records, and ``&expected`` is a local."""
 
 
 class _Compile(Struct):
@@ -211,7 +213,7 @@ def test_only_a_whole_file_that_marks_it_records_every_store() -> None:
 		parse_descriptors("".join(f"{line}\n" for line in _PLUGIN_RECORDS)).every_store,
 		parse_descriptors("".join(f"{line}\n" for line in records)).every_store,
 		(marked.every_store, len(marked.writes), len(marked.passes), len(marked.taken)),
-	) == (False, False, (True, 21, 8, 3))
+	) == (False, False, (True, 21, 9, 4))
 
 
 def test_a_unit_without_a_function_has_no_dump_and_no_records(tmp_path: Path) -> None:
@@ -347,8 +349,8 @@ def test_the_command_writes_where_narrow_by_field_reads(
 		len(_WRITE_RECORDS),
 		True,
 		(
-			f"1 records and {len(_WRITE_RECORDS) + len(_TAKEN_RECORDS)} writes from the alias dumps"
-			" of 1 of 1 C units\n"
+			f"1 records, {len(_WRITE_RECORDS)} writes and {len(_TAKEN_RECORDS)} addresses taken from"
+			" the alias dumps of 1 of 1 C units\n"
 		),
 	)
 
@@ -707,6 +709,19 @@ _WRITE_TYPES: Final = UnitTypes(
 		),
 		pytest.param(
 			_function(
+				"struct dev[2] * rows, struct dev * one",
+				"",
+				"MEM[(short int *)rows_1(D) + 12B] = 0",
+				"MEM[(short int *)one_2(D) + 12B] = 0",
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\tfield\tstruct dev\ttag",
+				"write\tu\tf\ta.c\t1\t1\tunknown",
+			),
+			id="an offset into an array a pointer points to, and past one record",
+		),
+		pytest.param(
+			_function(
 				"int n, struct dev s",
 				"  struct dev * p;\n  int _3;\n  static int state_1;",
 				"n = 1",
@@ -791,10 +806,12 @@ def test_a_write_names_what_its_store_writes(dump: str, writes: tuple[str, ...])
 	)
 
 
-def test_only_scalar_fields_and_variables_whose_address_is_used_are_taken() -> None:
+def test_only_scalar_fields_and_variables_whose_address_is_used_or_computed_are_taken() -> None:
 	dump = (
-		";; Function f (f, funcdef_no=0)\n\nint f (struct dev * d, struct outer * o)\n{\n"
-		"  int * _2;\n  struct dev local;\n\n"
+		";; Function f (f, funcdef_no=0)\n\n"
+		"int f (struct dev * d, struct outer * o, struct dev[2] * rows)\n{\n"
+		"  int * _2;\n  struct dev local;\n  short int * _7;\n  char * _8;\n"
+		"  struct dev * next_9;\n  short int * _10;\n\n"
 		"  # _6 = PHI <&counter(2), 0B(3)>\n"
 		"  [a.c:1:1] _2 = &d_1(D)->count;\n"
 		"  [a.c:2:1] sink (&o_3(D)->inner, &local, &o_3(D)->head);\n"
@@ -803,6 +820,11 @@ def test_only_scalar_fields_and_variables_whose_address_is_used_are_taken() -> N
 		'  [a.c:5:1] __asm__ __volatile__("" :  : "r" &word);\n'
 		"  [a.c:6:1] return &d_1(D)->undescribed;\n"
 		"  [a.c:7:1] _5 = &REALPART_EXPR <c>;\n"
+		"  [a.c:8:1] _6 = (unsigned int) &cast_flag;\n"
+		"  [a.c:9:1] _7 = d_1(D) + 4;\n"
+		"  [a.c:10:1] _8 = d_1(D) + _6;\n"
+		"  [a.c:11:1] next_9 = d_1(D) + 8;\n"
+		"  [a.c:12:1] _10 = rows_2(D) + 12;\n"
 		"}\n"
 	)
 	assert tuple(
@@ -816,7 +838,11 @@ def test_only_scalar_fields_and_variables_whose_address_is_used_are_taken() -> N
 		"taken\tvariable\tword",
 		"taken\tfield\tstruct dev\tundescribed",
 		"taken\tunknown",
+		"taken\tvariable\tcast_flag",
 		"taken\tvariable\tcounter",
+		"taken\tfield\tstruct dev\ttag",
+		"taken\trecord\tstruct dev",
+		"taken\tfield\tstruct dev\ttag",
 	)
 
 
