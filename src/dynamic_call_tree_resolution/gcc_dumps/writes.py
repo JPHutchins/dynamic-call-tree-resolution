@@ -26,6 +26,7 @@ from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	indexed_array,
 	is_ssa,
 	is_variable,
+	key_record,
 	member_record,
 	named_member,
 	record_layout,
@@ -34,7 +35,6 @@ from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	variable_symbol,
 )
 from dynamic_call_tree_resolution.gcc_dumps.records import Located, located, location_fields
-from dynamic_call_tree_resolution.gcc_dumps.units import Record, anonymous_name
 from dynamic_call_tree_resolution.model import Field
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.descriptors import WriteTarget
 	from dynamic_call_tree_resolution.gcc_dumps.dump import DumpFunction
 	from dynamic_call_tree_resolution.gcc_dumps.expressions import Member, Scope
-	from dynamic_call_tree_resolution.gcc_dumps.units import UnitTypes
+	from dynamic_call_tree_resolution.gcc_dumps.units import Record, UnitTypes
 
 EVERY_STORE: Final = "writes\tcomplete"
 INDIRECT: Final = "<indirect>"
@@ -58,23 +58,48 @@ _MEMORY: Final = re.compile(
 	r"^MEM(?: <(.+?)>)? ?\[\((.+?) \*(?: \{ref-all\})?\)([^\[\]]+?)(?: \+ (\d+)B)?\]$"
 )
 _DEREFERENCE: Final = re.compile(r"^\(\*(.+)\)$|^\*(.+)$")
-_ASSEMBLY: Final = re.compile(r"^__asm__(?: __volatile__)?\(\"(?:[^\"\\]|\\.)*\"(.*)\)$")
+_ASSEMBLY: Final = re.compile(r"^__asm__(?: __volatile__)?\(\"((?:[^\"\\]|\\.)*)\"(.*)\)$")
 _OPERAND: Final = re.compile(r"^\"([^\"]*)\" (.+)$")
 _OPERAND_LISTS: Final = re.compile(r"\s*:\s*")
-_MEMORY_CONSTRAINT: Final = re.compile(r"[mQ]")
+_QUALIFIER: Final = re.compile(r"\b(?:const|volatile)\b ?")
+_ARRAY_TYPE: Final = re.compile(r"^(.+)\[(\d+)\]$")
+_POINTER_WIDTH: Final = 4
+_SCALAR_WIDTHS: Final = {
+	"_Bool": 1,
+	"char": 1,
+	"signed char": 1,
+	"unsigned char": 1,
+	"short int": 2,
+	"short unsigned int": 2,
+	"int": 4,
+	"unsigned int": 4,
+	"long int": 4,
+	"long unsigned int": 4,
+	"long long int": 8,
+	"long long unsigned int": 8,
+	"float": 4,
+	"double": 8,
+	"long double": 8,
+}
+_NON_STORING: Final = frozenset(
+	{"", "bkpt", "cpsid", "cpsie", "dmb", "dsb", "isb", "mov", "movs", "mrs", "msr", "nop", "sev"}
+	| {"svc", "wfe", "wfi"}
+)
+"""The instructions an asm template may hold without storing: barriers, special registers, moves,
+hints and the supervisor call, whose handler is code without a dump."""
 _WRAP: Final = 1 << 32
 """GCC prints a negative ``MEM`` offset as its 32-bit unsigned wrap."""
 
 
 class WriteRecord(Struct):
-	"""A store a statement makes, or a builtin's write through an argument."""
+	"""A ``descriptors.Write`` as one unit's dump gives it."""
 
 	at: Located
 	target: WriteTarget
 
 
 class PassRecord(Struct):
-	"""A pointer a call hands a callee without a dump, an unknown callee, or inline assembly."""
+	"""A ``descriptors.Pass`` as one unit's dump gives it."""
 
 	at: Located
 	callee: str
@@ -84,6 +109,22 @@ class PassRecord(Struct):
 
 
 type WriteOrPass = WriteRecord | PassRecord
+
+
+class _Access(Struct):
+	"""A ``MEM`` access: the type it accesses, its address's cast, base and byte offset."""
+
+	type: str
+	cast: str
+	base: str
+	offset: int
+
+
+class _Span(Struct):
+	"""Bytes at an offset into a record, of a width the dump's types may not tell."""
+
+	offset: int
+	width: int | None
 
 
 def unit_writes(
@@ -128,7 +169,15 @@ def written(scope: Scope, expression: str) -> WriteTarget:
 	if array is not None:
 		return written(scope, array)
 	if memory is not None:
-		return _memory(scope, memory.group(2), memory.group(3), int(memory.group(4) or 0))
+		return _memory(
+			scope,
+			_Access(
+				type=memory.group(1) or memory.group(2),
+				cast=memory.group(2),
+				base=memory.group(3),
+				offset=int(memory.group(4) or 0),
+			),
+		)
 	if dereference is not None:
 		return _pointed(scope, dereference.group(1) or dereference.group(2))
 	if expression.startswith('"'):
@@ -205,21 +254,23 @@ def _written_through(scope: Scope, callee: str, arguments: tuple[str, ...]) -> t
 
 
 def _assembly(scope: Scope, at: Located, assembly: re.Match[str] | None) -> tuple[WriteOrPass, ...]:
-	"""Inline assembly writes its memory outputs, and is handed every pointer among its operands.
+	"""Inline assembly writes its outputs, and is handed every pointer among its operands.
 
-	Its operands are unreadable when the template spans lines: then it may write anything.
+	With a ``"memory"`` clobber and an instruction that may store, or operands it can't read, it may
+	write anything.
 	"""
 	if assembly is None:
 		return (WriteRecord(at=at, target=Unknown()),)
-	lists = _OPERAND_LISTS.split(assembly.group(1))[1:]
+	lists = _OPERAND_LISTS.split(assembly.group(2))[1:]
 	outputs = _operands(lists[0]) if lists else ()
 	inputs = _operands(lists[1]) if len(lists) > 1 else ()
+	clobbers = lists[2] if len(lists) > 2 else ""
 	operands = (*outputs, *inputs)
 	return (
 		*(
 			WriteRecord(at=at, target=written(scope, operand.group(2)))
 			for operand in outputs
-			if operand is not None and _MEMORY_CONSTRAINT.search(operand.group(1)) is not None
+			if operand is not None and not is_ssa(scope, operand.group(2))
 		),
 		*(
 			PassRecord(
@@ -228,7 +279,27 @@ def _assembly(scope: Scope, at: Located, assembly: re.Match[str] | None) -> tupl
 			for index, operand in enumerate(operands)
 			if operand is not None and _pointer(scope, operand.group(2))
 		),
-		*((WriteRecord(at=at, target=Unknown()),) if None in operands else ()),
+		*(
+			(WriteRecord(at=at, target=Unknown()),)
+			if None in operands or ('"memory"' in clobbers and _may_store(assembly.group(1)))
+			else ()
+		),
+	)
+
+
+def _may_store(template: str) -> bool:
+	r"""Whether an asm template holds an instruction other than those that store nothing.
+
+	>>> _may_store(""), _may_store("MSR basepri, %0"), _may_store("mov r0, %0\n\tsvc 3")
+	(False, False, False)
+	>>> _may_store("str %1, [%0]")
+	True
+	"""
+	return any(
+		mnemonic.lower() not in _NON_STORING
+		for line in template.replace("\\n", "\n").replace(";", "\n").splitlines()
+		for mnemonic in line.split()[:1]
+		if not mnemonic.startswith(".")
 	)
 
 
@@ -239,41 +310,56 @@ def _operands(text: str) -> tuple[re.Match[str] | None, ...]:
 def _field(scope: Scope, member: Member) -> WriteTarget:
 	"""A member's field, or, where the types can't name its record, what it is a member of."""
 	record = member_record(scope, member)
-	return (
-		Field(record=record.name, member=member.member)
-		if record is not None
-		else written(scope, member.base)
-	)
+	if record is not None:
+		return Field(record=record.name, member=member.member)
+	return _pointed(scope, member.base) if member.arrow else written(scope, member.base)
 
 
-def _memory(scope: Scope, cast: str, base: str, offset: int) -> WriteTarget:
-	"""A ``MEM`` store: of the object its address names, else at an offset into its pointee's record."""
-	if base.startswith("&"):
-		return written(scope, base[1:])
-	record = _pointee(scope, base) or type_record(scope, cast)
-	return (
-		_at_offset(scope, record, offset - _WRAP if offset >= _WRAP // 2 else offset)
-		if record is not None
-		else Unnamed()
-	)
+def _memory(scope: Scope, access: _Access) -> WriteTarget:
+	"""A ``MEM`` store: of the object its address names, else of its pointee's record at the offset.
+
+	An access no record holds writes every member of its own type, when that is a record.
+	"""
+	if access.base.startswith("&"):
+		return written(scope, access.base[1:])
+	record = _pointee(scope, access.base) or type_record(scope, access.cast)
+	accessed = type_record(scope, access.type)
+	if record is None:
+		return EveryMember(record=accessed.name) if accessed is not None else Unnamed()
+	offset = access.offset - _WRAP if access.offset >= _WRAP // 2 else access.offset
+	return _at_offset(scope, record, _Span(offset=offset, width=_width(scope, access.type)))
 
 
-def _at_offset(scope: Scope, record: Record, offset: int) -> WriteTarget:
-	"""The innermost named member at the offset, in whichever element it falls; else every member."""
+def _at_offset(scope: Scope, record: Record, span: _Span) -> WriteTarget:
+	"""The innermost named member the bytes lie in, else every member; anything outside the record.
+
+	A pointer offset before or past its record, as ``CONTAINER_OF`` makes, names no member of it.
+	"""
 	layout = record_layout(scope, record)
 	if layout is None or layout.size == 0:
 		return EveryMember(record=record.name)
-	within = offset % layout.size
+	flexible = tuple(
+		name
+		for name, extent in layout.extents.items()
+		if extent.size is None and layout.size <= extent.offset <= span.offset
+	)
+	if flexible:
+		return Field(record=record.name, member=flexible[0])
+	if not 0 <= span.offset < layout.size:
+		return Unknown()
 	match tuple(
 		(name, extent)
 		for name, extent in layout.extents.items()
-		if extent.size is not None and extent.offset <= within < extent.offset + extent.size
+		if extent.size is not None
+		and span.width is not None
+		and extent.offset <= span.offset
+		and span.offset + span.width <= extent.offset + extent.size
 	):
 		case ((name, extent),) if extent.layout is not None:
 			inner = _at_offset(
 				scope,
-				Record(name=anonymous_name(extent.layout), key=extent.layout),
-				within - extent.offset,
+				key_record(scope, extent.layout),
+				_Span(offset=span.offset - extent.offset, width=span.width),
 			)
 			return (
 				Field(record=record.name, member=name) if isinstance(inner, EveryMember) else inner
@@ -282,6 +368,24 @@ def _at_offset(scope: Scope, record: Record, offset: int) -> WriteTarget:
 			return Field(record=record.name, member=name)
 		case _:
 			return EveryMember(record=record.name)
+
+
+def _width(scope: Scope, type_text: str) -> int | None:
+	"""The bytes a type takes on 32-bit Arm, where the dump's names tell.
+
+	A typedef of a scalar is a name the unit's types don't describe.
+	"""
+	text = _QUALIFIER.sub("", type_text).strip()
+	array = _ARRAY_TYPE.match(text)
+	layout = record_layout(scope, type_record(scope, text))
+	if text.endswith("*"):
+		return _POINTER_WIDTH
+	if array is not None:
+		element = _width(scope, array.group(1))
+		return element * int(array.group(2)) if element is not None else None
+	if layout is not None:
+		return layout.size
+	return _SCALAR_WIDTHS.get(text)
 
 
 def _pointed(scope: Scope, pointer: str) -> WriteTarget:

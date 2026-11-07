@@ -18,6 +18,8 @@ _HEADER: Final = re.compile(r"^;; Function (\S+) \((\S+?),", re.MULTILINE)
 _LOCATION: Final = re.compile(r"\[([^\[\]]+?):(\d+):(\d+)(?: discrim \d+)?\] ")
 _CALL_FLAGS: Final = re.compile(r";(?: \[[^\[\]]*\])*$")
 _LABEL: Final = re.compile(r"^<(?:bb \d+|L\d+)>")
+_STRING: Final = re.compile(r'"(?:[^"\\]|\\.)*"')
+_PHI: Final = re.compile(r"^# (.+ = PHI <.*>)$")
 _LOGICAL_LINE: Final = re.compile(r'(?:[^"\n]|"(?:[^"\\]|\\.)*")+')
 """A line of a dump, or several where a string literal spans them, as an asm template can."""
 
@@ -50,6 +52,8 @@ class DumpFunction(Struct):
 	declarations: Mapping[str, str]
 	"""Each local's or SSA name's type, by the name it is declared under."""
 	statements: tuple[Statement, ...]
+	phis: tuple[str, ...] = ()
+	"""Its PHI nodes, ``x_5 = PHI <&a(3), y_4(2)>``, which join a value from each predecessor."""
 
 
 def dump_functions(text: str) -> tuple[DumpFunction, ...]:
@@ -63,7 +67,8 @@ def dump_functions(text: str) -> tuple[DumpFunction, ...]:
 	(DumpFunction(symbol='f', result='int', parameters={'g': 'int (*) (int)', 'x': 'int'},
 	              declarations={'_2': 'int'},
 	              statements=(Statement(file='a.c', line=3, column=9, body='_2 = g_1(D) (x_3(D))'),
-	                          Statement(file='a.c', line=4, column=1, body='return _2'))),)
+	                          Statement(file='a.c', line=4, column=1, body='return _2')),
+	              phis=()),)
 	"""
 	headers = tuple(_HEADER.finditer(text))
 	return tuple(
@@ -95,6 +100,7 @@ def _function(name: str, symbol: str, text: str) -> DumpFunction:
 			for line in _LOGICAL_LINE.finditer("\n".join(body[len(_leading(body)) :]))
 			if (statement := _statement(line.group())) is not None
 		),
+		phis=tuple(phi.group(1) for line in body if (phi := _PHI.match(line.strip())) is not None),
 	)
 
 
@@ -119,18 +125,30 @@ def _parameters(name: str, signature: str) -> dict[str, str]:
 
 
 def top_level_parts(text: str) -> tuple[str, ...]:
-	"""The comma-separated parts of a list, not splitting inside parentheses.
+	"""The comma-separated parts of a list, not splitting inside parentheses or string literals.
 
 	>>> top_level_parts("int a, void (*) (int, char) b, char c")
 	('int a', 'void (*) (int, char) b', 'char c')
+	>>> top_level_parts('"(%d, %s", &v')
+	('"(%d, %s"', '&v')
 	"""
-	depths = tuple(accumulate((character == "(") - (character == ")") for character in text))
+	masked = _STRING.sub(_blanked, text)
+	depths = tuple(accumulate((character == "(") - (character == ")") for character in masked))
 	cuts = (
 		-1,
-		*(index for index, character in enumerate(text) if character == "," and depths[index] == 0),
+		*(
+			index
+			for index, character in enumerate(masked)
+			if character == "," and depths[index] == 0
+		),
 		len(text),
 	)
 	return tuple(text[start + 1 : end].strip() for start, end in pairwise(cuts))
+
+
+def _blanked(literal: re.Match[str]) -> str:
+	"""A string literal with its contents blanked, so its commas and parentheses split nothing."""
+	return f'"{"_" * (len(literal.group()) - 2)}"'
 
 
 def _declaration(text: str) -> _Declared:

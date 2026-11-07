@@ -32,6 +32,7 @@ from dynamic_call_tree_resolution.gcc_dumps.records import (
 	record_line,
 	unit_records,
 )
+from dynamic_call_tree_resolution.gcc_dumps.taken import taken_line, unit_taken
 from dynamic_call_tree_resolution.gcc_dumps.units import Record, UnitTypes, unit_types
 from dynamic_call_tree_resolution.gcc_dumps.writes import EVERY_STORE, unit_writes, write_line
 from dynamic_call_tree_resolution.model import (
@@ -131,6 +132,13 @@ _WRITE_RECORDS: Final = tuple(
 )
 """What every store of gcc_dump_writes.c at -O2 writes, checked by hand against its source: no plugin
 writes these."""
+_TAKEN_RECORDS: Final = (
+	"taken\tfield\tstruct dev\tcount",
+	"taken\tvariable\tcounter",
+	"taken\tvariable\tword",
+)
+"""The scalar fields and variables gcc_dump_writes.c takes the address of: ``&config`` and ``&local``
+are records, and ``&expected`` is a local."""
 
 
 class _Compile(Struct):
@@ -193,18 +201,17 @@ def test_a_builds_dumps_give_the_records_the_plugin_writes(tmp_path: Path) -> No
 def test_every_store_of_a_build_is_recorded_by_what_it_writes(tmp_path: Path) -> None:
 	assert dump_descriptors(
 		_dumped(tmp_path / "build", FIXTURES / "gcc_dump_writes.c"), REPOSITORY_ROOT
-	).writes == (EVERY_STORE, *_WRITE_RECORDS)
+	).writes == (*_WRITE_RECORDS, *_TAKEN_RECORDS, EVERY_STORE)
 
 
-def test_only_a_file_that_marks_it_records_every_store() -> None:
-	unmarked = parse_descriptors("".join(f"{line}\n" for line in _PLUGIN_RECORDS))
-	marked = parse_descriptors("".join(f"{line}\n" for line in (EVERY_STORE, *_WRITE_RECORDS)))
-	assert (unmarked.every_store, marked.every_store, len(marked.writes), len(marked.passes)) == (
-		False,
-		True,
-		21,
-		8,
-	)
+def test_only_a_whole_file_that_marks_it_records_every_store() -> None:
+	records = (*_PLUGIN_RECORDS, *_WRITE_RECORDS, *_TAKEN_RECORDS)
+	marked = parse_descriptors("".join(f"{line}\n" for line in (*records, EVERY_STORE)))
+	assert (
+		parse_descriptors("".join(f"{line}\n" for line in _PLUGIN_RECORDS)).every_store,
+		parse_descriptors("".join(f"{line}\n" for line in records)).every_store,
+		(marked.every_store, len(marked.writes), len(marked.passes), len(marked.taken)),
+	) == (False, False, (True, 21, 8, 3))
 
 
 def test_a_unit_without_a_function_has_no_dump_and_no_records(tmp_path: Path) -> None:
@@ -339,7 +346,10 @@ def test_the_command_writes_where_narrow_by_field_reads(
 		1,
 		len(_WRITE_RECORDS),
 		True,
-		f"1 records and {len(_WRITE_RECORDS)} writes from the alias dumps of 1 of 1 C units\n",
+		(
+			f"1 records and {len(_WRITE_RECORDS) + len(_TAKEN_RECORDS)} writes from the alias dumps"
+			" of 1 of 1 C units\n"
+		),
 	)
 
 
@@ -606,6 +616,14 @@ _WRITE_TYPES: Final = UnitTypes(
 			members=(), size=4, extents={"lo": MemberExtent(offset=0, size=2, layout=None)}
 		),
 		"struct empty": StructureLayout(members=(), size=0),
+		"struct msg": StructureLayout(
+			members=(),
+			size=4,
+			extents={
+				"hdr": MemberExtent(offset=0, size=4, layout=None),
+				"data": MemberExtent(offset=4, size=None, layout=None),
+			},
+		),
 	},
 	typedefs={},
 	variables={"counter": "int"},
@@ -618,9 +636,19 @@ _WRITE_TYPES: Final = UnitTypes(
 	("dump", "writes"),
 	[
 		pytest.param(
-			_function("struct dev * p", "", "MEM[(short int *)p_1(D) + 4294967292B] = 0"),
-			("write\tu\tf\ta.c\t0\t1\tfield\tstruct dev\ttag",),
-			id="a negative offset, in the element before",
+			_function(
+				"struct dev * p, struct msg * m",
+				"",
+				"MEM[(short int *)p_1(D) + 4294967292B] = 0",
+				"MEM[(int *)m_2(D) + 4B] = 0",
+				"MEM[(int *)m_2(D) + 12B] = 0",
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\tunknown",
+				"write\tu\tf\ta.c\t1\t1\tfield\tstruct msg\tdata",
+				"write\tu\tf\ta.c\t2\t1\tfield\tstruct msg\tdata",
+			),
+			id="a negative offset, as CONTAINER_OF makes, and a flexible array past the end",
 		),
 		pytest.param(
 			_function(
@@ -633,19 +661,23 @@ _WRITE_TYPES: Final = UnitTypes(
 			(
 				"write\tu\tf\ta.c\t0\t1\tfield\tstruct in\tlo",
 				"write\tu\tf\ta.c\t1\t1\tfield\tstruct outer\tinner",
-				"write\tu\tf\ta.c\t2\t1\tfield\tstruct in\tlo",
+				"write\tu\tf\ta.c\t2\t1\tunknown",
 			),
-			id="an offset into a nested record, at a member or between them",
+			id="an offset into a nested record, at a member, between them, or past the end",
 		),
 		pytest.param(
 			_function(
-				"struct dev * d, struct unknown * u, struct empty * e, int * x",
+				"struct dev * d, struct unknown * u, struct empty * e, int * x, char * c",
 				"",
 				"MEM[(char *)d_1(D) + 3B] = 0",
 				"MEM[(int *)u_2(D) + 4B] = 0",
 				"MEM[(int *)e_3(D)] = 0",
 				"MEM[(int *)x_4(D)] = 0",
 				"MEM[(int *)&counter + 4B] = 0",
+				"MEM[(int *)d_1(D) + 4B] = 0",
+				"MEM[(uint16_t *)d_1(D) + 4B] = 0",
+				"MEM <unsigned char[8]> [(char * {ref-all})d_1(D)] = 0",
+				"MEM <struct dev> [(char *)c_5(D)] = 0",
 			),
 			(
 				"write\tu\tf\ta.c\t0\t1\tfield\tstruct dev\tcount",
@@ -653,8 +685,12 @@ _WRITE_TYPES: Final = UnitTypes(
 				"write\tu\tf\ta.c\t2\t1\trecord\tstruct empty",
 				"write\tu\tf\ta.c\t3\t1\tnone",
 				"write\tu\tf\ta.c\t4\t1\tvariable\tcounter",
+				"write\tu\tf\ta.c\t5\t1\trecord\tstruct dev",
+				"write\tu\tf\ta.c\t6\t1\trecord\tstruct dev",
+				"write\tu\tf\ta.c\t7\t1\trecord\tstruct dev",
+				"write\tu\tf\ta.c\t8\t1\trecord\tstruct dev",
 			),
-			id="offsets a layout can't place, a pointer to no record, and a named object's address",
+			id="offsets a layout can't place, accesses wider or less known than a member",
 		),
 		pytest.param(
 			_function(
@@ -672,19 +708,23 @@ _WRITE_TYPES: Final = UnitTypes(
 		pytest.param(
 			_function(
 				"int n, struct dev s",
-				"  struct dev * p;\n  int _3;",
+				"  struct dev * p;\n  int _3;\n  static int state_1;",
 				"n = 1",
 				"s = {}",
 				"p = _3",
 				"undeclared->count = 0",
 				"REALPART_EXPR <c> = 0",
+				"undeclared.count = 0",
+				"state_1 = 1",
 			),
 			(
 				"write\tu\tf\ta.c\t0\t1\tnone",
 				"write\tu\tf\ta.c\t1\t1\trecord\tstruct dev",
 				"write\tu\tf\ta.c\t2\t1\tnone",
-				"write\tu\tf\ta.c\t3\t1\tvariable\tundeclared",
+				"write\tu\tf\ta.c\t3\t1\tnone",
 				"write\tu\tf\ta.c\t4\t1\tunknown",
+				"write\tu\tf\ta.c\t5\t1\tvariable\tundeclared",
+				"write\tu\tf\ta.c\t6\t1\tvariable\tstate_1",
 			),
 			id="parameters, a local pointer, a member of nothing declared, a complex part",
 		),
@@ -702,6 +742,7 @@ _WRITE_TYPES: Final = UnitTypes(
 				"undeclared_5 = {CLOBBER(eos)}",
 				"sink (q_1(D), _3, unknown_9)",
 				'__builtin_puts (&"exit"[0])',
+				'sink ("(%d, %s", &counter)',
 			),
 			(
 				"write\tu\tf\ta.c\t1\t1\tvariable\tcounter",
@@ -710,6 +751,7 @@ _WRITE_TYPES: Final = UnitTypes(
 				"write\tu\tf\ta.c\t5\t1\tvariable\tcounter",
 				"pass\tu\tf\ta.c\t8\t1\tsink\t0\tnone",
 				"write\tu\tf\ta.c\t9\t1\tnone",
+				"pass\tu\tf\ta.c\t10\t1\tsink\t1\tvariable\tcounter",
 			),
 			id="builtins, a call's result, a condition, undumped code and a string",
 		),
@@ -722,14 +764,18 @@ _WRITE_TYPES: Final = UnitTypes(
 				'__asm__ __volatile__("str %1, %0" : "=m" counter : "r" d_1(D))',
 				'__asm__ __volatile__("nop")',
 				'__asm__ __volatile__("mrs %0, basepri" : "=r" counter)',
+				'__asm__ __volatile__("dsb" :  :  : "memory")',
+				'__asm__ __volatile__("str r0, [r1]" :  :  : "memory")',
 			),
 			(
 				"write\tu\tf\ta.c\t0\t1\tunknown",
 				"write\tu\tf\ta.c\t1\t1\tunknown",
 				"write\tu\tf\ta.c\t2\t1\tvariable\tcounter",
 				"pass\tu\tf\ta.c\t2\t1\t<asm>\t1\trecord\tstruct dev",
+				"write\tu\tf\ta.c\t4\t1\tvariable\tcounter",
+				"write\tu\tf\ta.c\t6\t1\tunknown",
 			),
-			id="inline assembly whose operands can't be read, and one that can",
+			id="inline assembly: unreadable, outputs, and a memory clobber that may or can't store",
 		),
 	],
 )
@@ -742,6 +788,35 @@ def test_a_write_names_what_its_store_writes(dump: str, writes: tuple[str, ...])
 			)
 		)
 		== writes
+	)
+
+
+def test_only_scalar_fields_and_variables_whose_address_is_used_are_taken() -> None:
+	dump = (
+		";; Function f (f, funcdef_no=0)\n\nint f (struct dev * d, struct outer * o)\n{\n"
+		"  int * _2;\n  struct dev local;\n\n"
+		"  # _6 = PHI <&counter(2), 0B(3)>\n"
+		"  [a.c:1:1] _2 = &d_1(D)->count;\n"
+		"  [a.c:2:1] sink (&o_3(D)->inner, &local, &o_3(D)->head);\n"
+		"  [a.c:3:1] _4 = &table_end - &table_start;\n"
+		"  [a.c:4:1] if (&flag != 0B)\n"
+		'  [a.c:5:1] __asm__ __volatile__("" :  : "r" &word);\n'
+		"  [a.c:6:1] return &d_1(D)->undescribed;\n"
+		"  [a.c:7:1] _5 = &REALPART_EXPR <c>;\n"
+		"}\n"
+	)
+	assert tuple(
+		taken_line(target) for target in unit_taken(dump_functions(dump), _WRITE_TYPES)
+	) == (
+		"taken\tfield\tstruct dev\tcount",
+		"taken\tfield\tstruct outer\thead",
+		"taken\tvariable\ttable_end",
+		"taken\tvariable\ttable_start",
+		"taken\tvariable\tflag",
+		"taken\tvariable\tword",
+		"taken\tfield\tstruct dev\tundescribed",
+		"taken\tunknown",
+		"taken\tvariable\tcounter",
 	)
 
 

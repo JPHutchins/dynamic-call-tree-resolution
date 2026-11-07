@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.gcc_dumps.records import (
 	record_line,
 	unit_records,
 )
+from dynamic_call_tree_resolution.gcc_dumps.taken import taken_line, unit_taken
 from dynamic_call_tree_resolution.gcc_dumps.units import DUMP_FLAG as DUMP_FLAG
 from dynamic_call_tree_resolution.gcc_dumps.units import (
 	DumpedUnit,
@@ -38,8 +39,9 @@ class DumpDescriptors(Struct):
 	lines: tuple[str, ...]
 	"""Sorted, as the plugin's replay writes ``descriptors.txt``."""
 	writes: tuple[str, ...]
-	"""What every store writes, and what calls hand code without a dump: the line that marks the
-	file as recording every store, then the records, sorted."""
+	"""What every store writes, what calls hand code without a dump, and the scalar fields and
+	variables whose address is taken, each sorted, then the line that marks the file as recording
+	every store: a file cut short lacks it."""
 	gaps: tuple[Gap, ...]
 	units: int
 	"""The build's C units."""
@@ -107,7 +109,6 @@ def dump_descriptors(build_directory: Path, root: Path) -> DumpDescriptors:
 			)
 		),
 		writes=(
-			EVERY_STORE,
 			*sorted(
 				write_line(record)
 				for unit in typed
@@ -115,6 +116,14 @@ def dump_descriptors(build_directory: Path, root: Path) -> DumpDescriptors:
 					unit.parsed.dumped.unit, unit.parsed.functions, unit.types, root, dumped
 				)
 			),
+			*sorted(
+				{
+					taken_line(target)
+					for unit in typed
+					for target in unit_taken(unit.parsed.functions, unit.types)
+				}
+			),
+			EVERY_STORE,
 		),
 		gaps=tuple(record for record in records if isinstance(record, Gap)),
 	)

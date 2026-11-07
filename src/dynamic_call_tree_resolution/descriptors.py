@@ -126,6 +126,9 @@ class Descriptors(Struct):
 	stores: tuple[Store, ...]
 	writes: tuple[Write, ...] = ()
 	passes: tuple[Pass, ...] = ()
+	taken: tuple[WriteTarget, ...] = ()
+	"""The scalar fields and variables whose address the build takes: all a store that names no
+	field can reach."""
 	every_store: bool = False
 	"""Whether the file records every store, as ``dctr descriptors`` writes it, and not only the
 	plugin's stores of a function pointer."""
@@ -133,6 +136,12 @@ class Descriptors(Struct):
 
 class _EveryStore(Struct):
 	"""The record that marks a file as recording every store."""
+
+
+class _Taken(Struct):
+	"""A scalar field or variable whose address the build takes."""
+
+	target: WriteTarget
 
 
 class DescribedCall(Struct):
@@ -165,7 +174,7 @@ def parse_descriptors(text: str) -> Descriptors:
 	            stores=(Store(unit='lib/os/printk.c', function='__printk_hook_install',
 	                          location=SourceLocation(file='printk.c', line=59, column=12),
 	                          place=Variable(symbol='_char_out'), value=Parameter(name='fn')),),
-	            writes=(), passes=(), every_store=False)
+	            writes=(), passes=(), taken=(), every_store=False)
 	"""
 	records = tuple(_record(line.split("\t")) for line in text.splitlines() if line)
 	return Descriptors(
@@ -173,6 +182,7 @@ def parse_descriptors(text: str) -> Descriptors:
 		stores=tuple(record for record in records if isinstance(record, Store)),
 		writes=tuple(record for record in records if isinstance(record, Write)),
 		passes=tuple(record for record in records if isinstance(record, Pass)),
+		taken=tuple(record.target for record in records if isinstance(record, _Taken)),
 		every_store=any(isinstance(record, _EveryStore) for record in records),
 	)
 
@@ -223,7 +233,7 @@ def _agreed(callees: frozenset[Descriptor]) -> Descriptor | None:
 			return None
 
 
-def _record(fields: list[str]) -> Site | Store | Write | Pass | _EveryStore:
+def _record(fields: list[str]) -> Site | Store | Write | Pass | _Taken | _EveryStore:
 	"""One plugin record.
 
 	>>> _record(["call", "a.c", "f", "a.c", "1", "2", "null", "0"])
@@ -273,6 +283,8 @@ def _record(fields: list[str]) -> Site | Store | Write | Pass | _EveryStore:
 				argument=int(argument),
 				target=_write_target(target),
 			)
+		case ["taken", *target]:
+			return _Taken(target=_write_target(target))
 		case ["writes", "complete"]:
 			return _EveryStore()
 		case _:

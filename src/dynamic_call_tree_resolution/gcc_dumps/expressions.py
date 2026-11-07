@@ -132,11 +132,14 @@ def variable_symbol(scope: Scope, variable: str) -> str:
 def is_ssa(scope: Scope, token: str) -> bool:
 	"""Whether a name is an SSA name here: a temporary, or a version of a local or parameter.
 
-	A file-scope ``api_0`` is no version of anything the function declares.
+	A file-scope ``api_0`` is no version of anything the function declares, and a static named
+	``state_1`` is a variable.
 	"""
 	named = NAMED_SSA.match(token)
-	return _TEMPORARY.match(token) is not None or (
-		named is not None and (token in scope.locals or named.group(1) in scope.locals)
+	declared = scope.function.declarations.get(token, "")
+	return not declared.startswith("static ") and (
+		_TEMPORARY.match(token) is not None
+		or (named is not None and (token in scope.locals or named.group(1) in scope.locals))
 	)
 
 
@@ -256,7 +259,7 @@ def _element_record(scope: Scope, array: Member) -> Record | None:
 		and isinstance(candidate.element, EmbeddedStructMember)
 	):
 		case (key,):
-			return _key_record(scope, key)
+			return key_record(scope, key)
 		case _:
 			return None
 
@@ -268,7 +271,7 @@ def _nested_record(scope: Scope, nested: Member | None) -> Record | None:
 		layout.extents.get(nested.member) if layout is not None and nested is not None else None
 	)
 	key = extent.layout if extent is not None else None
-	return _key_record(scope, key) if key is not None else None
+	return key_record(scope, key) if key is not None else None
 
 
 def _anonymous(scope: Scope, outer: Record | None, member: str) -> Record | None:
@@ -298,6 +301,6 @@ def _has_member(scope: Scope, key: str, member: str) -> bool:
 	return layout is not None and member in layout.extents
 
 
-def _key_record(scope: Scope, key: str) -> Record:
+def key_record(scope: Scope, key: str) -> Record:
 	"""A layout key as a record: a typedef's key names the typedef's record."""
 	return scope.types.typedefs.get(key) or Record(name=anonymous_name(key), key=key)
