@@ -105,6 +105,8 @@ def context_for(
 		for start, section in sorted(program.sections.items())
 	)
 	read_only = tuple(span for span in sections if not program.sections[span.start].writable)
+	unwritten = _disjoint(assumed_unwritten)
+	only_tracked = _disjoint(only_tracked_writes)
 	return Context(
 		program=program,
 		object_spans=spans,
@@ -125,10 +127,10 @@ def context_for(
 			for relocation in program.relocations
 			if relocation.symbol is not None
 		},
-		unwritten_spans=_disjoint(assumed_unwritten),
-		unwritten_starts=tuple(span.start for span in _disjoint(assumed_unwritten)),
-		only_tracked_spans=_disjoint(only_tracked_writes),
-		only_tracked_starts=tuple(span.start for span in _disjoint(only_tracked_writes)),
+		unwritten_spans=unwritten,
+		unwritten_starts=tuple(span.start for span in unwritten),
+		only_tracked_spans=only_tracked,
+		only_tracked_starts=tuple(span.start for span in only_tracked),
 		unescaped_spans=escapes.unescaped,
 		unescaped_starts=tuple(span.start for span in escapes.unescaped),
 		store_targets=escapes.store_targets,

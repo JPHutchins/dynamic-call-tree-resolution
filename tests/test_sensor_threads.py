@@ -204,9 +204,9 @@ def test_the_header_names_each_member_assumed_written_only_by_tracked_stores(
 			id="a member of a pointer",
 		),
 		pytest.param(
-			"_kernel.cpus",
-			"DWARF gives _kernel.cpus no size; name what holds it",
-			id="an array DWARF gives no size",
+			"__devstate_dts_ord_6.initialized",
+			"DWARF gives __devstate_dts_ord_6.initialized no size; name what holds it",
+			id="a bitfield",
 		),
 		pytest.param(
 			"no_such_object.dev",

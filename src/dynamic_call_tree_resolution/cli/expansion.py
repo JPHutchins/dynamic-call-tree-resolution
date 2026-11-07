@@ -137,8 +137,8 @@ def expand_from_elf(
 	resolution = resolve(
 		image.program,
 		model,
-		assumed_unwritten=_named_spans(image.program, "--assume-unwritten", assume_unwritten),
-		only_tracked_writes=_named_spans(
+		assumed_unwritten=named_spans(image.program, "--assume-unwritten", assume_unwritten),
+		only_tracked_writes=named_spans(
 			image.program, "--assume-only-tracked-writes", assume_only_tracked_writes
 		),
 		upward_frame_writes=_upward_frame_writes(image.program, assume_upward_frame_writes),
@@ -258,12 +258,21 @@ def expand_from_elf(
 	)
 
 
-def _named_spans(program: Program, flag: str, names: tuple[str, ...]) -> tuple[Span, ...]:
-	return tuple(_named_span(program, flag, name) for name in names)
+def named_spans(program: Program, flag: str, names: tuple[str, ...]) -> tuple[Span, ...]:
+	return tuple(named_span(program, flag, name) for name in names)
 
 
-def _named_span(program: Program, flag: str, name: str) -> Span:
-	object_name, *members = name.split(".")
+def named_span(program: Program, flag: str, name: str) -> Span:
+	"""The bytes of the data object, or of its member ``OBJECT.member.path``.
+
+	The object is the longest dotted prefix that names one, so a symbol such as GCC's
+	``CSWTCH.88`` stays one name.
+
+	Raises:
+		ValueError: when no object, or more than one, has the name, or DWARF does not place the
+			member, or gives it no size, or gives a structure on the path another size.
+	"""
+	object_name = _object_prefix(program, name)
 	match tuple(obj for obj in program.objects.values() if obj.name == object_name):
 		case (found,):
 			return _member_span(
@@ -274,7 +283,7 @@ def _named_span(program: Program, flag: str, name: str) -> Span:
 					type_name=found.type_name,
 					span=Span(start=found.address, end=Address(found.address + found.size)),
 				),
-				tuple(members),
+				tuple(name[len(object_name) + 1 :].split(".")) if name != object_name else (),
 			)
 		case ():
 			raise ValueError(f"{flag}: no data object is named {object_name}")
@@ -283,6 +292,19 @@ def _named_span(program: Program, flag: str, name: str) -> Span:
 				f"{flag}: {len(several)} data objects are named {object_name}, at "
 				f"{', '.join(hex(obj.address) for obj in several)}"
 			)
+
+
+def _object_prefix(program: Program, name: str) -> str:
+	names = frozenset(obj.name for obj in program.objects.values())
+	parts = name.split(".")
+	return next(
+		(
+			prefix
+			for count in range(len(parts), 0, -1)
+			if (prefix := ".".join(parts[:count])) in names
+		),
+		parts[0],
+	)
 
 
 class _Held(Struct):
@@ -301,6 +323,11 @@ def _member_span(program: Program, flag: str, held: _Held, members: tuple[str, .
 	layout = program.layouts.get(held.type_name) if held.type_name is not None else None
 	if layout is None:
 		raise ValueError(f"{flag}: DWARF gives {held.path} no structure, so no member {member}")
+	if layout.size != held.span.end - held.span.start:
+		raise ValueError(
+			f"{flag}: {held.path} is {held.span.end - held.span.start} bytes, but DWARF's "
+			f"{held.type_name} is {layout.size}; name what holds it"
+		)
 	extent = layout.extents.get(member)
 	if extent is None:
 		raise ValueError(
@@ -359,7 +386,7 @@ def _assumed_unwritten(
 		contradicted=tuple(
 			name
 			for name in names
-			for span in (_named_span(image.program, "--assume-unwritten", name),)
+			for span in (named_span(image.program, "--assume-unwritten", name),)
 			if any(
 				span.start - image.program.pointer_size < key < span.end
 				for key in resolution.written

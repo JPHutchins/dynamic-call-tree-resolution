@@ -352,7 +352,7 @@ def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:
 	return {
 		name: MemberExtent(
 			offset=offset,
-			size=_byte_size(strip_qualifiers(die_type(child))),
+			size=None if "DW_AT_bit_size" in child.attributes else _type_size(die_type(child)),
 			layout=_own_layout(die_type(child)),
 		)
 		for child in struct_die.iter_children()
@@ -360,6 +360,23 @@ def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:
 		and (name := _member_name(child)) is not None
 		and (offset := _member_offset(child)) is not None
 	}
+
+
+def _type_size(type_die: DIE | None) -> int | None:
+	unqualified = strip_qualifiers(type_die)
+	return (
+		_array_size(unqualified)
+		if unqualified is not None
+		and unqualified.tag == "DW_TAG_array_type"
+		and "DW_AT_byte_size" not in unqualified.attributes
+		else _byte_size(unqualified)
+	)
+
+
+def _array_size(array_die: DIE) -> int | None:
+	element = _type_size(die_type(array_die))
+	counts = _known_counts(array_die)
+	return element * prod(counts) if element and counts is not None else None
 
 
 def _own_layout(type_die: DIE | None) -> str | None:

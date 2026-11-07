@@ -244,6 +244,10 @@ def test_load_layouts(fixture_elfs: dict[str, Path]) -> None:
 		"a": MemberExtent(offset=0, size=4, layout=None),
 		"b": MemberExtent(offset=0, size=4, layout=None),
 	}
+	assert program.layouts["struct bitpacked"].extents == {
+		"a": MemberExtent(offset=0, size=None, layout=None),
+		"b": MemberExtent(offset=0, size=None, layout=None),
+	}
 
 
 def test_load_declaration_types_attach_to_symtab_objects(fixture_elfs: dict[str, Path]) -> None:
@@ -706,6 +710,25 @@ def test_load_records_a32_code_from_mapping_symbols(tmp_path: Path) -> None:
 	assert {
 		instruction_set_at(program, function.address) for function in program.functions.values()
 	} == {InstructionSet.A32}
+
+
+def test_a_layout_sizes_an_array_member_by_its_counts(fixture_elfs: dict[str, Path]) -> None:
+	layouts = load(fixture_elfs["arrays"]).layouts
+	assert {
+		name: {member: extent.size for member, extent in layouts[name].extents.items()}
+		for name in ("struct bus", "struct tailed", "struct indirection")
+	} == {
+		"struct bus": {"id": 4, "filters": 32, "hooks": 16, "grid": 32, "levels": 8},
+		"struct tailed": {"count": 4, "tail": None},
+		"struct indirection": {
+			"handlers": 8,
+			"filter_refs": 8,
+			"filter_rows": 8,
+			"names": 8,
+			"levels": 8,
+			"pairs": 32,
+		},
+	}
 
 
 def test_load_records_pointer_valued_array_members(fixture_elfs: dict[str, Path]) -> None:
