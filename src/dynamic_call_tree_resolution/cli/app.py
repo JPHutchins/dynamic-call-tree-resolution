@@ -48,9 +48,10 @@ ASSUME_ONLY_TRACKED_WRITES: Final = Parameter(
 	help="assume only stores the analysis places write this data object, or the member "
 	"OBJECT.member.path of it, so a load from it reads its value in the image and what those "
 	"stores write even after a store whose address is unknown; repeat it for each one. A store "
-	"the analysis can't place that writes it anyway, as code filling a list at runtime does, "
-	"breaks it. Nothing checks it, the rows that rest on it say so, and finding those rows "
-	"analyzes the image twice"
+	"the analysis can't place but knows was derived from the object's own address still writes "
+	"it. A store the analysis can't place that writes it anyway, as code filling a list at "
+	"runtime does, breaks it. Nothing checks it, the rows that rest on it say so, and finding "
+	"those rows analyzes the image twice"
 )
 
 
