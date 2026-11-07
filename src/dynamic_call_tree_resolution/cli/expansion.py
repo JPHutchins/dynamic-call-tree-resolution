@@ -100,6 +100,7 @@ def elf_expansion(
 	narrow_by_field: bool,
 	rtos: RtosChoice,
 	assume_unwritten: tuple[str, ...] = (),
+	assume_only_tracked_writes: tuple[str, ...] = (),
 	assume_upward_frame_writes: bool = False,
 ) -> Expansion:
 	"""Expand a build directory's indirect calls against its ELF image."""
@@ -111,6 +112,7 @@ def elf_expansion(
 		narrow_by_field=narrow_by_field,
 		rtos=rtos,
 		assume_unwritten=assume_unwritten,
+		assume_only_tracked_writes=assume_only_tracked_writes,
 		assume_upward_frame_writes=assume_upward_frame_writes,
 	)
 
@@ -123,6 +125,7 @@ def expand_from_elf(
 	narrow_by_field: bool,
 	rtos: RtosChoice,
 	assume_unwritten: tuple[str, ...] = (),
+	assume_only_tracked_writes: tuple[str, ...] = (),
 	assume_upward_frame_writes: bool = False,
 ) -> Expansion:
 	image_functions = image_function_names(artifacts, image)
@@ -131,16 +134,18 @@ def expand_from_elf(
 	)
 	indirect_sites = sum(edge.callee == INDIRECT_CALLEE for edge in in_image_edges)
 	model = rtos_model(image.program, rtos, build_kconfig(image.elf))
-	spans = _unwritten_spans(image.program, assume_unwritten)
 	resolution = resolve(
 		image.program,
 		model,
-		assumed_unwritten=spans,
+		assumed_unwritten=named_spans(image.program, "--assume-unwritten", assume_unwritten),
+		only_tracked_writes=named_spans(
+			image.program, "--assume-only-tracked-writes", assume_only_tracked_writes
+		),
 		upward_frame_writes=_upward_frame_writes(image.program, assume_upward_frame_writes),
 	)
 	changed = (
 		_assumed_callers(image, model, resolution)
-		if assume_unwritten or assume_upward_frame_writes
+		if assume_unwritten or assume_only_tracked_writes or assume_upward_frame_writes
 		else NO_ASSUMED_CALLERS
 	)
 	narrowed_by_field = field_narrowed_spans(image.elf, image.program) if narrow_by_field else ()
@@ -247,26 +252,100 @@ def expand_from_elf(
 		dropped=artifacts.dropped,
 		phantom_libcalls=artifacts.phantom_libcalls,
 		assumed_unwritten=_assumed_unwritten(image, resolution, assume_unwritten, changed),
+		assumed_only_tracked_writes=changed if assume_only_tracked_writes else NO_ASSUMED_CALLERS,
 		assumed_upward_frame_writes=changed if assume_upward_frame_writes else NO_ASSUMED_CALLERS,
 		handlers=_handler_names(image, model.handler_stack),
 	)
 
 
-def _unwritten_spans(program: Program, names: tuple[str, ...]) -> tuple[Span, ...]:
-	return tuple(span for name in names for span in (_unwritten_span(program, name),))
+def named_spans(program: Program, flag: str, names: tuple[str, ...]) -> tuple[Span, ...]:
+	return tuple(named_span(program, flag, name) for name in names)
 
 
-def _unwritten_span(program: Program, name: str) -> Span:
-	match tuple(obj for obj in program.objects.values() if obj.name == name):
+def named_span(program: Program, flag: str, name: str) -> Span:
+	"""The bytes of the data object, or of its member ``OBJECT.member.path``.
+
+	The object is the longest dotted prefix that names one, so a symbol such as GCC's
+	``CSWTCH.88`` stays one name.
+
+	Raises:
+		ValueError: when no object, or more than one, has the name, or DWARF does not place the
+			member, or gives it no size, or gives a structure on the path another size.
+	"""
+	object_name = _object_prefix(program, name)
+	match tuple(obj for obj in program.objects.values() if obj.name == object_name):
 		case (found,):
-			return Span(start=found.address, end=Address(found.address + found.size))
+			return _member_span(
+				program,
+				flag,
+				_Held(
+					path=object_name,
+					type_name=found.type_name,
+					span=Span(start=found.address, end=Address(found.address + found.size)),
+				),
+				tuple(name[len(object_name) + 1 :].split(".")) if name != object_name else (),
+			)
 		case ():
-			raise ValueError(f"--assume-unwritten: no data object is named {name}")
+			raise ValueError(f"{flag}: no data object is named {object_name}")
 		case several:
 			raise ValueError(
-				f"--assume-unwritten: {len(several)} data objects are named {name}, at "
+				f"{flag}: {len(several)} data objects are named {object_name}, at "
 				f"{', '.join(hex(obj.address) for obj in several)}"
 			)
+
+
+def _object_prefix(program: Program, name: str) -> str:
+	names = frozenset(obj.name for obj in program.objects.values())
+	parts = name.split(".")
+	return next(
+		(
+			prefix
+			for count in range(len(parts), 0, -1)
+			if (prefix := ".".join(parts[:count])) in names
+		),
+		parts[0],
+	)
+
+
+class _Held(Struct):
+	"""A member path walked so far, and the bytes it names."""
+
+	path: str
+	type_name: str | None
+	"""Its layout's key in ``Program.layouts``, when DWARF gives it one."""
+	span: Span
+
+
+def _member_span(program: Program, flag: str, held: _Held, members: tuple[str, ...]) -> Span:
+	if not members:
+		return held.span
+	member, *deeper = members
+	layout = program.layouts.get(held.type_name) if held.type_name is not None else None
+	if layout is None:
+		raise ValueError(f"{flag}: DWARF gives {held.path} no structure, so no member {member}")
+	if layout.size != held.span.end - held.span.start:
+		raise ValueError(
+			f"{flag}: {held.path} is {held.span.end - held.span.start} bytes, but DWARF's "
+			f"{held.type_name} is {layout.size}; name what holds it"
+		)
+	extent = layout.extents.get(member)
+	if extent is None:
+		raise ValueError(
+			f"{flag}: DWARF places no member {member} in {held.path}'s {held.type_name}"
+		)
+	if extent.size is None:
+		raise ValueError(f"{flag}: DWARF gives {held.path}.{member} no size; name what holds it")
+	start = Address(held.span.start + extent.offset)
+	return _member_span(
+		program,
+		flag,
+		_Held(
+			path=f"{held.path}.{member}",
+			type_name=extent.layout,
+			span=Span(start=start, end=Address(start + extent.size)),
+		),
+		tuple(deeper),
+	)
 
 
 def _upward_frame_writes(program: Program, assumed: bool) -> bool:
@@ -307,7 +386,7 @@ def _assumed_unwritten(
 		contradicted=tuple(
 			name
 			for name in names
-			for span in (_unwritten_span(image.program, name),)
+			for span in (named_span(image.program, "--assume-unwritten", name),)
 			if any(
 				span.start - image.program.pointer_size < key < span.end
 				for key in resolution.written

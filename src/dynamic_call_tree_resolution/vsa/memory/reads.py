@@ -41,18 +41,30 @@ def _span_at(context: Context, address: Address) -> Span | None:
 
 
 def _assumed_unwritten(context: Context, address: Address, width: int) -> bool:
-	index = bisect_right(context.unwritten_starts, address) - 1
-	return index >= 0 and address + width <= context.unwritten_spans[index].end
+	return _within(context.unwritten_starts, context.unwritten_spans, address, width) is not None
 
 
 def kept(context: Context, clobbered: frozenset[Span], address: Address, width: int) -> bool:
-	"""Whether the bytes lie in one unescaped object no unknown store derived from it has written."""
-	index = bisect_right(context.unescaped_starts, address) - 1
+	"""Whether the bytes lie in one unescaped object no unknown store derived from it has written.
+
+	Or, outside every unescaped object, in an object or member the user asserts only stores the
+	analysis places write.
+	"""
+	unescaped = _within(context.unescaped_starts, context.unescaped_spans, address, width)
 	return (
-		index >= 0
-		and address + width <= context.unescaped_spans[index].end
-		and context.unescaped_spans[index] not in clobbered
+		unescaped not in clobbered
+		if unescaped is not None
+		else bool(context.only_tracked_starts)
+		and _within(context.only_tracked_starts, context.only_tracked_spans, address, width)
+		is not None
 	)
+
+
+def _within(
+	starts: tuple[int, ...], spans: tuple[Span, ...], address: Address, width: int
+) -> Span | None:
+	index = bisect_right(starts, address) - 1
+	return spans[index] if index >= 0 and address + width <= spans[index].end else None
 
 
 def _read_only(context: Context, address: Address) -> bool:

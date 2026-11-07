@@ -28,6 +28,7 @@ from dynamic_call_tree_resolution.model import (
 	EmbeddedStructMember,
 	FunctionPointerMember,
 	FunctionSignature,
+	MemberExtent,
 	SkippedMember,
 	SkipReason,
 	StructPointerMember,
@@ -312,7 +313,7 @@ def structure_layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 			layout = StructureLayout(
 				members=tuple(_layout_members(aggregate)),
 				size=_byte_size(aggregate) or 0,
-				offsets=_member_offsets(aggregate),
+				extents=_member_extents(aggregate),
 			)
 			existing = layouts.get(key)
 			if existing is None or len(layout.members) > len(existing.members):
@@ -347,14 +348,45 @@ def _layout_members(struct_die: DIE) -> Iterator[Member]:
 			yield member
 
 
-def _member_offsets(struct_die: DIE) -> dict[str, int]:
+def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:
 	return {
-		name: offset
+		name: MemberExtent(
+			offset=offset,
+			size=None if "DW_AT_bit_size" in child.attributes else _type_size(die_type(child)),
+			layout=_own_layout(die_type(child)),
+		)
 		for child in struct_die.iter_children()
 		if child.tag == "DW_TAG_member"
 		and (name := _member_name(child)) is not None
 		and (offset := _member_offset(child)) is not None
 	}
+
+
+def _type_size(type_die: DIE | None) -> int | None:
+	unqualified = strip_qualifiers(type_die)
+	return (
+		_array_size(unqualified)
+		if unqualified is not None
+		and unqualified.tag == "DW_TAG_array_type"
+		and "DW_AT_byte_size" not in unqualified.attributes
+		else _byte_size(unqualified)
+	)
+
+
+def _array_size(array_die: DIE) -> int | None:
+	element = _type_size(die_type(array_die))
+	counts = _known_counts(array_die)
+	return element * prod(counts) if element and counts is not None else None
+
+
+def _own_layout(type_die: DIE | None) -> str | None:
+	unqualified = strip_qualifiers(type_die)
+	return (
+		layout_name(type_die)
+		if unqualified is not None
+		and unqualified.tag in ("DW_TAG_structure_type", "DW_TAG_union_type")
+		else None
+	)
 
 
 def _member_name(member_die: DIE) -> str | None:

@@ -900,6 +900,70 @@ def test_a_load_from_an_object_assumed_unwritten_reads_its_image_value(
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("only_tracked", "unwritten", "targets"),
+	[
+		pytest.param((), (), set[int](), id="no assumption, so the unknown store may write it"),
+		pytest.param(
+			((0x2000, 0x2004),), (), {0x3001, 0x5555}, id="the slot written only by tracked stores"
+		),
+		pytest.param(((0x2000, 0x2002),), (), set[int](), id="a read past the assumed bytes"),
+		pytest.param(
+			((0x2000, 0x2002), (0x1FF0, 0x2004)),
+			(),
+			{0x3001, 0x5555},
+			id="overlapping assumed spans",
+		),
+		pytest.param((), ((0x2000, 0x2004),), {0x3001}, id="the slot assumed unwritten instead"),
+	],
+)
+def test_a_slot_written_only_by_tracked_stores_keeps_them_past_an_unknown_store(
+	only_tracked: tuple[tuple[int, int], ...],
+	unwritten: tuple[tuple[int, int], ...],
+	targets: set[int],
+) -> None:
+	writer = bytes.fromhex("42f20000 45f25551 0160 1060 7047")
+	caller = bytes.fromhex("42f20000 0368 9847 7047")
+	program = build_program(
+		Machine.EM_ARM,
+		(("writer", 0x1000, len(writer)), ("caller", 0x1100, len(caller))),
+		objects=(("slot", 0x2000, _pointer(0x3001, 4)),),
+		sections={0x1000: writer, 0x1100: caller},
+		writable=frozenset({0x2000}),
+		pointer_size=4,
+	)
+	(site,) = (
+		site
+		for site in resolve(
+			program,
+			assumed_unwritten=tuple(span(*pair) for pair in unwritten),
+			only_tracked_writes=tuple(span(*pair) for pair in only_tracked),
+		).sites
+		if site.caller_address == 0x1100
+	)
+	assert tracked_values(site) == targets
+
+
+def test_a_store_derived_from_an_unescaped_object_still_writes_it_past_the_assumption() -> None:
+	writer = bytes.fromhex("014b 43f82100 7047 00000020")
+	caller = bytes.fromhex("014b 1b68 9847 7047 00000020")
+	program = build_program(
+		Machine.EM_ARM,
+		(("writer", 0x1000, len(writer)), ("caller", 0x1100, len(caller))),
+		objects=(("buf", 0x2000_0000, _pointer(0x3001, 4) + bytes(0x1FC)),),
+		sections={0x1000: writer, 0x1100: caller},
+		writable=frozenset({0x2000_0000}),
+		pointer_size=4,
+		data_in_code=((0x1008, 0x100C), (0x1108, 0x110C)),
+	)
+	(site,) = (
+		site
+		for site in resolve(program, only_tracked_writes=(span(0x2000_0000, 0x2000_0200),)).sites
+		if site.caller_address == 0x1100
+	)
+	assert tracked_values(site) == set()
+
+
 def test_a_cbz_decided_to_leave_the_function_leaves_the_rest_dead() -> None:
 	program = build_program(
 		Machine.EM_ARM,

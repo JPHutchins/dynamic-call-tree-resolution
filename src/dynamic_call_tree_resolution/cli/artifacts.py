@@ -88,6 +88,7 @@ class Expansion(Struct):
 	phantom_libcalls: frozenset[str]
 	"""Libcalls a kept function's ``.ci`` records but the final link did not keep."""
 	assumed_unwritten: AssumedUnwritten
+	assumed_only_tracked_writes: AssumedCallers
 	assumed_upward_frame_writes: AssumedCallers
 	handlers: HandlerNames | None = None
 

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import msgspec
 import pytest
@@ -64,11 +64,17 @@ def test_reading_each_painted_stack_under_gdb_finds_what_the_thread_reports(
 	) == (1024 - 840, 1024 - 864)
 
 
+_FORWARD_LIST: Final = ("i2c_emul_cfg_0.forward_list", "i2c_emul_cfg_0.forward_list_size")
+"""What ``i2c_emul_transfer`` reads to find the bus it forwards to; the config's initializer sets
+both."""
+
+
 @pytest.mark.parametrize(
-	("assume_no_recursion", "assume_unwritten", "provenance"),
+	("assume_no_recursion", "assume_unwritten", "assume_only_tracked_writes", "provenance"),
 	[
 		pytest.param(
 			("i2c_emul_transfer",),
+			(),
 			(),
 			{"assumed_no_recursion": ("i2c_emul_transfer",)},
 			id="assume no recursion",
@@ -76,8 +82,23 @@ def test_reading_each_painted_stack_under_gdb_finds_what_the_thread_reports(
 		pytest.param(
 			(),
 			("i2c_emul_cfg_0",),
+			(),
 			{"assumed_unwritten": ("i2c_emul_transfer",)},
 			id="assume the I2C emulator's config unwritten",
+		),
+		pytest.param(
+			(),
+			_FORWARD_LIST,
+			(),
+			{"assumed_unwritten": ("i2c_emul_transfer",)},
+			id="assume the I2C emulator's forwarding list unwritten",
+		),
+		pytest.param(
+			(),
+			(),
+			_FORWARD_LIST,
+			{"assumed_only_tracked_writes": ("i2c_emul_transfer",)},
+			id="assume only tracked stores write the I2C emulator's forwarding list",
 		),
 	],
 )
@@ -86,6 +107,7 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 	capsys: pytest.CaptureFixture[str],
 	assume_no_recursion: tuple[str, ...],
 	assume_unwritten: tuple[str, ...],
+	assume_only_tracked_writes: tuple[str, ...],
 	provenance: dict[str, tuple[str, ...]],
 ) -> None:
 	artifacts = zephyr_fixtures / "sensor-threads"
@@ -95,6 +117,7 @@ def test_each_threads_measured_high_water_is_within_its_bound(
 		narrow_by_field=True,
 		assume_no_recursion=assume_no_recursion,
 		assume_unwritten=assume_unwritten,
+		assume_only_tracked_writes=assume_only_tracked_writes,
 		json=True,
 	)
 	used = {
@@ -154,6 +177,50 @@ def test_the_header_names_an_object_assumed_unwritten_that_a_tracked_store_write
 		" | assumed unwritten: _stdout_hook, i2c_emul_cfg_0"
 		" | yet tracked stores write: _stdout_hook | "
 	) in capsys.readouterr().out.splitlines()[0]
+
+
+def test_the_header_names_each_member_assumed_written_only_by_tracked_stores(
+	zephyr_fixtures: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	stack(artifacts, artifacts / "zephyr" / "zephyr.elf", assume_only_tracked_writes=_FORWARD_LIST)
+	assert (
+		" | assumed only tracked writes: i2c_emul_cfg_0.forward_list,"
+		" i2c_emul_cfg_0.forward_list_size | "
+	) in capsys.readouterr().out.splitlines()[0]
+
+
+@pytest.mark.parametrize(
+	("name", "message"),
+	[
+		pytest.param(
+			"i2c_emul_cfg_0.no_such_member",
+			"DWARF places no member no_such_member in i2c_emul_cfg_0's struct i2c_emul_config",
+			id="a member its structure lacks",
+		),
+		pytest.param(
+			"i2c_emul_cfg_0.forward_list.addr",
+			"DWARF gives i2c_emul_cfg_0.forward_list no structure, so no member addr",
+			id="a member of a pointer",
+		),
+		pytest.param(
+			"__devstate_dts_ord_6.initialized",
+			"DWARF gives __devstate_dts_ord_6.initialized no size; name what holds it",
+			id="a bitfield",
+		),
+		pytest.param(
+			"no_such_object.dev",
+			"no data object is named no_such_object",
+			id="an unknown object",
+		),
+	],
+)
+def test_a_member_path_names_a_member_dwarf_places(
+	zephyr_fixtures: Path, name: str, message: str
+) -> None:
+	artifacts = zephyr_fixtures / "sensor-threads"
+	with pytest.raises(ValueError, match=f"--assume-only-tracked-writes: {message}"):
+		stack(artifacts, artifacts / "zephyr" / "zephyr.elf", assume_only_tracked_writes=(name,))
 
 
 @pytest.mark.parametrize(

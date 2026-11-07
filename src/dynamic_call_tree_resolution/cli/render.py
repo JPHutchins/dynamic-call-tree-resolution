@@ -61,6 +61,10 @@ def render(report: StackReport) -> str:
 					),
 					_Count(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
 					_Count(
+						reason=Reason.ASSUMED_ONLY_TRACKED_WRITES,
+						functions=bound.assumed_only_tracked_writes,
+					),
+					_Count(
 						reason=Reason.ASSUMED_UPWARD_FRAME_WRITES,
 						functions=bound.assumed_upward_frame_writes,
 					),
@@ -84,6 +88,10 @@ def render(report: StackReport) -> str:
 						reason=Reason.NARROWED_BY_SIGNATURE, functions=bound.narrowed_by_signature
 					),
 					_Count(reason=Reason.ASSUMED_UNWRITTEN, functions=bound.assumed_unwritten),
+					_Count(
+						reason=Reason.ASSUMED_ONLY_TRACKED_WRITES,
+						functions=bound.assumed_only_tracked_writes,
+					),
 					_Count(
 						reason=Reason.ASSUMED_UPWARD_FRAME_WRITES,
 						functions=bound.assumed_upward_frame_writes,

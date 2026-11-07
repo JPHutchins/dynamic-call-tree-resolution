@@ -168,14 +168,24 @@ def array_elements(member: ArrayMember) -> tuple[Member, ...]:
 	)
 
 
+class MemberExtent(Struct):
+	"""Where a named member lies in its structure, and what layout it has of its own."""
+
+	offset: int
+	size: int | None
+	"""``None`` when DWARF gives the member's type no byte size."""
+	layout: str | None
+	"""Its own layout's key in ``Program.layouts``, when it is a structure or union."""
+
+
 class StructureLayout(Struct):
 	"""One structure type's layout."""
 
 	members: tuple[Member, ...]
 	"""Only those that hold or may lead to code."""
 	size: int
-	offsets: Mapping[str, int] = {}
-	"""Every named member's offset, whatever it holds."""
+	extents: Mapping[str, MemberExtent] = {}
+	"""Every named member, whatever it holds."""
 
 
 class Field(Struct, order=True):

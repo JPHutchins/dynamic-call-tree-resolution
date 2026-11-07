@@ -39,6 +39,7 @@ def stack_graph(
 	entry_edges: Iterable[CallEdge] | None = None,
 	assumed_no_recursion: frozenset[str] = frozenset(),
 	assumed_unwritten: frozenset[str] = frozenset(),
+	assumed_only_tracked_writes: frozenset[str] = frozenset(),
 	assumed_upward_frame_writes: frozenset[str] = frozenset(),
 	hardware_roots: frozenset[str] = frozenset(),
 ) -> StackGraph:
@@ -62,6 +63,7 @@ def stack_graph(
 		edges_tuple,
 		{
 			Reason.ASSUMED_UNWRITTEN: assumed_unwritten,
+			Reason.ASSUMED_ONLY_TRACKED_WRITES: assumed_only_tracked_writes,
 			Reason.ASSUMED_UPWARD_FRAME_WRITES: assumed_upward_frame_writes,
 		},
 	)

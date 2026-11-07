@@ -82,6 +82,7 @@ def analyze(
 	rtos: RtosModel = BARE_METAL,
 	*,
 	assumed_unwritten: tuple[Span, ...] = (),
+	only_tracked_writes: tuple[Span, ...] = (),
 	upward_frame_writes: bool = False,
 ) -> Analysis:
 	blocks_by_function = control_flow_graphs(program)
@@ -136,6 +137,7 @@ def analyze(
 				top=top,
 				creation=creation,
 				assumed_unwritten=assumed_unwritten,
+				only_tracked_writes=only_tracked_writes,
 				upward_frame_writes=upward_frame_writes,
 				escapes=found,
 				entry_loads=loads,
@@ -147,6 +149,7 @@ def analyze(
 			program,
 			final.writes,
 			assumed_unwritten=assumed_unwritten,
+			only_tracked_writes=only_tracked_writes,
 			upward_frame_writes=upward_frame_writes,
 			escapes=found,
 			entry_loads=loads,

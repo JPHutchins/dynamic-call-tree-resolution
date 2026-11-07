@@ -205,7 +205,7 @@ def interrupt_table(program: Program, options: Kconfig) -> InterruptTable | None
 			or options.options.get(_DYNAMIC_INTERRUPTS) == "y"
 			or table is None
 			or layout is None
-			or _ISR not in layout.offsets
+			or _ISR not in layout.extents
 			or layout.size == 0
 			or in_writable_memory(program, table.address)
 		):
@@ -213,7 +213,7 @@ def interrupt_table(program: Program, options: Kconfig) -> InterruptTable | None
 				program,
 				tuple(
 					pointer_at(program, Address(table.address + offset))
-					for offset in range(layout.offsets[_ISR], table.size, layout.size)
+					for offset in range(layout.extents[_ISR].offset, table.size, layout.size)
 				),
 			)
 		case ArmCore() | None:
