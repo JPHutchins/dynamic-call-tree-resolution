@@ -70,5 +70,14 @@
 		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da -fdump-tree-alias-lineno",
 		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections",
 		"EXTRA_ARGS": "-DCONFIG_STACK_SENTINEL=y -DCONFIG_INIT_STACKS=y"
+	},
+	{
+		"NAME": "logger",
+		"BOARD": "qemu_cortex_m3",
+		"SOURCE": "zephyr/samples/subsys/logging/logger",
+		"TOOLCHAIN": "zephyr",
+		"EXTRA_CFLAGS": "-fstack-usage -fcallgraph-info=su,da -fdump-tree-alias-lineno",
+		"EXTRA_LDFLAGS": "-Wl,--emit-relocs -Wl,--print-gc-sections",
+		"EXTRA_ARGS": ""
 	}
 ]
