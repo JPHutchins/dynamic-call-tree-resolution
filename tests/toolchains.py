@@ -91,6 +91,11 @@ def cortex_m3_cc(*flags: str) -> tuple[str, ...]:
 	)
 
 
+def cortex_m3_unit(*flags: str) -> tuple[str, ...]:
+	"""The Cortex-M3 compiler for one unit's object, without the harness or the link."""
+	return ("arm-none-eabi-gcc", "-mcpu=cortex-m3", "-mthumb", *_CC_FLAGS, "-c", *flags)
+
+
 def cortex_a15_cc(*flags: str) -> tuple[str, ...]:
 	return (
 		"arm-none-eabi-gcc",
