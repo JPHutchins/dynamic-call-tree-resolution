@@ -108,9 +108,7 @@ def _replayed(
 			if index > 0
 			and argument != "-o"
 			and arguments[index - 1] != "-o"
-			and argument != "-fstack-usage"
-			and not argument.startswith("-fcallgraph-info")
-			and not argument.startswith("-fdump-")
+			and not argument.startswith(("-fstack-usage", "-fcallgraph-info", "-fdump-"))
 		),
 		*(
 			include
