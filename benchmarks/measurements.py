@@ -7,7 +7,7 @@ from msgspec import Struct
 
 
 class CpuTime(Struct, frozen=True, forbid_unknown_fields=True):
-	"""The process CPU time of one analysis, every analysis thread summed."""
+	"""The process CPU time of one measured stage, every thread summed."""
 
 	cpu_seconds: float
 

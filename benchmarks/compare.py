@@ -85,7 +85,7 @@ class _DctrCommand(Struct):
 	arguments: tuple[str, ...]
 
 
-class _DctrOutput(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+class _Completed(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
 	exit_status: int
 	stdout: bytes
 	stderr: bytes
@@ -94,7 +94,7 @@ class _DctrOutput(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
 class _KeptOutput(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
 	key: str
 	"""What the output depends on besides the revision."""
-	output: _DctrOutput
+	output: _Completed
 
 
 class _OutputComparison(Struct):
@@ -135,8 +135,8 @@ def outputs(
 	The commands are ``dctr analyze --json`` for every image and ``dctr stack --json`` for every
 	image with a build directory. The images are $DCTR_FIXTURES' builds and pexplorer's testdata,
 	once ``camas pexplorer_testdata`` has fetched it. Each tree's outputs are kept under
-	.camas/benchmarks/outputs, and the base revision's are reused while what they depend on stays
-	the same.
+	.camas/benchmarks/outputs, and the base revision's are reused until its ELF or the environment
+	changes; clear them after rebuilding a build directory in place.
 
 	Raises:
 		SystemExit: when an output differs.
@@ -256,7 +256,10 @@ def _chosen(names: Collection[str], default: Callable[[_Image], bool]) -> tuple[
 	unknown = sorted(frozenset(names) - seen.keys())
 	if unknown:
 		raise SystemExit(f"no testbed image is named {', '.join(unknown)}")
-	return tuple(image for image in images if (image.name in names if names else default(image)))
+	chosen = tuple(image for image in images if (image.name in names if names else default(image)))
+	if not chosen:
+		raise SystemExit("no testbed image to run: check DCTR_FIXTURES and the pexplorer testdata")
+	return chosen
 
 
 def _checked_by_default(image: _Image, *, all_images: bool) -> bool:
@@ -316,13 +319,15 @@ def _dctr_commands(image: _Image) -> Iterable[_DctrCommand]:
 async def _compared(
 	trees: _Trees, command: _DctrCommand, limit: asyncio.Semaphore
 ) -> _OutputComparison:
-	base_output = await _kept(trees.base, command, limit)
-	head_output = await _kept(trees.head, command, limit)
+	key = _key(command)
+	base_output = await _kept(trees.base, command, key, limit)
+	head_output = await _kept(trees.head, command, key, limit)
 	return _OutputComparison(command, base_output == head_output)
 
 
-async def _kept(tree: _Tree, command: _DctrCommand, limit: asyncio.Semaphore) -> _DctrOutput:
-	key = _key(command)
+async def _kept(
+	tree: _Tree, command: _DctrCommand, key: str, limit: asyncio.Semaphore
+) -> _Completed:
 	record = _STORE / "outputs" / (tree.revision or "working-tree") / f"{command.output}.json"
 	match _reusable(tree, record, key):
 		case None:
@@ -346,14 +351,17 @@ def _key(command: _DctrCommand) -> str:
 	).hexdigest()
 
 
-def _reusable(tree: _Tree, record: Path, key: str) -> _DctrOutput | None:
+def _reusable(tree: _Tree, record: Path, key: str) -> _Completed | None:
 	if tree.revision is None or not record.is_file():
 		return None
-	kept = msgspec.json.decode(record.read_bytes(), type=_KeptOutput)
+	try:
+		kept = msgspec.json.decode(record.read_bytes(), type=_KeptOutput)
+	except msgspec.DecodeError:
+		return None
 	return kept.output if kept.key == key else None
 
 
-def _recorded(record: Path, key: str, output: _DctrOutput) -> _DctrOutput:
+def _recorded(record: Path, key: str, output: _Completed) -> _Completed:
 	if output.exit_status >= 0:
 		record.parent.mkdir(parents=True, exist_ok=True)
 		_replaced(record.with_name(f"{record.stem}.stdout"), output.stdout)
@@ -368,7 +376,7 @@ def _replaced(path: Path, content: bytes) -> None:
 	written.replace(path)
 
 
-async def _dctr_output(tree: _Tree, command: _DctrCommand) -> _DctrOutput:
+async def _dctr_output(tree: _Tree, command: _DctrCommand) -> _Completed:
 	process = await asyncio.create_subprocess_exec(
 		sys.executable,
 		"-c",
@@ -379,8 +387,21 @@ async def _dctr_output(tree: _Tree, command: _DctrCommand) -> _DctrOutput:
 		stdout=asyncio.subprocess.PIPE,
 		stderr=asyncio.subprocess.PIPE,
 	)
-	stdout, stderr = await process.communicate()
-	return _DctrOutput(await process.wait(), stdout, stderr)
+	completed = await _completed(process)
+	return _Completed(
+		completed.exit_status,
+		completed.stdout,
+		completed.stderr.replace(os.fsencode(tree.source), b"<src>"),
+	)
+
+
+async def _completed(process: asyncio.subprocess.Process) -> _Completed:
+	try:
+		stdout, stderr = await process.communicate()
+	except asyncio.CancelledError:
+		process.kill()
+		raise
+	return _Completed(await process.wait(), stdout, stderr)
 
 
 def _comparison_line(comparison: _OutputComparison) -> str:
@@ -435,7 +456,7 @@ async def _idle(load_below: float, polls: int = 1) -> float:
 	if polls >= _LOAD_POLLS:
 		raise SystemExit(
 			f"the 1-minute load average stayed at or above {load_below} for "
-			f"{_LOAD_POLLS * _LOAD_POLL_SECONDS} s; stop what loads the machine, or raise "
+			f"{(_LOAD_POLLS - 1) * _LOAD_POLL_SECONDS} s; stop what loads the machine, or raise "
 			"--load-below"
 		)
 	print(
@@ -493,13 +514,18 @@ async def _git(*arguments: str) -> str:
 
 async def _output(command: tuple[str, ...], environment: Mapping[str, str] | None = None) -> bytes:
 	process = await asyncio.create_subprocess_exec(
-		*command, cwd=_ROOT, env=environment, stdout=asyncio.subprocess.PIPE
+		*command,
+		cwd=_ROOT,
+		env=environment,
+		stdout=asyncio.subprocess.PIPE,
+		stderr=asyncio.subprocess.PIPE,
 	)
-	stdout, _ = await process.communicate()
-	exit_status = await process.wait()
-	if exit_status:
-		raise SystemExit(f"{shlex.join(command)} exited {exit_status}")
-	return stdout
+	completed = await _completed(process)
+	if completed.exit_status:
+		raise SystemExit(
+			f"{shlex.join(command)} exited {completed.exit_status}:\n{completed.stderr.decode()}"
+		)
+	return completed.stdout
 
 
 def _environment(tree: _Tree) -> dict[str, str]:
