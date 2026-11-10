@@ -61,7 +61,7 @@ fix = Sequential(lint_fix, format, c_format, nix_format)
 actionlint = Task("uv run actionlint", when=".github")
 mypy = Task("uv run mypy .", when=touches_python)
 pyright = Task(
-	"uv run pyright src tests tasks.py testbeds/plugin",
+	"uv run pyright src tests tasks.py testbeds/plugin benchmarks",
 	when=touches_python,
 )
 
@@ -159,6 +159,24 @@ descriptors = Sequential(
 	),
 	help="replay each Arm testbed's C compiles through the plugin into "
 	".camas/build/{NAME}/zephyr/descriptors.txt; run in `nix develop` after `testbeds`",
+)
+
+benchmark_outputs = Task(
+	"uv run python -m benchmarks.compare outputs",
+	help="exit 1 unless a base revision and the working tree print the same dctr outputs for "
+	"the testbed images; `-- --help` lists the options. Run in `nix develop`, never in CI",
+)
+benchmark_work = Task(
+	"uv run python -m benchmarks.compare work",
+	help="count the instructions the interpreter transfers and the functions it analyzes under "
+	"a base revision and the working tree; `-- --help` lists the options. Run in "
+	"`nix develop`, never in CI",
+)
+benchmark_cpu = Task(
+	"uv run python -m benchmarks.compare cpu",
+	help="time the analysis in process CPU seconds, a base revision against the working tree, "
+	"in interleaved pairs on an idle machine; `-- --help` lists the options. Run in "
+	"`nix develop`, never in CI",
 )
 
 pexplorer_testdata = Sequential(
