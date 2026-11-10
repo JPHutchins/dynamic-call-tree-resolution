@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+from itertools import chain
 from typing import TYPE_CHECKING, Final, cast
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	ANONYMOUS,
 )
@@ -15,6 +17,7 @@ if TYPE_CHECKING:
 	from collections.abc import Iterator
 
 	from elftools.dwarf.die import DIE, AttributeValue
+	from elftools.dwarf.dwarfinfo import DWARFInfo
 
 
 DW_OP_ADDR: Final = 0x03
@@ -41,10 +44,12 @@ BLOCK_FORMS: Final = frozenset(
 )
 
 
+def every_die(dwarf: DWARFInfo) -> Iterator[DIE]:
+	return flatmap(lambda unit: iter_dies(unit.get_top_DIE()), dwarf.iter_CUs())
+
+
 def iter_dies(root: DIE) -> Iterator[DIE]:
-	yield root
-	for child in root.iter_children():
-		yield from iter_dies(child)
+	return chain((root,), flatmap(iter_dies, root.iter_children()))
 
 
 def int_value(attribute: AttributeValue) -> int:

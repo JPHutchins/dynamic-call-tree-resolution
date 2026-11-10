@@ -6,12 +6,19 @@
 from __future__ import annotations
 
 import re
-from itertools import groupby
+from functools import partial
+from itertools import chain, groupby
 from typing import TYPE_CHECKING, Final
 
-from elftools.elf.sections import ARMAttributesSection, SymbolTableSection
+from elftools.elf.sections import (
+	ARMAttributesSection,
+	ARMAttributesSubsection,
+	ARMAttributesSubsubsection,
+	SymbolTableSection,
+)
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import Pipeline, flatmap
 from dynamic_call_tree_resolution.model import (
 	Address,
 	ArmCore,
@@ -78,12 +85,13 @@ def aligned_total(blocks: Iterable[AlignedBlock]) -> int:
 def arm_core(elf: ELFFile) -> ArmCore | None:
 	match elf.get_section_by_name(".ARM.attributes"):
 		case ARMAttributesSection() as section:
-			attributes = {
-				attribute.tag: attribute.value
-				for subsection in section.iter_subsections()
-				for subsubsection in subsection.iter_subsubsections()
-				for attribute in subsubsection.iter_attributes()
-			}
+			every_attribute = (
+				Pipeline(section.iter_subsections())
+				.then(partial(flatmap, ARMAttributesSubsection.iter_subsubsections))
+				.then(partial(flatmap, ARMAttributesSubsubsection.iter_attributes))
+				.value
+			)
+			attributes = {attribute.tag: attribute.value for attribute in every_attribute}
 			profile = attributes.get("TAG_CPU_ARCH_PROFILE")
 			return (
 				ArmCore(
@@ -106,14 +114,12 @@ class MappingMarker(Struct, order=True):
 	"""``a`` for A32 code, ``t`` for T32 code, ``d`` for data."""
 
 
-def mapped_spans(elf: ELFFile, markers: tuple[MappingMarker, ...], kind: str) -> tuple[Span, ...]:
-	return tuple(
-		span
+def mapped_spans(elf: ELFFile, markers: Iterable[MappingMarker], kind: str) -> tuple[Span, ...]:
+	section_spans = (
+		_section_spans(elf, section_index, tuple(group), kind)
 		for section_index, group in groupby(markers, key=_marker_section)
-		if (section := elf.get_section(section_index)) is not None
-		and section.header.sh_flags & SHF_EXECINSTR
-		for span in _kind_spans(tuple(group), section.header.sh_addr + section.header.sh_size, kind)
 	)
+	return tuple(chain.from_iterable(section_spans))
 
 
 def mapping_markers(symtab: SymbolTableSection | None) -> tuple[MappingMarker, ...]:
@@ -135,6 +141,17 @@ def _mapping_marker(symbol: Symbol) -> MappingMarker | None:
 
 def _marker_section(marker: MappingMarker) -> int:
 	return marker.section
+
+
+def _section_spans(
+	elf: ELFFile, section_index: int, marks: tuple[MappingMarker, ...], kind: str
+) -> Iterable[Span]:
+	section = elf.get_section(section_index)
+	return (
+		_kind_spans(marks, section.header.sh_addr + section.header.sh_size, kind)
+		if section is not None and section.header.sh_flags & SHF_EXECINSTR
+		else ()
+	)
 
 
 def _kind_spans(marks: tuple[MappingMarker, ...], end: int, kind: str) -> Iterator[Span]:

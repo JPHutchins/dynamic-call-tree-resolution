@@ -337,15 +337,21 @@ def _defined_aggregate(die: DIE) -> DIE | None:
 
 
 def _layout_members(struct_die: DIE) -> Iterator[Member]:
-	for child in struct_die.iter_children():
-		if child.tag != "DW_TAG_member":
-			continue  # pragma: no cover
-		offset = _member_offset(child)
-		if offset is None:
-			continue  # pragma: no cover
-		member = _member(_member_kind(die_type(child)), _member_name(child), offset)
-		if member is not None:
-			yield member
+	members = (
+		_layout_member(child)
+		for child in struct_die.iter_children()
+		if child.tag == "DW_TAG_member"
+	)
+	return (member for member in members if member is not None)
+
+
+def _layout_member(member_die: DIE) -> Member | None:
+	offset = _member_offset(member_die)
+	return (
+		_member(_member_kind(die_type(member_die)), _member_name(member_die), offset)
+		if offset is not None
+		else None
+	)
 
 
 def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from enum import IntEnum
+from functools import partial
 from typing import TYPE_CHECKING, assert_never
 
 from elftools.elf.descriptions import describe_reloc_type
@@ -14,6 +15,7 @@ from elftools.elf.relocation import RelocationSection
 from elftools.elf.sections import SymbolTableSection
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.loader.sections import (
 	SHF_ALLOC,
 	SectionBytes,
@@ -27,9 +29,10 @@ from dynamic_call_tree_resolution.model import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Mapping
 
 	from elftools.elf.elffile import ELFFile
+	from elftools.elf.sections import Symbol
 
 	from dynamic_call_tree_resolution.model import ByteOrder
 
@@ -154,21 +157,43 @@ class _ReferenceTypes(Struct):
 
 
 def link_references(elf: ELFFile, types: _ReferenceTypes) -> tuple[LinkReference, ...]:
-	return tuple(
-		LinkReference(
-			slot=Address(relocation["r_offset"]),
-			symbol="" if symbol["st_info"]["type"] == "STT_SECTION" else symbol.name,
-			value=Address(symbol["st_value"]),
-			kind=_reference_kind(types, relocation["r_info_type"]),
-		)
+	kept = (
+		section
 		for section in elf.iter_sections()
 		if isinstance(section, RelocationSection)
 		and not section.header.sh_flags & SHF_ALLOC
-		and (target := elf.get_section(section["sh_info"])) is not None
-		and target.header.sh_flags & SHF_ALLOC
-		and isinstance(symbols := elf.get_section(section["sh_link"]), SymbolTableSection)
-		for relocation in section.iter_relocations()
-		for symbol in (symbols.get_symbol(relocation["r_info_sym"]),)
+		and _relocates_allocated(elf, section)
+	)
+	return tuple(flatmap(partial(_section_references, elf, types), kept))
+
+
+def _relocates_allocated(elf: ELFFile, section: RelocationSection) -> bool:
+	target = elf.get_section(section["sh_info"])
+	return target is not None and bool(target.header.sh_flags & SHF_ALLOC)
+
+
+def _section_references(
+	elf: ELFFile, types: _ReferenceTypes, section: RelocationSection
+) -> Iterable[LinkReference]:
+	symbols = elf.get_section(section["sh_link"])
+	return (
+		(
+			_link_reference(types, relocation, symbols.get_symbol(relocation["r_info_sym"]))
+			for relocation in section.iter_relocations()
+		)
+		if isinstance(symbols, SymbolTableSection)
+		else ()
+	)
+
+
+def _link_reference(
+	types: _ReferenceTypes, relocation: ElfRelocation, symbol: Symbol
+) -> LinkReference:
+	return LinkReference(
+		slot=Address(relocation["r_offset"]),
+		symbol="" if symbol["st_info"]["type"] == "STT_SECTION" else symbol.name,
+		value=Address(symbol["st_value"]),
+		kind=_reference_kind(types, relocation["r_info_type"]),
 	)
 
 
