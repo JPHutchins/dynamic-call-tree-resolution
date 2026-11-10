@@ -175,7 +175,7 @@ benchmark_work = Task(
 benchmark_cpu = Task(
 	"uv run python -m benchmarks.compare cpu",
 	help="time the analysis in process CPU seconds, a base revision against the working tree, "
-	"in interleaved pairs on an idle machine; `-- --help` lists the options. Run in "
+	"in interleaved pairs; `-- --help` lists the options. Run in "
 	"`nix develop`, never in CI",
 )
 

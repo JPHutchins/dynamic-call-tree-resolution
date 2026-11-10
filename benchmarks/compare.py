@@ -173,8 +173,12 @@ def cpu(
 		Parameter(help="how many runs of each tree per image", validator=validators.Number(gte=1)),
 	] = 6,
 	load_below: Annotated[
-		float, Parameter(help="the 1-minute load average each pair waits to fall below")
-	] = 1.0,
+		float | None,
+		Parameter(
+			help="wait before each pair for the 1-minute load average to fall below this. Without "
+			"it, the pairs run at once"
+		),
+	] = None,
 	stage: Annotated[
 		Literal["analysis", "load"],
 		Parameter(help="what to time: the analysis, or loading the image before it"),
@@ -182,9 +186,9 @@ def cpu(
 ) -> None:
 	"""Print the process CPU seconds of the analysis or the load, in interleaved pairs of runs.
 
-	Each pair waits for an idle machine, and the pairs alternate which tree runs first. Every
-	run's line carries the load average before and after its pair, and each image ends with every
-	tree's minimum, median and maximum, and the change of the medians.
+	The pairs alternate which tree runs first, so both trees share whatever load the machine
+	carries. Every run's line carries the load average before and after its pair, and each image
+	ends with every tree's minimum, median and maximum, and the change of the medians.
 	"""
 	asyncio.run(_cpu(base, _chosen(image, _rtos_testbed), pairs, load_below, stage))
 
@@ -206,7 +210,7 @@ async def _cpu(
 	base: str,
 	images: Iterable[_Image],
 	pairs: int,
-	load_below: float,
+	load_below: float | None,
 	stage: Literal["analysis", "load"],
 ) -> None:
 	trees = await _trees(base)
@@ -422,7 +426,11 @@ async def _work_line(trees: _Trees, image: _Image, limit: asyncio.Semaphore) -> 
 
 
 async def _pairs(
-	trees: _Trees, image: _Image, pairs: int, load_below: float, stage: Literal["analysis", "load"]
+	trees: _Trees,
+	image: _Image,
+	pairs: int,
+	load_below: float | None,
+	stage: Literal["analysis", "load"],
 ) -> Collection[_Pair]:
 	return [await _pair(trees, image, load_below, stage, index) for index in range(pairs)]
 
@@ -430,11 +438,11 @@ async def _pairs(
 async def _pair(
 	trees: _Trees,
 	image: _Image,
-	load_below: float,
+	load_below: float | None,
 	stage: Literal["analysis", "load"],
 	index: int,
 ) -> _Pair:
-	load_before = await _idle(load_below)
+	load_before = os.getloadavg()[0] if load_below is None else await _idle(load_below)
 	order = (trees.base, trees.head) if index % 2 == 0 else (trees.head, trees.base)
 	seconds = {tree.name: await _cpu_seconds(tree, image, stage) for tree in order}
 	pair = _Pair(
