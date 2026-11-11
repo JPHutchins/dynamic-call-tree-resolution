@@ -116,12 +116,12 @@ def _leading(body: list[str]) -> list[str]:
 
 def _parameters(name: str, signature: str) -> dict[str, str]:
 	start = signature.index(f"{name} (") + len(name) + 2
-	return {
-		declared.name: declared.type
+	parts = (
+		part
 		for part in top_level_parts(signature[start : signature.rindex(")")])
 		if part and part != "void"
-		for declared in (_declaration(part),)
-	}
+	)
+	return {declared.name: declared.type for declared in map(_declaration, parts)}
 
 
 def top_level_parts(text: str) -> tuple[str, ...]:

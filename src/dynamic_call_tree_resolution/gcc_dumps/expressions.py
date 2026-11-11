@@ -10,13 +10,14 @@ from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import merged
 from dynamic_call_tree_resolution.gcc_dumps.units import Record, anonymous_name
 from dynamic_call_tree_resolution.model import ArrayMember, EmbeddedStructMember
 
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
-	from dynamic_call_tree_resolution.gcc_dumps.dump import DumpFunction
+	from dynamic_call_tree_resolution.gcc_dumps.dump import DumpFunction, Statement
 	from dynamic_call_tree_resolution.gcc_dumps.units import UnitTypes
 	from dynamic_call_tree_resolution.model import StructureLayout
 
@@ -59,14 +60,17 @@ def function_scope(types: UnitTypes, function: DumpFunction) -> Scope:
 	return Scope(
 		types=types,
 		function=function,
-		definitions={
-			match.group(1): match.group(2)
-			for statement in function.statements
-			if CALL.match(statement.body) is None
-			for match in (ASSIGNMENT.match(statement.body),)
-			if match is not None
-		},
+		definitions=merged(map(_definition, function.statements)),
 		locals=frozenset(function.declarations.keys() | function.parameters.keys()),
+	)
+
+
+def _definition(statement: Statement) -> dict[str, str]:
+	assignment = ASSIGNMENT.match(statement.body)
+	return (
+		{assignment.group(1): assignment.group(2)}
+		if assignment is not None and CALL.match(statement.body) is None
+		else {}
 	)
 
 

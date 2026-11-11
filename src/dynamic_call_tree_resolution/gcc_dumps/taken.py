@@ -9,9 +9,11 @@ A store that names no field can reach only these.
 from __future__ import annotations
 
 import re
-from itertools import accumulate, pairwise
+from functools import partial
+from itertools import accumulate, chain, pairwise
 from typing import TYPE_CHECKING, Final, assert_never
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.descriptors import (
 	EveryMember,
 	Unknown,
@@ -32,8 +34,10 @@ from dynamic_call_tree_resolution.gcc_dumps.writes import assembly_operands, poi
 from dynamic_call_tree_resolution.model import Field
 
 if TYPE_CHECKING:
+	from collections.abc import Iterable, Iterator
+
 	from dynamic_call_tree_resolution.descriptors import WriteTarget
-	from dynamic_call_tree_resolution.gcc_dumps.dump import DumpFunction
+	from dynamic_call_tree_resolution.gcc_dumps.dump import DumpFunction, Statement
 	from dynamic_call_tree_resolution.gcc_dumps.expressions import Scope
 	from dynamic_call_tree_resolution.gcc_dumps.units import UnitTypes
 
@@ -48,58 +52,57 @@ _MEMORY_TYPE: Final = re.compile(r"<[^<>]*>")
 _BINARY: Final = re.compile(r" (?:[-+*/%^|&<>]|[<>!=]=|<<|>>) ")
 
 
-def unit_taken(functions: tuple[DumpFunction, ...], types: UnitTypes) -> tuple[WriteTarget, ...]:
+def unit_taken(functions: Iterable[DumpFunction], types: UnitTypes) -> Iterator[WriteTarget]:
 	"""Each scalar field or variable whose address a function uses as a value.
 
 	The value may be assigned, passed, returned, an asm operand, or joined by a PHI.
 	"""
-	return tuple(
-		target
-		for function in functions
-		for scope in (function_scope(types, function),)
-		for target in (
-			*_addressed(scope, function),
-			*_interior(scope, function),
-			*_unreadable(function),
-		)
-	)
+	return flatmap(partial(_function_taken, types), functions)
 
 
-def _unreadable(function: DumpFunction) -> tuple[WriteTarget, ...]:
+def _function_taken(types: UnitTypes, function: DumpFunction) -> Iterator[WriteTarget]:
+	scope = function_scope(types, function)
+	return chain(_addressed(scope, function), _interior(scope, function), _unreadable(function))
+
+
+def _unreadable(function: DumpFunction) -> Iterator[WriteTarget]:
 	"""Inline assembly whose operands can't be read may take any address."""
-	return tuple(
+	return (
 		Unknown()
 		for statement in function.statements
 		if statement.body.startswith("__asm__") and assembly_operands(statement.body) is None
 	)
 
 
-def _addressed(scope: Scope, function: DumpFunction) -> tuple[WriteTarget, ...]:
-	return tuple(
-		target
-		for value in _values(function)
-		for address in (_CAST.sub("", value),)
-		if address.startswith("&")
-		for target in (written(scope, address[1:]),)
-		if _scalar(scope, target, address[1:])
-	)
+def _addressed(scope: Scope, function: DumpFunction) -> Iterator[WriteTarget]:
+	return flatmap(partial(_addressed_target, scope), _values(function))
 
 
-def _interior(scope: Scope, function: DumpFunction) -> tuple[WriteTarget, ...]:
+def _addressed_target(scope: Scope, value: str) -> tuple[WriteTarget, ...]:
+	address = _CAST.sub("", value)
+	if not address.startswith("&"):
+		return ()
+	target = written(scope, address[1:])
+	return (target,) if _scalar(scope, target, address[1:]) else ()
+
+
+def _interior(scope: Scope, function: DumpFunction) -> Iterator[WriteTarget]:
 	"""What pointer arithmetic on a record pointer reaches, when its result points to no record.
 
 	A variable offset reaches every member of the record.
 	"""
-	return tuple(
-		target
-		for statement in function.statements
-		for assignment in (ASSIGNMENT.match(statement.body),)
-		if assignment is not None and not _points_to_record(scope, assignment.group(1))
-		for arithmetic in (_ARITHMETIC.match(assignment.group(2)),)
-		if arithmetic is not None
-		for target in (_reached(scope, arithmetic.group(1), arithmetic.group(2)),)
-		if target is not None
-	)
+	return flatmap(partial(_interior_target, scope), function.statements)
+
+
+def _interior_target(scope: Scope, statement: Statement) -> tuple[WriteTarget, ...]:
+	assignment = ASSIGNMENT.match(statement.body)
+	if assignment is None or _points_to_record(scope, assignment.group(1)):
+		return ()
+	arithmetic = _ARITHMETIC.match(assignment.group(2))
+	if arithmetic is None:
+		return ()
+	target = _reached(scope, arithmetic.group(1), arithmetic.group(2))
+	return (target,) if target is not None else ()
 
 
 def _reached(scope: Scope, pointer: str, offset: str) -> WriteTarget | None:
@@ -124,20 +127,19 @@ def taken_line(target: WriteTarget) -> str:
 	return "\t".join(("taken", *write_target_fields(target)))
 
 
-def _values(function: DumpFunction) -> tuple[str, ...]:
+def _values(function: DumpFunction) -> Iterator[str]:
+	return chain(
+		flatmap(lambda statement: _statement_values(statement.body), function.statements),
+		flatmap(_phi_values, function.phis),
+	)
+
+
+def _phi_values(phi: str) -> Iterable[str]:
+	arguments = _PHI_ARGUMENTS.search(phi)
 	return (
-		*(
-			value
-			for statement in function.statements
-			for value in _statement_values(statement.body)
-		),
-		*(
-			_PREDECESSOR.sub("", argument)
-			for phi in function.phis
-			for arguments in (_PHI_ARGUMENTS.search(phi),)
-			if arguments is not None
-			for argument in top_level_parts(arguments.group(1))
-		),
+		(_PREDECESSOR.sub("", argument) for argument in top_level_parts(arguments.group(1)))
+		if arguments is not None
+		else ()
 	)
 
 
@@ -165,15 +167,10 @@ def _operands(expression: str) -> tuple[str, ...]:
 	masked = _MEMORY_TYPE.sub(_blanked, expression)
 	depths = tuple(accumulate((character in "([") - (character in ")]") for character in masked))
 	cuts = tuple(operator for operator in _BINARY.finditer(masked) if depths[operator.start()] == 0)
+	edges = flatmap(lambda operator: (operator.start(), operator.end()), cuts)
 	return tuple(
 		expression[start:end].strip()
-		for start, end in pairwise(
-			(
-				0,
-				*(edge for operator in cuts for edge in (operator.start(), operator.end())),
-				len(expression),
-			)
-		)
+		for start, end in pairwise(chain((0,), edges, (len(expression),)))
 	)[::2]
 
 

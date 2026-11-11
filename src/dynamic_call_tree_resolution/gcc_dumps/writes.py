@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import re
+from functools import partial
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.descriptors import (
 	EveryMember,
 	Unknown,
@@ -38,6 +40,7 @@ from dynamic_call_tree_resolution.gcc_dumps.records import Located, located, loc
 from dynamic_call_tree_resolution.model import Field
 
 if TYPE_CHECKING:
+	from collections.abc import Iterable, Iterator
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.descriptors import WriteTarget
@@ -130,20 +133,24 @@ class _Span(Struct):
 
 def unit_writes(
 	unit: str,
-	functions: tuple[DumpFunction, ...],
+	functions: Iterable[DumpFunction],
 	types: UnitTypes,
 	root: Path,
 	dumped: frozenset[str],
-) -> tuple[WriteOrPass, ...]:
+) -> Iterator[WriteOrPass]:
 	"""Every function's writes, with ``dumped`` the functions some dump of the build defines."""
-	return tuple(
-		record
-		for function in functions
-		for scope in (function_scope(types, function),)
-		for statement in function.statements
-		for record in _writes(
+	return flatmap(partial(_function_writes, unit, types, root, dumped), functions)
+
+
+def _function_writes(
+	unit: str, types: UnitTypes, root: Path, dumped: frozenset[str], function: DumpFunction
+) -> Iterator[WriteOrPass]:
+	scope = function_scope(types, function)
+	return flatmap(
+		lambda statement: _writes(
 			scope, dumped, located(unit, function, statement, root), statement.body
-		)
+		),
+		function.statements,
 	)
 
 
@@ -296,10 +303,10 @@ def _may_store(template: str) -> bool:
 	>>> _may_store("str %1, [%0]")
 	True
 	"""
+	lines = template.replace("\\n", "\n").replace(";", "\n").splitlines()
 	return any(
 		mnemonic.lower() not in _NON_STORING
-		for line in template.replace("\\n", "\n").replace(";", "\n").splitlines()
-		for mnemonic in line.split()[:1]
+		for mnemonic in flatmap(lambda line: line.split()[:1], lines)
 		if not mnemonic.startswith(".")
 	)
 
@@ -309,11 +316,7 @@ def assembly_operands(body: str) -> tuple[str, ...] | None:
 	assembly = _ASSEMBLY.match(body)
 	if assembly is None:
 		return None
-	operands = tuple(
-		operand
-		for listed in _OPERAND_LISTS.split(assembly.group(2))[1:3]
-		for operand in _operands(listed)
-	)
+	operands = tuple(flatmap(_operands, _OPERAND_LISTS.split(assembly.group(2))[1:3]))
 	return (
 		None
 		if None in operands
