@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct, replace
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	FUNCTION_POINTER,
 	Address,
@@ -71,11 +73,8 @@ def _gated_creation(
 	taken: frozenset[Address],
 	references: Mapping[Address, frozenset[Address]],
 ) -> Creation | None:
-	builders = {
-		builder: _entry_position(program.functions[builder])
-		for name in creation.frame_builders
-		for builder in functions_named(program, name)
-	}
+	every_builder = flatmap(partial(functions_named, program), creation.frame_builders)
+	builders = {builder: _entry_position(program.functions[builder]) for builder in every_builder}
 	match functions_named(program, trampoline_name), functions_named(program, creation.setup):
 		case (trampoline,), (setup,) if (
 			builders

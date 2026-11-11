@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable
+from itertools import product
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
@@ -140,7 +141,7 @@ def indexed(base: ValueSet, index: ValueSet, scale: int, disp: int) -> ValueSet:
 		lambda bases: bind(
 			index,
 			lambda indexes: capped(
-				frozenset(Address(b + i * scale + disp) for b in bases for i in indexes)
+				frozenset(Address(b + i * scale + disp) for b, i in product(bases, indexes))
 			),
 		),
 	)
@@ -149,4 +150,4 @@ def indexed(base: ValueSet, index: ValueSet, scale: int, disp: int) -> ValueSet:
 def indexed_offsets(
 	base: frozenset[int], index: frozenset[Address], scale: int, disp: int
 ) -> OffsetSet:
-	return capped(frozenset(b + i * scale + disp for b in base for i in index))
+	return capped(frozenset(b + i * scale + disp for b, i in product(base, index)))

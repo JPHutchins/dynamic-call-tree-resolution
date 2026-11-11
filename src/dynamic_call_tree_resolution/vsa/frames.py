@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct, replace
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import Address, Machine
 from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_CALLS,
@@ -22,6 +23,7 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 	FunctionGraph,
 	branch_target,
 	call_target,
+	every_instruction,
 	function_graph,
 	indirect_operand,
 )
@@ -31,7 +33,7 @@ from dynamic_call_tree_resolution.vsa.memory import context_for
 from dynamic_call_tree_resolution.vsa.state import NO_WRITES, top_seed
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Mapping
+	from collections.abc import Callable, Iterator, Mapping
 	from collections.abc import Set as AbstractSet
 
 	from capstone import Cs, CsInsn
@@ -110,20 +112,16 @@ def code_measure(program: Program) -> CodeMeasure:
 
 def code_depths(measure: CodeMeasure, starts: frozenset[Address]) -> Mapping[Address, int]:
 	"""How deep each function takes the stack, its callees included, where its code can say."""
-	return {
-		start: depth
-		for start in starts
-		for depth in (_worst(measure.own, start, frozenset()),)
-		if depth is not None
-	}
+	depths = {start: _worst(measure.own, start, frozenset()) for start in starts}
+	return {start: depth for start, depth in depths.items() if depth is not None}
 
 
 def own_frames(measure: CodeMeasure, starts: frozenset[Address]) -> Mapping[Address, OwnCode]:
 	"""Each function's own frame, where its code can say even though a callee is unnamed."""
+	owns = {start: measure.own(start) for start in starts}
 	return {
 		start: OwnCode(bytes=own.depth, callees=frozenset(call.callee for call in own.calls))
-		for start in starts
-		for own in (measure.own(start),)
+		for start, own in owns.items()
 		if own is not None
 	}
 
@@ -197,15 +195,12 @@ def _own(
 def _measured_blocks(
 	program: Program, context: Context, blocks: tuple[Block, ...], starts: AbstractSet[Address]
 ) -> _Own | None:
-	addresses = frozenset(
-		instruction.address for block in blocks for instruction in block.instructions
-	)
+	instructions = tuple(every_instruction(blocks))
+	addresses = frozenset(instruction.address for instruction in instructions)
 	return (
 		None
 		if any(
-			_lost(_exit(program, instruction, addresses, starts))
-			for block in blocks
-			for instruction in block.instructions
+			_lost(_exit(program, instruction, addresses, starts)) for instruction in instructions
 		)
 		else _measured(
 			program,
@@ -228,17 +223,19 @@ class _Step(Struct):
 def _steps(
 	context: Context, blocks: tuple[Block, ...], states: Mapping[Address, State]
 ) -> tuple[_Step, ...]:
-	return tuple(
+	reached = (block for block in blocks if block.start in states)
+	return tuple(flatmap(partial(_block_steps, context, states), reached))
+
+
+def _block_steps(
+	context: Context, states: Mapping[Address, State], block: Block
+) -> Iterator[_Step]:
+	before_each = accumulate(
+		block.instructions[:-1], partial(transfer, context), initial=states[block.start]
+	)
+	return (
 		_Step(instruction, state)
-		for block in blocks
-		if block.start in states
-		for instruction, state in zip(
-			block.instructions,
-			accumulate(
-				block.instructions[:-1], partial(transfer, context), initial=states[block.start]
-			),
-			strict=True,
-		)
+		for instruction, state in zip(block.instructions, before_each, strict=True)
 	)
 
 
@@ -250,19 +247,23 @@ def _measured(
 ) -> _Own | None:
 	offsets = tuple(step.state.sp_offsets.get(SP_REGISTERS[program.machine][0]) for step in steps)
 	exits = tuple(_exit(program, step.instruction, addresses, starts) for step in steps)
+	calls = (_direct_call(offset, exit_) for offset, exit_ in zip(offsets, exits, strict=True))
 	return (
 		_Own(
 			depth=max((_depth(offset) for offset in offsets if offset is not None), default=0),
-			calls=tuple(
-				_Call(depth=_depth(offset), callee=callee)
-				for offset, exit_ in zip(offsets, exits, strict=True)
-				if offset is not None
-				for callee in (_called(exit_),)
-				if callee is not None
-			),
+			calls=tuple(call for call in calls if call is not None),
 			register_calls=sum(map(_through_register, exits)),
 		)
 		if None not in offsets
+		else None
+	)
+
+
+def _direct_call(offsets: frozenset[int] | None, exit_: _Exit) -> _Call | None:
+	callee = _called(exit_)
+	return (
+		_Call(depth=_depth(offsets), callee=callee)
+		if offsets is not None and callee is not None
 		else None
 	)
 

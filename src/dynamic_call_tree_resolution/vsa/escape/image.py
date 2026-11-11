@@ -7,11 +7,13 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from enum import Enum
+from functools import partial
 from itertools import accumulate, chain, pairwise
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import merged
 from dynamic_call_tree_resolution.model import Address
 from dynamic_call_tree_resolution.points_to import in_writable_memory, memory_at
 from dynamic_call_tree_resolution.span import Span
@@ -19,7 +21,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	is_data,
 	normalized,
 )
-from dynamic_call_tree_resolution.vsa.cfg import branch_target
+from dynamic_call_tree_resolution.vsa.cfg import branch_target, every_instruction
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
@@ -96,11 +98,7 @@ def escape_image(program: Program, graphs: tuple[FunctionGraph, ...]) -> Image:
 	}
 	object_starts = frozenset(data_object.address for data_object in program.objects.values())
 	arrays = frozenset(section for section in writable if _one_type(program, section))
-	routines = {
-		normalized(address, program.machine): fill
-		for name, fill in _FILL_ROUTINES.items()
-		for address in program.symbol_addresses.get(name, frozenset())
-	}
+	routines = merged(map(partial(_routines_named, program), _FILL_ROUTINES))
 	return Image(
 		program=program,
 		spans=spans,
@@ -137,6 +135,11 @@ def escape_image(program: Program, graphs: tuple[FunctionGraph, ...]) -> Image:
 	)
 
 
+def _routines_named(program: Program, name: str) -> dict[Address, Fill]:
+	addresses = program.symbol_addresses.get(name, frozenset())
+	return {normalized(address, program.machine): _FILL_ROUTINES[name] for address in addresses}
+
+
 def _one_type(program: Program, section: Span) -> bool:
 	return (
 		len(
@@ -169,10 +172,7 @@ def _forwarded_fill(
 	program: Program, routines: Mapping[Address, Fill], blocks: tuple[Block, ...]
 ) -> Fill | None:
 	match tuple(
-		instruction
-		for block in blocks
-		for instruction in block.instructions
-		if not is_data(instruction)
+		instruction for instruction in every_instruction(blocks) if not is_data(instruction)
 	):
 		case (only,):
 			branch = branch_target(only, program.machine)

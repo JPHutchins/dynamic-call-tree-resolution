@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from functools import reduce
+from itertools import chain
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct, replace
@@ -15,7 +16,7 @@ from dynamic_call_tree_resolution.vsa.cfg import CallsNoReturn, LeavesNoReturnIn
 from dynamic_call_tree_resolution.vsa.conditions import Conditional, edge_values
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Mapping
+	from collections.abc import Callable, Iterable, Mapping
 
 	from capstone import CsInsn
 
@@ -34,7 +35,7 @@ class SuccessorState(Struct):
 
 def successor_states(
 	block: Block, states: tuple[State, ...], step: Callable[[State, CsInsn], State]
-) -> tuple[SuccessorState, ...]:
+) -> Iterable[SuccessorState]:
 	"""Each successor some value can reach, with the state its edge carries there.
 
 	The states are those before each instruction and after the last. A predicated last
@@ -42,11 +43,11 @@ def successor_states(
 	"""
 	match block.condition:
 		case None:
-			return tuple(SuccessorState(successor, states[-1]) for successor in block.successors)
+			return (SuccessorState(successor, states[-1]) for successor in block.successors)
 		case Conditional(test=test, taken=taken, fallthrough=fallthrough, narrowing=narrowing):
 			edges = edge_values(test, states[narrowing.at].registers)
-			return (
-				*_outcome_states(
+			return chain(
+				_outcome_states(
 					block,
 					states,
 					step,
@@ -55,7 +56,7 @@ def successor_states(
 					fallthrough,
 					len(states) - (2 if arm_predicated(block.instructions[-1]) else 1),
 				),
-				*_outcome_states(
+				_outcome_states(
 					block, states, step, narrowing, edges.get(True), taken, len(states) - 1
 				),
 			)
@@ -73,12 +74,12 @@ def _outcome_states(
 	values: Mapping[int, frozenset[Address]] | None,
 	successors: tuple[Address, ...],
 	end: int,
-) -> tuple[SuccessorState, ...]:
+) -> Iterable[SuccessorState]:
 	"""One outcome's successors, when some value takes the outcome."""
 	return (
 		()
 		if values is None
-		else tuple(
+		else (
 			SuccessorState(successor, _edge_state(block, states, step, narrowing, values, end))
 			for successor in successors
 		)

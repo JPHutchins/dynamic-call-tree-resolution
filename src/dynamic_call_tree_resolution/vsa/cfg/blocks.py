@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+from functools import partial
 from itertools import groupby
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct, replace
 
+from dynamic_call_tree_resolution.composition import flatmap, merged
 from dynamic_call_tree_resolution.model import Address, InstructionFamily, Machine
 from dynamic_call_tree_resolution.points_to import (
 	instruction_runs,
@@ -40,7 +42,7 @@ from dynamic_call_tree_resolution.vsa.cfg.transfers import (
 from dynamic_call_tree_resolution.vsa.conditions import Conditional, arm_branch_test
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Iterator, Mapping
 
 	from capstone import Cs, CsInsn
 
@@ -71,18 +73,16 @@ class FunctionGraph(Struct):
 	blocks: tuple[Block, ...]
 
 
+def every_instruction(blocks: Iterable[Block]) -> Iterator[CsInsn]:
+	return flatmap(lambda block: block.instructions, blocks)
+
+
 def predecessors(by_start: Mapping[Address, Block]) -> Mapping[Address, tuple[Address, ...]]:
 	"""The blocks each block is a successor of, in address order."""
+	edges = flatmap(partial(_edges_from, by_start), by_start)
 	return {
 		start: tuple(inbound.predecessor for inbound in group)
-		for start, group in groupby(
-			sorted(
-				_Inbound(block=successor, predecessor=start)
-				for start, block in by_start.items()
-				for successor in block.successors
-			),
-			key=_entered,
-		)
+		for start, group in groupby(sorted(edges), key=_entered)
 	}
 
 
@@ -91,6 +91,12 @@ class _Inbound(Struct, order=True):
 
 	block: Address
 	predecessor: Address
+
+
+def _edges_from(by_start: Mapping[Address, Block], start: Address) -> Iterator[_Inbound]:
+	return (
+		_Inbound(block=successor, predecessor=start) for successor in by_start[start].successors
+	)
 
 
 def _entered(inbound: _Inbound) -> Address:
@@ -131,9 +137,9 @@ def function_graph(
 	return FunctionGraph(
 		function,
 		_build_blocks(
-			tuple(instruction for decode in decoded for instruction in decode.instructions),
+			tuple(flatmap(lambda decode: decode.instructions, decoded)),
 			program.machine,
-			{address: table for decode in decoded for address, table in decode.dispatches.items()},
+			merged(decode.dispatches for decode in decoded),
 		),
 	)
 
@@ -176,9 +182,9 @@ def _build_blocks(
 		for instruction in instructions
 		if (branch := branch_target(instruction, machine)) is not None
 	)
-	entered = branched_to | {
-		target for table in dispatches.values() if table is not None for target in table.targets
-	}
+	entered = branched_to.union(
+		*(table.targets for table in dispatches.values() if table is not None)
+	)
 	cases = {
 		address: table.targets
 		for address, table in dispatches.items()
@@ -186,7 +192,7 @@ def _build_blocks(
 		and entered.isdisjoint(table.guarded)
 		and all(target in by_address for target in table.targets)
 	}
-	targets = branched_to | {target for targets in cases.values() for target in targets}
+	targets = branched_to.union(*cases.values())
 	blocks: list[Block] = []
 	current: list[CsInsn] = []
 	for index, instruction in enumerate(instructions):

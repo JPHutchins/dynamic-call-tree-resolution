@@ -9,6 +9,7 @@ from functools import partial, reduce
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
+from dynamic_call_tree_resolution.composition import flatmap, merged
 from dynamic_call_tree_resolution.model import (
 	Address,
 	Machine,
@@ -28,7 +29,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Collection, Mapping
 
 	from dynamic_call_tree_resolution.model import (
 		Program,
@@ -74,17 +75,21 @@ def observed_entry_words(
 	roots: Mapping[Address, State],
 	entry_seeds: Mapping[Address, State],
 ) -> dict[Address, ValueSet]:
-	return {
-		site: word
+	groups = (
+		tuple(group)
 		for callee, group in groupby(sorted(observations, key=_callee), key=_callee)
 		if callee not in roots and callee not in entry_seeds
-		for observed in (tuple(group),)
-		for site in sorted({site for observation in observed for site in observation.entry_words})
-		for word in (
-			reduce(join, (observation.entry_words.get(site, Top()) for observation in observed)),
-		)
-		if not is_top(word)
+	)
+	return merged(map(_callee_entry_words, groups))
+
+
+def _callee_entry_words(observed: Collection[CallObservation]) -> dict[Address, ValueSet]:
+	sites = frozenset(flatmap(lambda observation: observation.entry_words.keys(), observed))
+	words = {
+		site: reduce(join, (observation.entry_words.get(site, Top()) for observation in observed))
+		for site in sorted(sites)
 	}
+	return {site: word for site, word in words.items() if not is_top(word)}
 
 
 def seed_from_arguments(arguments: Mapping[int, ValueSet], program: Program) -> State:
