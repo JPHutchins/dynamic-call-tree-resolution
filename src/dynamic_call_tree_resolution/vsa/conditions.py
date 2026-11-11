@@ -16,7 +16,7 @@ from dynamic_call_tree_resolution.vsa.abi import ARM_WORD_MASK
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top, lookup
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Mapping
+	from collections.abc import Callable, Iterator, Mapping
 
 	from capstone import ArmCsOperand, CsInsn
 
@@ -235,16 +235,17 @@ def _ordered_edges(
 	relation: _Relation,
 ) -> Mapping[bool, Mapping[int, frozenset[Address]]]:
 	"""Each outcome's values, found against the other side's extreme instead of every pair."""
-	return (
-		{
-			outcome: {left_register: kept.left, right_register: kept.right}
-			for outcome, holding in {True: relation, False: _NEGATED[relation]}.items()
-			for kept in (_holding(left, right, holding),)
-			if kept.left
-		}
-		if left and right
-		else {True: {}, False: {}}
-	)
+	if not left or not right:
+		return {True: {}, False: {}}
+	kept_by_outcome = {
+		outcome: _holding(left, right, holding)
+		for outcome, holding in {True: relation, False: _NEGATED[relation]}.items()
+	}
+	return {
+		outcome: {left_register: kept.left, right_register: kept.right}
+		for outcome, kept in kept_by_outcome.items()
+		if kept.left
+	}
 
 
 def _holding(
@@ -347,11 +348,11 @@ def _enumerated_edges(
 
 def _assignments(
 	test: BranchTest, registers: Mapping[int, frozenset[Address]]
-) -> tuple[Mapping[int, Address], ...] | None:
+) -> Iterator[Mapping[int, Address]] | None:
 	"""Every combination of values the tested registers hold; None when one holds none known."""
 	known = tuple(_values(registers, register) for register in tested_registers(test))
 	return (
-		tuple(
+		(
 			dict(zip(tested_registers(test), combination, strict=True))
 			for combination in product(*known)
 		)

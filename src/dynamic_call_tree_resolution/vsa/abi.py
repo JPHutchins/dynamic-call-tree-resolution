@@ -21,6 +21,7 @@ from capstone import (
 )
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import merged
 from dynamic_call_tree_resolution.model import (
 	Address,
 	ArmCore,
@@ -118,6 +119,18 @@ class _X86Family(Struct):
 	narrow: int
 	word: int
 	bytes: tuple[int, ...]
+
+
+def _family_registers(family: _X86Family) -> dict[int, X86Register]:
+	return {
+		family.wide: X86Register(wide=family.wide, narrow=family.narrow, bits=64),
+		family.narrow: X86Register(wide=family.wide, narrow=family.narrow, bits=32),
+		family.word: X86Register(wide=family.wide, narrow=family.narrow, bits=16),
+		**{
+			byte: X86Register(wide=family.wide, narrow=family.narrow, bits=8)
+			for byte in family.bytes
+		},
+	}
 
 
 _X86_FAMILIES: Final = (
@@ -230,17 +243,7 @@ _X86_FAMILIES: Final = (
 		bytes=(x86_const.X86_REG_R15B,),
 	),
 )
-X86_REGISTERS: Final[Mapping[int, X86Register]] = {
-	register: X86Register(wide=family.wide, narrow=family.narrow, bits=bits)
-	for family in _X86_FAMILIES
-	for bits, registers in {
-		64: (family.wide,),
-		32: (family.narrow,),
-		16: (family.word,),
-		8: family.bytes,
-	}.items()
-	for register in registers
-}
+X86_REGISTERS: Final[Mapping[int, X86Register]] = merged(map(_family_registers, _X86_FAMILIES))
 X86_CALLER_SAVED_64: Final = (
 	x86_const.X86_REG_RAX,
 	x86_const.X86_REG_RCX,

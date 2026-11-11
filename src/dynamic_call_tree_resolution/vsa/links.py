@@ -38,13 +38,16 @@ class SlotTarget(Struct):
 
 def linked_calls(program: Program) -> frozenset[LinkedCall]:
 	return frozenset(
-		LinkedCall(
-			slot=linked.slot,
-			caller=caller.address if caller is not None else None,
-			callee=linked.target,
-		)
-		for linked in linked_targets(program, ReferenceKind.CALL)
-		for caller in (function_covering(program, linked.slot),)
+		_linked_call(program, linked) for linked in linked_targets(program, ReferenceKind.CALL)
+	)
+
+
+def _linked_call(program: Program, linked: SlotTarget) -> LinkedCall:
+	caller = function_covering(program, linked.slot)
+	return LinkedCall(
+		slot=linked.slot,
+		caller=caller.address if caller is not None else None,
+		callee=linked.target,
 	)
 
 
@@ -79,9 +82,9 @@ def function_covering(program: Program, address: Address) -> Function | None:
 
 
 def _assembly_covering(program: Program, address: Address) -> Iterator[Function]:
+	functions = functions_by_start(program)
 	yield from (
 		function
-		for functions in (functions_by_start(program),)
 		for start, function in functions.items()
 		if function.size == 0
 		and address - start in range(function_extent(program, functions, start))

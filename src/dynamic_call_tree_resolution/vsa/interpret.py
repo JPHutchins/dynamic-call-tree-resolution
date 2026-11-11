@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 from functools import partial
-from itertools import accumulate
+from itertools import accumulate, chain
 from typing import TYPE_CHECKING, assert_never
 
 from capstone import x86_const
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	Address,
 	CallSite,
@@ -77,7 +78,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 from dynamic_call_tree_resolution.vsa.x86 import apply_x86
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Iterator, Mapping
 
 	from capstone import CsInsn, CsOperand
 
@@ -178,6 +179,10 @@ class FunctionResult(Struct):
 	"""Of calls through a site the analysis tracked to known functions."""
 
 
+def every_observation(result: FunctionResult) -> Iterator[CallObservation]:
+	return chain(result.observations, result.indirect_observations)
+
+
 class BlockStates(Struct):
 	"""The state on entry to each block the seed reaches, and every write on the way."""
 
@@ -244,10 +249,7 @@ def analyze_function(
 			is not None
 		),
 		indirect_observations=tuple(
-			observation
-			for located in sites
-			if (state := found.in_states.get(located.block.start)) is not None
-			for observation in _indirect_observations(context, located.block, located.site, state)
+			flatmap(partial(_located_observations, context, found.in_states), sites)
 		),
 	)
 
@@ -282,12 +284,23 @@ def _call_observation(
 			assert_never(unreachable)
 
 
+def _located_observations(
+	context: Context, in_states: Mapping[Address, State], located: _BlockSite
+) -> Iterable[CallObservation]:
+	state = in_states.get(located.block.start)
+	return (
+		_indirect_observations(context, located.block, located.site, state)
+		if state is not None
+		else ()
+	)
+
+
 def _indirect_observations(
 	context: Context, block: Block, site: CallSite, state: State
-) -> tuple[CallObservation, ...]:
+) -> Iterable[CallObservation]:
 	match site.target:
 		case Known(values=values):
-			return tuple(
+			return (
 				CallObservation(
 					callee=callee,
 					site=Address(block.instructions[-1].address),

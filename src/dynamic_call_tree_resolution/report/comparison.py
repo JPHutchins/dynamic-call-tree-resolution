@@ -40,8 +40,9 @@ from dynamic_call_tree_resolution.report.resolution import (
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
+	from dynamic_call_tree_resolution.call_sites import SignatureNarrowed
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
-	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
+	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel, SlotAssignment
 
 
 class FunctionComparison(Struct):
@@ -93,21 +94,8 @@ def build_comparison(
 	)
 	counts = slot_counts(resolved, unresolved, null_slots(program, resolved))
 	outcomes = tuple(
-		_SiteOutcome(
-			caller=_site_address(site),
-			candidates=0
-			if nothing
-			else len(
-				narrowed(
-					call_site_candidates(program, site, resolved_map, narrowings),
-					narrowed_by_field,
-					site.site_address,
-				)
-			),
-			calls_nothing=nothing,
-		)
+		_site_outcome(program, resolved_map, narrowings, narrowed_by_field, site)
 		for site in resolution.sites
-		for nothing in (calls_nothing(program, site),)
 	)
 	candidate_sizes = sorted(outcome.candidates for outcome in outcomes)
 	dynamic_by_caller: Mapping[Address, DynamicSites] = (
@@ -183,6 +171,29 @@ class _SiteOutcome(Struct):
 	caller: Address
 	candidates: int
 	calls_nothing: bool
+
+
+def _site_outcome(
+	program: Program,
+	resolved_map: Mapping[Address, SlotAssignment],
+	narrowings: Mapping[Address, SignatureNarrowed] | None,
+	narrowed_by_field: tuple[NarrowedSpan, ...],
+	site: CallSite,
+) -> _SiteOutcome:
+	nothing = calls_nothing(program, site)
+	return _SiteOutcome(
+		caller=_site_address(site),
+		candidates=0
+		if nothing
+		else len(
+			narrowed(
+				call_site_candidates(program, site, resolved_map, narrowings),
+				narrowed_by_field,
+				site.site_address,
+			)
+		),
+		calls_nothing=nothing,
+	)
 
 
 def _outcome_caller(outcome: _SiteOutcome) -> Address:

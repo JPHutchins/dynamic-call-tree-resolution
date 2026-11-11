@@ -6,20 +6,22 @@
 from __future__ import annotations
 
 import posixpath
-from itertools import groupby
+from functools import partial
+from itertools import groupby, product
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from salix import Struct
 
 from dynamic_call_tree_resolution.callgraph import CallEdge
+from dynamic_call_tree_resolution.composition import flatmap, merged
 from dynamic_call_tree_resolution.model import Address, Declaration
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 from dynamic_call_tree_resolution.stack_usage import StackUsage
 from dynamic_call_tree_resolution.vsa.abi import normalized
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Callable, Iterator, Mapping
 
 	from dynamic_call_tree_resolution.model import Program, SourceLocation
 
@@ -59,6 +61,15 @@ class _DeclaredAt(Struct):
 
 
 def identities(program: Program, names: Mapping[Address, str]) -> Identities:
+	keyed_names = sorted(
+		_KeyedName(key=frame_key(function.name), name=names[normalized(address, program.machine)])
+		for address, function in program.functions.items()
+		if normalized(address, program.machine) in names
+	)
+	names_by_key = {
+		key: tuple(sorted(copy.name for copy in group))
+		for key, group in groupby(keyed_names, key=_copy_key)
+	}
 	return Identities(
 		by_declaration={
 			declaration: next(iter(addresses))
@@ -67,22 +78,7 @@ def identities(program: Program, names: Mapping[Address, str]) -> Identities:
 		},
 		by_symbol=program.symbol_addresses,
 		names=names,
-		copies={
-			key: tuple(sorted(copy.name for copy in copies))
-			for key, group in groupby(
-				sorted(
-					_KeyedName(
-						key=frame_key(function.name),
-						name=names[normalized(address, program.machine)],
-					)
-					for address, function in program.functions.items()
-					if normalized(address, program.machine) in names
-				),
-				key=_copy_key,
-			)
-			for copies in (tuple(group),)
-			if len(copies) > 1
-		},
+		copies={key: copies for key, copies in names_by_key.items() if len(copies) > 1},
 	)
 
 
@@ -95,23 +91,18 @@ def stack_name(program: Program, names: Mapping[Address, str] | None, address: A
 
 
 def stack_names(program: Program) -> Mapping[Address, str]:
-	return {
-		start: name
-		for _, group in groupby(
-			sorted(
-				(
-					_KeyedStart(
-						key=frame_key(function.name),
-						start=normalized(address, program.machine),
-						name=function.name,
-					)
-					for address, function in program.functions.items()
-				),
-			),
-			key=_key,
+	keyed_starts = sorted(
+		_KeyedStart(
+			key=frame_key(function.name),
+			start=normalized(address, program.machine),
+			name=function.name,
 		)
-		for start, name in _distinct_names(tuple(group), program.declarations).items()
-	}
+		for address, function in program.functions.items()
+	)
+	return merged(
+		_distinct_names(tuple(group), program.declarations)
+		for _, group in groupby(keyed_starts, key=_key)
+	)
 
 
 def canonical_edges(
@@ -120,12 +111,8 @@ def canonical_edges(
 	locations: Mapping[str, SourceLocation],
 	edges: tuple[CallEdge, ...],
 ) -> tuple[CallEdge, ...]:
-	return tuple(
-		CallEdge(caller=caller, callee=callee, kind=edge.kind)
-		for edge in edges
-		for caller in _named(known, unit, locations, edge.caller)
-		for callee in _named(known, unit, locations, edge.callee)
-	)
+	named = partial(_named, known, unit, locations)
+	return tuple(flatmap(partial(_named_edges, named), edges))
 
 
 def canonical_frames(
@@ -134,10 +121,23 @@ def canonical_frames(
 	locations: Mapping[str, SourceLocation],
 	usages: tuple[StackUsage, ...],
 ) -> tuple[StackUsage, ...]:
-	return tuple(
+	named = partial(_named, known, unit, locations)
+	return tuple(flatmap(partial(_named_frames, named), usages))
+
+
+def _named_edges(named: Callable[[str], tuple[str, ...]], edge: CallEdge) -> Iterator[CallEdge]:
+	return (
+		CallEdge(caller=caller, callee=callee, kind=edge.kind)
+		for caller, callee in product(named(edge.caller), named(edge.callee))
+	)
+
+
+def _named_frames(
+	named: Callable[[str], tuple[str, ...]], usage: StackUsage
+) -> Iterator[StackUsage]:
+	return (
 		StackUsage(function=function, bytes=usage.bytes, bounded=usage.bounded)
-		for usage in usages
-		for function in _named(known, unit, locations, usage.function)
+		for function in named(usage.function)
 	)
 
 

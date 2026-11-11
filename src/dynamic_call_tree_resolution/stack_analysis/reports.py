@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct, replace
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import BARE_METAL
 from dynamic_call_tree_resolution.stack_analysis.graph import (
 	own_reasons,
@@ -31,7 +32,7 @@ from dynamic_call_tree_resolution.stack_analysis.values import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable, Mapping
+	from collections.abc import Iterable, Iterator, Mapping
 
 	from dynamic_call_tree_resolution.callgraph import CallEdge
 	from dynamic_call_tree_resolution.model import RtosModel, Uncounted
@@ -55,13 +56,13 @@ def thread_reports(
 	own_graphs: Mapping[str, StackGraph],
 	rtos: RtosModel = BARE_METAL,
 ) -> tuple[StackReport, ...]:
+	sizes = _stack_sizes(rtos)
 	return tuple(
 		sorted(
 			(
 				replace(
 					_thread_report(report, own_graphs, rtos), stack_size=sizes.get(report.entry)
 				)
-				for sizes in (_stack_sizes(rtos),)
 				for report in reports
 			),
 			key=report_order,
@@ -375,9 +376,12 @@ class _ReasonFunctions(Struct):
 
 
 def _bound_reasons(bound: Bounded | Unbounded) -> Reasons:
-	return frozenset(
+	return frozenset(flatmap(_function_reasons, _reason_sets(bound)))
+
+
+def _function_reasons(reason_functions: _ReasonFunctions) -> Iterator[FunctionReason]:
+	return (
 		FunctionReason(reason=reason_functions.reason, function=function)
-		for reason_functions in _reason_sets(bound)
 		for function in reason_functions.functions
 	)
 

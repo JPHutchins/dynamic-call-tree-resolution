@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+from functools import partial
+from itertools import chain
 from typing import TYPE_CHECKING
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import Pipeline, flatmap
 from dynamic_call_tree_resolution.gcc_dumps.dump import DumpFunction, dump_functions
 from dynamic_call_tree_resolution.gcc_dumps.records import (
 	Gap,
@@ -28,9 +31,13 @@ from dynamic_call_tree_resolution.gcc_dumps.units import (
 from dynamic_call_tree_resolution.gcc_dumps.writes import EVERY_STORE, unit_writes, write_line
 
 if TYPE_CHECKING:
+	from collections.abc import Iterator
 	from pathlib import Path
 
+	from dynamic_call_tree_resolution.descriptors import WriteTarget
+	from dynamic_call_tree_resolution.gcc_dumps.records import DumpRecord
 	from dynamic_call_tree_resolution.gcc_dumps.units import UnitTypes
+	from dynamic_call_tree_resolution.gcc_dumps.writes import WriteOrPass
 
 
 class DumpDescriptors(Struct):
@@ -80,24 +87,13 @@ def dump_descriptors(build_directory: Path, root: Path) -> DumpDescriptors:
 		for unit in dumped_units(build_directory)
 	)
 	_check_functions(units)
-	dumped = frozenset(
-		name
-		for unit in units
-		for symbols in (frozenset(function.symbol for function in unit.functions),)
-		for aliases in (*unit.defined, symbols)
-		if not aliases.isdisjoint(symbols)
-		for name in aliases
-	)
+	dumped = Pipeline(units).then(partial(flatmap, _dumped_names)).then(frozenset).value
 	typed = tuple(
 		_TypedUnit(parsed=unit, types=unit_types(unit.dumped.object))
 		for unit in units
 		if unit.dumped.dump is not None
 	)
-	records = tuple(
-		record
-		for unit in typed
-		for record in unit_records(unit.parsed.dumped.unit, unit.parsed.functions, unit.types, root)
-	)
+	records = tuple(flatmap(partial(_typed_records, root), typed))
 	return DumpDescriptors(
 		units=len(units),
 		dumps=len(typed),
@@ -111,22 +107,32 @@ def dump_descriptors(build_directory: Path, root: Path) -> DumpDescriptors:
 		writes=(
 			*sorted(
 				write_line(record)
-				for unit in typed
-				for record in unit_writes(
-					unit.parsed.dumped.unit, unit.parsed.functions, unit.types, root, dumped
-				)
+				for record in flatmap(partial(_typed_writes, root, dumped), typed)
 			),
-			*sorted(
-				{
-					taken_line(target)
-					for unit in typed
-					for target in unit_taken(unit.parsed.functions, unit.types)
-				}
-			),
+			*sorted({taken_line(target) for target in flatmap(_typed_taken, typed)}),
 			EVERY_STORE,
 		),
 		gaps=tuple(record for record in records if isinstance(record, Gap)),
 	)
+
+
+def _dumped_names(unit: _ParsedUnit) -> Iterator[str]:
+	symbols = frozenset(function.symbol for function in unit.functions)
+	return chain.from_iterable(
+		aliases for aliases in chain(unit.defined, (symbols,)) if not aliases.isdisjoint(symbols)
+	)
+
+
+def _typed_records(root: Path, unit: _TypedUnit) -> tuple[DumpRecord, ...]:
+	return unit_records(unit.parsed.dumped.unit, unit.parsed.functions, unit.types, root)
+
+
+def _typed_writes(root: Path, dumped: frozenset[str], unit: _TypedUnit) -> Iterator[WriteOrPass]:
+	return unit_writes(unit.parsed.dumped.unit, unit.parsed.functions, unit.types, root, dumped)
+
+
+def _typed_taken(unit: _TypedUnit) -> Iterator[WriteTarget]:
+	return unit_taken(unit.parsed.functions, unit.types)
 
 
 def _check_functions(units: tuple[_ParsedUnit, ...]) -> None:
@@ -136,25 +142,32 @@ def _check_functions(units: tuple[_ParsedUnit, ...]) -> None:
 		ValueError: when a defined function has no dump, as GCC dumps only what it optimizes, or a
 			dumped function is not defined, as in a stale dump.
 	"""
-	undumped = tuple(
-		f"{min(aliases)} of {unit.dumped.unit}"
-		for unit in units
-		for aliases in unit.defined
-		if aliases.isdisjoint(function.symbol for function in unit.functions)
-	)
+	undumped = tuple(flatmap(_undumped, units))
 	if undumped:
 		raise ValueError(
 			f"{len(undumped)} functions have no alias dump, such as {undumped[0]}: GCC dumps "
 			"only the functions it optimizes"
 		)
-	stale = tuple(
-		f"{function.symbol} of {unit.dumped.unit}"
-		for unit in units
-		for function in unit.functions
-		if not any(function.symbol in aliases for aliases in unit.defined)
-	)
+	stale = tuple(flatmap(_stale, units))
 	if stale:
 		raise ValueError(
 			f"{len(stale)} dumped functions are not in their objects, such as {stale[0]}: the "
 			"dumps are stale, rebuild"
 		)
+
+
+def _undumped(unit: _ParsedUnit) -> Iterator[str]:
+	symbols = frozenset(function.symbol for function in unit.functions)
+	return (
+		f"{min(aliases)} of {unit.dumped.unit}"
+		for aliases in unit.defined
+		if aliases.isdisjoint(symbols)
+	)
+
+
+def _stale(unit: _ParsedUnit) -> Iterator[str]:
+	return (
+		f"{function.symbol} of {unit.dumped.unit}"
+		for function in unit.functions
+		if not any(function.symbol in aliases for aliases in unit.defined)
+	)

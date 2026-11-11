@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	Address,
 	CallSite,
@@ -39,6 +40,7 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 from dynamic_call_tree_resolution.vsa.interpret import (
 	FunctionResult,
 	analyze_function,
+	every_observation,
 )
 from dynamic_call_tree_resolution.vsa.lattice import Known
 from dynamic_call_tree_resolution.vsa.memory import Context, accumulate_writes, context_for
@@ -114,8 +116,7 @@ def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
 		)
 	)
 	observations = modeled(
-		[observation for result in results for observation in result.observations],
-		rounds.creation,
+		list(flatmap(lambda result: result.observations, results)), rounds.creation
 	)
 	following = Round(
 		seeds={
@@ -194,13 +195,10 @@ def thread_sites(
 	}
 	seeds = _thread_fixpoint(program, functions, context, executor, start, start, 1)
 	reached = _reached(functions, seeds, program.machine)
+	results = executor.map(partial(final_result, program, context, seeds), reached)
 	return ThreadSites(
 		reached=frozenset(graph.function.address for graph in reached),
-		sites=tuple(
-			site
-			for result in executor.map(partial(final_result, program, context, seeds), reached)
-			for site in result.sites
-		),
+		sites=tuple(flatmap(lambda result: result.sites, results)),
 	)
 
 
@@ -213,15 +211,12 @@ def _thread_fixpoint(
 	seeds: Mapping[Address, State],
 	round_number: int,
 ) -> Mapping[Address, State]:
+	results = executor.map(
+		partial(_round_analysis, program, context, seeds),
+		_reached(functions, seeds, program.machine),
+	)
 	observed = observed_seeds(
-		[
-			observation
-			for result in executor.map(
-				partial(_round_analysis, program, context, seeds),
-				_reached(functions, seeds, program.machine),
-			)
-			for observation in (*result.observations, *result.indirect_observations)
-		],
+		list(flatmap(every_observation, results)),
 		{},
 		start,
 		program,

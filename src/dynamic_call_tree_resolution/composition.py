@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from salix import Struct
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Iterable, Iterator
+	from collections.abc import Callable, Iterable, Iterator, Mapping
 
 
 def flatmap[T, U](function: Callable[[T], Iterable[U]], items: Iterable[T]) -> Iterator[U]:
@@ -23,6 +23,17 @@ def flatmap[T, U](function: Callable[[T], Iterable[U]], items: Iterable[T]) -> I
 	('a', 'b', 'c')
 	"""
 	return chain.from_iterable(map(function, items))
+
+
+def merged[K, V](mappings: Iterable[Mapping[K, V]]) -> dict[K, V]:
+	"""Every mapping's entries in one dict, a later mapping's value winning a shared key.
+
+	>>> merged(({"a": 1, "b": 2}, {"b": 3}))
+	{'a': 1, 'b': 3}
+	>>> merged({word: len(word)} for word in ("ab", "c"))
+	{'ab': 2, 'c': 1}
+	"""
+	return dict(chain.from_iterable(mapping.items() for mapping in mappings))
 
 
 class Pipeline[T](Struct):

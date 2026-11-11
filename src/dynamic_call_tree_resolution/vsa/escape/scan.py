@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap, merged
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
 from dynamic_call_tree_resolution.vsa.cfg import predecessors
 from dynamic_call_tree_resolution.vsa.escape.image import (
@@ -90,13 +91,11 @@ def _arm_escapes(
 	escaped = frozenset(chain.from_iterable(scan.escaped for scan in scans)) | data_escapes(
 		image, frozenset(chain.from_iterable(scan.literals for scan in scans))
 	)
+	every_store = flatmap(lambda scanned: scanned.stores.items(), scans)
 	return Escapes(
 		unescaped=tuple(span for span in image.spans if span not in escaped),
 		store_targets={
-			site: targets
-			for scan in scans
-			for site, reached in scan.stores.items()
-			if (targets := reached - escaped)
+			site: reached - escaped for site, reached in every_store if not reached <= escaped
 		},
 	)
 
@@ -157,9 +156,7 @@ def _carriers(
 	Those outside the loop body, when the loop's head dominates the edge; none of a loop that
 	control can enter elsewhere.
 	"""
-	sites = {
-		instruction.address: block.start for block in blocks for instruction in block.instructions
-	}
+	sites = merged(map(_block_sites, blocks))
 	inbound = predecessors(by_start)
 	reachable = _reached(by_start, blocks[0].start, None)
 	return {
@@ -169,6 +166,10 @@ def _carriers(
 		else _carries_nothing
 		for edge in _back_edges(by_start)
 	}
+
+
+def _block_sites(block: Block) -> dict[int, Address]:
+	return {instruction.address: block.start for instruction in block.instructions}
 
 
 def _outside(sites: Mapping[int, Address], body: frozenset[Address], site: int) -> bool:
@@ -244,6 +245,7 @@ def _scanned(image: Image, effects: tuple[Effects, ...]) -> _Scan:
 	for effect in effects:
 		if effect.site is not None:
 			stores[effect.site].update(reached_objects(image, effect.store))
+	filled = flatmap(lambda effect: chain(effect.filled.exact, effect.filled.indexed), effects)
 	return _Scan(
 		escaped=frozenset(
 			chain(
@@ -252,8 +254,7 @@ def _scanned(image: Image, effects: tuple[Effects, ...]) -> _Scan:
 					containing(image, derived.address)
 					| sections_objects(image, image.bounded, derived.address)
 					| sections_objects(image, image.bounded, derived.origin)
-					for effect in effects
-					for derived in chain(effect.filled.exact, effect.filled.indexed)
+					for derived in filled
 				),
 				chain.from_iterable(effect.overwritten for effect in effects),
 			)

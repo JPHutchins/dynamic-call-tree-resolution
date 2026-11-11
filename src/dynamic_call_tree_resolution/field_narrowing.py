@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from itertools import groupby
+from functools import partial
+from itertools import chain, groupby
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.descriptors import (
 	Element,
 	Function,
@@ -25,7 +27,7 @@ from dynamic_call_tree_resolution.vsa.abi import normalized
 from dynamic_call_tree_resolution.vsa.links import function_covering
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Iterator, Mapping
 
 	from dynamic_call_tree_resolution.descriptors import Descriptor, Descriptors, Place, Site, Store
 	from dynamic_call_tree_resolution.model import Address, LineSpan, Program, SourceLocation
@@ -70,32 +72,20 @@ class _NamedAddress(Struct, order=True):
 def field_narrowings(
 	program: Program, descriptors: Descriptors, spans: tuple[LineSpan, ...]
 ) -> tuple[NarrowedSpan, ...]:
-	return tuple(
-		sorted(
-			(
-				NarrowedSpan(
-					start=span.start,
-					end=span.end,
-					narrowing=FieldNarrowing(field=field, targets=targets[field]),
-				)
-				for targets in (field_targets(program, descriptors.stores),)
-				for callees in (_callees(descriptors.sites),)
-				for names in (_names_by_address(program),)
-				for span in spans
-				for function in (function_covering(program, span.start),)
-				if function is not None
-				for field in (
-					_site_field(
-						callees,
-						names.get(normalized(function.address, program.machine), frozenset()),
-						span.location,
-					),
-				)
-				if field is not None and field in targets
-			),
-			key=_span_start,
-		)
+	targets = field_targets(program, descriptors.stores)
+	span_field = partial(
+		_span_field, program, _callees(descriptors.sites), _names_by_address(program)
 	)
+	narrowed_spans = (
+		NarrowedSpan(
+			start=span.start,
+			end=span.end,
+			narrowing=FieldNarrowing(field=field, targets=targets[field]),
+		)
+		for span, field in zip(spans, map(span_field, spans), strict=True)
+		if field is not None and field in targets
+	)
+	return tuple(sorted(narrowed_spans, key=_span_start))
 
 
 def narrowing_at(spans: tuple[NarrowedSpan, ...], address: Address) -> FieldNarrowing | None:
@@ -135,22 +125,17 @@ def field_targets(
 	"""
 	stored = _stored(stores)
 	slots = field_slots(program)
-	return {
-		field: targets
-		for functions in (
-			{normalized(address, program.machine): address for address in program.functions},
+	functions = {normalized(address, program.machine): address for address in program.functions}
+	held = {
+		field: _held(
+			program,
+			functions,
+			slots.get(field, frozenset()),
+			stored.get(field, frozenset()),
 		)
 		for field in slots.keys() | stored.keys()
-		for targets in (
-			_held(
-				program,
-				functions,
-				slots.get(field, frozenset()),
-				stored.get(field, frozenset()),
-			),
-		)
-		if targets
 	}
+	return {field: targets for field, targets in held.items() if targets}
 
 
 def _held(
@@ -159,7 +144,8 @@ def _held(
 	slots: frozenset[Address],
 	stored: frozenset[Descriptor],
 ) -> frozenset[Address]:
-	initial = frozenset(value for slot in slots for value in (pointer_at(program, slot),) if value)
+	initialized = (pointer_at(program, slot) for slot in slots)
+	initial = frozenset(value for value in initialized if value)
 	values = tuple(_stored_functions(program, functions, value) for value in stored)
 	return (
 		initial.union(*(value for value in values if value is not None))
@@ -188,20 +174,15 @@ def _stored_functions(
 
 
 def _stored(stores: tuple[Store, ...]) -> Mapping[Field, frozenset[Descriptor]]:
+	fields = (_stored_field(store.place) for store in stores)
+	stored_values = (
+		_StoredValue(field=field, value=store.value)
+		for store, field in zip(stores, fields, strict=True)
+		if field is not None
+	)
 	return {
 		field: frozenset(stored.value for stored in group)
-		for field, group in groupby(
-			sorted(
-				(
-					_StoredValue(field=field, value=store.value)
-					for store in stores
-					for field in (_stored_field(store.place),)
-					if field is not None
-				),
-				key=_stored_into,
-			),
-			key=_stored_into,
-		)
+		for field, group in groupby(sorted(stored_values, key=_stored_into), key=_stored_into)
 	}
 
 
@@ -231,21 +212,39 @@ def _site_key(site: Site) -> _SiteKey:
 
 
 def _names_by_address(program: Program) -> Mapping[Address, frozenset[str]]:
+	named_addresses = chain.from_iterable(
+		_addresses_named(name, addresses) for name, addresses in program.symbol_addresses.items()
+	)
 	return {
 		address: frozenset(named.name for named in group)
-		for address, group in groupby(
-			sorted(
-				_NamedAddress(address=address, name=name)
-				for name, addresses in program.symbol_addresses.items()
-				for address in addresses
-			),
-			key=_address_of,
-		)
+		for address, group in groupby(sorted(named_addresses), key=_address_of)
 	}
+
+
+def _addresses_named(name: str, addresses: Iterable[Address]) -> Iterator[_NamedAddress]:
+	return (_NamedAddress(address=address, name=name) for address in addresses)
 
 
 def _address_of(named: _NamedAddress) -> Address:
 	return named.address
+
+
+def _span_field(
+	program: Program,
+	callees: Mapping[_SiteKey, frozenset[Descriptor]],
+	names: Mapping[Address, frozenset[str]],
+	span: LineSpan,
+) -> Field | None:
+	function = function_covering(program, span.start)
+	return (
+		_site_field(
+			callees,
+			names.get(normalized(function.address, program.machine), frozenset()),
+			span.location,
+		)
+		if function is not None
+		else None
+	)
 
 
 def _site_field(
@@ -253,13 +252,10 @@ def _site_field(
 	names: frozenset[str],
 	location: SourceLocation,
 ) -> Field | None:
-	match tuple(
-		frozenset(
-			callee
-			for name in names
-			for callee in callees.get(_SiteKey(function=name, location=location), frozenset())
-		)
-	):
+	named_callees = flatmap(
+		lambda name: callees.get(_SiteKey(function=name, location=location), frozenset()), names
+	)
+	match tuple(frozenset(named_callees)):
 		case (Field() as field,):
 			return field
 		case _:

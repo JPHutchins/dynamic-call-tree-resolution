@@ -185,20 +185,12 @@ def _after(
 		for register, held in registers.held.items()
 		if predicated or register not in written
 	}
+	new_held = {
+		register: union(kept.get(register, NOTHING), value.held) if predicated else value.held
+		for register, value in new.items()
+	}
 	return Registers(
-		held={
-			**kept,
-			**{
-				register: value
-				for register, written in new.items()
-				for value in (
-					union(kept.get(register, NOTHING), written.held)
-					if predicated
-					else written.held,
-				)
-				if size(value)
-			},
-		},
+		held={**kept, **{register: held for register, held in new_held.items() if size(held)}},
 		constants={
 			**{
 				register: value

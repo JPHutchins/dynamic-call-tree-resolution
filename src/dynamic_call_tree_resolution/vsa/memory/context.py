@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from functools import reduce
+from itertools import product
 from typing import TYPE_CHECKING
 
 from salix import Struct
@@ -117,7 +118,8 @@ def context_for(
 		read_only_starts=tuple(span.start for span in read_only),
 		global_writes=global_writes,
 		global_covered=frozenset(
-			key + offset for key in global_writes.values for offset in range(program.pointer_size)
+			key + offset
+			for key, offset in product(global_writes.values, range(program.pointer_size))
 		),
 		function_starts=frozenset(
 			normalized(function.address, program.machine) for function in program.functions.values()

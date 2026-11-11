@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import os
 import re
+from functools import partial
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.descriptors import (
 	Element,
 	Function,
@@ -39,6 +41,7 @@ from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 from dynamic_call_tree_resolution.model import FUNCTION_POINTER, Field, FunctionPointerMember
 
 if TYPE_CHECKING:
+	from collections.abc import Iterable, Iterator
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.descriptors import Descriptor
@@ -87,14 +90,18 @@ type DumpRecord = SiteRecord | StoreRecord | Gap
 
 
 def unit_records(
-	unit: str, functions: tuple[DumpFunction, ...], types: UnitTypes, root: Path
+	unit: str, functions: Iterable[DumpFunction], types: UnitTypes, root: Path
 ) -> tuple[DumpRecord, ...]:
-	return tuple(
-		record
-		for function in functions
-		for scope in (function_scope(types, function),)
-		for statement in function.statements
-		for record in _records(scope, located(unit, function, statement, root), statement.body)
+	return tuple(flatmap(partial(_function_records, unit, types, root), functions))
+
+
+def _function_records(
+	unit: str, types: UnitTypes, root: Path, function: DumpFunction
+) -> Iterator[DumpRecord]:
+	scope = function_scope(types, function)
+	return flatmap(
+		lambda statement: _records(scope, located(unit, function, statement, root), statement.body),
+		function.statements,
 	)
 
 

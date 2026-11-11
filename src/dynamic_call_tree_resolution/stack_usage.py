@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import SourceLocation
 
 if TYPE_CHECKING:
@@ -47,7 +48,7 @@ def parse_records(text: str) -> tuple[StackUsage, ...]:
 
 
 def load_stack_usages(build_directory: Path) -> tuple[StackUsage, ...]:
-	return tuple(record for file in stack_usage_files(build_directory) for record in file.usages)
+	return tuple(flatmap(lambda file: file.usages, stack_usage_files(build_directory)))
 
 
 class StackUsageFile(Struct):

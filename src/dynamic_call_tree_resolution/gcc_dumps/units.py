@@ -16,6 +16,7 @@ import msgspec
 from elftools.elf.elffile import ELFFile
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap, merged
 from dynamic_call_tree_resolution.loader.dwarf import die_name, iter_dies
 from dynamic_call_tree_resolution.loader.layouts import (
 	die_type,
@@ -27,7 +28,7 @@ from dynamic_call_tree_resolution.loader.sections import elf_symbol_table
 from dynamic_call_tree_resolution.model import ANONYMOUS
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable, Mapping
+	from collections.abc import Iterable, Iterator, Mapping
 
 	from elftools.dwarf.die import DIE
 	from elftools.elf.sections import Symbol, SymbolTableSection
@@ -216,27 +217,15 @@ def unit_types(object_path: Path) -> UnitTypes:
 		dwarf = elf.get_dwarf_info(
 			relocate_dwarf_sections=elf.get_section_by_name(".rela.debug_info") is not None
 		)
-		dies = tuple(
-			die
-			for compilation_unit in dwarf.iter_CUs()
-			for die in iter_dies(compilation_unit.get_top_DIE())
-		)
+		dies = tuple(flatmap(lambda unit: iter_dies(unit.get_top_DIE()), dwarf.iter_CUs()))
 		return UnitTypes(
 			layouts=structure_layouts(dwarf),
-			typedefs={
-				die_name(die): record
-				for die in dies
-				if die.tag == "DW_TAG_typedef" and "DW_AT_name" in die.attributes
-				for record in (_record(die),)
-				if record is not None
-			},
+			typedefs=merged(map(_typedef, dies)),
 			variables={
 				die_name(die): layout_name(die_type(die))
 				for die in reversed(
 					tuple(
-						child
-						for compilation_unit in dwarf.iter_CUs()
-						for child in compilation_unit.get_top_DIE().iter_children()
+						flatmap(lambda unit: unit.get_top_DIE().iter_children(), dwarf.iter_CUs())
 					)
 				)
 				if die.tag == "DW_TAG_variable" and "DW_AT_name" in die.attributes
@@ -252,26 +241,39 @@ def unit_types(object_path: Path) -> UnitTypes:
 
 def _statics(symtab: SymbolTableSection | None) -> Mapping[str, str]:
 	"""Each function-scope static's symbol, by its name: GCC numbers the symbol, ``hook.0``."""
-	return {
-		name: symbols[0]
-		for name, group in groupby(
-			sorted(
-				_NumberedSymbol(name=named.group(1), symbol=symbol.name)
-				for symbol in _symbols(symtab)
-				if symbol["st_info"]["type"] == "STT_OBJECT"
-				and symbol["st_info"]["bind"] == "STB_LOCAL"
-				for named in (_NUMBERED.match(symbol.name),)
-				if named is not None
-			),
-			key=_static_name,
-		)
-		for symbols in (tuple(numbered.symbol for numbered in group),)
-		if len(symbols) == 1
-	}
+	return merged(
+		_unshared(group)
+		for _, group in groupby(sorted(_numbered_symbols(symtab)), key=_static_name)
+	)
+
+
+def _numbered_symbols(symtab: SymbolTableSection | None) -> Iterator[_NumberedSymbol]:
+	return flatmap(_numbered, filter(_local_object, _symbols(symtab)))
+
+
+def _local_object(symbol: Symbol) -> bool:
+	return symbol["st_info"]["type"] == "STT_OBJECT" and symbol["st_info"]["bind"] == "STB_LOCAL"
+
+
+def _numbered(symbol: Symbol) -> tuple[_NumberedSymbol, ...]:
+	named = _NUMBERED.match(symbol.name)
+	return (_NumberedSymbol(name=named.group(1), symbol=symbol.name),) if named is not None else ()
+
+
+def _unshared(group: Iterable[_NumberedSymbol]) -> dict[str, str]:
+	numbered = tuple(group)
+	return {numbered[0].name: numbered[0].symbol} if len(numbered) == 1 else {}
 
 
 def _static_name(numbered: _NumberedSymbol) -> str:
 	return numbered.name
+
+
+def _typedef(die: DIE) -> dict[str, Record]:
+	record = (
+		_record(die) if die.tag == "DW_TAG_typedef" and "DW_AT_name" in die.attributes else None
+	)
+	return {die_name(die): record} if record is not None else {}
 
 
 def _record(typedef: DIE) -> Record | None:

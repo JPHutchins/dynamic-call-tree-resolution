@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial, reduce
-from itertools import groupby
+from itertools import groupby, product
 from typing import TYPE_CHECKING, assert_never, cast
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
 	Address,
@@ -46,6 +47,7 @@ from dynamic_call_tree_resolution.vsa.cfg import (
 from dynamic_call_tree_resolution.vsa.entry_loads import entry_loads
 from dynamic_call_tree_resolution.vsa.escape import escapes
 from dynamic_call_tree_resolution.vsa.fallback import address_taken, referenced_only_at, referrers
+from dynamic_call_tree_resolution.vsa.interpret import every_observation
 from dynamic_call_tree_resolution.vsa.memory import Context, context_for
 from dynamic_call_tree_resolution.vsa.state import NO_WRITES, join_states, top_seed
 
@@ -158,25 +160,19 @@ def analyze(
 		results = tuple(
 			executor.map(partial(final_result, program, final_context, final.seeds), functions)
 		)
+		seeded_threads = flatmap(lambda entry: threads_by_entry[entry], seeded_entries)
 		return Analysis(
-			sites=tuple(site for result in results for site in result.sites),
+			sites=tuple(flatmap(lambda result: result.sites, results)),
 			context=final_context,
-			seeded=frozenset(
-				thread.name for entry in seeded_entries for thread in threads_by_entry[entry]
-			),
+			seeded=frozenset(thread.name for thread in seeded_threads),
 			threads={
 				thread.name: thread_sites(
 					program, functions, final_context, executor, trampoline, thread
 				)
-				for trampoline in _trampoline(program, rtos)
-				for thread in rtos.threads
+				for trampoline, thread in product(_trampoline(program, rtos), rtos.threads)
 			},
 			address_taken=taken,
-			observations=tuple(
-				observation
-				for result in results
-				for observation in (*result.observations, *result.indirect_observations)
-			),
+			observations=tuple(flatmap(every_observation, results)),
 		)
 
 

@@ -4,6 +4,8 @@
 """What the image's code adds to a build's call graph and frames."""
 
 from collections import Counter
+from functools import partial
+from itertools import chain
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
@@ -15,7 +17,9 @@ from dynamic_call_tree_resolution.call_sites import (
 from dynamic_call_tree_resolution.callgraph import (
 	CallEdge,
 	EdgeKind,
+	edge_nodes,
 )
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.identity import (
 	stack_name,
 )
@@ -54,7 +58,8 @@ from dynamic_call_tree_resolution.vsa.vectors import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable, Mapping
+	from collections.abc import Iterable, Iterator, Mapping
+	from collections.abc import Set as AbstractSet
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.call_sites import CallerCandidates, ProgramResolution
@@ -102,36 +107,41 @@ def register_callers(
 		frames=tuple(
 			OwnFrame(function=image.names[start], bytes=own.bytes) for start, own in owns.items()
 		),
-		edges=tuple(
-			edge
-			for start, own in sorted(owns.items())
-			for edge in (
-				*(
-					CallEdge(caller=image.names[start], callee=INDIRECT_CALLEE)
-					for _ in range(sites_by_start[start])
-				),
-				*_direct_edges(image, start, own),
-			)
-		),
+		edges=tuple(flatmap(partial(_start_edges, image, sites_by_start, owns), sorted(owns))),
 	)
+
+
+def _start_edges(
+	image: Image,
+	sites_by_start: Mapping[Address, int],
+	owns: Mapping[Address, OwnCode],
+	start: Address,
+) -> Iterator[CallEdge]:
+	return chain(
+		_indirect_edges(image.names[start], sites_by_start[start]),
+		_direct_edges(image, start, owns[start]),
+	)
+
+
+def _indirect_edges(caller: str, count: int) -> Iterator[CallEdge]:
+	return (CallEdge(caller=caller, callee=INDIRECT_CALLEE) for _ in range(count))
 
 
 def unrecorded_sites(
 	image: Image, sites: tuple[CallSite, ...], edges: tuple[CallEdge, ...]
 ) -> tuple[CallEdge, ...]:
 	recorded = Counter(frame_key(edge.caller) for edge in edges if edge.callee == INDIRECT_CALLEE)
+	starts = (
+		normalized(site.caller_address, image.program.machine)
+		for site in sites
+		if not calls_nothing(image.program, site)
+	)
+	found = Counter(image.names[start] for start in starts if start in image.names)
 	return tuple(
-		CallEdge(caller=caller, callee=INDIRECT_CALLEE)
-		for caller, found in sorted(
-			Counter(
-				image.names[start]
-				for site in sites
-				if not calls_nothing(image.program, site)
-				for start in (normalized(site.caller_address, image.program.machine),)
-				if start in image.names
-			).items()
+		flatmap(
+			lambda caller: _indirect_edges(caller, found[caller] - recorded[frame_key(caller)]),
+			sorted(found),
 		)
-		for _ in range(found - recorded[frame_key(caller)])
 	)
 
 
@@ -157,12 +167,19 @@ def resolved_callers(
 			assert_never(unreachable)
 
 
-def _direct_edges(image: Image, start: Address, own: OwnCode) -> tuple[CallEdge, ...]:
-	return tuple(
+def _direct_edges(image: Image, start: Address, own: OwnCode) -> Iterator[CallEdge]:
+	return (
 		CallEdge(caller=image.names[start], callee=image.names[callee], kind=EdgeKind.BINARY)
 		for callee in sorted(own.callees)
 		if callee in image.names
 	)
+
+
+def _complete_addresses(
+	starts: Mapping[Address, str], measurable: AbstractSet[Address], key: str
+) -> frozenset[Address]:
+	addresses = frozenset(address for address in starts if frame_key(starts[address]) == key)
+	return addresses if addresses and addresses <= measurable else frozenset()
 
 
 def code_measures(
@@ -174,23 +191,15 @@ def code_measures(
 	attempted: frozenset[str],
 ) -> _CodeMeasures:
 	unframed = (
-		frozenset(frame_key(node) for edge in edges for node in (edge.caller, edge.callee))
-		| frozenset(map(frame_key, roots))
+		frozenset(map(frame_key, flatmap(edge_nodes, edges))) | frozenset(map(frame_key, roots))
 	) - ({frame_key(frame.function) for frame in frames} | {INDIRECT_CALLEE} | attempted)
 	if not unframed:
 		return _CodeMeasures(frames=(), edges=())
 	starts = {address: name for address, name in image.names.items() if frame_key(name) in unframed}
 	depths = code_depths(measure, frozenset(starts))
 	owns = own_frames(measure, frozenset(starts) - depths.keys())
-	measured = tuple(
-		address
-		for key in unframed
-		for addresses in (
-			frozenset(address for address in starts if frame_key(starts[address]) == key),
-		)
-		if addresses and addresses <= depths.keys() | owns.keys()
-		for address in addresses
-	)
+	measurable = depths.keys() | owns.keys()
+	measured = tuple(flatmap(lambda key: _complete_addresses(starts, measurable, key), unframed))
 	found = _CodeMeasures(
 		frames=tuple(
 			MeasuredFrame(function=starts[address], bytes=depths[address])
@@ -199,10 +208,10 @@ def code_measures(
 			for address in measured
 		),
 		edges=tuple(
-			edge
-			for address in sorted(measured)
-			if address not in depths
-			for edge in _direct_edges(image, address, owns[address])
+			flatmap(
+				lambda address: _direct_edges(image, address, owns[address]),
+				(address for address in sorted(measured) if address not in depths),
+			)
 		),
 	)
 	following = code_measures(
@@ -275,19 +284,22 @@ def stack_nodes(image: Image, model: RtosModel) -> _ThreadGraph:
 		**_system_call_node(model.handler_stack),
 	}
 	return _ThreadGraph(
-		edges=tuple(
-			CallEdge(
-				caller=name,
-				callee=frame_key(stack_name(image.program, image.names, entry.function)),
-				kind=entry.kind,
-			)
-			for name, node in nodes.items()
-			for entry in node.entries
-		),
+		edges=tuple(flatmap(lambda name: _node_edges(image, name, nodes[name]), nodes)),
 		frames=tuple(
 			StackUsage(function=name, bytes=node.frame, bounded=True)
 			for name, node in nodes.items()
 		),
+	)
+
+
+def _node_edges(image: Image, name: str, node: _StackNode) -> Iterator[CallEdge]:
+	return (
+		CallEdge(
+			caller=name,
+			callee=frame_key(stack_name(image.program, image.names, entry.function)),
+			kind=entry.kind,
+		)
+		for entry in node.entries
 	)
 
 

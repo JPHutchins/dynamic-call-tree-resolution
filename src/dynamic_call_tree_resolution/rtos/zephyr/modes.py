@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	ArmCore,
 	ArmProfile,
@@ -173,4 +175,4 @@ _SYSTEM_CALL_ENTRY: Final = (1 + 1 + 2) * 4
 
 
 def _present(program: Program, names: tuple[str, ...]) -> tuple[Address, ...]:
-	return tuple(address for name in names for address in addresses_of(program, name))
+	return tuple(flatmap(partial(addresses_of, program), names))

@@ -15,7 +15,7 @@ from salix import Struct as SalixStruct
 from dynamic_call_tree_resolution.model import Address, aligned
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Collection, Mapping
 	from pathlib import Path
 
 
@@ -56,20 +56,21 @@ class DynamicSites(SalixStruct):
 
 
 def dynamic_sites_by_caller(report: PexplorerReport) -> Mapping[Address, DynamicSites]:
+	dynamic = sorted(
+		(function for function in report.functions if _dynamic_count(function)),
+		key=_aligned_address,
+	)
 	return {
-		address: DynamicSites(
-			names=tuple(function.name for function in functions),
-			total=sum(_dynamic_count(function) for function in functions),
-		)
-		for address, group in groupby(
-			sorted(
-				(function for function in report.functions if _dynamic_count(function)),
-				key=_aligned_address,
-			),
-			key=_aligned_address,
-		)
-		for functions in (tuple(group),)
+		address: _dynamic_sites(tuple(group))
+		for address, group in groupby(dynamic, key=_aligned_address)
 	}
+
+
+def _dynamic_sites(functions: Collection[PexplorerFunction]) -> DynamicSites:
+	return DynamicSites(
+		names=tuple(function.name for function in functions),
+		total=sum(_dynamic_count(function) for function in functions),
+	)
 
 
 def _aligned_address(function: PexplorerFunction) -> Address:

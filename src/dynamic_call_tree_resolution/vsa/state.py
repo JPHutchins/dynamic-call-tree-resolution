@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from functools import partial, reduce
+from itertools import chain, product
 from typing import TYPE_CHECKING, Final, assert_never
 
 from capstone import CS_OP_REG
@@ -24,7 +25,6 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 	join,
 	join_maps,
 	lookup,
-	map_entry,
 	put_value,
 )
 
@@ -195,16 +195,12 @@ def escape_after_join(
 		case Unescaped() | EscapedFrom() if not lowest_tracked:
 			return ESCAPED_ANYWHERE
 		case Unescaped() | EscapedFrom():
-			return _lowest_of(
-				escaped,
-				(
-					offset
-					for side in (current, incoming)
-					for register, offsets in side.items()
-					if register not in joined
-					for offset in offsets
-				),
+			lost = (
+				offsets
+				for register, offsets in chain(current.items(), incoming.items())
+				if register not in joined
 			)
+			return _lowest_of(escaped, chain.from_iterable(lost))
 		case _ as unreachable:
 			assert_never(unreachable)
 
@@ -333,7 +329,7 @@ def escaping(state: State, registers: Iterable[int], *, lowest_tracked: bool) ->
 
 def _lowered(state: State, escaped: Unescaped | EscapedFrom, frame_registers: list[int]) -> State:
 	lowered = _lowest_of(
-		escaped, (offset for register in frame_registers for offset in state.sp_offsets[register])
+		escaped, chain.from_iterable(state.sp_offsets[register] for register in frame_registers)
 	)
 	return state if lowered is escaped else replace(state, escaped=lowered)
 
@@ -400,7 +396,7 @@ def stack_read(stack: Mapping[int, frozenset[Address]], offsets: OffsetSet) -> V
 def _frame_read(stack: Mapping[int, frozenset[Address]], offsets: frozenset[int]) -> ValueSet:
 	if any(offset not in stack for offset in offsets):
 		return Top()
-	return capped(frozenset(value for offset in offsets for value in stack[offset]))
+	return capped(frozenset(chain.from_iterable(stack[offset] for offset in offsets)))
 
 
 def frame_write(
@@ -419,11 +415,7 @@ def frame_write(
 			)
 			return {
 				**{key: values for key, values in stack.items() if key not in written},
-				**{
-					entry: values
-					for key, value in written.items()
-					for entry, values in map_entry(key, value).items()
-				},
+				**{key: value.values for key, value in written.items() if not is_top(value)},
 			}
 		case _ as unreachable:
 			assert_never(unreachable)
@@ -485,7 +477,9 @@ def _overlapping(
 	keys: Container[int], store: Store, pointer_size: int, starts: frozenset[int]
 ) -> frozenset[int]:
 	return frozenset(
-		key for start in starts for key in overlapping_keys(keys, start, store.width, pointer_size)
+		chain.from_iterable(
+			overlapping_keys(keys, start, store.width, pointer_size) for start in starts
+		)
 	)
 
 
@@ -496,18 +490,16 @@ def overlapping_keys(
 
 
 def _word_keys(store: Store, pointer_size: int, starts: frozenset[int]) -> frozenset[int]:
-	return frozenset(
-		start + index * pointer_size
-		for start in starts
-		for index in range(min(len(store.words), store.width // pointer_size))
-	)
+	indexes = range(min(len(store.words), store.width // pointer_size))
+	return frozenset(start + index * pointer_size for start, index in product(starts, indexes))
 
 
 def _aligned_keys(store: Store, pointer_size: int, starts: frozenset[int]) -> frozenset[int]:
 	return frozenset(
-		key
-		for start in starts
-		for key in range(start - start % pointer_size, start + store.width, pointer_size)
+		chain.from_iterable(
+			range(start - start % pointer_size, start + store.width, pointer_size)
+			for start in starts
+		)
 	)
 
 

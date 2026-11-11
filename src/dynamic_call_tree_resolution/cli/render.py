@@ -4,7 +4,8 @@
 """Rendering reports, stack rows and notes as text."""
 
 import sys
-from itertools import accumulate
+from functools import partial
+from itertools import accumulate, chain, islice
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
@@ -12,6 +13,7 @@ from salix import Struct
 from dynamic_call_tree_resolution.cli.app import (
 	oversized,
 )
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.loader import (
 	elf_machine,
 )
@@ -35,6 +37,7 @@ from dynamic_call_tree_resolution.stack_analysis import (
 )
 
 if TYPE_CHECKING:
+	from collections.abc import Iterator
 	from pathlib import Path
 
 
@@ -160,16 +163,17 @@ def _thread_stack_additions(bound: Bounded | Unbounded) -> tuple[_Addition, ...]
 
 def thread_stack_steps(
 	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
-) -> tuple[str, ...]:
-	return tuple(
+) -> Iterator[str]:
+	return flatmap(partial(_addition_steps, steps), shown[:1]) if steps else iter(())
+
+
+def _addition_steps(steps: tuple[PathStep, ...], report: StackReport) -> Iterator[str]:
+	additions = _thread_stack_additions(report.bound)
+	totals = accumulate(addition.added for addition in additions)
+	return (
 		f"({addition.label}{'s' if addition.count > 1 else ''}) +{addition.added} "
 		f"= {steps[-1].cumulative + total} bytes"
-		for report in shown[:1]
-		if steps
-		for additions in (_thread_stack_additions(report.bound),)
-		for addition, total in zip(
-			additions, accumulate(addition.added for addition in additions), strict=True
-		)
+		for addition, total in zip(additions, totals, strict=True)
 		if addition.added
 	)
 
@@ -180,33 +184,31 @@ def path_steps(report: StackReport, graph: StackGraph) -> tuple[PathStep, ...]:
 
 def nesting_steps(
 	shown: tuple[StackReport, ...], steps: tuple[PathStep, ...] | None
-) -> tuple[str, ...]:
-	return tuple(
-		line
-		for report in shown[:1]
-		if steps is not None and report.nesting is not None
-		for nesting in (report.nesting,)
-		for line in (
+) -> Iterator[str]:
+	nestings = (
+		report.nesting for report in shown[:1] if steps is not None and report.nesting is not None
+	)
+	return flatmap(_nesting_lines, nestings)
+
+
+def _nesting_lines(nesting: Nesting) -> Iterator[str]:
+	totals = accumulate(
+		(nesting.exception_frame + nested.depth for nested in nesting.chain),
+		initial=nesting.base.depth,
+	)
+	return chain(
+		(
 			(
 				f"(exception {nesting.base.exception}) {nesting.base.handler} "
 				f"+{nesting.base.depth} = {nesting.base.depth} bytes"
 			),
-			*(
-				f"(exception {nested.exception}) {nested.handler} "
-				f"+{nesting.exception_frame} +{nested.depth} "
-				f"= {total} bytes"
-				for nested, total in zip(
-					nesting.chain,
-					tuple(
-						accumulate(
-							(nesting.exception_frame + nested.depth for nested in nesting.chain),
-							initial=nesting.base.depth,
-						)
-					)[1:],
-					strict=True,
-				)
-			),
-		)
+		),
+		(
+			f"(exception {nested.exception}) {nested.handler} "
+			f"+{nesting.exception_frame} +{nested.depth} "
+			f"= {total} bytes"
+			for nested, total in zip(nesting.chain, islice(totals, 1, None), strict=True)
+		),
 	)
 
 
@@ -227,9 +229,10 @@ def _nesting_notes(nesting: Nesting | None) -> tuple[str, ...]:
 
 
 def _stack_notes(report: StackReport) -> tuple[str, ...]:
+	margin = stack_margin(report)
 	return (
 		*((f"stack: {report.stack_size} bytes",) if report.stack_size is not None else ()),
-		*(f"margin: {margin} bytes" for margin in (stack_margin(report),) if margin is not None),
+		*((f"margin: {margin} bytes",) if margin is not None else ()),
 	)
 
 

@@ -53,17 +53,17 @@ def narrowing(instructions: tuple[CsInsn, ...], test: BranchTest) -> Narrowing:
 
 def _narrowing(preceding: tuple[CsInsn, ...], tested: tuple[int, ...]) -> Narrowing:
 	writers = {register: _last_writer(preceding, register) for register in tested}
-	at = max((index + 1 for index in writers.values() if index is not None), default=len(preceding))
+	written = {register: index for register, index in writers.items() if index is not None}
+	at = max((index + 1 for index in written.values()), default=len(preceding))
+	sources = {register: _move_source(preceding[index]) for register, index in written.items()}
 	return Narrowing(
 		at=at,
 		copies=tuple(
 			RegisterCopy(register=register, source=source)
-			for register, index in writers.items()
-			if index is not None
-			for source in (_move_source(preceding[index]),)
+			for register, source in sources.items()
 			if source is not None
 			and source not in tested
-			and _last_writer(preceding[index + 1 : at], source) is None
+			and _last_writer(preceding[written[register] + 1 : at], source) is None
 		),
 	)
 

@@ -8,18 +8,19 @@ from __future__ import annotations
 import posixpath
 import re
 from enum import StrEnum
-from itertools import groupby
+from itertools import chain, groupby
 from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
 from dynamic_call_tree_resolution.callgraph import CallgraphFile, libcall_nodes
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.loader import defined_function_names
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 from dynamic_call_tree_resolution.stack_usage import StackUsageFile
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Iterator, Mapping
 	from pathlib import Path
 
 	from dynamic_call_tree_resolution.callgraph import CallEdge
@@ -285,29 +286,7 @@ def held_artifacts(
 	callgraphs: tuple[CallgraphFile, ...],
 	usages: tuple[StackUsageFile, ...],
 ) -> HeldArtifacts:
-	edges = tuple(
-		_LinkedEdges(
-			path=file.path,
-			edges=tuple(
-				_LinkedEdge(
-					edge=edge,
-					linkage=linkage(
-						records, build_directory, file.path, edge.caller.rsplit(":", 1)[-1]
-					),
-					phantom=edge.callee in not_kept,
-				)
-				for edge in file.edges
-			),
-		)
-		for file in callgraphs
-		for not_kept in (
-			frozenset(
-				name
-				for name in libcall_nodes(file.path)
-				if libcall_linkage(records, name) is not Linkage.IN_IMAGE
-			),
-		)
-	)
+	edges = tuple(_linked_edges(records, build_directory, file) for file in callgraphs)
 	frames = tuple(
 		_LinkedUsages(
 			path=file.path,
@@ -321,31 +300,19 @@ def held_artifacts(
 		)
 		for file in usages
 	)
+	every_edge = tuple(flatmap(lambda linked_file: linked_file.edges, edges))
+	every_usage = tuple(flatmap(lambda linked_file: linked_file.usages, frames))
 	held = frozenset(
-		(
-			*(
+		chain(
+			(
 				frame_key(linked.edge.caller)
-				for linked_file in edges
-				for linked in linked_file.edges
+				for linked in every_edge
 				if linked.linkage is Linkage.IN_IMAGE
 			),
-			*(
-				frame_key(linked.usage.function)
-				for linked_file in frames
-				for linked in linked_file.usages
-				if linked.linkage is Linkage.IN_IMAGE
-			),
+			_frame_keys(every_usage, Linkage.IN_IMAGE),
 		)
 	)
-	discarded = (
-		frozenset(
-			frame_key(linked.usage.function)
-			for linked_file in frames
-			for linked in linked_file.usages
-			if linked.linkage is Linkage.DISCARDED
-		)
-		- held
-	)
+	discarded = frozenset(_frame_keys(every_usage, Linkage.DISCARDED)) - held
 	return HeldArtifacts(
 		callgraphs=tuple(
 			CallgraphFile(
@@ -371,19 +338,40 @@ def held_artifacts(
 		),
 		dropped={
 			Linkage.DISCARDED: discarded,
-			Linkage.NEVER_LINKED: frozenset(
-				frame_key(linked.usage.function)
-				for linked_file in frames
-				for linked in linked_file.usages
-				if linked.linkage is Linkage.NEVER_LINKED
-			)
+			Linkage.NEVER_LINKED: frozenset(_frame_keys(every_usage, Linkage.NEVER_LINKED))
 			- held
 			- discarded,
 		},
 		phantom_libcalls=frozenset(
 			linked.edge.callee
-			for linked_file in edges
-			for linked in linked_file.edges
+			for linked in every_edge
 			if linked.linkage is Linkage.IN_IMAGE and linked.phantom
 		),
 	)
+
+
+def _linked_edges(
+	records: LinkerRecords, build_directory: Path, file: CallgraphFile
+) -> _LinkedEdges:
+	not_kept = frozenset(
+		name
+		for name in libcall_nodes(file.path)
+		if libcall_linkage(records, name) is not Linkage.IN_IMAGE
+	)
+	return _LinkedEdges(
+		path=file.path,
+		edges=tuple(
+			_LinkedEdge(
+				edge=edge,
+				linkage=linkage(
+					records, build_directory, file.path, edge.caller.rsplit(":", 1)[-1]
+				),
+				phantom=edge.callee in not_kept,
+			)
+			for edge in file.edges
+		),
+	)
+
+
+def _frame_keys(usages: Iterable[_LinkedUsage], linked_as: Linkage) -> Iterator[str]:
+	return (frame_key(linked.usage.function) for linked in usages if linked.linkage is linked_as)
