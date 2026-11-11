@@ -63,7 +63,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = ["--doctest-modules"]
-testpaths = ["src", "tests"]
+testpaths = ["src", "tests", "benchmarks"]
 norecursedirs = ["fixtures"]
 markers = [
     "slow: tests excluded from the default check run",
@@ -177,7 +177,7 @@ exclude = ["^testbeds/(?!plugin/|$)", "references", "typings", "build", "dist", 
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["src", "tests", "tasks.py", "testbeds/plugin"]
+include = ["src", "tests", "tasks.py", "testbeds/plugin", "benchmarks"]
 exclude = ["**/__pycache__", ".venv*", "references/**", "typings/**"]
 stubPath = "typings"
 
