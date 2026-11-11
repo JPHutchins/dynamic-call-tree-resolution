@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import SourceLocation
 
 if TYPE_CHECKING:
@@ -90,7 +91,7 @@ def parse_callgraph(path: Path) -> tuple[CallEdge, ...]:
 
 
 def load_callgraph(build_directory: Path) -> tuple[CallEdge, ...]:
-	return tuple(edge for file in callgraph_files(build_directory) for edge in file.edges)
+	return tuple(flatmap(lambda file: file.edges, callgraph_files(build_directory)))
 
 
 class CallgraphFile(Struct):

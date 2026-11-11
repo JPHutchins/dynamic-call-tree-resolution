@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from itertools import groupby
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, assert_never
@@ -12,11 +13,12 @@ from typing import TYPE_CHECKING, assert_never
 from salix import Struct
 
 from dynamic_call_tree_resolution.callgraph import IndirectCall, indirect_calls
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import Field, SourceLocation
 from dynamic_call_tree_resolution.stack_analysis import frame_key
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterator, Mapping
 	from pathlib import Path
 
 
@@ -189,7 +191,15 @@ def parse_descriptors(text: str) -> Descriptors:
 
 
 def described_calls(descriptors: Descriptors, build_directory: Path) -> tuple[DescribedCall, ...]:
-	return tuple(
+	unit_calls = partial(_unit_calls, _callees(descriptors.sites), build_directory)
+	return tuple(flatmap(unit_calls, sorted(build_directory.glob("**/*.ci"))))
+
+
+def _unit_calls(
+	callees: Mapping[_CallKey, frozenset[Descriptor]], build_directory: Path, path: Path
+) -> Iterator[DescribedCall]:
+	unit = path.relative_to(build_directory).with_suffix("").as_posix()
+	return (
 		DescribedCall(
 			unit=unit,
 			call=call,
@@ -200,9 +210,6 @@ def described_calls(descriptors: Descriptors, build_directory: Path) -> tuple[De
 				)
 			),
 		)
-		for callees in (_callees(descriptors.sites),)
-		for path in sorted(build_directory.glob("**/*.ci"))
-		for unit in (path.relative_to(build_directory).with_suffix("").as_posix(),)
 		for call in indirect_calls(path)
 	)
 

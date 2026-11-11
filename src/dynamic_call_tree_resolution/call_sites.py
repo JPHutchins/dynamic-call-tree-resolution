@@ -7,12 +7,13 @@ from __future__ import annotations
 
 from collections import Counter
 from functools import partial
-from itertools import groupby
+from itertools import groupby, product
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct, replace
 
 from dynamic_call_tree_resolution.callgraph import EdgeKind
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.field_narrowing import narrowed
 from dynamic_call_tree_resolution.identity import stack_name
 from dynamic_call_tree_resolution.model import (
@@ -43,7 +44,7 @@ from dynamic_call_tree_resolution.vsa.lattice import Known, Top
 from dynamic_call_tree_resolution.vsa.vectors import hardware_handlers
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Mapping
+	from collections.abc import Callable, Collection, Iterator, Mapping
 
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
@@ -116,8 +117,7 @@ def _dispatched(
 	callers = Counter(site.caller_address for site in sites)
 	targets = {
 		start: dispatch.targets
-		for dispatch in rtos.dispatches
-		for start, function in program.functions.items()
+		for dispatch, (start, function) in product(rtos.dispatches, program.functions.items())
 		if function.name == dispatch.function and callers[start] == 1
 	}
 	return tuple(
@@ -171,9 +171,7 @@ def call_site_candidates(
 	narrowings: Mapping[Address, SignatureNarrowed] | None = None,
 ) -> frozenset[Address]:
 	return frozenset(
-		target
-		for found in site_targets(program, site, resolved_by_slot, narrowings)
-		for target in target_addresses(found)
+		flatmap(target_addresses, site_targets(program, site, resolved_by_slot, narrowings))
 	)
 
 
@@ -236,11 +234,11 @@ def signature_narrowings(
 	signatures: Mapping[Address, FunctionSignature],
 	fallback: frozenset[Address] | None = None,
 ) -> Mapping[Address, SignatureNarrowed]:
+	available = fallback if fallback is not None else fallback_addresses(program)
 	return {
 		slot: SignatureNarrowed(
 			signature=signature, targets=matching_targets(program, signature) & available
 		)
-		for available in (fallback if fallback is not None else fallback_addresses(program),)
 		for slot, signature in signatures.items()
 	}
 
@@ -260,18 +258,15 @@ def site_targets(
 		return (Null(),)
 	by_slot = narrowings if narrowings is not None else dict[Address, SignatureNarrowed]()
 	chased = _chased(program, site, resolved_by_slot, by_slot)
+	narrowing = by_slot.get(site.loaded_from) if site.loaded_from is not None else None
 	return (
 		chased
 		if any(map(target_addresses, chased))
 		else (Dispatched(targets=site.dispatch),)
 		if site.dispatch is not None
-		else tuple(
-			narrowing
-			for narrowing in (
-				by_slot.get(site.loaded_from) if site.loaded_from is not None else None,
-			)
-			if narrowing is not None
-		)
+		else (narrowing,)
+		if narrowing is not None
+		else ()
 	)
 
 
@@ -283,15 +278,8 @@ def calls_nothing(program: Program, site: CallSite) -> bool:
 
 
 def narrowing_signature(findings: tuple[SiteTargets, ...]) -> FunctionSignature | None:
-	return next(
-		(
-			signature
-			for found in findings
-			for signature in (_signature(found),)
-			if signature is not None and target_addresses(found)
-		),
-		None,
-	)
+	signatures = (_signature(found) for found in findings if target_addresses(found))
+	return next((signature for signature in signatures if signature is not None), None)
 
 
 def _signature(found: SiteTargets) -> FunctionSignature | None:
@@ -399,26 +387,24 @@ def narrowed_targets(
 	fallback: frozenset[Address] | None = None,
 ) -> Mapping[str, Mapping[str, EdgeKind]]:
 	"""The targets each caller reaches only through a narrowing, with its edge, by caller key."""
-	return {
-		caller: only
+	only_by_caller = {
+		caller: _narrowing_only(tuple(group))
 		for caller, group in groupby(
 			_caller_targets(
 				program, sites, resolved, narrow_by_signature, narrowed_by_field, names, fallback
 			),
 			key=_caller,
 		)
-		for entries in (tuple(group),)
-		for candidates in (
-			frozenset(entry.target for entry in entries if entry.kind is EdgeKind.CANDIDATE),
-		)
-		for only in (
-			{
-				entry.target: entry.kind
-				for entry in entries
-				if entry.kind is not EdgeKind.CANDIDATE and entry.target not in candidates
-			},
-		)
-		if only
+	}
+	return {caller: only for caller, only in only_by_caller.items() if only}
+
+
+def _narrowing_only(entries: Collection[_CallerTarget]) -> dict[str, EdgeKind]:
+	candidates = frozenset(entry.target for entry in entries if entry.kind is EdgeKind.CANDIDATE)
+	return {
+		entry.target: entry.kind
+		for entry in entries
+		if entry.kind is not EdgeKind.CANDIDATE and entry.target not in candidates
 	}
 
 
@@ -455,20 +441,33 @@ def _caller_targets(
 		else None
 	)
 	name = partial(stack_name, program, names)
-	return tuple(
-		sorted(
-			_CallerTarget(
-				caller=frame_key(name(site.caller_address)), target=target, kind=labeled.kind
-			)
-			for site in sites
-			for labeled in _labeled(
-				site_targets(program, site, resolved_map, narrowings),
-				narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
-				name,
-				site.dispatch,
-			)
-			for target in labeled.names or {INDIRECT_CALLEE}
-		)
+	site_caller_targets = partial(
+		_site_caller_targets, program, resolved_map, narrowings, narrowed_by_field, name
+	)
+	return tuple(sorted(flatmap(site_caller_targets, sites)))
+
+
+def _site_caller_targets(
+	program: Program,
+	resolved_by_slot: Mapping[Address, SlotAssignment],
+	narrowings: Mapping[Address, SignatureNarrowed] | None,
+	narrowed_by_field: tuple[NarrowedSpan, ...],
+	name: Callable[[Address], str],
+	site: CallSite,
+) -> Iterator[_CallerTarget]:
+	labeled = _labeled(
+		site_targets(program, site, resolved_by_slot, narrowings),
+		narrowed(frozenset[Address](), narrowed_by_field, site.site_address),
+		name,
+		site.dispatch,
+	)
+	return flatmap(partial(_labeled_targets, frame_key(name(site.caller_address))), labeled)
+
+
+def _labeled_targets(caller: str, labeled: _LabeledTargets) -> Iterator[_CallerTarget]:
+	return (
+		_CallerTarget(caller=caller, target=target, kind=labeled.kind)
+		for target in labeled.names or {INDIRECT_CALLEE}
 	)
 
 
@@ -478,12 +477,12 @@ def _labeled(
 	name: Callable[[Address], str],
 	dispatch: frozenset[Address] | None,
 ) -> tuple[_LabeledTargets, ...]:
-	return tuple(
-		_LabeledTargets(names=names, kind=_kind(found, dispatch))
+	every_label = (
+		_LabeledTargets(names=_names(found, name), kind=_kind(found, dispatch))
 		for found in findings
-		for names in (_names(found, name),)
-		if names
-	) or (
+	)
+	labeled = tuple(label for label in every_label if label.names)
+	return labeled or (
 		(_LabeledTargets(names=frozenset(map(name, field)), kind=EdgeKind.FIELD),)
 		if field
 		else (_LabeledTargets(names=frozenset[str](), kind=EdgeKind.CANDIDATE),)
