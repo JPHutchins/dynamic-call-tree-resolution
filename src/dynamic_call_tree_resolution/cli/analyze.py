@@ -28,6 +28,7 @@ from dynamic_call_tree_resolution.cli.render import (
 	rtos_lines,
 	signature_text,
 )
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.loader import (
 	load,
 )
@@ -42,7 +43,7 @@ from dynamic_call_tree_resolution.report import (
 from dynamic_call_tree_resolution.rtos import RtosChoice, rtos_model
 
 if TYPE_CHECKING:
-	from collections.abc import Iterator
+	from collections.abc import Iterable, Iterator
 
 
 @app.command  # type: ignore[misc]
@@ -162,15 +163,17 @@ def compare(
 			)
 
 
-def _elf_paths(elfs: list[Path]) -> Iterator[Path]:
-	for elf in elfs:
-		if elf.is_dir():
-			found = sorted(elf.glob("*.elf"))
-			if not found:
-				print(f"warning: {elf}: no .elf files", file=sys.stderr)
-			yield from found
-		else:
-			yield elf
+def _elf_paths(elfs: Iterable[Path]) -> Iterator[Path]:
+	return flatmap(_images_in, elfs)
+
+
+def _images_in(elf: Path) -> Iterable[Path]:
+	if not elf.is_dir():
+		return (elf,)
+	found = sorted(elf.glob("*.elf"))
+	if not found:
+		print(f"warning: {elf}: no .elf files", file=sys.stderr)
+	return found
 
 
 def _comparison(

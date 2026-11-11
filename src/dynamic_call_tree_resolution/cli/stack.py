@@ -41,6 +41,7 @@ from dynamic_call_tree_resolution.cli.render import (
 	step_report,
 	thread_stack_steps,
 )
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.linker import (
 	Linkage,
 	Membership,
@@ -78,6 +79,8 @@ if TYPE_CHECKING:
 	from collections.abc import Mapping
 
 	from dynamic_call_tree_resolution.callgraph import CallEdge
+	from dynamic_call_tree_resolution.cli.artifacts import HandlerNames
+	from dynamic_call_tree_resolution.model import HandlerStack, InterruptStack
 
 
 def in_image(reports: tuple[StackReport, ...], expansion: Expansion) -> tuple[StackReport, ...]:
@@ -108,29 +111,31 @@ def with_interrupt_stack(expansion: Expansion | None, graph: StackGraph) -> tupl
 
 
 def _interrupt_stacks(expansion: Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
-	return (
+	if (
+		expansion is None
+		or expansion.rtos.interrupt_stack is None
+		or RESET not in expansion.exceptions
+	):
+		return ()
+	return (_interrupt_stack(graph, expansion, expansion.rtos.interrupt_stack),)
+
+
+def _interrupt_stack(graph: StackGraph, expansion: Expansion, stack: InterruptStack) -> StackReport:
+	return interrupt_stack_report(
+		stack.name,
+		_handled(graph, expansion.exceptions, RESET),
 		tuple(
-			interrupt_stack_report(
-				stack.name,
-				_handled(graph, expansion.exceptions, RESET),
-				tuple(
-					_handled(graph, expansion.exceptions, number)
-					for number in (HARD_FAULT, NMI)
-					if number in expansion.exceptions
-				),
-				tuple(
-					_handled(graph, expansion.exceptions, number)
-					for number in sorted(expansion.exceptions)
-					if number > HARD_FAULT
-				),
-				levels=expansion.priority_levels,
-				exception_frame=expansion.rtos.exception_frame,
-			)
-			for stack in (expansion.rtos.interrupt_stack,)
-			if stack is not None and RESET in expansion.exceptions
-		)
-		if expansion is not None
-		else ()
+			_handled(graph, expansion.exceptions, number)
+			for number in (HARD_FAULT, NMI)
+			if number in expansion.exceptions
+		),
+		tuple(
+			_handled(graph, expansion.exceptions, number)
+			for number in sorted(expansion.exceptions)
+			if number > HARD_FAULT
+		),
+		levels=expansion.priority_levels,
+		exception_frame=expansion.rtos.exception_frame,
 	)
 
 
@@ -139,30 +144,25 @@ def _handled(graph: StackGraph, exceptions: Mapping[int, str], number: int) -> H
 
 
 def _handler_stacks(expansion: Expansion | None, graph: StackGraph) -> tuple[StackReport, ...]:
-	return (
+	if expansion is None or expansion.rtos.handler_stack is None or expansion.handlers is None:
+		return ()
+	return (_handler_stack(graph, expansion.rtos.handler_stack, expansion.handlers),)
+
+
+def _handler_stack(graph: StackGraph, stack: HandlerStack, names: HandlerNames) -> StackReport:
+	return interrupt_stack_report(
+		stack.name,
+		Handled(exception=_SVC, report=entry_report(graph, SYSTEM_CALL_NODE)),
 		tuple(
-			interrupt_stack_report(
-				stack.name,
-				Handled(exception=_SVC, report=entry_report(graph, SYSTEM_CALL_NODE)),
-				tuple(
-					_wrapped(graph, number, handler, names.wrapper_calls)
-					for number, handler in names.spurious.items()
-				),
-				tuple(
-					_wrapped(graph, number, handler, names.wrapper_calls)
-					for number, handler in names.interrupts.items()
-				),
-				levels=PriorityLevels(
-					count=len(names.interrupts), source=LevelSource.INTERRUPT_TABLE
-				),
-				exception_frame=stack.interrupt_frame,
-			)
-			for stack in (expansion.rtos.handler_stack,)
-			for names in (expansion.handlers,)
-			if stack is not None and names is not None
-		)
-		if expansion is not None
-		else ()
+			_wrapped(graph, number, handler, names.wrapper_calls)
+			for number, handler in names.spurious.items()
+		),
+		tuple(
+			_wrapped(graph, number, handler, names.wrapper_calls)
+			for number, handler in names.interrupts.items()
+		),
+		levels=PriorityLevels(count=len(names.interrupts), source=LevelSource.INTERRUPT_TABLE),
+		exception_frame=stack.interrupt_frame,
 	)
 
 
@@ -322,9 +322,8 @@ def _assumed_frame(
 		raise ValueError(f"--assume-frame: {statement} is not FUNCTION=BYTES")
 	if any(frame_key(frame.function) == frame_key(name) for frame in frames):
 		raise ValueError(f"--assume-frame: {name} already has a frame")
-	if not any(
-		frame_key(node) == frame_key(name) for edge in edges for node in (edge.caller, edge.callee)
-	):
+	nodes = flatmap(lambda edge: (edge.caller, edge.callee), edges)
+	if not any(frame_key(node) == frame_key(name) for node in nodes):
 		raise ValueError(f"--assume-frame: no function named {name} is in the call graph")
 	return AssumedFrame(function=name, bytes=int(size))
 

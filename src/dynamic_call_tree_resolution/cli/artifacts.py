@@ -3,6 +3,7 @@
 
 """A build's call graph and frames, and the image they come from."""
 
+from functools import partial
 from typing import TYPE_CHECKING, Final
 
 from salix import Struct
@@ -12,6 +13,7 @@ from dynamic_call_tree_resolution.callgraph import (
 	callgraph_files,
 	callgraph_locations,
 )
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.identity import (
 	Identities,
 	canonical_edges,
@@ -189,12 +191,8 @@ def _named_artifacts(
 	dropped: Mapping[Linkage, frozenset[str]],
 	phantom_libcalls: frozenset[str],
 ) -> Artifacts:
-	edges = tuple(
-		edge for file in callgraphs for edge in _named_edges(known, file.path, file.edges)
-	)
-	frames = tuple(
-		frame for file in usages for frame in _named_frames(known, file.path, file.usages)
-	)
+	edges = tuple(flatmap(partial(_named_edges, known), callgraphs))
+	frames = tuple(flatmap(partial(_named_frames, known), usages))
 	return Artifacts(
 		edges=edges,
 		frames=frames,
@@ -210,21 +208,21 @@ def _named_artifacts(
 	)
 
 
-def _named_edges(
-	known: Identities | None, path: Path, edges: tuple[CallEdge, ...]
-) -> tuple[CallEdge, ...]:
+def _named_edges(known: Identities | None, file: CallgraphFile) -> tuple[CallEdge, ...]:
 	return (
-		canonical_edges(known, path.name.removesuffix(".ci"), callgraph_locations(path), edges)
+		canonical_edges(
+			known, file.path.name.removesuffix(".ci"), callgraph_locations(file.path), file.edges
+		)
 		if known is not None
-		else edges
+		else file.edges
 	)
 
 
-def _named_frames(
-	known: Identities | None, path: Path, frames: tuple[StackUsage, ...]
-) -> tuple[StackUsage, ...]:
+def _named_frames(known: Identities | None, file: StackUsageFile) -> tuple[StackUsage, ...]:
 	return (
-		canonical_frames(known, path.name.removesuffix(".su"), stack_usage_locations(path), frames)
+		canonical_frames(
+			known, file.path.name.removesuffix(".su"), stack_usage_locations(file.path), file.usages
+		)
 		if known is not None
-		else frames
+		else file.usages
 	)

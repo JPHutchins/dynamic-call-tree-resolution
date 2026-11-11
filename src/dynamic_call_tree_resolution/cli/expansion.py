@@ -44,6 +44,7 @@ from dynamic_call_tree_resolution.cli.measures import (
 	thread_graph,
 	unrecorded_sites,
 )
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.descriptors import load_descriptors
 from dynamic_call_tree_resolution.field_narrowing import field_narrowings
 from dynamic_call_tree_resolution.identity import (
@@ -84,6 +85,7 @@ if TYPE_CHECKING:
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel
 	from dynamic_call_tree_resolution.stack_usage import StackUsage
+	from dynamic_call_tree_resolution.vsa.links import LinkedCall
 
 
 def field_narrowed_spans(elf: Path, program: Program) -> tuple[NarrowedSpan, ...]:
@@ -456,6 +458,16 @@ def _site_place(site: CallSite) -> _SitePlace:
 	return _SitePlace(caller_address=site.caller_address, site_address=site.site_address)
 
 
+def _image_call(image: Image, call: LinkedCall) -> tuple[_ImageCall, ...]:
+	caller = normalized(call.caller, image.program.machine) if call.caller is not None else None
+	callee = normalized(call.callee, image.program.machine)
+	return (
+		(_ImageCall(caller=caller, callee=callee),)
+		if caller is not None and caller in image.names and callee in image.names
+		else ()
+	)
+
+
 def _binary_edges(
 	image: Image, measure: CodeMeasure, edges: tuple[CallEdge, ...], frames: tuple[StackUsage, ...]
 ) -> tuple[CallEdge, ...]:
@@ -463,14 +475,7 @@ def _binary_edges(
 	known = frozenset(
 		CallPair(caller=frame_key(edge.caller), callee=frame_key(edge.callee)) for edge in edges
 	)
-	calls = tuple(
-		_ImageCall(caller=caller, callee=callee)
-		for call in linked_calls(image.program)
-		if call.caller is not None
-		for caller in (normalized(call.caller, image.program.machine),)
-		for callee in (normalized(call.callee, image.program.machine),)
-		if caller in image.names and callee in image.names
-	)
+	calls = tuple(flatmap(partial(_image_call, image), linked_calls(image.program)))
 	measured = code_depths(
 		measure,
 		frozenset(
