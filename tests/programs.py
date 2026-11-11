@@ -47,7 +47,7 @@ def build_program(
 		},
 		layouts={},
 		relocations=(),
-		data_in_code=tuple(span(low, high) for low, high in data_in_code),
+		data_in_code=tuple(sorted(span(low, high) for low, high in data_in_code)),
 		arm_code=tuple(sorted(span(low, high) for low, high in arm_code)),
 		never_returns=frozenset(map(Address, never_returns)),
 		noreturn_inlines=tuple(

@@ -293,7 +293,7 @@ class Program(Struct):
 	relocations: tuple[Relocation, ...]
 	sections: Mapping[Address, Section]
 	data_in_code: tuple[Span, ...]
-	"""Spans of data inside code, such as literal pools, from ARM `$d` mapping symbols."""
+	"""Sorted spans of data inside code, such as literal pools, from ARM `$d` mapping symbols."""
 	arm_code: tuple[Span, ...]
 	"""Sorted spans of A32 code, from ARM `$a` mapping symbols."""
 	link_references: tuple[LinkReference, ...] = ()
