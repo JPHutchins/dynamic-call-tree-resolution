@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from functools import partial
-from itertools import accumulate, groupby, pairwise
+from itertools import accumulate, chain, groupby, pairwise
 from typing import TYPE_CHECKING, assert_never
 
 from elftools.dwarf.die import AttributeValue
@@ -71,11 +71,11 @@ def _unit_line_spans(dwarf: DWARFInfo, unit: CompileUnit) -> Iterator[LineSpan]:
 	)
 
 
-def _sequences(rows: tuple[LineState, ...]) -> tuple[tuple[LineState, ...], ...]:
-	return tuple(
+def _sequences(rows: tuple[LineState, ...]) -> Iterator[tuple[LineState, ...]]:
+	return (
 		rows[previous + 1 : end + 1]
 		for previous, end in pairwise(
-			(-1, *(index for index, row in enumerate(rows) if row.end_sequence))
+			chain((-1,), (index for index, row in enumerate(rows) if row.end_sequence))
 		)
 	)
 
@@ -124,7 +124,7 @@ def noreturn_inlines(dwarf: DWARFInfo | None) -> tuple[tuple[Span, ...], ...]:
 	copies = (
 		die for die in every_die(dwarf) if die.tag == "DW_TAG_inlined_subroutine" and noreturn(die)
 	)
-	copy_spans = (_die_spans(dwarf, copy.cu, copy) for copy in copies)
+	copy_spans = (tuple(_die_spans(dwarf, copy.cu, copy)) for copy in copies)
 	return tuple(spans for spans in copy_spans if spans)
 
 
@@ -144,7 +144,7 @@ def _reference(unit: CompileUnit, attribute: AttributeValue | None) -> int | Non
 			assert_never(unreachable)
 
 
-def _die_spans(dwarf: DWARFInfo, unit: CompileUnit, die: DIE) -> tuple[Span, ...]:
+def _die_spans(dwarf: DWARFInfo, unit: CompileUnit, die: DIE) -> Iterable[Span]:
 	match die.attributes.get("DW_AT_ranges"), die.attributes.get("DW_AT_low_pc"):
 		case AttributeValue() as ranges, _:
 			return _range_spans(dwarf.range_lists(), int_value(ranges), unit)
@@ -159,13 +159,11 @@ def _die_spans(dwarf: DWARFInfo, unit: CompileUnit, die: DIE) -> tuple[Span, ...
 			return ()  # pragma: no cover
 
 
-def _range_spans(
-	range_lists: RangeLists | None, offset: int, unit: CompileUnit
-) -> tuple[Span, ...]:
+def _range_spans(range_lists: RangeLists | None, offset: int, unit: CompileUnit) -> Iterable[Span]:
 	if range_lists is None:
 		return ()  # pragma: no cover
 	entries = range_lists.get_range_list_at_offset(offset, cu=unit)
-	return tuple(
+	return (
 		Span(start=Address(entry.begin_offset), end=Address(entry.end_offset))
 		if entry.is_absolute
 		else Span(start=Address(base + entry.begin_offset), end=Address(base + entry.end_offset))

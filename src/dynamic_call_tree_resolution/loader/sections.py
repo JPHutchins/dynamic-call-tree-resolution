@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from functools import partial
-from itertools import chain, groupby
+from itertools import chain, groupby, islice
 from typing import TYPE_CHECKING, Final
 
 from elftools.elf.sections import (
@@ -114,12 +114,12 @@ class MappingMarker(Struct, order=True):
 	"""``a`` for A32 code, ``t`` for T32 code, ``d`` for data."""
 
 
-def mapped_spans(elf: ELFFile, markers: Iterable[MappingMarker], kind: str) -> tuple[Span, ...]:
+def mapped_spans(elf: ELFFile, markers: Iterable[MappingMarker], kind: str) -> Iterator[Span]:
 	section_spans = (
 		_section_spans(elf, section_index, tuple(group), kind)
 		for section_index, group in groupby(markers, key=_marker_section)
 	)
-	return tuple(chain.from_iterable(section_spans))
+	return chain.from_iterable(section_spans)
 
 
 def mapping_markers(symtab: SymbolTableSection | None) -> tuple[MappingMarker, ...]:
@@ -158,7 +158,7 @@ def _kind_spans(marks: tuple[MappingMarker, ...], end: int, kind: str) -> Iterat
 	return (
 		Span(start=Address(mark.address), end=Address(following))
 		for mark, following in zip(
-			marks, (*(later.address for later in marks[1:]), end), strict=True
+			marks, chain((later.address for later in islice(marks, 1, None)), (end,)), strict=True
 		)
 		if mark.kind == kind and following > mark.address
 	)

@@ -121,7 +121,7 @@ def _load(stream: BinaryIO) -> Program:
 			for section in sections.values()
 			if section.flags & SHF_ALLOC
 		},
-		data_in_code=mapped_spans(elf, markers, "d"),
+		data_in_code=tuple(mapped_spans(elf, markers, "d")),
 		arm_code=tuple(sorted(mapped_spans(elf, markers, "a"))),
 		link_references=link_references(elf, reference_types(machine)),
 		inlined=inlined(dwarf),
