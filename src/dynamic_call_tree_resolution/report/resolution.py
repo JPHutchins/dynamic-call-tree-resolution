@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.call_sites import (
 	site_targets,
 	target_addresses,
 )
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.field_narrowing import narrowing_at
 from dynamic_call_tree_resolution.model import (
 	BARE_METAL,
@@ -40,6 +41,7 @@ from dynamic_call_tree_resolution.points_to import (
 if TYPE_CHECKING:
 	from collections.abc import Mapping
 
+	from dynamic_call_tree_resolution.call_sites import SignatureNarrowed
 	from dynamic_call_tree_resolution.field_narrowing import NarrowedSpan
 	from dynamic_call_tree_resolution.model import CallSite, Program, RtosModel, SlotAssignment
 
@@ -235,42 +237,10 @@ def build_report(
 			for assignment in resolved
 		),
 		call_sites=tuple(
-			CallSiteReport(
-				caller=program.functions[site.caller_address].name,
-				site_address=site.site_address,
-				slot_address=site.slot,
-				member_path=next(
-					(
-						render_path(slot_paths[slot])
-						for slot in (site.loaded_from, site.slot)
-						if slot is not None and slot in slot_paths
-					),
-					None,
-				),
-				candidates=_candidates(
-					program, narrowing.targets if narrowing is not None else chased
-				),
-				field=(
-					f"{narrowing.field.record}.{narrowing.field.member}"
-					if narrowing is not None
-					else None
-				),
-				signature=_render_signature(narrowing_signature(findings)),
-				external=site.external,
-				null=any(isinstance(found, Null) for found in findings),
-				dispatch=any(isinstance(found, Dispatched) for found in findings),
-				dead=any(isinstance(found, Dead) for found in findings),
+			_call_site_report(
+				program, slot_paths, resolved_map, narrowings, narrowed_by_field, site
 			)
 			for site in call_sites
-			for findings in (site_targets(program, site, resolved_map, narrowings),)
-			for chased in (
-				frozenset(target for found in findings for target in target_addresses(found)),
-			)
-			for narrowing in (
-				None
-				if chased or calls_nothing(program, site)
-				else narrowing_at(narrowed_by_field, site.site_address),
-			)
 		),
 		unresolved_slots=tuple(
 			UnresolvedSlotReport(
@@ -297,6 +267,45 @@ def build_report(
 		resolved_slots=counts.resolved_slots,
 		resolved_targets=counts.resolved_targets,
 		rtos=rtos,
+	)
+
+
+def _call_site_report(
+	program: Program,
+	slot_paths: Mapping[Address, tuple[str | None, ...]],
+	resolved_map: Mapping[Address, SlotAssignment],
+	narrowings: Mapping[Address, SignatureNarrowed] | None,
+	narrowed_by_field: tuple[NarrowedSpan, ...],
+	site: CallSite,
+) -> CallSiteReport:
+	findings = site_targets(program, site, resolved_map, narrowings)
+	chased = frozenset(flatmap(target_addresses, findings))
+	narrowing = (
+		None
+		if chased or calls_nothing(program, site)
+		else narrowing_at(narrowed_by_field, site.site_address)
+	)
+	return CallSiteReport(
+		caller=program.functions[site.caller_address].name,
+		site_address=site.site_address,
+		slot_address=site.slot,
+		member_path=next(
+			(
+				render_path(slot_paths[slot])
+				for slot in (site.loaded_from, site.slot)
+				if slot is not None and slot in slot_paths
+			),
+			None,
+		),
+		candidates=_candidates(program, narrowing.targets if narrowing is not None else chased),
+		field=(
+			f"{narrowing.field.record}.{narrowing.field.member}" if narrowing is not None else None
+		),
+		signature=_render_signature(narrowing_signature(findings)),
+		external=site.external,
+		null=any(isinstance(found, Null) for found in findings),
+		dispatch=any(isinstance(found, Dispatched) for found in findings),
+		dead=any(isinstance(found, Dead) for found in findings),
 	)
 
 
