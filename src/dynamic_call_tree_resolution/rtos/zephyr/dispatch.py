@@ -91,13 +91,11 @@ def _section_dispatch(program: Program, spec: _SectionDispatch) -> Dispatch | No
 		)
 	):
 		return None
+	pointed_at = (pointer_at(program, Address(entry.address + offset)) for entry in entries)
 	return Dispatch(
 		function=spec.function,
 		targets=frozenset(
-			target
-			for entry in entries
-			for target in (pointer_at(program, Address(entry.address + offset)),)
-			if target is not None and target in program.functions
+			target for target in pointed_at if target is not None and target in program.functions
 		),
 	)
 
