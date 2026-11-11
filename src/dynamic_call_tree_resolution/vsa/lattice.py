@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable
 from itertools import product
-from typing import TYPE_CHECKING, Final, assert_never
+from typing import TYPE_CHECKING, Final, TypeIs, assert_never
 
 from salix import Struct
 
@@ -49,7 +49,7 @@ def join_maps[K: int, T: Hashable](
 	}
 
 
-def is_top[T: Hashable](value: Lattice[T]) -> bool:
+def is_top[T: Hashable](value: Lattice[T]) -> TypeIs[Top]:
 	match value:
 		case Top():
 			return True

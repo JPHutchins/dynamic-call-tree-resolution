@@ -57,6 +57,10 @@ def call_pair(edge: CallEdge) -> CallPair:
 	return CallPair(caller=edge.caller, callee=edge.callee)
 
 
+def edge_nodes(edge: CallEdge) -> tuple[str, ...]:
+	return (edge.caller, edge.callee)
+
+
 _TOKEN: Final = re.compile(r'"(?P<quoted>[^"]*)"|(?P<unterminated>")|[{}:]|[^\s{}:"][^\s{}:]*')
 _LOCATED: Final = re.compile(r"(?P<path>.+):(?P<line>\d+):(?P<column>\d+)")
 

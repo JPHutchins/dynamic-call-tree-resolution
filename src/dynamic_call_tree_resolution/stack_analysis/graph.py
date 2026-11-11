@@ -8,7 +8,7 @@ from __future__ import annotations
 from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
-from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind, call_pair
+from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind, call_pair, edge_nodes
 from dynamic_call_tree_resolution.composition import flatmap, merged
 from dynamic_call_tree_resolution.stack_analysis.depths import (
 	all_callees,
@@ -128,7 +128,7 @@ def _assumed_narrowings(
 	return {
 		node: narrowed.get(node, frozenset[Reason]())
 		| {reason for reason, callers in assumed.items() if frame_key(node) in callers}
-		for node in flatmap(lambda edge: (edge.caller, edge.callee), edges)
+		for node in flatmap(edge_nodes, edges)
 		if any(frame_key(node) in callers for callers in assumed.values())
 	}
 

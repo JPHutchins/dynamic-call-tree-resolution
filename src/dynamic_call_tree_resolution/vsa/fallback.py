@@ -62,7 +62,7 @@ def address_taken(program: Program) -> frozenset[Address]:
 				for section in program.sections.values()
 			)
 		)
-		| frozenset(address for address in _computed_addresses(program) if address in functions)
+		| frozenset(Address(value) for value in _computed_addresses(program) if value in functions)
 		| linked_address_taken(program)
 	)
 
@@ -139,8 +139,12 @@ def _section_occurrences(
 	)
 
 
-def _computed_addresses(program: Program) -> Iterator[Address]:
-	return (computed.target for computed in _computed_slots(program))
+def _computed_addresses(program: Program) -> Iterator[int]:
+	return flatmap(partial(_function_addresses, program), _non_branch_instructions(program))
+
+
+def _function_addresses(program: Program, instructions: tuple[CsInsn, ...]) -> Iterator[int]:
+	return flatmap(partial(_instruction_addresses, program, instructions), range(len(instructions)))
 
 
 def _computed_slots(program: Program) -> Iterator[SlotTarget]:

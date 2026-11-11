@@ -10,6 +10,7 @@ import msgspec
 from cyclopts import Parameter
 from salix import replace
 
+from dynamic_call_tree_resolution.callgraph import edge_nodes
 from dynamic_call_tree_resolution.cli.app import (
 	ASSUME_FRAME,
 	ASSUME_NO_RECURSION,
@@ -322,7 +323,7 @@ def _assumed_frame(
 		raise ValueError(f"--assume-frame: {statement} is not FUNCTION=BYTES")
 	if any(frame_key(frame.function) == frame_key(name) for frame in frames):
 		raise ValueError(f"--assume-frame: {name} already has a frame")
-	nodes = flatmap(lambda edge: (edge.caller, edge.callee), edges)
+	nodes = flatmap(edge_nodes, edges)
 	if not any(frame_key(node) == frame_key(name) for node in nodes):
 		raise ValueError(f"--assume-frame: no function named {name} is in the call graph")
 	return AssumedFrame(function=name, bytes=int(size))

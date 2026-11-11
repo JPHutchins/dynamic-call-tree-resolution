@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind
+from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind, edge_nodes
 from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.stack_analysis.values import (
 	INDIRECT_CALLEE,
@@ -81,19 +81,32 @@ def _expanded_callees(
 	*,
 	exact: bool,
 ) -> Iterable[_Callee]:
-	targets = targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
 	return (
-		_expansion(
-			targets,
-			(narrowed_by_caller or {}).get(frame_key(edge.caller), {}),
-			fallback,
-			graph_targets,
-			exact=exact,
+		_indirect_callees(
+			edge, targets_by_caller, narrowed_by_caller, fallback, graph_targets, exact=exact
 		)
-		or _unexpanded(targets, edge.kind)
 		if edge.callee == INDIRECT_CALLEE
 		else (_Callee(callee=edge.callee, kind=edge.kind),)
 	)
+
+
+def _indirect_callees(
+	edge: CallEdge,
+	targets_by_caller: Mapping[str, frozenset[str]],
+	narrowed_by_caller: Mapping[str, Mapping[str, EdgeKind]] | None,
+	fallback: frozenset[str],
+	graph_targets: Callable[[str], frozenset[str]],
+	*,
+	exact: bool,
+) -> Iterable[_Callee]:
+	targets = targets_by_caller.get(frame_key(edge.caller), frozenset[str]())
+	return _expansion(
+		targets,
+		(narrowed_by_caller or {}).get(frame_key(edge.caller), {}),
+		fallback,
+		graph_targets,
+		exact=exact,
+	) or _unexpanded(targets, edge.kind)
 
 
 def _edges_to(caller: str, callees: Iterable[_Callee]) -> Iterator[CallEdge]:
@@ -212,7 +225,7 @@ def own_thread_edges(
 			(
 				_own_expansion(own, node, graph_targets, frame_key(edge.caller))
 				if frame_key(edge.caller) in own_complete
-				else _expanded_callees(
+				else _indirect_callees(
 					edge,
 					targets_by_caller,
 					narrowed_by_caller,
@@ -311,7 +324,7 @@ def _raw_names_by_key(edges: tuple[CallEdge, ...]) -> Mapping[str, frozenset[str
 	return {
 		key: frozenset(group)
 		for key, group in groupby(
-			sorted(set(flatmap(lambda edge: (edge.caller, edge.callee), edges)), key=frame_key),
+			sorted(set(flatmap(edge_nodes, edges)), key=frame_key),
 			key=frame_key,
 		)
 	}

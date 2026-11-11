@@ -415,7 +415,7 @@ def frame_write(
 			)
 			return {
 				**{key: values for key, values in stack.items() if key not in written},
-				**{key: value.values for key, value in written.items() if isinstance(value, Known)},
+				**{key: value.values for key, value in written.items() if not is_top(value)},
 			}
 		case _ as unreachable:
 			assert_never(unreachable)

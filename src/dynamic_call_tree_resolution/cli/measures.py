@@ -17,6 +17,7 @@ from dynamic_call_tree_resolution.call_sites import (
 from dynamic_call_tree_resolution.callgraph import (
 	CallEdge,
 	EdgeKind,
+	edge_nodes,
 )
 from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.identity import (
@@ -190,8 +191,7 @@ def code_measures(
 	attempted: frozenset[str],
 ) -> _CodeMeasures:
 	unframed = (
-		frozenset(map(frame_key, flatmap(lambda edge: (edge.caller, edge.callee), edges)))
-		| frozenset(map(frame_key, roots))
+		frozenset(map(frame_key, flatmap(edge_nodes, edges))) | frozenset(map(frame_key, roots))
 	) - ({frame_key(frame.function) for frame in frames} | {INDIRECT_CALLEE} | attempted)
 	if not unframed:
 		return _CodeMeasures(frames=(), edges=())
