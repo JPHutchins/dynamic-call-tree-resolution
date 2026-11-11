@@ -118,6 +118,35 @@ def test_an_object_places_every_record_it_holds(fixture_elfs: dict[str, Path]) -
 	assert Unwalked(reason=UnwalkedReason.UNSIZED_ARRAY, offset=72) in placed["rows"]
 
 
+def test_a_key_two_units_define_differently_is_unwalked_and_one_they_share_is_not(
+	fixture_elfs: dict[str, Path],
+) -> None:
+	program = load(fixture_elfs["placements"])
+	objects = {data_object.name: data_object for data_object in program.objects.values()}
+	assert {
+		key: program.layouts[key].conflicting
+		for key in ("struct ctx", "struct node", "struct leaf", "struct empty")
+	} == {"struct ctx": True, "struct node": False, "struct leaf": False, "struct empty": False}
+	assert {
+		name: tuple(object_placements(program.layouts, objects[name]))
+		for name in ("first_ctx", "second_ctx")
+	} == {
+		"first_ctx": (Unwalked(reason=UnwalkedReason.CONFLICTING, offset=0),),
+		"second_ctx": (Unwalked(reason=UnwalkedReason.CONFLICTING, offset=0),),
+	}
+	assert Counter(map(_kind_of, object_placements(program.layouts, objects["other_nodes"]))) == (
+		Counter(
+			{
+				"struct leaf": 9,
+				"union <anonymous>": 2,
+				"struct node": 1,
+				"struct empty": 1,
+				"struct <anonymous>": 1,
+			}
+		)
+	)
+
+
 _LEAF: StructureLayout = StructureLayout(members=(), size=16)
 
 
@@ -138,6 +167,12 @@ def _holder(inner: str, size: int) -> StructureLayout:
 			24,
 			{"struct leaf": _LEAF},
 			Unwalked(reason=UnwalkedReason.SIZE, offset=0),
+		),
+		(
+			"struct leaf []",
+			0,
+			{"struct leaf": _LEAF},
+			Unwalked(reason=UnwalkedReason.UNSIZED_ARRAY, offset=0),
 		),
 		(
 			"struct holder",

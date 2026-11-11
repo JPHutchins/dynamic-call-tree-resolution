@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from itertools import chain
 from math import prod
 from typing import TYPE_CHECKING, assert_never
 
@@ -40,7 +41,7 @@ from dynamic_call_tree_resolution.model import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Callable, Iterator
+	from collections.abc import Callable, Iterable, Iterator
 
 	from elftools.dwarf.die import DIE, AttributeValue
 	from elftools.dwarf.dwarfinfo import DWARFInfo
@@ -210,7 +211,8 @@ def _member_kind(type_die: DIE | None) -> _MemberKind:
 		return pointee_kind(underlying)
 	if underlying.tag in ("DW_TAG_structure_type", "DW_TAG_union_type"):
 		return _EmbeddedStruct(
-			type_name=layout_name(type_die), members=tuple(_layout_members(underlying))
+			type_name=layout_name(type_die),
+			members=tuple(_embedded_members(underlying)),
 		)
 	if underlying.tag == "DW_TAG_array_type":
 		return _array_kind(underlying)
@@ -307,21 +309,35 @@ def structure_layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 	if dwarf is None:
 		return {}
 	layouts: dict[str, StructureLayout] = {}
+	firsts: dict[str, _Sighting] = {}
+	conflicting: set[str] = set()
 	for die in every_die(dwarf):
 		aggregate = _defined_aggregate(die)
 		if aggregate is None:
 			continue
 		key = layout_name(die)
+		members = tuple(map(_held_member, _member_dies(aggregate)))
 		layout = StructureLayout(
-			members=tuple(_layout_members(aggregate)),
+			members=tuple(_layout_members(members)),
 			size=_byte_size(aggregate) or 0,
-			extents=_member_extents(aggregate),
-			unnamed=tuple(_unnamed_members(aggregate)),
+			extents=_member_extents(members),
+			unnamed=tuple(_unnamed_members(members)),
 		)
+		sighting = _Sighting(aggregate=aggregate, members=members, layout=layout)
+		first = firsts.setdefault(key, sighting)
+		if (
+			first is not sighting
+			and key not in conflicting
+			and not _same_definition(first, sighting)
+		):
+			conflicting.add(key)
 		existing = layouts.get(key)
 		if existing is None or len(layout.members) > len(existing.members):
 			layouts[key] = layout
-	return layouts
+	return {
+		key: replace(layout, conflicting=True) if key in conflicting else layout
+		for key, layout in layouts.items()
+	}
 
 
 def _defined_aggregate(die: DIE) -> DIE | None:
@@ -339,16 +355,55 @@ def _defined_aggregate(die: DIE) -> DIE | None:
 	)
 
 
-def _layout_members(struct_die: DIE) -> Iterator[Member]:
-	members = map(_layout_member, _member_dies(struct_die))
-	return (member for member in members if member is not None)
+class _HeldMember(Struct):
+	"""A member's DIE, with what every reading of it needs, resolved once."""
+
+	die: DIE
+	name: str | None
+	offset: int | None
+	type_die: DIE | None
+	type_size: int | None
+	layout: str | None
+	elements: RecordArray | None
 
 
 def _member_dies(struct_die: DIE) -> Iterator[DIE]:
 	return (child for child in struct_die.iter_children() if child.tag == "DW_TAG_member")
 
 
-def _layout_member(member_die: DIE) -> Member | None:
+def _held_member(member_die: DIE) -> _HeldMember:
+	type_die = die_type(member_die)
+	type_size = _type_size(type_die)
+	return _HeldMember(
+		die=member_die,
+		name=_member_name(member_die),
+		offset=_member_offset(member_die),
+		type_die=type_die,
+		type_size=type_size,
+		layout=_own_layout(type_die),
+		elements=_record_array(type_die, type_size),
+	)
+
+
+def _layout_members(members: Iterable[_HeldMember]) -> Iterator[Member]:
+	laid_out = map(_layout_member, members)
+	return (member for member in laid_out if member is not None)
+
+
+def _layout_member(held: _HeldMember) -> Member | None:
+	return (
+		_member(_member_kind(held.type_die), held.name, held.offset)
+		if held.offset is not None
+		else None
+	)
+
+
+def _embedded_members(struct_die: DIE) -> Iterator[Member]:
+	members = map(_embedded_member, _member_dies(struct_die))
+	return (member for member in members if member is not None)
+
+
+def _embedded_member(member_die: DIE) -> Member | None:
 	offset = _member_offset(member_die)
 	return (
 		_member(_member_kind(die_type(member_die)), _member_name(member_die), offset)
@@ -357,73 +412,135 @@ def _layout_member(member_die: DIE) -> Member | None:
 	)
 
 
-def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:
-	return merged(map(_named_extent, _member_dies(struct_die)))
+def _member_extents(members: Iterable[_HeldMember]) -> dict[str, MemberExtent]:
+	return merged(map(_named_extent, members))
 
 
-def _named_extent(member_die: DIE) -> dict[str, MemberExtent]:
-	name = _member_name(member_die)
-	offset = _member_offset(member_die)
+def _named_extent(held: _HeldMember) -> dict[str, MemberExtent]:
 	return (
 		{
-			name: MemberExtent(
-				offset=offset,
-				size=None
-				if "DW_AT_bit_size" in member_die.attributes
-				else _type_size(die_type(member_die)),
-				layout=_own_layout(die_type(member_die)),
-				elements=_record_array(die_type(member_die)),
+			held.name: MemberExtent(
+				offset=held.offset,
+				size=None if "DW_AT_bit_size" in held.die.attributes else held.type_size,
+				layout=held.layout,
+				elements=held.elements,
 			)
 		}
-		if name is not None and offset is not None
+		if held.name is not None and held.offset is not None
 		else {}
 	)
 
 
-def _unnamed_members(struct_die: DIE) -> Iterator[UnnamedMember]:
-	unnamed = map(_unnamed_member, _member_dies(struct_die))
-	return (member for member in unnamed if member is not None)
-
-
-def _unnamed_member(member_die: DIE) -> UnnamedMember | None:
-	offset = _member_offset(member_die)
-	layout = _own_layout(die_type(member_die))
+def _unnamed_members(members: Iterable[_HeldMember]) -> Iterator[UnnamedMember]:
 	return (
-		UnnamedMember(offset=offset, layout=layout)
-		if _member_name(member_die) is None and offset is not None and layout is not None
-		else None
+		UnnamedMember(offset=held.offset, layout=held.layout)
+		for held in members
+		if held.name is None and held.offset is not None and held.layout is not None
 	)
 
 
-def _record_array(type_die: DIE | None) -> RecordArray | None:
+def _record_array(type_die: DIE | None, size: int | None) -> RecordArray | None:
+	element_type = _array_element(type_die)
+	element = strip_qualifiers(element_type)
+	if element is None or element.tag not in ("DW_TAG_structure_type", "DW_TAG_union_type"):
+		return None
+	stride = _byte_size(element) or 0
+	return RecordArray(
+		layout=layout_name(element_type),
+		count=0 if not stride else size // stride if size is not None else None,
+		stride=stride,
+	)
+
+
+def _array_element(type_die: DIE | None) -> DIE | None:
+	"""An array's innermost element type, through typedefs of arrays; None for anything else."""
 	array = strip_qualifiers(type_die)
 	if array is None or array.tag != "DW_TAG_array_type":
 		return None
-	element_type = die_type(array)
-	element = strip_qualifiers(element_type)
-	counts = _known_counts(array)
-	match element.tag if element is not None else None:
-		case "DW_TAG_structure_type" | "DW_TAG_union_type":
-			stride = _byte_size(element)
-			return RecordArray(
-				layout=layout_name(element_type),
-				count=prod(counts) if counts is not None and stride is not None else None,
-				stride=stride or 0,
-			)
-		case "DW_TAG_array_type":  # pragma: no cover
-			inner = _record_array(element_type)
-			return (
-				replace(
-					inner,
-					count=prod(counts) * inner.count
-					if counts is not None and inner.count is not None
-					else None,
-				)
-				if inner is not None
-				else None
-			)
-		case _:
-			return None
+	inner = _array_element(die_type(array))
+	return inner if inner is not None else die_type(array)
+
+
+class _Sighting(Struct):
+	"""A unit's definition of a key, as its DIE and as the layout built from it."""
+
+	aggregate: DIE
+	members: tuple[_HeldMember, ...]
+	layout: StructureLayout
+
+
+def _same_definition(first: _Sighting, later: _Sighting) -> bool:
+	"""Whether two units define a key alike: by definition where an anonymous record's key differs."""
+	return (
+		_definition(first.aggregate, first.members) == _definition(later.aggregate, later.members)
+		if _holds_anonymous(first.layout) or _holds_anonymous(later.layout)
+		else first.layout.size == later.layout.size
+		and first.layout.extents == later.layout.extents
+		and first.layout.unnamed == later.layout.unnamed
+	)
+
+
+def _holds_anonymous(layout: StructureLayout) -> bool:
+	keys = chain(
+		(extent.layout for extent in layout.extents.values()),
+		(
+			extent.elements.layout
+			for extent in layout.extents.values()
+			if extent.elements is not None
+		),
+		(unnamed.layout for unnamed in layout.unnamed),
+	)
+	return any(key is not None and f"{ANONYMOUS}@" in key for key in keys)
+
+
+class _MemberDefinition(Struct):
+	"""A member as its record's extents and unnamed members hold it, an anonymous record by definition."""
+
+	name: str | None
+	offset: int | None
+	size: int | None
+	record: str | _Definition | None
+	"""The record it holds, itself or as its array's elements: by key, or anonymous by definition."""
+
+
+class _Definition(Struct):
+	"""A record as one unit defines it, so that two units' definitions under one key compare."""
+
+	size: int
+	members: tuple[_MemberDefinition, ...]
+
+
+def _definition(aggregate: DIE, members: Iterable[_HeldMember]) -> _Definition:
+	return _Definition(
+		size=_byte_size(aggregate) or 0,
+		members=tuple(
+			_member_definition(held)
+			for held in members
+			if held.name is not None or held.layout is not None
+		),
+	)
+
+
+def _member_definition(held: _HeldMember) -> _MemberDefinition:
+	return _MemberDefinition(
+		name=held.name,
+		offset=held.offset,
+		size=None if "DW_AT_bit_size" in held.die.attributes else held.type_size,
+		record=_held_record(
+			held.type_die if held.elements is None else _array_element(held.type_die)
+		),
+	)
+
+
+def _held_record(type_die: DIE | None) -> str | _Definition | None:
+	unqualified = strip_qualifiers(type_die)
+	if unqualified is None or unqualified.tag not in ("DW_TAG_structure_type", "DW_TAG_union_type"):
+		return None
+	return (
+		_definition(unqualified, map(_held_member, _member_dies(unqualified)))
+		if _anonymous_aggregate(unqualified)
+		else layout_name(type_die)
+	)
 
 
 def _type_size(type_die: DIE | None) -> int | None:

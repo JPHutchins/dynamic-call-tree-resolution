@@ -32,7 +32,6 @@ FIXTURE_VARIANTS: dict[str, tuple[str, tuple[str, ...]]] = {
 	),
 	"arrays": ("array_fn.c", ("-g", "-O0", "-no-pie")),
 	"anonymous": ("anonymous_types.c", ("-g", "-O0", "-no-pie")),
-	"placements": ("record_placements.c", ("-g", "-O0", "-no-pie")),
 	"residue": ("residue.c", ("-g", "-O0", "-no-pie")),
 	"threads": ("static_threads.c", ("-g", "-O0", "-no-pie")),
 	"shared_threads": ("shared_threads.c", ("-g", "-O0", "-no-pie")),
@@ -137,6 +136,12 @@ def fixture_elfs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
 		build_directory,
 		(("decl_def", ()), ("decl_use", ("-DSECOND",)), ("decl_fwd", ())),
 		"decl",
+	)
+	variants["placements"] = _compile_tus(
+		FIXTURE_DIRECTORY,
+		build_directory,
+		(("record_placements", ()), ("record_placements_other", ())),
+		"placements",
 	)
 	return variants
 

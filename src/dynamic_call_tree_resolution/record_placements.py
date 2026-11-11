@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from salix import Struct, replace
 
 from dynamic_call_tree_resolution.composition import flatmap
-from dynamic_call_tree_resolution.model import ARRAY_SUFFIX
+from dynamic_call_tree_resolution.model import array_element_type
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Iterator, Mapping
@@ -40,6 +40,7 @@ class UnwalkedReason(StrEnum):
 	NO_LAYOUT = "structure without a layout"
 	SIZE = "size unlike its layout's"
 	UNSIZED_ARRAY = "array of structures of unknown size"
+	CONFLICTING = "units define its key differently"
 
 
 class Unwalked(Struct):
@@ -97,7 +98,10 @@ def object_placements(
 		return (
 			(Unwalked(reason=UnwalkedReason.NO_LAYOUT, offset=0),) if _names_record(element) else ()
 		)
-	if not _fits(layout, data_object, whole=element == data_object.type_name):
+	whole = element == data_object.type_name
+	if not whole and layout.size and not data_object.size:
+		return (Unwalked(reason=UnwalkedReason.UNSIZED_ARRAY, offset=0),)
+	if not _fits(layout, data_object, whole=whole):
 		return (Unwalked(reason=UnwalkedReason.SIZE, offset=0),)
 	return flatmap(
 		partial(_placements, layouts, element),
@@ -142,7 +146,7 @@ def _shifted(extent: MemberExtent | None, offset: int) -> MemberExtent | None:
 
 
 def _element_name(type_name: str) -> str:
-	element = type_name.removesuffix(ARRAY_SUFFIX)
+	element = array_element_type(type_name)
 	return element if element == type_name else _element_name(element)
 
 
@@ -164,6 +168,8 @@ def _placements(
 	layout = layouts.get(key)
 	if layout is None:
 		return iter((Unwalked(reason=UnwalkedReason.NO_LAYOUT, offset=offset),))
+	if layout.conflicting:
+		return iter((Unwalked(reason=UnwalkedReason.CONFLICTING, offset=offset),))
 	return chain(
 		(RecordInstance(layout=key, offset=offset),),
 		flatmap(partial(_extent_placements, layouts, offset), layout.extents.values()),

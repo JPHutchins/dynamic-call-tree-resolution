@@ -185,7 +185,7 @@ class RecordArray(Struct):
 
 	layout: str
 	count: int | None
-	"""``None`` when DWARF gives a dimension or the element no size, as for a flexible array."""
+	"""``None`` when DWARF gives the array no size, as for a flexible or zero-length array."""
 	stride: int
 
 
@@ -205,6 +205,8 @@ class StructureLayout(Struct):
 	extents: Mapping[str, MemberExtent] = {}
 	"""Every named member, whatever it holds."""
 	unnamed: tuple[UnnamedMember, ...] = ()
+	conflicting: bool = False
+	"""Units define different records under its key, so it may not describe a given instance."""
 
 
 class Field(Struct, order=True):
