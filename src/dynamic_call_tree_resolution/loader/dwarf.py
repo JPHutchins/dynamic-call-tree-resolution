@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final, cast
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	ANONYMOUS,
 )
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 	from collections.abc import Iterator
 
 	from elftools.dwarf.die import DIE, AttributeValue
+	from elftools.dwarf.dwarfinfo import DWARFInfo
 
 
 DW_OP_ADDR: Final = 0x03
@@ -39,6 +41,10 @@ CONSTANT_FORMS: Final = frozenset(
 BLOCK_FORMS: Final = frozenset(
 	{"DW_FORM_exprloc", "DW_FORM_block1", "DW_FORM_block2", "DW_FORM_block4"}
 )
+
+
+def every_die(dwarf: DWARFInfo) -> Iterator[DIE]:
+	return flatmap(lambda unit: iter_dies(unit.get_top_DIE()), dwarf.iter_CUs())
 
 
 def iter_dies(root: DIE) -> Iterator[DIE]:

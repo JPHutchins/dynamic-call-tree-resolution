@@ -14,9 +14,9 @@ from dynamic_call_tree_resolution.loader.dwarf import (
 	BLOCK_FORMS,
 	CONSTANT_FORMS,
 	die_name,
+	every_die,
 	exprloc,
 	int_value,
-	iter_dies,
 	plus_uconst,
 	string_value,
 )
@@ -304,20 +304,19 @@ def structure_layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 	if dwarf is None:
 		return {}
 	layouts: dict[str, StructureLayout] = {}
-	for compilation_unit in dwarf.iter_CUs():
-		for die in iter_dies(compilation_unit.get_top_DIE()):
-			aggregate = _defined_aggregate(die)
-			if aggregate is None:
-				continue
-			key = layout_name(die)
-			layout = StructureLayout(
-				members=tuple(_layout_members(aggregate)),
-				size=_byte_size(aggregate) or 0,
-				extents=_member_extents(aggregate),
-			)
-			existing = layouts.get(key)
-			if existing is None or len(layout.members) > len(existing.members):
-				layouts[key] = layout
+	for die in every_die(dwarf):
+		aggregate = _defined_aggregate(die)
+		if aggregate is None:
+			continue
+		key = layout_name(die)
+		layout = StructureLayout(
+			members=tuple(_layout_members(aggregate)),
+			size=_byte_size(aggregate) or 0,
+			extents=_member_extents(aggregate),
+		)
+		existing = layouts.get(key)
+		if existing is None or len(layout.members) > len(existing.members):
+			layouts[key] = layout
 	return layouts
 
 
@@ -337,15 +336,21 @@ def _defined_aggregate(die: DIE) -> DIE | None:
 
 
 def _layout_members(struct_die: DIE) -> Iterator[Member]:
-	for child in struct_die.iter_children():
-		if child.tag != "DW_TAG_member":
-			continue  # pragma: no cover
-		offset = _member_offset(child)
-		if offset is None:
-			continue  # pragma: no cover
-		member = _member(_member_kind(die_type(child)), _member_name(child), offset)
-		if member is not None:
-			yield member
+	members = (
+		_layout_member(child)
+		for child in struct_die.iter_children()
+		if child.tag == "DW_TAG_member"
+	)
+	return (member for member in members if member is not None)
+
+
+def _layout_member(member_die: DIE) -> Member | None:
+	offset = _member_offset(member_die)
+	return (
+		_member(_member_kind(die_type(member_die)), _member_name(member_die), offset)
+		if offset is not None
+		else None
+	)
 
 
 def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:

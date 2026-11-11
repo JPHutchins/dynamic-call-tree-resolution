@@ -18,8 +18,8 @@ from dynamic_call_tree_resolution.loader.dwarf import (
 	declaration,
 	die_name,
 	die_origin,
+	every_die,
 	int_value,
-	iter_dies,
 	string_value,
 )
 from dynamic_call_tree_resolution.loader.layouts import (
@@ -40,7 +40,7 @@ from dynamic_call_tree_resolution.model import (
 )
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Iterator, Mapping
 	from pathlib import Path
 
 	from elftools.dwarf.compileunit import CompileUnit
@@ -124,32 +124,35 @@ def _symbol_size(symbol: Symbol) -> int:
 def functions_from_dwarf(dwarf: DWARFInfo | None) -> dict[Address, Function]:
 	if dwarf is None:
 		return {}
-	return {
-		address: Function(
+	functions = (
+		Function(
 			name=die_name(die),
-			address=address,
+			address=_low_pc(die),
 			size=subprogram_size(die),
 			signature=function_signature(declaration(die)),
 		)
-		for compilation_unit in dwarf.iter_CUs()
-		for die in iter_dies(compilation_unit.get_top_DIE())
-		if die.tag == "DW_TAG_subprogram"
-		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
-		if (address := Address(int_value(low_pc))) & ~1
-	}
+		for die in _subprograms_with_code(dwarf)
+	)
+	return {function.address: function for function in functions}
+
+
+def _subprograms_with_code(dwarf: DWARFInfo) -> Iterator[DIE]:
+	return (
+		die
+		for die in every_die(dwarf)
+		if die.tag == "DW_TAG_subprogram" and "DW_AT_low_pc" in die.attributes and _low_pc(die) & ~1
+	)
+
+
+def _low_pc(die: DIE) -> Address:
+	return Address(int_value(die.attributes["DW_AT_low_pc"]))
 
 
 def never_returns(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Address]:
 	if dwarf is None:
 		return frozenset()
 	return frozenset(
-		_code_start(Address(int_value(low_pc)), machine)
-		for compilation_unit in dwarf.iter_CUs()
-		for die in iter_dies(compilation_unit.get_top_DIE())
-		if die.tag == "DW_TAG_subprogram"
-		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
-		if int_value(low_pc) & ~1
-		if noreturn(die)
+		_code_start(_low_pc(die), machine) for die in _subprograms_with_code(dwarf) if noreturn(die)
 	)
 
 
@@ -162,12 +165,8 @@ def parameterless(dwarf: DWARFInfo | None, machine: Machine) -> frozenset[Addres
 	if dwarf is None:
 		return frozenset()
 	return frozenset(
-		_code_start(Address(int_value(low_pc)), machine)
-		for compilation_unit in dwarf.iter_CUs()
-		for die in iter_dies(compilation_unit.get_top_DIE())
-		if die.tag == "DW_TAG_subprogram"
-		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
-		if int_value(low_pc) & ~1
+		_code_start(_low_pc(die), machine)
+		for die in _subprograms_with_code(dwarf)
 		if _prototyped(die) and not _declares_parameters(die)
 	)
 
@@ -190,31 +189,50 @@ def _declares_parameters(die: DIE) -> bool:
 def declarations(dwarf: DWARFInfo | None) -> dict[Address, Declaration]:
 	if dwarf is None:
 		return {}
-	units = tuple(dwarf.iter_CUs())
-	files = {unit.cu_offset: file_names(dwarf, unit) for unit in units}
-	return {
-		Address(int_value(low_pc)): Declaration(
-			unit=string_value(unit.get_top_DIE().attributes["DW_AT_name"]),
-			location=SourceLocation(
-				file=file_name,
-				line=int_value(declared.attributes["DW_AT_decl_line"]),
-				column=int_value(column)
-				if (column := declared.attributes.get("DW_AT_decl_column")) is not None
-				else 0,
+	files = {unit.cu_offset: file_names(dwarf, unit) for unit in dwarf.iter_CUs()}
+	declared = (_declared_function(files, die) for die in _subprograms_with_code(dwarf))
+	return {function.address: function.declaration for function in declared if function is not None}
+
+
+class _DeclaredFunction(Struct):
+	"""A function's declaration, by the address of its code."""
+
+	address: Address
+	declaration: Declaration
+
+
+def _declared_function(
+	files: Mapping[int, Mapping[int, str]], die: DIE
+) -> _DeclaredFunction | None:
+	declared = _declared(die)
+	location = (
+		_declared_location(files[declared.cu.cu_offset], declared) if declared is not None else None
+	)
+	return (
+		_DeclaredFunction(
+			address=_low_pc(die),
+			declaration=Declaration(
+				unit=string_value(die.cu.get_top_DIE().attributes["DW_AT_name"]),
+				location=location,
 			),
 		)
-		for unit in units
-		for die in iter_dies(unit.get_top_DIE())
-		if die.tag == "DW_TAG_subprogram"
-		if (low_pc := die.attributes.get("DW_AT_low_pc")) is not None
-		if int_value(low_pc) & ~1
-		for declared in (_declared(die),)
-		if declared is not None
-		for file_name in (
-			files[declared.cu.cu_offset].get(int_value(declared.attributes["DW_AT_decl_file"])),
+		if location is not None
+		else None
+	)
+
+
+def _declared_location(names: Mapping[int, str], declared: DIE) -> SourceLocation | None:
+	file_name = names.get(int_value(declared.attributes["DW_AT_decl_file"]))
+	column = declared.attributes.get("DW_AT_decl_column")
+	return (
+		SourceLocation(
+			file=file_name,
+			line=int_value(declared.attributes["DW_AT_decl_line"]),
+			column=int_value(column) if column is not None else 0,
 		)
 		if file_name is not None
-	}
+		else None
+	)
 
 
 def file_names(dwarf: DWARFInfo, unit: CompileUnit) -> dict[int, str]:
@@ -253,34 +271,34 @@ def symbol_addresses(
 ) -> dict[str, frozenset[Address]]:
 	if symtab is None:
 		return {}  # pragma: no cover
-	named = sorted(
+	return _addresses_by_name(
 		_SymbolAddress(name=symbol.name, address=_code_start(Address(symbol["st_value"]), machine))
 		for symbol in symtab.iter_symbols()
 		if symbol["st_info"]["type"] == "STT_FUNC"
 		if symbol["st_shndx"] != "SHN_UNDEF"
 	)
-	return {
-		name: frozenset(entry.address for entry in group)
-		for name, group in groupby(named, key=_symbol_name)
-	}
 
 
 def labels(symtab: SymbolTableSection | None) -> dict[str, Address]:
+	addresses_by_name = _addresses_by_name(
+		_SymbolAddress(name=symbol.name, address=Address(symbol["st_value"]))
+		for symbol in (symtab.iter_symbols() if symtab is not None else ())
+		if symbol["st_info"]["type"] == "STT_NOTYPE"
+		and symbol["st_shndx"] != "SHN_UNDEF"
+		and symbol.name
+		and not symbol.name.startswith("$")
+	)
 	return {
 		name: next(iter(addresses))
-		for name, group in groupby(
-			sorted(
-				_SymbolAddress(name=symbol.name, address=Address(symbol["st_value"]))
-				for symbol in (symtab.iter_symbols() if symtab is not None else ())
-				if symbol["st_info"]["type"] == "STT_NOTYPE"
-				and symbol["st_shndx"] != "SHN_UNDEF"
-				and symbol.name
-				and not symbol.name.startswith("$")
-			),
-			key=_symbol_name,
-		)
-		for addresses in ({entry.address for entry in group},)
+		for name, addresses in addresses_by_name.items()
 		if len(addresses) == 1
+	}
+
+
+def _addresses_by_name(named: Iterable[_SymbolAddress]) -> dict[str, frozenset[Address]]:
+	return {
+		name: frozenset(entry.address for entry in group)
+		for name, group in groupby(sorted(named), key=_symbol_name)
 	}
 
 

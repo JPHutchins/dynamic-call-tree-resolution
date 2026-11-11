@@ -12,9 +12,9 @@ from salix import replace
 from dynamic_call_tree_resolution.loader.dwarf import (
 	BLOCK_FORMS,
 	DW_OP_ADDR,
+	every_die,
 	exprloc,
 	int_value,
-	iter_dies,
 	string_value,
 )
 from dynamic_call_tree_resolution.loader.layouts import (
@@ -72,21 +72,30 @@ def objects_from_dwarf(
 ) -> dict[Address, DataObject]:
 	if dwarf is None:
 		return {}
-	return {
-		address: DataObject(
-			name=string_value(name_attribute),
+	defined = (
+		die
+		for die in every_die(dwarf)
+		if die.tag == "DW_TAG_variable"
+		and "DW_AT_declaration" not in die.attributes
+		and "DW_AT_name" in die.attributes
+	)
+	located = (_data_object(die, pointer_size, byte_order) for die in defined)
+	return {data_object.address: data_object for data_object in located if data_object is not None}
+
+
+def _data_object(die: DIE, pointer_size: int, byte_order: ByteOrder) -> DataObject | None:
+	address = _location_address(die, pointer_size, byte_order)
+	return (
+		DataObject(
+			name=string_value(die.attributes["DW_AT_name"]),
 			address=address,
 			size=_byte_size_of(die),
 			type_name=layout_name(die_type(die)),
 			signature=_object_signature(die),
 		)
-		for compilation_unit in dwarf.iter_CUs()
-		for die in iter_dies(compilation_unit.get_top_DIE())
-		if die.tag == "DW_TAG_variable"
-		if "DW_AT_declaration" not in die.attributes
-		if (name_attribute := die.attributes.get("DW_AT_name")) is not None
-		if (address := _location_address(die, pointer_size, byte_order)) is not None
-	}
+		if address is not None
+		else None
+	)
 
 
 def _object_signature(die: DIE) -> FunctionSignature | None:
@@ -126,12 +135,11 @@ def types_of_declarations(dwarf: DWARFInfo | None) -> dict[str, str]:
 	if dwarf is None:
 		return {}
 	return {
-		string_value(name_attribute): layout_name(die_type(die))
-		for compilation_unit in dwarf.iter_CUs()
-		for die in iter_dies(compilation_unit.get_top_DIE())
+		string_value(die.attributes["DW_AT_name"]): layout_name(die_type(die))
+		for die in every_die(dwarf)
 		if die.tag == "DW_TAG_variable"
-		if "DW_AT_declaration" in die.attributes
-		if (name_attribute := die.attributes.get("DW_AT_name")) is not None
+		and "DW_AT_declaration" in die.attributes
+		and "DW_AT_name" in die.attributes
 	}
 
 
