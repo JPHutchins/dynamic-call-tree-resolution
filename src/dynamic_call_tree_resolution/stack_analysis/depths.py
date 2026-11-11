@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from itertools import chain
 from typing import TYPE_CHECKING
 
 from salix import Struct
@@ -28,7 +29,7 @@ class WithinKey(Struct):
 
 
 def all_callees(adjacency: Mapping[str, frozenset[str]]) -> frozenset[str]:
-	return frozenset(callee for callees in adjacency.values() for callee in callees)
+	return frozenset(chain.from_iterable(adjacency.values()))
 
 
 def strongly_connected_components(
@@ -74,7 +75,7 @@ def depths_by_component(
 	components: tuple[tuple[str, ...], ...],
 ) -> Mapping[str, int]:
 	memo: dict[str, int] = {}
-	known = {node for component in components for node in component}
+	known = frozenset(chain.from_iterable(components))
 	all_nodes = set(adjacency) | all_callees(adjacency)
 	for component in (*components, *((node,) for node in sorted(all_nodes - known))):
 		in_component = frozenset(component)

@@ -9,6 +9,7 @@ from itertools import groupby
 from typing import TYPE_CHECKING, Final, assert_never
 
 from dynamic_call_tree_resolution.callgraph import CallEdge, EdgeKind, call_pair
+from dynamic_call_tree_resolution.composition import flatmap, merged
 from dynamic_call_tree_resolution.stack_analysis.depths import (
 	all_callees,
 	depths_by_component,
@@ -70,7 +71,9 @@ def stack_graph(
 	return StackGraph(
 		adjacency=adjacency,
 		frame_by_name=frame_by_name,
-		components={node: frozenset(component) for component in components for node in component},
+		components=merged(
+			dict.fromkeys(component, frozenset(component)) for component in components
+		),
 		depths=depths_by_component(adjacency, frame_by_name, components),
 		reasons=_reasons_by_component(adjacency, frame_by_name, components, assumed, narrowings),
 		assumed_no_recursion=assumed,
@@ -85,8 +88,7 @@ def stack_graph(
 				| (
 					{
 						frame_key(record.function)
-						for frame in frames_tuple
-						for record in (_record(frame),)
+						for record in map(_record, frames_tuple)
 						if record is not None
 					}
 					- root_graph_nodes
@@ -106,28 +108,29 @@ _NARROWED: Final = {
 def _narrowings(
 	edges: tuple[CallEdge, ...], assumed: Mapping[Reason, frozenset[str]]
 ) -> Mapping[str, frozenset[Reason]]:
-	narrowed = {
-		caller: reasons
+	narrowed_by_caller = {
+		caller: frozenset(_NARROWED[edge.kind] for edge in group if edge.kind in _NARROWED)
 		for caller, group in groupby(sorted(edges, key=call_pair), key=_edge_caller)
-		for reasons in (
-			frozenset(_NARROWED[edge.kind] for edge in group if edge.kind in _NARROWED),
-		)
-		if reasons
 	}
+	narrowed = {caller: reasons for caller, reasons in narrowed_by_caller.items() if reasons}
 	return (
-		{
-			**narrowed,
-			**{
-				node: narrowed.get(node, frozenset[Reason]())
-				| {reason for reason, callers in assumed.items() if frame_key(node) in callers}
-				for edge in edges
-				for node in (edge.caller, edge.callee)
-				if any(frame_key(node) in callers for callers in assumed.values())
-			},
-		}
+		{**narrowed, **_assumed_narrowings(edges, narrowed, assumed)}
 		if any(assumed.values())
 		else narrowed
 	)
+
+
+def _assumed_narrowings(
+	edges: Iterable[CallEdge],
+	narrowed: Mapping[str, frozenset[Reason]],
+	assumed: Mapping[Reason, frozenset[str]],
+) -> dict[str, frozenset[Reason]]:
+	return {
+		node: narrowed.get(node, frozenset[Reason]())
+		| {reason for reason, callers in assumed.items() if frame_key(node) in callers}
+		for node in flatmap(lambda edge: (edge.caller, edge.callee), edges)
+		if any(frame_key(node) in callers for callers in assumed.values())
+	}
 
 
 def _edge_caller(edge: CallEdge) -> str:
@@ -165,8 +168,7 @@ def _reasons_by_component(
 			),
 			*(
 				closure[callee]
-				for member in component
-				for callee in adjacency.get(member, frozenset())
+				for callee in flatmap(lambda member: adjacency.get(member, frozenset()), component)
 				if callee not in members
 			),
 			(
@@ -234,7 +236,7 @@ def _grouped_frames(frames: Iterable[Frame]) -> dict[str, list[Frame]]:
 
 
 def _merge_frame_records(records: list[Frame]) -> Frame:
-	match tuple(record for frame in records if (record := _record(frame)) is not None):
+	match tuple(record for record in map(_record, records) if record is not None):
 		case ():
 			return max(records, key=_frame_bytes)
 		case usages:
