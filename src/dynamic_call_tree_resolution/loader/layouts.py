@@ -14,9 +14,9 @@ from dynamic_call_tree_resolution.loader.dwarf import (
 	BLOCK_FORMS,
 	CONSTANT_FORMS,
 	die_name,
+	every_die,
 	exprloc,
 	int_value,
-	iter_dies,
 	plus_uconst,
 	string_value,
 )
@@ -304,20 +304,19 @@ def structure_layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 	if dwarf is None:
 		return {}
 	layouts: dict[str, StructureLayout] = {}
-	for compilation_unit in dwarf.iter_CUs():
-		for die in iter_dies(compilation_unit.get_top_DIE()):
-			aggregate = _defined_aggregate(die)
-			if aggregate is None:
-				continue
-			key = layout_name(die)
-			layout = StructureLayout(
-				members=tuple(_layout_members(aggregate)),
-				size=_byte_size(aggregate) or 0,
-				extents=_member_extents(aggregate),
-			)
-			existing = layouts.get(key)
-			if existing is None or len(layout.members) > len(existing.members):
-				layouts[key] = layout
+	for die in every_die(dwarf):
+		aggregate = _defined_aggregate(die)
+		if aggregate is None:
+			continue
+		key = layout_name(die)
+		layout = StructureLayout(
+			members=tuple(_layout_members(aggregate)),
+			size=_byte_size(aggregate) or 0,
+			extents=_member_extents(aggregate),
+		)
+		existing = layouts.get(key)
+		if existing is None or len(layout.members) > len(existing.members):
+			layouts[key] = layout
 	return layouts
 
 

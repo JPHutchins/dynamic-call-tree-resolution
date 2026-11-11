@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from itertools import chain
 from typing import TYPE_CHECKING, Final, cast
 
 from dynamic_call_tree_resolution.composition import flatmap
@@ -49,7 +48,9 @@ def every_die(dwarf: DWARFInfo) -> Iterator[DIE]:
 
 
 def iter_dies(root: DIE) -> Iterator[DIE]:
-	return chain((root,), flatmap(iter_dies, root.iter_children()))
+	yield root
+	for child in root.iter_children():
+		yield from iter_dies(child)
 
 
 def int_value(attribute: AttributeValue) -> int:
