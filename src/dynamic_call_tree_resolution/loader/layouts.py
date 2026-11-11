@@ -8,8 +8,9 @@ from __future__ import annotations
 from math import prod
 from typing import TYPE_CHECKING, assert_never
 
-from salix import Struct
+from salix import Struct, replace
 
+from dynamic_call_tree_resolution.composition import merged
 from dynamic_call_tree_resolution.loader.dwarf import (
 	BLOCK_FORMS,
 	CONSTANT_FORMS,
@@ -29,10 +30,12 @@ from dynamic_call_tree_resolution.model import (
 	FunctionPointerMember,
 	FunctionSignature,
 	MemberExtent,
+	RecordArray,
 	SkippedMember,
 	SkipReason,
 	StructPointerMember,
 	StructureLayout,
+	UnnamedMember,
 	layout_key,
 )
 
@@ -313,6 +316,7 @@ def structure_layouts(dwarf: DWARFInfo | None) -> dict[str, StructureLayout]:
 			members=tuple(_layout_members(aggregate)),
 			size=_byte_size(aggregate) or 0,
 			extents=_member_extents(aggregate),
+			unnamed=tuple(_unnamed_members(aggregate)),
 		)
 		existing = layouts.get(key)
 		if existing is None or len(layout.members) > len(existing.members):
@@ -336,12 +340,12 @@ def _defined_aggregate(die: DIE) -> DIE | None:
 
 
 def _layout_members(struct_die: DIE) -> Iterator[Member]:
-	members = (
-		_layout_member(child)
-		for child in struct_die.iter_children()
-		if child.tag == "DW_TAG_member"
-	)
+	members = map(_layout_member, _member_dies(struct_die))
 	return (member for member in members if member is not None)
+
+
+def _member_dies(struct_die: DIE) -> Iterator[DIE]:
+	return (child for child in struct_die.iter_children() if child.tag == "DW_TAG_member")
 
 
 def _layout_member(member_die: DIE) -> Member | None:
@@ -354,17 +358,72 @@ def _layout_member(member_die: DIE) -> Member | None:
 
 
 def _member_extents(struct_die: DIE) -> dict[str, MemberExtent]:
-	return {
-		name: MemberExtent(
-			offset=offset,
-			size=None if "DW_AT_bit_size" in child.attributes else _type_size(die_type(child)),
-			layout=_own_layout(die_type(child)),
-		)
-		for child in struct_die.iter_children()
-		if child.tag == "DW_TAG_member"
-		and (name := _member_name(child)) is not None
-		and (offset := _member_offset(child)) is not None
-	}
+	return merged(map(_named_extent, _member_dies(struct_die)))
+
+
+def _named_extent(member_die: DIE) -> dict[str, MemberExtent]:
+	name = _member_name(member_die)
+	offset = _member_offset(member_die)
+	return (
+		{
+			name: MemberExtent(
+				offset=offset,
+				size=None
+				if "DW_AT_bit_size" in member_die.attributes
+				else _type_size(die_type(member_die)),
+				layout=_own_layout(die_type(member_die)),
+				elements=_record_array(die_type(member_die)),
+			)
+		}
+		if name is not None and offset is not None
+		else {}
+	)
+
+
+def _unnamed_members(struct_die: DIE) -> Iterator[UnnamedMember]:
+	unnamed = map(_unnamed_member, _member_dies(struct_die))
+	return (member for member in unnamed if member is not None)
+
+
+def _unnamed_member(member_die: DIE) -> UnnamedMember | None:
+	offset = _member_offset(member_die)
+	layout = _own_layout(die_type(member_die))
+	return (
+		UnnamedMember(offset=offset, layout=layout)
+		if _member_name(member_die) is None and offset is not None and layout is not None
+		else None
+	)
+
+
+def _record_array(type_die: DIE | None) -> RecordArray | None:
+	array = strip_qualifiers(type_die)
+	if array is None or array.tag != "DW_TAG_array_type":
+		return None
+	element_type = die_type(array)
+	element = strip_qualifiers(element_type)
+	counts = _known_counts(array)
+	match element.tag if element is not None else None:
+		case "DW_TAG_structure_type" | "DW_TAG_union_type":
+			stride = _byte_size(element)
+			return RecordArray(
+				layout=layout_name(element_type),
+				count=prod(counts) if counts is not None and stride is not None else None,
+				stride=stride or 0,
+			)
+		case "DW_TAG_array_type":  # pragma: no cover
+			inner = _record_array(element_type)
+			return (
+				replace(
+					inner,
+					count=prod(counts) * inner.count
+					if counts is not None and inner.count is not None
+					else None,
+				)
+				if inner is not None
+				else None
+			)
+		case _:
+			return None
 
 
 def _type_size(type_die: DIE | None) -> int | None:
