@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from itertools import pairwise
+from itertools import chain, pairwise
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
@@ -21,6 +21,8 @@ from dynamic_call_tree_resolution.model import (
 from dynamic_call_tree_resolution.points_to.objects import object_covering
 
 if TYPE_CHECKING:
+	from collections.abc import Iterator
+
 	from dynamic_call_tree_resolution.span import Span
 
 
@@ -78,31 +80,26 @@ class InstructionRun(Struct):
 
 def instruction_runs(program: Program, start: Address, size: int) -> tuple[InstructionRun, ...]:
 	end = start + size
-	edges = (
-		start,
-		*(
-			edge
-			for span in sorted(program.data_in_code)
-			if span.start < end and start < span.end
-			for edge in (max(span.start, start), min(span.end, end))
-		),
-		end,
+	data_edges = chain.from_iterable(
+		(max(span.start, start), min(span.end, end))
+		for span in sorted(program.data_in_code)
+		if span.start < end and start < span.end
 	)
+	edges = tuple(chain((start,), data_edges, (end,)))
 	return tuple(
-		InstructionRun(start=Address(low), code=memory_at(program, Address(low), high - low))
-		for code_start, code_end in zip(edges[::2], edges[1::2], strict=True)
-		for low, high in pairwise(
-			(
-				code_start,
-				*sorted(
-					edge
-					for span in program.arm_code
-					for edge in (span.start, span.end)
-					if code_start < edge < code_end
-				),
-				code_end,
-			)
+		chain.from_iterable(
+			_code_runs(program, code_start, code_end)
+			for code_start, code_end in zip(edges[::2], edges[1::2], strict=True)
 		)
+	)
+
+
+def _code_runs(program: Program, code_start: int, code_end: int) -> Iterator[InstructionRun]:
+	arm_edges = chain.from_iterable((span.start, span.end) for span in program.arm_code)
+	inner_edges = sorted(edge for edge in arm_edges if code_start < edge < code_end)
+	return (
+		InstructionRun(start=Address(low), code=memory_at(program, Address(low), high - low))
+		for low, high in pairwise(chain((code_start,), inner_edges, (code_end,)))
 		if high > low
 	)
 

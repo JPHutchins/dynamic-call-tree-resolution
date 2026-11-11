@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
-from itertools import groupby
+from functools import partial
+from itertools import chain, groupby
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	ARRAY_SUFFIX,
 	FUNCTION_POINTER,
@@ -84,18 +86,14 @@ def null_slots(program: Program, resolved: tuple[SlotAssignment, ...]) -> tuple[
 
 def field_slots(program: Program) -> Mapping[Field, frozenset[Address]]:
 	"""Every function-pointer slot that is a named member of a layout, by layout and member."""
+	named = (
+		_FieldSlot(field=Field(record=entry.record, member=entry.path[-1]), slot=entry.slot)
+		for entry in _slot_universe(program)
+		if entry.record is not None and entry.path[-1] is not None
+	)
 	return {
 		field: frozenset(entry.slot for entry in group)
-		for field, group in groupby(
-			sorted(
-				_FieldSlot(field=Field(record=entry.record, member=member), slot=entry.slot)
-				for entry in _slot_universe(program)
-				if entry.record is not None
-				for member in (entry.path[-1],)
-				if member is not None
-			),
-			key=_field_of,
-		)
+		for field, group in groupby(sorted(named), key=_field_of)
 	}
 
 
@@ -129,27 +127,33 @@ def _first_entries(program: Program) -> Iterable[_SlotUniverseEntry]:
 
 
 def _slot_universe(program: Program) -> Iterable[_SlotUniverseEntry]:
-	for data_object in program.objects.values():
-		layout = layout_of(program, data_object)
-		if layout is None:
-			if data_object.type_name == FUNCTION_POINTER:
-				yield _SlotUniverseEntry(
-					slot=data_object.address,
-					path=(data_object.name,),
-					signature=data_object.signature,
-				)
-			elif data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
-				yield from _array_element_slots(program, data_object, (data_object.name,))
-			continue
-		yield from _member_slots(
-			data_object, 0, layout.members, (data_object.name,), data_object.type_name
-		)
-	for relocation in program.relocations:
-		if relocation.target not in program.functions:
-			continue
-		yield _SlotUniverseEntry(
+	relocated = (
+		_SlotUniverseEntry(
 			slot=relocation.slot, path=slot_path(program, relocation.slot), signature=None
 		)
+		for relocation in program.relocations
+		if relocation.target in program.functions
+	)
+	return chain(flatmap(partial(_object_slots, program), program.objects.values()), relocated)
+
+
+def _object_slots(program: Program, data_object: DataObject) -> Iterable[_SlotUniverseEntry]:
+	layout = layout_of(program, data_object)
+	if layout is not None:
+		return _member_slots(
+			data_object, 0, layout.members, (data_object.name,), data_object.type_name
+		)
+	if data_object.type_name == FUNCTION_POINTER:
+		return (
+			_SlotUniverseEntry(
+				slot=data_object.address,
+				path=(data_object.name,),
+				signature=data_object.signature,
+			),
+		)
+	if data_object.type_name is not None and data_object.type_name.endswith(ARRAY_SUFFIX):
+		return _array_element_slots(program, data_object, (data_object.name,))
+	return ()
 
 
 def _residue(program: Program, slot: Address) -> Residue:
@@ -170,19 +174,29 @@ def _array_element_slots(
 ) -> Iterable[_SlotUniverseEntry]:
 	element_name = array_element_type(data_object.type_name) if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
-	if element_layout is None:
-		if element_name == FUNCTION_POINTER:
-			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
-				yield _SlotUniverseEntry(
-					slot=Address(data_object.address + base_offset),
-					path=(*path, f"[{index}]"),
-					signature=data_object.signature,
-				)
-		return
-	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
-		yield from _member_slots(
-			data_object, base_offset, element_layout.members, (*path, f"[{index}]"), element_name
+	if element_layout is not None:
+		return chain.from_iterable(
+			_member_slots(
+				data_object,
+				base_offset,
+				element_layout.members,
+				(*path, f"[{index}]"),
+				element_name,
+			)
+			for index, base_offset in enumerate(
+				range(0, data_object.size, element_layout.size or 1)
+			)
 		)
+	if element_name == FUNCTION_POINTER:
+		return (
+			_SlotUniverseEntry(
+				slot=Address(data_object.address + base_offset),
+				path=(*path, f"[{index}]"),
+				signature=data_object.signature,
+			)
+			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size))
+		)
+	return ()
 
 
 def _member_slots(
@@ -192,25 +206,36 @@ def _member_slots(
 	path: tuple[str | None, ...],
 	record: str | None,
 ) -> Iterable[_SlotUniverseEntry]:
-	for member in members:
-		member_path = (*path, member.name)
-		match member:
-			case FunctionPointerMember(offset=offset, signature=signature):
-				yield _SlotUniverseEntry(
+	return flatmap(partial(_slots_in_member, data_object, base_offset, path, record), members)
+
+
+def _slots_in_member(
+	data_object: DataObject,
+	base_offset: int,
+	path: tuple[str | None, ...],
+	record: str | None,
+	member: Member,
+) -> Iterable[_SlotUniverseEntry]:
+	member_path = (*path, member.name)
+	match member:
+		case FunctionPointerMember(offset=offset, signature=signature):
+			return (
+				_SlotUniverseEntry(
 					slot=Address(data_object.address + base_offset + offset),
 					path=member_path,
 					signature=signature,
 					record=record,
-				)
-			case EmbeddedStructMember(offset=offset, type_name=type_name, members=inner_members):
-				yield from _member_slots(
-					data_object, base_offset + offset, inner_members, member_path, type_name
-				)
-			case ArrayMember(offset=offset):
-				yield from _member_slots(
-					data_object, base_offset + offset, array_elements(member), member_path, None
-				)
-			case StructPointerMember() | SkippedMember():
-				pass
-			case _ as unreachable:
-				assert_never(unreachable)
+				),
+			)
+		case EmbeddedStructMember(offset=offset, type_name=type_name, members=inner_members):
+			return _member_slots(
+				data_object, base_offset + offset, inner_members, member_path, type_name
+			)
+		case ArrayMember(offset=offset):
+			return _member_slots(
+				data_object, base_offset + offset, array_elements(member), member_path, None
+			)
+		case StructPointerMember() | SkippedMember():
+			return ()
+		case _ as unreachable:
+			assert_never(unreachable)

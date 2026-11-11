@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+from functools import partial
+from itertools import chain
 from typing import TYPE_CHECKING, assert_never
 
 from salix import Struct
 
+from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
 	ARRAY_SUFFIX,
 	FUNCTION_POINTER,
@@ -69,21 +72,24 @@ def _provenance(program: Program, slot: Address) -> Provenance:
 
 
 def _from_relocations(program: Program) -> Iterable[_Resolution]:
-	for relocation in program.relocations:
-		if relocation.target not in program.functions:
-			continue
-		yield _Resolution(
+	return (
+		_Resolution(
 			slot=relocation.slot,
 			path=slot_path(program, relocation.slot),
 			candidates=frozenset({relocation.target}),
 		)
+		for relocation in program.relocations
+		if relocation.target in program.functions
+	)
 
 
 def _from_objects(program: Program) -> Iterable[_Resolution]:
-	for data_object in program.objects.values():
-		yield from _object_assignments(
+	return flatmap(
+		lambda data_object: _object_assignments(
 			program, data_object, path=(data_object.name,), visited=frozenset()
-		)
+		),
+		program.objects.values(),
+	)
 
 
 def _object_assignments(
@@ -105,16 +111,11 @@ def _object_assignments(
 		elif data_object.size > program.pointer_size:
 			yield from _vector_table_assignments(program, data_object, path)
 		else:
-			target = pointer_at(program, data_object.address)
-			if target is not None and target != 0 and target in program.functions:
-				yield _Resolution(
-					slot=data_object.address,
-					path=path,
-					candidates=frozenset({target}),
-				)
+			yield from _slot_resolutions(program, data_object.address, path)
 		return
-	visited = visited | {data_object.address}
-	yield from _member_assignments(program, data_object.address, 0, layout.members, path, visited)
+	yield from _member_assignments(
+		program, data_object.address, 0, layout.members, path, visited | {data_object.address}
+	)
 
 
 def _vector_table_assignments(
@@ -132,13 +133,15 @@ def _vector_table_assignments(
 		if target is not None and target != 0 and target in program.functions
 	)
 	if len(targets) != len(values):
-		return
-	for index, target in enumerate(targets):
-		yield _Resolution(
+		return ()
+	return (
+		_Resolution(
 			slot=Address(data_object.address + index * program.pointer_size),
 			path=(*path, f"[{index}]"),
 			candidates=frozenset({target}),
 		)
+		for index, target in enumerate(targets)
+	)
 
 
 def _array_element_assignments(
@@ -150,17 +153,14 @@ def _array_element_assignments(
 	element_name = array_element_type(data_object.type_name) if data_object.type_name else ""
 	element_layout = program.layouts.get(element_name)
 	if element_layout is None:
-		for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size)):
-			target = pointer_at(program, Address(data_object.address + base_offset))
-			if target is not None and target != 0 and target in program.functions:
-				yield _Resolution(
-					slot=Address(data_object.address + base_offset),
-					path=(*path, f"[{index}]"),
-					candidates=frozenset({target}),
-				)
-		return
-	for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1)):
-		yield from _member_assignments(
+		return chain.from_iterable(
+			_slot_resolutions(
+				program, Address(data_object.address + base_offset), (*path, f"[{index}]")
+			)
+			for index, base_offset in enumerate(range(0, data_object.size, program.pointer_size))
+		)
+	return chain.from_iterable(
+		_member_assignments(
 			program,
 			data_object.address,
 			base_offset,
@@ -168,6 +168,8 @@ def _array_element_assignments(
 			(*path, f"[{index}]"),
 			visited,
 		)
+		for index, base_offset in enumerate(range(0, data_object.size, element_layout.size or 1))
+	)
 
 
 def _member_assignments(
@@ -178,50 +180,73 @@ def _member_assignments(
 	path: tuple[str | None, ...],
 	visited: frozenset[Address],
 ) -> Iterable[_Resolution]:
-	for member in members:
-		member_path = (*path, member.name)
-		match member:
-			case FunctionPointerMember(offset=offset):
-				target = pointer_at(program, Address(base_address + base_offset + offset))
-				if target is not None and target != 0 and target in program.functions:
-					yield _Resolution(
-						slot=Address(base_address + base_offset + offset),
-						path=member_path,
-						candidates=frozenset({target}),
-					)
-			case StructPointerMember(offset=offset, pointee=pointee):
-				target_object = object_covering(
-					program,
-					pointer_at(program, Address(base_address + base_offset + offset)) or None,
-				)
-				if target_object is not None and (
+	return flatmap(
+		partial(_assignments_in_member, program, base_address, base_offset, path, visited), members
+	)
+
+
+def _assignments_in_member(
+	program: Program,
+	base_address: Address,
+	base_offset: int,
+	path: tuple[str | None, ...],
+	visited: frozenset[Address],
+	member: Member,
+) -> Iterable[_Resolution]:
+	member_path = (*path, member.name)
+	match member:
+		case FunctionPointerMember(offset=offset):
+			return _slot_resolutions(
+				program, Address(base_address + base_offset + offset), member_path
+			)
+		case StructPointerMember(offset=offset, pointee=pointee):
+			target_object = object_covering(
+				program,
+				pointer_at(program, Address(base_address + base_offset + offset)) or None,
+			)
+			return (
+				_object_assignments(program, target_object, member_path, visited)
+				if target_object is not None
+				and (
 					pointee is None
 					or target_object.type_name is None
 					or target_object.type_name == pointee
-				):
-					yield from _object_assignments(program, target_object, member_path, visited)
-			case EmbeddedStructMember(offset=offset, members=inner_members):
-				yield from _member_assignments(
-					program,
-					base_address,
-					base_offset + offset,
-					inner_members,
-					member_path,
-					visited,
 				)
-			case ArrayMember(offset=offset):
-				yield from _member_assignments(
-					program,
-					base_address,
-					base_offset + offset,
-					array_elements(member),
-					member_path,
-					visited,
-				)
-			case SkippedMember():
-				pass
-			case _ as unreachable:
-				assert_never(unreachable)
+				else ()
+			)
+		case EmbeddedStructMember(offset=offset, members=inner_members):
+			return _member_assignments(
+				program,
+				base_address,
+				base_offset + offset,
+				inner_members,
+				member_path,
+				visited,
+			)
+		case ArrayMember(offset=offset):
+			return _member_assignments(
+				program,
+				base_address,
+				base_offset + offset,
+				array_elements(member),
+				member_path,
+				visited,
+			)
+		case SkippedMember():
+			return ()
+		case _ as unreachable:
+			assert_never(unreachable)
+
+
+def _slot_resolutions(
+	program: Program, slot: Address, path: tuple[str | None, ...]
+) -> tuple[_Resolution, ...]:
+	target = pointer_at(program, slot)
+	return (
+		(_Resolution(slot=slot, path=path, candidates=frozenset({target})),)
+		if target is not None and target != 0 and target in program.functions
+		else ()
+	)
 
 
 def _assignment_slot(assignment: SlotAssignment) -> Address:
