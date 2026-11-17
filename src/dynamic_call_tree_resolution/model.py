@@ -176,6 +176,24 @@ class MemberExtent(Struct):
 	"""``None`` when DWARF gives the member's type no byte size."""
 	layout: str | None
 	"""Its own layout's key in ``Program.layouts``, when it is a structure or union."""
+	elements: RecordArray | None = None
+	"""When it is an array of structures or unions."""
+
+
+class RecordArray(Struct):
+	"""The structures or unions an array holds, its dimensions flattened."""
+
+	layout: str
+	count: int | None
+	"""``None`` when DWARF gives the array no size, as for a flexible or zero-length array."""
+	stride: int
+
+
+class UnnamedMember(Struct):
+	"""A structure or union held without a member name, as C's anonymous members are."""
+
+	offset: int
+	layout: str
 
 
 class StructureLayout(Struct):
@@ -186,6 +204,9 @@ class StructureLayout(Struct):
 	size: int
 	extents: Mapping[str, MemberExtent] = {}
 	"""Every named member, whatever it holds."""
+	unnamed: tuple[UnnamedMember, ...] = ()
+	conflicting: bool = False
+	"""Units define different records under its key, so it may not describe a given instance."""
 
 
 class Field(Struct, order=True):
