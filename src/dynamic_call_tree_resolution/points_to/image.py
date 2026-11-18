@@ -18,17 +18,30 @@ from dynamic_call_tree_resolution.model import (
 	Program,
 	Section,
 )
-from dynamic_call_tree_resolution.points_to.objects import object_covering
+from dynamic_call_tree_resolution.points_to.objects import (
+	covering_object,
+	object_covering,
+	object_end,
+)
 
 if TYPE_CHECKING:
 	from collections.abc import Iterator, Sequence
 
+	from dynamic_call_tree_resolution.model import DataObject
+	from dynamic_call_tree_resolution.points_to.objects import ObjectIndex
 	from dynamic_call_tree_resolution.span import Span
 
 
 def pointer_at(program: Program, address: Address) -> Address | None:
-	covering = object_covering(program, address)
-	bound = covering.address + max(covering.size, 1) if covering is not None else None
+	return pointer_in(program, object_covering(program, address), address)
+
+
+def indexed_pointer_at(program: Program, objects: ObjectIndex, address: Address) -> Address | None:
+	return pointer_in(program, covering_object(objects, address), address)
+
+
+def pointer_in(program: Program, covering: DataObject | None, address: Address) -> Address | None:
+	bound = object_end(covering) if covering is not None else None
 	return read_pointer(program, address, bound)
 
 

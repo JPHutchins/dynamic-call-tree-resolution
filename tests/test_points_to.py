@@ -26,11 +26,20 @@ from dynamic_call_tree_resolution import (
 	render_path,
 	unresolved_slots,
 )
+from dynamic_call_tree_resolution.composition import flatmap
+from dynamic_call_tree_resolution.points_to.objects import (
+	covering_object,
+	object_covering,
+	object_end,
+	object_index,
+)
 from tests.expected import EXPECTED_NOPIE
 from tests.programs import build_program
 
 if TYPE_CHECKING:
 	from pathlib import Path
+
+	from dynamic_call_tree_resolution.model import DataObject
 
 
 def _by_path(program: Program) -> dict[str, SlotAssignment]:
@@ -349,3 +358,43 @@ def test_typeless_vector_table_resolves_element_by_element(fixture_elfs: dict[st
 	resolved = _by_path(program)
 	assert _names(program, resolved["vector_table.[0]"]) == {"handler_a"}
 	assert _names(program, resolved["vector_table.[1]"]) == {"handler_b"}
+
+
+@pytest.mark.image
+@pytest.mark.parametrize("image", ["synchronization", "synchronization-r52"])
+def test_the_object_index_finds_the_object_a_scan_of_every_object_finds(
+	zephyr_fixtures: Path, image: str
+) -> None:
+	program = load(zephyr_fixtures / image / "zephyr" / "zephyr.elf")
+	index = object_index(program)
+	addresses = sorted(frozenset(flatmap(_start_last_and_end, program.objects.values())))
+	assert [
+		address
+		for address in addresses
+		if covering_object(index, Address(address)) != object_covering(program, Address(address))
+	] == []
+	assert any(
+		object_covering(program, Address(address)) != _lowest_start_covering(program, address)
+		for address in addresses
+	)
+
+
+def _start_last_and_end(data_object: DataObject) -> tuple[int, ...]:
+	end = object_end(data_object)
+	return (data_object.address, end - 1, end)
+
+
+def _lowest_start_covering(program: Program, address: int) -> DataObject | None:
+	return min(
+		(
+			data_object
+			for data_object in program.objects.values()
+			if data_object.address <= address < object_end(data_object)
+		),
+		key=_object_start,
+		default=None,
+	)
+
+
+def _object_start(data_object: DataObject) -> int:
+	return data_object.address
