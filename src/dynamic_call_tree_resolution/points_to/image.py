@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from itertools import chain, pairwise
 from typing import TYPE_CHECKING, assert_never
 
@@ -21,7 +21,7 @@ from dynamic_call_tree_resolution.model import (
 from dynamic_call_tree_resolution.points_to.objects import object_covering
 
 if TYPE_CHECKING:
-	from collections.abc import Iterator
+	from collections.abc import Iterator, Sequence
 
 	from dynamic_call_tree_resolution.span import Span
 
@@ -82,8 +82,7 @@ def instruction_runs(program: Program, start: Address, size: int) -> tuple[Instr
 	end = start + size
 	data_edges = chain.from_iterable(
 		(max(span.start, start), min(span.end, end))
-		for span in sorted(program.data_in_code)
-		if span.start < end and start < span.end
+		for span in _overlapping(program.data_in_code, start, end)
 	)
 	edges = tuple(chain((start,), data_edges, (end,)))
 	return tuple(
@@ -95,7 +94,9 @@ def instruction_runs(program: Program, start: Address, size: int) -> tuple[Instr
 
 
 def _code_runs(program: Program, code_start: int, code_end: int) -> Iterator[InstructionRun]:
-	arm_edges = chain.from_iterable((span.start, span.end) for span in program.arm_code)
+	arm_edges = chain.from_iterable(
+		(span.start, span.end) for span in _overlapping(program.arm_code, code_start, code_end)
+	)
 	inner_edges = sorted(edge for edge in arm_edges if code_start < edge < code_end)
 	return (
 		InstructionRun(start=Address(low), code=memory_at(program, Address(low), high - low))
@@ -119,6 +120,25 @@ def instruction_set_at(program: Program, address: Address) -> InstructionSet:
 			)
 		case _ as unreachable:
 			assert_never(unreachable)
+
+
+def _overlapping(spans: Sequence[Span], start: int, end: int) -> Iterator[Span]:
+	"""Those of the sorted, disjoint spans that overlap the addresses from start up to end.
+
+	>>> from dynamic_call_tree_resolution.span import Span
+	>>> spans = tuple(Span(start=Address(low), end=Address(low + 4)) for low in (0, 8, 16))
+	>>> [span.start for span in _overlapping(spans, 2, 9)], [span.start for span in _overlapping(spans, 4, 8)]
+	([0, 8], [])
+	"""
+	return (
+		span
+		for span in spans[
+			max(bisect_right(spans, start, key=_span_start) - 1, 0) : bisect_left(
+				spans, end, key=_span_start
+			)
+		]
+		if span.end > start
+	)
 
 
 def _span_start(span: Span) -> Address:

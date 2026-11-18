@@ -97,8 +97,8 @@ def _program(
 				for address, data in (sections or {}).items()
 			},
 		},
-		data_in_code=tuple(span(low, high) for low, high in data_in_code),
-		arm_code=tuple(span(low, high) for low, high in arm_code),
+		data_in_code=tuple(sorted(span(low, high) for low, high in data_in_code)),
+		arm_code=tuple(sorted(span(low, high) for low, high in arm_code)),
 		labels={name: Address(address) for name, address in (labels or {}).items()},
 		symbol_addresses={name: frozenset({Address(address)}) for name, address, _ in _ROUTINES},
 		nobits=(span(0x2000_0010, 0x2000_0020),),

@@ -690,6 +690,7 @@ def test_load_records_data_in_code_from_mapping_symbols(
 		if first_code_data is not None
 		else spans == ()
 	)
+	assert spans == tuple(sorted(spans))
 
 
 @pytest.mark.image
