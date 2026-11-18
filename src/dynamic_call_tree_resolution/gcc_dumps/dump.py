@@ -6,13 +6,13 @@
 from __future__ import annotations
 
 import re
-from itertools import accumulate, pairwise
+from itertools import accumulate, groupby, pairwise
 from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
 if TYPE_CHECKING:
-	from collections.abc import Mapping
+	from collections.abc import Iterable, Mapping
 
 _HEADER: Final = re.compile(r"^;; Function (\S+) \((\S+?),", re.MULTILINE)
 _LOCATION: Final = re.compile(r"\[([^\[\]]+?):(\d+):(\d+)(?: discrim \d+)?\] ")
@@ -49,8 +49,9 @@ class DumpFunction(Struct):
 	"""Its return type, which ``<retval>`` has."""
 	parameters: Mapping[str, str]
 	"""Each parameter's type, by its name."""
-	declarations: Mapping[str, str]
-	"""Each local's or SSA name's type, by the name it is declared under."""
+	declarations: Mapping[str, tuple[str, ...]]
+	"""Each local's or SSA name's types, by the name it is declared under: inlined scopes may
+	declare a name again."""
 	statements: tuple[Statement, ...]
 	phis: tuple[str, ...] = ()
 	"""Its PHI nodes, ``x_5 = PHI <&a(3), y_4(2)>``, which join a value from each predecessor."""
@@ -65,7 +66,7 @@ def dump_functions(text: str) -> tuple[DumpFunction, ...]:
 	...     "  [a.c:3:9] _2 = [a.c:3:9] g_1(D) (x_3(D));\n  [a.c:4:1] return _2;\n}\n"
 	... )  # doctest: +NORMALIZE_WHITESPACE
 	(DumpFunction(symbol='f', result='int', parameters={'g': 'int (*) (int)', 'x': 'int'},
-	              declarations={'_2': 'int'},
+	              declarations={'_2': ('int',)},
 	              statements=(Statement(file='a.c', line=3, column=9, body='_2 = g_1(D) (x_3(D))'),
 	                          Statement(file='a.c', line=4, column=1, body='return _2')),
 	              phis=()),)
@@ -94,7 +95,7 @@ def _function(name: str, symbol: str, text: str) -> DumpFunction:
 		symbol=symbol,
 		result=signature[: signature.index(f"{name} (")].strip(),
 		parameters=_parameters(name, signature),
-		declarations={declared.name: declared.type for declared in map(_declaration, declared)},
+		declarations=_grouped(map(_declaration, declared)),
 		statements=tuple(
 			statement
 			for line in _LOGICAL_LINE.finditer("\n".join(body[len(_leading(body)) :]))
@@ -102,6 +103,23 @@ def _function(name: str, symbol: str, text: str) -> DumpFunction:
 		),
 		phis=tuple(phi.group(1) for line in body if (phi := _PHI.match(line.strip())) is not None),
 	)
+
+
+def _grouped(declarations: Iterable[_Declared]) -> dict[str, tuple[str, ...]]:
+	"""Each name's types, in the order the dump declares them.
+
+	>>> _grouped((_Declared(name="n", type="int"), _Declared(name="m", type="char"),
+	...           _Declared(name="n", type="struct a *")))
+	{'m': ('char',), 'n': ('int', 'struct a *')}
+	"""
+	return {
+		name: tuple(declared.type for declared in group)
+		for name, group in groupby(sorted(declarations, key=_declared_name), key=_declared_name)
+	}
+
+
+def _declared_name(declared: _Declared) -> str:
+	return declared.name
 
 
 def _leading(body: list[str]) -> list[str]:

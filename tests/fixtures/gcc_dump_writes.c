@@ -112,3 +112,61 @@ extern void sink_int(int * p, int v);
 void interior(struct dev * const d, int const v) {
 	sink_int((int *) ((char *) d + 8), v);
 }
+
+struct link {
+	struct link * next;
+	struct link * prev;
+};
+
+struct ring {
+	struct ring * next;
+	struct ring * prev;
+};
+
+struct span {
+	int prev;
+	int ticks;
+};
+
+struct guard {
+	int key;
+};
+
+extern void restart(struct span * s);
+
+static inline void unlink_link(struct link * const node) {
+	struct link * const next = node->next;
+	struct link * const prev = node->prev;
+	next->prev = prev;
+	prev->next = next;
+}
+
+static inline void unlink_ring(struct ring * const node) {
+	struct ring * const next = node->next;
+	struct ring * const prev = node->prev;
+	next->prev = prev;
+	prev->next = next;
+}
+
+void expire(struct link * const node, struct span const * const period) {
+	unlink_link(node);
+	struct span next = *period;
+	next.ticks = 0;
+	restart(&next);
+}
+
+void unlink_both(struct link * const a, struct ring * const b) {
+	unlink_link(a);
+	unlink_ring(b);
+}
+
+static inline unsigned int lock(void) {
+	unsigned int key;
+	__asm__ volatile ("mrs %0, primask" : "=r"(key));
+	return key;
+}
+
+void release(struct guard * const key) {
+	unsigned int const saved = lock();
+	key->key = (int) saved;
+}

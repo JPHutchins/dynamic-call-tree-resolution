@@ -99,6 +99,7 @@ _WRITE_RECORDS: Final = tuple(
 		line.split("\t")
 		for line in (
 			"pass\tassembly\t102\t2\t<asm>\t0\trecord\tstruct dev",
+			"pass\texpire\t155\t2\trestart\t0\tunknown",
 			"pass\tfills\t75\t2\tmemcpy\t0\tvariable\tconfig",
 			"pass\tfills\t75\t2\tmemcpy\t1\tnone",
 			"pass\tfills\t76\t2\tmemset\t0\trecord\tstruct dev",
@@ -107,6 +108,7 @@ _WRITE_RECORDS: Final = tuple(
 			"pass\thanded\t88\t2\t<indirect>\t0\trecord\tstruct dev",
 			"pass\tinterior\t113\t2\tsink_int\t0\tnone",
 			"pass\tlocal_handed\t107\t2\ttake_pair\t0\trecord\tstruct pair",
+			"pass\trelease\t165\t2\t<asm>\t0\trecord\tstruct guard",
 			"write\tanonymous_store\t50\t10\tfield\tstruct node\tnext",
 			"write\tassembly\t101\t2\tfield\tstruct dev\tcount",
 			"write\tatomics\t81\t2\tfield\tstruct dev\tcount",
@@ -114,6 +116,10 @@ _WRITE_RECORDS: Final = tuple(
 			"write\tatomics\t83\t10\tvariable\tcounter",
 			"write\telement_stores\t66\t11\tvariable\ttable",
 			"write\telement_stores\t67\t13\tfield\tstruct dev\tregs",
+			"write\texpire\t140\t13\tfield\tstruct link\tprev",
+			"write\texpire\t141\t13\tfield\tstruct link\tnext",
+			"write\texpire\t153\t14\tunknown",
+			"write\texpire\t154\t13\tfield\tstruct span\tticks",
 			"write\tfield_store\t36\t11\tfield\tstruct dev\tcount",
 			"write\tfills\t75\t2\tvariable\tconfig",
 			"write\tfills\t76\t2\trecord\tstruct dev",
@@ -125,8 +131,13 @@ _WRITE_RECORDS: Final = tuple(
 			"write\tout_parameter\t58\t7\tnone",
 			"write\tpointer_to_pointer\t71\t6\tnone",
 			"write\trecord_copy\t54\t5\trecord\tstruct dev",
+			"write\trelease\t171\t11\tfield\tstruct guard\tkey",
 			"write\tresult_store\t92\t11\tfield\tstruct dev\tcount",
 			"write\tstatic_store\t45\t8\tvariable\tcalls.0",
+			"write\tunlink_both\t140\t13\tunknown",
+			"write\tunlink_both\t141\t13\tunknown",
+			"write\tunlink_both\t147\t13\tunknown",
+			"write\tunlink_both\t148\t13\tunknown",
 			"write\tvariable_store\t40\t10\tvariable\tcounter",
 		)
 	)
@@ -213,7 +224,7 @@ def test_only_a_whole_file_that_marks_it_records_every_store() -> None:
 		parse_descriptors("".join(f"{line}\n" for line in _PLUGIN_RECORDS)).every_store,
 		parse_descriptors("".join(f"{line}\n" for line in records)).every_store,
 		(marked.every_store, len(marked.writes), len(marked.passes), len(marked.taken)),
-	) == (False, False, (True, 21, 9, 4))
+	) == (False, False, (True, 30, 11, 4))
 
 
 def test_a_unit_without_a_function_has_no_dump_and_no_records(tmp_path: Path) -> None:
@@ -771,6 +782,19 @@ _WRITE_TYPES: Final = UnitTypes(
 				"pass\tu\tf\ta.c\t10\t1\tsink\t1\tvariable\tcounter",
 			),
 			id="builtins, a call's result, a condition, undumped code and a string",
+		),
+		pytest.param(
+			_function(
+				"",
+				"  struct dev dev_0;\n  struct outer * p[2];\n  struct dev * p;",
+				"dev_0.count = 1",
+				"p_3->count = 2",
+			),
+			(
+				"write\tu\tf\ta.c\t0\t1\tfield\tstruct dev\tcount",
+				"write\tu\tf\ta.c\t1\t1\tfield\tstruct dev\tcount",
+			),
+			id="an SSA-like local of a record, and an SSA name no array of pointers can be",
 		),
 		pytest.param(
 			_function(

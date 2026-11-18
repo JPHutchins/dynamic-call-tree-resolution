@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Final
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.composition import merged
+from dynamic_call_tree_resolution.composition import merged, unanimous
 from dynamic_call_tree_resolution.gcc_dumps.units import Record, anonymous_name
 from dynamic_call_tree_resolution.model import ArrayMember, EmbeddedStructMember
 
@@ -35,6 +35,10 @@ _DECLARATOR_SUFFIX: Final = re.compile(r"(?:\s*(?:\*|\[[^\]]*\]))+$")
 _ANONYMOUS_MEMBER: Final = re.compile(r"^(.+?)(?:(->)|\.)(D\.\d+)$")
 _MEMBER: Final = re.compile(r"^(.*?)(?:(->)|\.)([A-Za-z_]\w*)$")
 _QUALIFIER: Final = re.compile(r"\b(?:const|volatile|static)\b ?")
+CV_QUALIFIER: Final = re.compile(r"\b(?:const|volatile)\b ?")
+_ARITHMETIC: Final = re.compile(
+	r"^(?:(?:signed|unsigned|char|short|int|long|_Bool|float|double)\b ?)+$"
+)
 
 
 class Scope(Struct):
@@ -78,28 +82,84 @@ def member_record(scope: Scope, member: Member) -> Record | None:
 	"""The record a member is accessed in."""
 	anonymous = _ANONYMOUS_MEMBER.match(member.base)
 	if anonymous is not None:
-		outer = _base_record(scope, anonymous.group(1), anonymous.group(2) is not None)
-		return _anonymous(scope, outer, member.member)
-	return _base_record(scope, member.base, member.arrow)
+		outers = _base_records(scope, anonymous.group(1), anonymous.group(2) is not None)
+		return unanimous((_anonymous(scope, outer, member.member) for outer in outers), None)
+	return unanimous(_base_records(scope, member.base, member.arrow), None)
 
 
 def record_layout(scope: Scope, record: Record | None) -> StructureLayout | None:
 	return scope.types.layouts.get(record.key) if record is not None else None
 
 
-def declared_type(scope: Scope, token: str) -> str | None:
-	"""A name's type: as a local or SSA name, as a parameter, or as a file-scope variable."""
-	named = NAMED_SSA.match(token)
-	base = named.group(1) if named is not None and is_ssa(scope, token) else token
-	declarations = scope.function.declarations
+def possible_types(scope: Scope, token: str) -> frozenset[str | None]:
+	"""The types a name may have: as a local or SSA name or a parameter, else a file-scope variable.
+
+	Inlined scopes may declare a name again, and an SSA name may be a version of any of them that is
+	no structure, union or array. Declarations that differ only in qualifiers give one type.
+	"""
 	if token == "<retval>":
-		return scope.function.result
-	return (
-		declarations.get(token)
-		or declarations.get(base)
-		or scope.function.parameters.get(base)
-		or scope.types.variables.get(base)
+		return frozenset((scope.function.result,))
+	named = NAMED_SSA.match(token)
+	ssa = named is not None and is_ssa(scope, token)
+	base = named.group(1) if named is not None and ssa else token
+	declared = _declared(scope, token, base)
+	versioned = ssa and token not in scope.function.declarations
+	candidates = tuple(
+		candidate for candidate in declared if not (versioned and _aggregate(scope, candidate))
 	)
+	if not declared:
+		return frozenset((scope.types.variables.get(base),))
+	if len(frozenset(map(_unqualified, candidates))) == 1:
+		return frozenset(candidates[-1:])
+	return frozenset(candidates)
+
+
+def pointer_types(scope: Scope, token: str) -> frozenset[str | None]:
+	"""The types a name the dump uses as a pointer may have: all of them, where none may be one."""
+	possible = possible_types(scope, token)
+	pointers = frozenset(
+		declared for declared in possible if declared is None or _may_point(scope, declared)
+	)
+	return pointers or possible
+
+
+def _declared(scope: Scope, token: str, base: str) -> tuple[str, ...]:
+	"""A name's declarations in the function: an SSA name's own, else its base's, a parameter's first."""
+	parameter = scope.function.parameters.get(base)
+	own = scope.function.declarations.get(token, ()) if token != base else ()
+	return own or (
+		*((parameter,) if parameter is not None else ()),
+		*scope.function.declarations.get(base, ()),
+	)
+
+
+def _aggregate(scope: Scope, type_text: str) -> bool:
+	"""Whether a type is a structure, union or array, which no SSA name has.
+
+	GCC prints a pointer to an array as ``int[4] *``.
+	"""
+	text = _unqualified(type_text)
+	return text.endswith("]") or (
+		"*" not in text
+		and (text.startswith(("struct ", "union ")) or type_record(scope, text) is not None)
+	)
+
+
+def _accessible(scope: Scope, type_text: str, arrow: bool) -> bool:
+	"""Whether a member access may be of a name of a type: ``->`` needs a pointer, ``.`` a record."""
+	return (
+		_may_point(scope, type_text)
+		if arrow
+		else "*" not in type_text and _ARITHMETIC.match(_unqualified(type_text)) is None
+	)
+
+
+def _may_point(scope: Scope, type_text: str) -> bool:
+	return not _aggregate(scope, type_text) and _ARITHMETIC.match(_unqualified(type_text)) is None
+
+
+def _unqualified(type_text: str) -> str:
+	return CV_QUALIFIER.sub("", type_text).strip()
 
 
 def type_record(scope: Scope, type_text: str | None) -> Record | None:
@@ -125,12 +185,7 @@ def is_variable(scope: Scope, text: str) -> bool:
 
 def variable_symbol(scope: Scope, variable: str) -> str:
 	"""A variable's symbol: a function-scope static's is numbered, ``hook.0``."""
-	declared = scope.function.declarations.get(variable)
-	return (
-		scope.types.statics.get(variable, variable)
-		if declared is not None and declared.startswith("static ")
-		else variable
-	)
+	return scope.types.statics.get(variable, variable) if is_static(scope, variable) else variable
 
 
 def is_ssa(scope: Scope, token: str) -> bool:
@@ -140,10 +195,15 @@ def is_ssa(scope: Scope, token: str) -> bool:
 	``state_1`` is a variable.
 	"""
 	named = NAMED_SSA.match(token)
-	declared = scope.function.declarations.get(token, "")
-	return not declared.startswith("static ") and (
+	return not is_static(scope, token) and (
 		_TEMPORARY.match(token) is not None
 		or (named is not None and (token in scope.locals or named.group(1) in scope.locals))
+	)
+
+
+def is_static(scope: Scope, name: str) -> bool:
+	return any(
+		declared.startswith("static ") for declared in scope.function.declarations.get(name, ())
 	)
 
 
@@ -211,19 +271,23 @@ def _balanced(text: str) -> bool:
 	return text.count("(") == text.count(")") and text.count("[") == text.count("]")
 
 
-def _base_record(scope: Scope, base: str, arrow: bool) -> Record | None:
-	"""The record of what a member is taken from."""
+def _base_records(scope: Scope, base: str, arrow: bool) -> frozenset[Record | None]:
+	"""The record of what a member is taken from, for each type a name may have."""
 	memory = _MEMORY.match(base)
 	element = _ELEMENT.match(base)
 	indexed = element is not None and _MEMORY_PREFIX.match(element.group(1)) is None
 	nested = split_member(base)
 	if arrow or (memory is None and element is None and nested is None):
-		return type_record(scope, declared_type(scope, base))
+		return frozenset(
+			type_record(scope, declared)
+			for declared in possible_types(scope, base)
+			if declared is None or _accessible(scope, declared, arrow)
+		)
 	if element is not None and indexed:
-		return _array_record(scope, element.group(1))
+		return frozenset((_array_record(scope, element.group(1)),))
 	if memory is not None:
-		return type_record(scope, _accessed(memory.group(1), memory.group(2)))
-	return _nested_record(scope, nested)
+		return frozenset((type_record(scope, _accessed(memory.group(1), memory.group(2))),))
+	return frozenset((_nested_record(scope, nested),))
 
 
 def _accessed(access: str | None, cast: str) -> str:
@@ -247,8 +311,14 @@ def _array_record(scope: Scope, array: str) -> Record | None:
 		return _element_record(scope, member)
 	if element is not None:
 		return _array_record(scope, element.group(1))
-	return type_record(
-		scope, declared_type(scope, pointed.group(1) if pointed is not None else array)
+	return unanimous(
+		(
+			type_record(scope, declared)
+			for declared in possible_types(
+				scope, pointed.group(1) if pointed is not None else array
+			)
+		),
+		None,
 	)
 
 

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.composition import flatmap
+from dynamic_call_tree_resolution.composition import flatmap, unanimous
 from dynamic_call_tree_resolution.descriptors import (
 	EveryMember,
 	Unknown,
@@ -23,7 +23,7 @@ from dynamic_call_tree_resolution.gcc_dumps.dump import top_level_parts
 from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	ASSIGNMENT,
 	CALL,
-	declared_type,
+	CV_QUALIFIER,
 	function_scope,
 	indexed_array,
 	is_ssa,
@@ -31,6 +31,8 @@ from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	key_record,
 	member_record,
 	named_member,
+	pointer_types,
+	possible_types,
 	record_layout,
 	split_member,
 	type_record,
@@ -64,7 +66,6 @@ _DEREFERENCE: Final = re.compile(r"^\(\*(.+)\)$|^\*(.+)$")
 _ASSEMBLY: Final = re.compile(r"^__asm__(?: __volatile__)?\(\"((?:[^\"\\]|\\.)*)\"(.*)\)$")
 _OPERAND: Final = re.compile(r"^\"([^\"]*)\" (.+)$")
 _OPERAND_LISTS: Final = re.compile(r"\s*:\s*")
-_QUALIFIER: Final = re.compile(r"\b(?:const|volatile)\b ?")
 _ARRAY_TYPE: Final = re.compile(r"^(.+)\[(\d+)\]$")
 _POINTER_WIDTH: Final = 4
 _SCALAR_WIDTHS: Final = {
@@ -359,12 +360,24 @@ def pointed_member(
 ) -> WriteTarget | None:
 	"""What the bytes at an offset from a pointer lie in, by the record it points to.
 
-	None when it points to no record. An offset from a pointer to an array of records lands in one
-	of their elements, in that array or a later row of the array holding it.
+	None when it points to no record, and anything when the types it may have disagree.
 	"""
-	declared = declared_type(scope, pointer)
+	return unanimous(
+		(_member_at(scope, declared, offset, width) for declared in pointer_types(scope, pointer)),
+		Unknown(),
+	)
+
+
+def _member_at(
+	scope: Scope, declared: str | None, offset: int, width: int | None
+) -> WriteTarget | None:
+	"""What the bytes at an offset from a pointer of a type lie in.
+
+	An offset from a pointer to an array of records lands in one of their elements, in that array
+	or a later row of the array holding it.
+	"""
 	array = _ARRAY_POINTEE.match(declared.strip()) if declared is not None else None
-	record = _pointee(scope, pointer)
+	record = pointee(scope, declared)
 	layout = record_layout(scope, record)
 	signed = _signed(offset)
 	if record is None:
@@ -433,7 +446,7 @@ def _width(scope: Scope, type_text: str) -> int | None:
 
 	A typedef of a scalar is a name the unit's types don't describe.
 	"""
-	text = _QUALIFIER.sub("", type_text).strip()
+	text = CV_QUALIFIER.sub("", type_text).strip()
 	array = _ARRAY_TYPE.match(text)
 	layout = record_layout(scope, type_record(scope, text))
 	if text.endswith("*"):
@@ -454,16 +467,18 @@ def _pointed(scope: Scope, pointer: str) -> WriteTarget:
 	address = scope.definitions.get(pointer, pointer)
 	if address.startswith("&"):
 		return written(scope, address[1:])
-	return _pointed_record(_pointee(scope, pointer))
+	return unanimous(
+		(_pointed_record(pointee(scope, declared)) for declared in pointer_types(scope, pointer)),
+		Unknown(),
+	)
 
 
 def _pointed_record(record: Record | None) -> WriteTarget:
 	return EveryMember(record=record.name) if record is not None else Unnamed()
 
 
-def _pointee(scope: Scope, pointer: str) -> Record | None:
-	"""The record a pointer points to: none for a pointer to a pointer, which writes no member."""
-	declared = declared_type(scope, pointer)
+def pointee(scope: Scope, declared: str | None) -> Record | None:
+	"""The record a pointer type points to: none for a pointer to a pointer, which writes no member."""
 	return (
 		type_record(scope, declared) if declared is not None and declared.count("*") == 1 else None
 	)
@@ -471,16 +486,22 @@ def _pointee(scope: Scope, pointer: str) -> Record | None:
 
 def _object(scope: Scope, name: str) -> WriteTarget:
 	"""A named object: a file-scope or function-scope static variable, or a local or parameter."""
-	declared = scope.function.declarations.get(name)
-	if name not in scope.function.parameters and (
-		declared is None or declared.startswith("static ")
-	):
+	if name not in scope.function.parameters and name not in scope.function.declarations:
+		return Variable(symbol=name)
+	return unanimous(
+		(_held(scope, name, declared) for declared in possible_types(scope, name)), Unknown()
+	)
+
+
+def _held(scope: Scope, name: str, declared: str | None) -> WriteTarget:
+	"""What a store to a local, parameter or function-scope static of a type writes."""
+	if declared is not None and declared.startswith("static "):
 		return Variable(symbol=variable_symbol(scope, name))
-	held = declared_type(scope, name)
-	record = type_record(scope, held) if held is not None and "*" not in held else None
+	record = type_record(scope, declared) if declared is not None and "*" not in declared else None
 	return EveryMember(record=record.name) if record is not None else Unnamed()
 
 
 def _pointer(scope: Scope, argument: str) -> bool:
-	declared = declared_type(scope, argument)
-	return argument.startswith("&") or (declared is not None and "*" in declared)
+	return argument.startswith("&") or any(
+		declared is not None and "*" in declared for declared in possible_types(scope, argument)
+	)
