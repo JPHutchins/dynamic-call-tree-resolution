@@ -36,6 +36,16 @@ def merged[K, V](mappings: Iterable[Mapping[K, V]]) -> dict[K, V]:
 	return dict(chain.from_iterable(mapping.items() for mapping in mappings))
 
 
+def unanimous[T](answers: Iterable[T], otherwise: T) -> T:
+	"""The one answer every candidate gives, else ``otherwise``.
+
+	>>> unanimous((2, 2), 0), unanimous((1, 2), 0), unanimous((), 0)
+	(2, 0, 0)
+	"""
+	distinct = frozenset(answers)
+	return next(iter(distinct)) if len(distinct) == 1 else otherwise
+
+
 class Pipeline[T](Struct):
 	"""A value, and the functions applied to it in reading order.
 

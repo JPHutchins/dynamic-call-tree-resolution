@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Final, assert_never
 
 from salix import Struct
 
-from dynamic_call_tree_resolution.composition import flatmap
+from dynamic_call_tree_resolution.composition import flatmap, unanimous
 from dynamic_call_tree_resolution.descriptors import (
 	Element,
 	Function,
@@ -29,11 +29,11 @@ from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	NAMED_SSA,
 	Scope,
 	array_name,
-	declared_type,
 	function_scope,
 	is_ssa,
 	is_variable,
 	member_record,
+	possible_types,
 	record_layout,
 	split_member,
 	variable_symbol,
@@ -184,7 +184,7 @@ def _store(scope: Scope, at: Located, target: str, value: str) -> tuple[DumpReco
 				value=_describe(scope, value),
 			),
 		)
-		if is_variable(scope, target) and _function_pointer_type(declared_type(scope, target))
+		if is_variable(scope, target) and _may_be_code(scope, target)
 		else ()
 	)
 
@@ -196,7 +196,7 @@ def _describe(scope: Scope, value: str) -> Descriptor:
 		return Null()
 	if named is not None and named.group(2) and named.group(1) in scope.function.parameters:
 		return Parameter(name=named.group(1))
-	if value in scope.types.functions and declared_type(scope, value) is None:
+	if value in scope.types.functions and possible_types(scope, value) == frozenset((None,)):
 		return Function(symbol=value)
 	if source is not None and _OPERATION.search(source) is None:
 		return _loaded(scope, value, source)
@@ -209,7 +209,9 @@ def _other(scope: Scope, value: str) -> Other:
 	>>> _UID.sub(r"<\1xxxx>", "int (*<T2cf>) (int)")
 	'int (*<Txxxx>) (int)'
 	"""
-	return Other(type=_UID.sub(r"<\1xxxx>", declared_type(scope, value) or "<unknown>"))
+	return Other(
+		type=_UID.sub(r"<\1xxxx>", unanimous(possible_types(scope, value), None) or "<unknown>")
+	)
 
 
 def _loaded(scope: Scope, value: str, source: str) -> Descriptor:
@@ -243,4 +245,9 @@ def _function_pointer_type(type_text: str | None) -> bool:
 
 def _code(scope: Scope, value: str) -> bool:
 	"""Whether a stored value is a function or a function pointer."""
-	return value in scope.types.functions or _function_pointer_type(declared_type(scope, value))
+	return value in scope.types.functions or _may_be_code(scope, value)
+
+
+def _may_be_code(scope: Scope, name: str) -> bool:
+	"""Whether a name may be a function pointer, by any type it may have."""
+	return any(_function_pointer_type(declared) for declared in possible_types(scope, name))

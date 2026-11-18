@@ -13,7 +13,7 @@ from functools import partial
 from itertools import accumulate, chain, pairwise
 from typing import TYPE_CHECKING, Final, assert_never
 
-from dynamic_call_tree_resolution.composition import flatmap
+from dynamic_call_tree_resolution.composition import flatmap, unanimous
 from dynamic_call_tree_resolution.descriptors import (
 	EveryMember,
 	Unknown,
@@ -25,12 +25,18 @@ from dynamic_call_tree_resolution.gcc_dumps.dump import top_level_parts
 from dynamic_call_tree_resolution.gcc_dumps.expressions import (
 	ASSIGNMENT,
 	CALL,
-	declared_type,
 	function_scope,
+	is_static,
+	possible_types,
 	record_layout,
 	type_record,
 )
-from dynamic_call_tree_resolution.gcc_dumps.writes import assembly_operands, pointed_member, written
+from dynamic_call_tree_resolution.gcc_dumps.writes import (
+	assembly_operands,
+	pointed_member,
+	pointee,
+	written,
+)
 from dynamic_call_tree_resolution.model import Field
 
 if TYPE_CHECKING:
@@ -115,11 +121,14 @@ def _reached(scope: Scope, pointer: str, offset: str) -> WriteTarget | None:
 
 
 def _points_to_record(scope: Scope, name: str) -> bool:
-	declared = declared_type(scope, name)
-	return (
-		declared is not None
-		and declared.count("*") == 1
-		and type_record(scope, declared) is not None
+	return unanimous(
+		(pointee(scope, declared) is not None for declared in possible_types(scope, name)), False
+	)
+
+
+def _local(scope: Scope, name: str) -> bool:
+	return not is_static(scope, name) and (
+		name in scope.function.parameters or name in scope.function.declarations
 	)
 
 
@@ -187,10 +196,12 @@ def _scalar(scope: Scope, target: WriteTarget, expression: str) -> bool:
 			return extent is None or extent.layout is None
 		case Variable():
 			variable = _VARIABLE.match(expression)
-			declared = declared_type(scope, variable.group()) if variable is not None else None
-			return declared is None or "*" in declared or type_record(scope, declared) is None
+			return variable is None or any(
+				declared is None or "*" in declared or type_record(scope, declared) is None
+				for declared in possible_types(scope, variable.group())
+			)
 		case Unknown():
-			return True
+			return not _local(scope, expression)
 		case EveryMember() | Unnamed():
 			return False
 		case _ as unreachable:
