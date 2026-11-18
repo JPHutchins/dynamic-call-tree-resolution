@@ -23,25 +23,28 @@ from dynamic_call_tree_resolution.model import (
 	array_element_type,
 	array_elements,
 )
-from dynamic_call_tree_resolution.points_to.image import in_writable_memory, pointer_at
-from dynamic_call_tree_resolution.points_to.objects import layout_of
+from dynamic_call_tree_resolution.points_to.image import in_writable_memory, indexed_pointer_at
+from dynamic_call_tree_resolution.points_to.objects import layout_of, object_index
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Iterator
 
 	from dynamic_call_tree_resolution.model import DataObject, Member
+	from dynamic_call_tree_resolution.points_to.objects import ObjectIndex
 
 
 def not_enumerated(program: Program) -> tuple[NotEnumerated, ...]:
 	return tuple(
 		flatmap(
-			partial(_object_skips, program),
+			partial(_object_skips, program, object_index(program)),
 			sorted(program.objects.values(), key=_object_address),
 		)
 	)
 
 
-def _object_skips(program: Program, data_object: DataObject) -> Iterable[NotEnumerated]:
+def _object_skips(
+	program: Program, objects: ObjectIndex, data_object: DataObject
+) -> Iterable[NotEnumerated]:
 	layout = layout_of(program, data_object)
 	if layout is not None:
 		return _skipped_members(layout.members, (data_object.name,))
@@ -57,24 +60,29 @@ def _object_skips(program: Program, data_object: DataObject) -> Iterable[NotEnum
 			),
 			range(data_object.size // element_layout.size),
 		)
-	if _untyped_and_unchecked(program, data_object):
+	if _untyped_and_unchecked(program, objects, data_object):
 		return (NotEnumerated(path=(data_object.name,), reason=SkipReason.UNTYPED_OBJECT),)
 	return ()
 
 
-def _untyped_and_unchecked(program: Program, data_object: DataObject) -> bool:
+def _untyped_and_unchecked(program: Program, objects: ObjectIndex, data_object: DataObject) -> bool:
+	return (
+		data_object.type_name is None
+		and data_object.size > program.pointer_size
+		and _unchecked_words(program, objects, data_object)
+	)
+
+
+def _unchecked_words(program: Program, objects: ObjectIndex, data_object: DataObject) -> bool:
 	words = tuple(
-		pointer_at(program, Address(data_object.address + base_offset))
+		indexed_pointer_at(program, objects, Address(data_object.address + base_offset))
 		for base_offset in range(0, data_object.size, program.pointer_size)
 	)
 	functions = sum(
 		1 for word in words if word is not None and word != 0 and word in program.functions
 	)
-	return (
-		data_object.type_name is None
-		and data_object.size > program.pointer_size
-		and functions < len(words)
-		and (functions > 0 or in_writable_memory(program, data_object.address))
+	return functions < len(words) and (
+		functions > 0 or in_writable_memory(program, data_object.address)
 	)
 
 
