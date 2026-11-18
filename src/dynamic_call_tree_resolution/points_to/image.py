@@ -130,9 +130,14 @@ def _overlapping(spans: Sequence[Span], start: int, end: int) -> Iterator[Span]:
 	>>> [span.start for span in _overlapping(spans, 2, 9)], [span.start for span in _overlapping(spans, 4, 8)]
 	([0, 8], [])
 	"""
-	first = max(bisect_right(spans, start, key=_span_start) - 1, 0)
 	return (
-		span for span in spans[first : bisect_left(spans, end, key=_span_start)] if span.end > start
+		span
+		for span in spans[
+			max(bisect_right(spans, start, key=_span_start) - 1, 0) : bisect_left(
+				spans, end, key=_span_start
+			)
+		]
+		if span.end > start
 	)
 
 
