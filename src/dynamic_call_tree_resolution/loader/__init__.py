@@ -11,4 +11,5 @@ from dynamic_call_tree_resolution.loader.program import load as load
 from dynamic_call_tree_resolution.loader.relocations import ArmRelocation as ArmRelocation
 from dynamic_call_tree_resolution.loader.relocations import I386Relocation as I386Relocation
 from dynamic_call_tree_resolution.loader.relocations import X64Relocation as X64Relocation
+from dynamic_call_tree_resolution.loader.spans import line_locations as line_locations
 from dynamic_call_tree_resolution.loader.spans import line_spans as line_spans

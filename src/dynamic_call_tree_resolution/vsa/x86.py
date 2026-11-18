@@ -32,8 +32,8 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 )
 from dynamic_call_tree_resolution.vsa.memory import (
 	Context,
-	Frame,
 	anywhere,
+	frame_store,
 	load_value,
 	loaded,
 	memory_addresses,
@@ -218,9 +218,7 @@ def _push(context: Context, state: State, sp: int, value: ValueSet) -> State:
 	pointer_size = context.program.pointer_size
 	offsets = shift_offsets(lookup(state.sp_offsets, sp), -pointer_size)
 	return set_offsets(
-		store_at(
-			context, state, Frame(offsets=offsets), Store(words=(value,), width=pointer_size), None
-		),
+		frame_store(context, state, offsets, Store(words=(value,), width=pointer_size)),
 		sp,
 		offsets,
 	)

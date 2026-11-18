@@ -68,6 +68,8 @@ class ProgramResolution(Struct):
 	"""Where in the image a tracked store writes a word."""
 	clobbered: frozenset[Span] = frozenset()
 	"""The objects the escape analysis tracks that an unknown store may write anyway."""
+	unplaced: frozenset[Address] = frozenset()
+	"""Where each store the analysis can't place is."""
 
 
 class CallerCandidates(Struct):
@@ -108,6 +110,7 @@ def resolve(
 		),
 		written=frozenset(analysis.context.global_writes.values),
 		clobbered=analysis.context.global_writes.clobbered,
+		unplaced=analysis.unplaced,
 	)
 
 

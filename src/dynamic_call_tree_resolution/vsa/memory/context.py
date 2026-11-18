@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.vsa.lattice import (
 )
 from dynamic_call_tree_resolution.vsa.state import (
 	Writes,
+	united,
 )
 
 if TYPE_CHECKING:
@@ -75,12 +76,16 @@ def accumulate_writes(current: Writes, written: Iterable[Writes]) -> Writes:
 	values = dict(current.values)
 	unknown_store = current.unknown_store
 	clobbered = current.clobbered
+	unplaced = current.unplaced
 	for writes in written:
 		unknown_store = unknown_store or writes.unknown_store
 		clobbered = clobbered | writes.clobbered
+		unplaced = united(unplaced, writes.unplaced)
 		for address, value in writes.values.items():
 			values[address] = join(values[address], value) if address in values else value
-	return Writes(values=values, unknown_store=unknown_store, clobbered=clobbered)
+	return Writes(
+		values=values, unknown_store=unknown_store, clobbered=clobbered, unplaced=unplaced
+	)
 
 
 def context_for(

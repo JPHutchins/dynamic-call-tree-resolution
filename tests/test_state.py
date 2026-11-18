@@ -3,15 +3,16 @@
 
 """Where a frame address escapes, as the analysis tracks it."""
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pytest
 from capstone import arm_const
 from salix import replace
 
 from dynamic_call_tree_resolution.model import Address, Machine
+from dynamic_call_tree_resolution.vsa import interpret
 from dynamic_call_tree_resolution.vsa.cfg import control_flow_graphs
-from dynamic_call_tree_resolution.vsa.interpret import block_states
+from dynamic_call_tree_resolution.vsa.interpret import block_states, transfer
 from dynamic_call_tree_resolution.vsa.memory import context_for
 from dynamic_call_tree_resolution.vsa.state import (
 	ESCAPED_ANYWHERE,
@@ -26,6 +27,12 @@ from dynamic_call_tree_resolution.vsa.state import (
 	top_seed,
 )
 from tests.programs import build_program
+
+if TYPE_CHECKING:
+	from capstone import CsInsn
+
+	from dynamic_call_tree_resolution.vsa.memory import Context
+	from dynamic_call_tree_resolution.vsa.state import State
 
 
 @pytest.mark.parametrize(
@@ -230,4 +237,30 @@ def test_a_frame_copy_a_join_drops_escapes_from_its_offsets_when_tracked(
 	assert (
 		escape_after_join(UNESCAPED, current, incoming, joined, lowest_tracked=lowest_tracked)
 		== escaped
+	)
+
+
+def test_a_loop_records_its_unknown_store_without_another_pass_once_one_happened_before_it(
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""``str r0, [r1]``, then a loop of ``str r0, [r2]; subs r3, #1; bne``."""
+	code = bytes.fromhex("0860 1060 013b fcd1 7047")
+	program = build_program(
+		Machine.EM_ARM, (("loop", 0x1000, len(code)),), sections={0x1000: code}, pointer_size=4
+	)
+	transferred: list[CsInsn] = []
+
+	def counted(context: Context, state: State, instruction: CsInsn) -> State:
+		transferred.append(instruction)
+		return transfer(context, state, instruction)
+
+	monkeypatch.setattr(interpret, "transfer", counted)
+	states = interpret.block_states(
+		context_for(program, NO_WRITES),
+		control_flow_graphs(program)[Address(0x1000)].blocks,
+		top_seed(Machine.EM_ARM),
+	)
+	assert (len(transferred), states.writes.unplaced) == (
+		5,
+		frozenset({Address(0x1000), Address(0x1002)}),
 	)

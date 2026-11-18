@@ -22,6 +22,7 @@ from dynamic_call_tree_resolution.vsa.memory.stores import (
 	after_unknown_store as after_unknown_store,
 )
 from dynamic_call_tree_resolution.vsa.memory.stores import anywhere as anywhere
+from dynamic_call_tree_resolution.vsa.memory.stores import frame_store as frame_store
 from dynamic_call_tree_resolution.vsa.memory.stores import memory_destination as memory_destination
 from dynamic_call_tree_resolution.vsa.memory.stores import (
 	register_destination as register_destination,
