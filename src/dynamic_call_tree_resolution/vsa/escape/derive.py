@@ -70,7 +70,6 @@ _DESCENDING: Final = frozenset(
 		arm_const.ARM_INS_STMDA,
 		arm_const.ARM_INS_STMDB,
 		arm_const.ARM_INS_VLDMDB,
-		arm_const.ARM_INS_VLSTM,
 		arm_const.ARM_INS_VSTMDB,
 	}
 )
