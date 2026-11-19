@@ -58,11 +58,7 @@ def line_spans(path: Path, locations: frozenset[SourceLocation]) -> tuple[LineSp
 def line_locations(
 	path: Path, addresses: Collection[Address]
 ) -> Mapping[Address, frozenset[SourceLocation]]:
-	"""Where the line table places each address.
-
-	An address is absent when no row covers it, when a row covering it has no source line, or when
-	rows of more than one sequence cover it.
-	"""
+	"""Where the line table places each address, absent wherever that is ambiguous."""
 	with path.open("rb") as stream:
 		elf = ELFFile(stream)
 		dwarf = elf.get_dwarf_info(relocate_dwarf_sections=False) if elf.has_dwarf_info() else None
@@ -131,9 +127,14 @@ def _unit_covering(
 	return chain.from_iterable(
 		starmap(
 			partial(_sequence_covering, file_names(dwarf, unit), addresses, unit.cu_offset),
-			enumerate(_sequences(_unit_rows(dwarf, unit))),
+			enumerate(_linked_sequences(_unit_rows(dwarf, unit))),
 		)
 	)
+
+
+def _linked_sequences(rows: tuple[LineState, ...]) -> Iterator[tuple[LineState, ...]]:
+	"""The sequences of code the link kept: a discarded section's sequence starts at 0."""
+	return (sequence for sequence in _sequences(rows) if sequence and sequence[0].address != 0)
 
 
 def _sequence_covering(
@@ -160,24 +161,20 @@ def _rows_covering(
 ) -> Iterator[_Covering]:
 	return flatmap(
 		partial(
-			_row_covering,
-			names,
+			_line_covering,
 			sequence,
 			addresses[
 				bisect_left(addresses, here.address) : bisect_left(addresses, following.address)
 			],
 		),
-		here.rows,
+		(_source_line(names, row) for row in here.rows),
 	)
 
 
-def _row_covering(
-	names: dict[int, str], sequence: _Sequence, covered: Sequence[Address], row: LineState
+def _line_covering(
+	sequence: _Sequence, covered: Sequence[Address], line: SourceLocation | _NoLine
 ) -> Iterator[_Covering]:
-	return (
-		_Covering(address=address, sequence=sequence, line=_source_line(names, row))
-		for address in covered
-	)
+	return (_Covering(address=address, sequence=sequence, line=line) for address in covered)
 
 
 def _source_line(names: dict[int, str], row: LineState) -> SourceLocation | _NoLine:

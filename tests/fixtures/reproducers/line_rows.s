@@ -44,6 +44,15 @@ slot:
 	.4byte .Lline
 	.asciz "line_rows.c"
 .Linfo_end:
+	.4byte .Linfo2_end - .Linfo2_start
+.Linfo2_start:
+	.2byte 3
+	.4byte .Labbrev
+	.byte 4
+	.uleb128 1
+	.4byte .Lline2
+	.asciz "other.c"
+.Linfo2_end:
 
 	.section .debug_line,"",%progbits
 .Lline:
@@ -122,3 +131,37 @@ slot:
 	.uleb128 2
 	.byte 0, 1, 1
 .Lline_end:
+.Lline2:
+	.4byte .Lline2_end - .Lline2_start
+.Lline2_start:
+	.2byte 3
+	.4byte .Lheader2_end - .Lheader2_start
+.Lheader2_start:
+	.byte 1
+	.byte 1
+	.byte -5
+	.byte 14
+	.byte 13
+	.byte 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1
+	.byte 0
+	.asciz "other.c"
+	.uleb128 0, 0, 0
+	.byte 0
+.Lheader2_end:
+	.byte 0, 5, 2
+	.4byte .Lcode + 12
+	.byte 3
+	.sleb128 29
+	.byte 1
+	.byte 2
+	.uleb128 2
+	.byte 0, 1, 1
+	.byte 0, 5, 2
+	.4byte 0
+	.byte 3
+	.sleb128 39
+	.byte 1
+	.byte 9
+	.2byte .Lcode + 20
+	.byte 0, 1, 1
+.Lline2_end:
