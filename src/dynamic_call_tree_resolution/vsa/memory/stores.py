@@ -11,7 +11,6 @@ from capstone import x86_const
 from salix import Struct, replace
 
 from dynamic_call_tree_resolution.model import Address, InstructionFamily
-from dynamic_call_tree_resolution.span import Span
 from dynamic_call_tree_resolution.vsa.abi import (
 	SP_REGISTERS,
 )
@@ -46,6 +45,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	frame_write,
 	image_write,
 	join_escapes,
+	united,
 )
 
 if TYPE_CHECKING:
@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
 	from capstone import CsInsn, CsOperand
 
+	from dynamic_call_tree_resolution.span import Span
 	from dynamic_call_tree_resolution.vsa.memory.context import Context
 
 
@@ -118,34 +119,41 @@ def store_value(
 
 
 def store_at(
-	context: Context, state: State, destination: Destination, store: Store, site: Address | None
+	context: Context, state: State, destination: Destination, store: Store, site: Address
 ) -> State:
-	pointer_size = context.program.pointer_size
 	match destination:
 		case Frame(offsets=offsets):
-			return _weak_across(
-				context,
-				state,
-				offsets,
-				replace(state, stack=frame_write(state.stack, offsets, store, pointer_size)),
-			)
+			return frame_store(context, state, offsets, store)
 		case Image(addresses=addresses):
 			return _image_store(context, state, addresses, store, site)
 		case Unknown():
-			return after_unknown_store(context, state)
+			return after_unknown_store(context, state, site)
 		case _ as unreachable:
 			assert_never(unreachable)
 
 
+def frame_store(context: Context, state: State, offsets: OffsetSet, store: Store) -> State:
+	return _weak_across(
+		context,
+		state,
+		offsets,
+		replace(
+			state, stack=frame_write(state.stack, offsets, store, context.program.pointer_size)
+		),
+	)
+
+
 def _image_store(
-	context: Context, state: State, addresses: ValueSet, store: Store, site: Address | None
+	context: Context, state: State, addresses: ValueSet, store: Store, site: Address
 ) -> State:
 	match addresses:
 		case Top():
 			return replace(
 				state,
 				stack=frame_after_escape(state, context.program.pointer_size),
-				globals=_unknown_writes(context, state.globals, site),
+				globals=_unknown_writes(
+					context, state.globals, site, context.store_targets.get(site, frozenset())
+				),
 			)
 		case Known(values=starts):
 			return _weak_across(
@@ -161,16 +169,18 @@ def _image_store(
 			assert_never(unreachable)
 
 
-def after_unknown_store(context: Context, state: State) -> State:
+def after_unknown_store(context: Context, state: State, site: Address) -> State:
 	"""The state after a store that may write the stack and any escaped object."""
-	return replace(state, stack={}, globals=_unknown_writes(context, state.globals, None))
-
-
-def _unknown_writes(context: Context, writes: Writes, site: Address | None) -> Writes:
-	"""The writes after an unknown store, which may write any escaped object and its own targets."""
-	clobbered = writes.clobbered | (
-		context.store_targets.get(site, frozenset()) if site is not None else frozenset[Span]()
+	return replace(
+		state, stack={}, globals=_unknown_writes(context, state.globals, site, frozenset())
 	)
+
+
+def _unknown_writes(
+	context: Context, writes: Writes, site: Address, targets: frozenset[Span]
+) -> Writes:
+	"""The writes after an unknown store, which may write any escaped object and its own targets."""
+	clobbered = writes.clobbered | targets
 	return Writes(
 		values={
 			address: value
@@ -178,6 +188,7 @@ def _unknown_writes(context: Context, writes: Writes, site: Address | None) -> W
 			if kept(context, clobbered, address, context.program.pointer_size)
 		},
 		unknown_store=True,
+		unplaced=united(writes.unplaced, frozenset({site})),
 		clobbered=clobbered,
 	)
 
@@ -212,6 +223,7 @@ def weakened(context: Context, before: State, after: State) -> State:
 			},
 			unknown_store=after.globals.unknown_store,
 			clobbered=before.globals.clobbered | after.globals.clobbered,
+			unplaced=united(before.globals.unplaced, after.globals.unplaced),
 		),
 		escaped=escape_after_join(
 			join_escapes(before.escaped, after.escaped),

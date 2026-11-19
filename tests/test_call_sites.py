@@ -944,6 +944,43 @@ def test_a_slot_written_only_by_tracked_stores_keeps_them_past_an_unknown_store(
 	assert tracked_values(site) == targets
 
 
+@pytest.mark.parametrize(
+	("machine", "code", "unplaced"),
+	[
+		pytest.param(
+			Machine.EM_ARM, "81ed0001 7047", {0x1000}, id="an untracked store instruction"
+		),
+		pytest.param(
+			Machine.EM_ARM, "0860 7047", {0x1000}, id="a store through an unknown pointer"
+		),
+		pytest.param(
+			Machine.EM_ARM, "0860 0090 0860 7047", {0x1000, 0x1004}, id="every unknown store"
+		),
+		pytest.param(
+			Machine.EM_ARM, "42f20001 0860 7047", set[int](), id="a store the analysis places"
+		),
+		pytest.param(
+			Machine.EM_X86_64,
+			"48894500 c3",
+			{0x1000},
+			id="a store through an unknown frame pointer",
+		),
+	],
+)
+def test_the_resolution_records_where_each_store_it_cannot_place_is(
+	machine: Machine, code: str, unplaced: set[int]
+) -> None:
+	program = build_program(
+		machine,
+		(("writer", 0x1000, len(bytes.fromhex(code))),),
+		objects=(("slot", 0x2000, bytes(4)),),
+		sections={0x1000: bytes.fromhex(code)},
+		writable=frozenset({0x2000}),
+		pointer_size=4 if machine == Machine.EM_ARM else 8,
+	)
+	assert resolve(program).unplaced == unplaced
+
+
 def test_a_store_derived_from_an_unescaped_object_still_writes_it_past_the_assumption() -> None:
 	writer = bytes.fromhex("014b 43f82100 7047 00000020")
 	caller = bytes.fromhex("014b 1b68 9847 7047 00000020")

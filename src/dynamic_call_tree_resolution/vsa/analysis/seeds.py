@@ -209,6 +209,7 @@ def _widened_writes(previous: Writes, current: Writes) -> Writes:
 		},
 		unknown_store=current.unknown_store,
 		clobbered=current.clobbered,
+		unplaced=current.unplaced,
 	)
 
 

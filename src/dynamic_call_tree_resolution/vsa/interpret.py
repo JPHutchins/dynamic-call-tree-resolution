@@ -5,12 +5,12 @@
 
 from __future__ import annotations
 
-from functools import partial
+from functools import partial, reduce
 from itertools import accumulate, chain
 from typing import TYPE_CHECKING, assert_never
 
 from capstone import x86_const
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution.composition import flatmap
 from dynamic_call_tree_resolution.model import (
@@ -74,6 +74,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	join_states,
 	stack_read,
 	top_registers,
+	without_unplaced,
 )
 from dynamic_call_tree_resolution.vsa.x86 import apply_x86
 
@@ -83,6 +84,7 @@ if TYPE_CHECKING:
 	from capstone import CsInsn, CsOperand
 
 	from dynamic_call_tree_resolution.model import Function
+	from dynamic_call_tree_resolution.vsa.branch_edges import SuccessorState
 	from dynamic_call_tree_resolution.vsa.entry_loads import EntryLoad
 
 
@@ -125,6 +127,7 @@ def _called(context: Context, state: State) -> State:
 				values={},
 				unknown_store=passed.globals.unknown_store,
 				clobbered=passed.globals.clobbered,
+				unplaced=passed.globals.unplaced,
 			),
 			escaped=passed.escaped,
 			loaded_from=passed.loaded_from,
@@ -200,14 +203,29 @@ def block_states(context: Context, blocks: tuple[Block, ...], seed: State) -> Bl
 	while worklist:
 		block = by_start[worklist.pop()]
 		states = tuple(accumulate(block.instructions, step, initial=in_states[block.start]))
-		writes = accumulate_writes(writes, [states[-1].globals])
-		for edge in successor_states(block, states, step):
+		edges = tuple(successor_states(block, states, step))
+		writes = _with_edge_stores(accumulate_writes(writes, [states[-1].globals]), edges)
+		for edge in edges:
 			existing = in_states.get(edge.successor)
-			joined = join_states(existing, edge.state, lowest_tracked=context.upward_frame_writes)
+			joined = join_states(
+				existing, without_unplaced(edge.state), lowest_tracked=context.upward_frame_writes
+			)
 			if joined != existing:
 				in_states[edge.successor] = joined
 				worklist.append(edge.successor)
 	return BlockStates(in_states, writes)
+
+
+def _with_edge_stores(writes: Writes, edges: Iterable[SuccessorState]) -> Writes:
+	return reduce(_with_edge_store, edges, writes)
+
+
+def _with_edge_store(writes: Writes, edge: SuccessorState) -> Writes:
+	return (
+		writes
+		if edge.state.globals.unplaced <= writes.unplaced
+		else replace(writes, unplaced=writes.unplaced | edge.state.globals.unplaced)
+	)
 
 
 class _BlockSite(Struct):

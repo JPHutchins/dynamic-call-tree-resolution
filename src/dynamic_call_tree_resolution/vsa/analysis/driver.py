@@ -62,7 +62,7 @@ if TYPE_CHECKING:
 		ThreadRoot,
 	)
 	from dynamic_call_tree_resolution.span import Span
-	from dynamic_call_tree_resolution.vsa.interpret import CallObservation
+	from dynamic_call_tree_resolution.vsa.interpret import CallObservation, FunctionResult
 
 
 class Analysis(Struct):
@@ -77,6 +77,8 @@ class Analysis(Struct):
 	address_taken: frozenset[Address]
 	observations: tuple[CallObservation, ...]
 	"""Every call the final pass saw reach a known function, with the arguments it passes."""
+	unplaced: frozenset[Address]
+	"""Where each store the final pass can't place is."""
 
 
 def analyze(
@@ -173,7 +175,12 @@ def analyze(
 			},
 			address_taken=taken,
 			observations=tuple(flatmap(every_observation, results)),
+			unplaced=frozenset(flatmap(_unplaced, results)),
 		)
+
+
+def _unplaced(result: FunctionResult) -> frozenset[Address]:
+	return result.writes.unplaced
 
 
 def _entry(thread: ThreadRoot) -> Address:

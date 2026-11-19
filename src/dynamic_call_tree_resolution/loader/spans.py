@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from functools import partial
-from itertools import accumulate, chain, groupby, pairwise
+from itertools import accumulate, chain, groupby, pairwise, starmap
 from typing import TYPE_CHECKING, assert_never
 
 from elftools.dwarf.die import AttributeValue
@@ -33,7 +34,7 @@ from dynamic_call_tree_resolution.model import (
 from dynamic_call_tree_resolution.span import Span
 
 if TYPE_CHECKING:
-	from collections.abc import Iterable, Iterator
+	from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 	from pathlib import Path
 
 	from elftools.dwarf.compileunit import CompileUnit
@@ -54,11 +55,155 @@ def line_spans(path: Path, locations: frozenset[SourceLocation]) -> tuple[LineSp
 		return tuple(span for span in spans if span.location in locations)
 
 
-def _unit_line_spans(dwarf: DWARFInfo, unit: CompileUnit) -> Iterator[LineSpan]:
+def line_locations(
+	path: Path, addresses: Collection[Address]
+) -> Mapping[Address, frozenset[SourceLocation]]:
+	"""Where the line table places each address, absent wherever that is ambiguous."""
+	with path.open("rb") as stream:
+		elf = ELFFile(stream)
+		dwarf = elf.get_dwarf_info(relocate_dwarf_sections=False) if elf.has_dwarf_info() else None
+		return _line_locations(dwarf, sorted(addresses)) if dwarf is not None else {}
+
+
+def _line_locations(
+	dwarf: DWARFInfo, addresses: Sequence[Address]
+) -> Mapping[Address, frozenset[SourceLocation]]:
+	covering = sorted(
+		flatmap(partial(_unit_covering, dwarf, addresses), dwarf.iter_CUs()),
+		key=_covering_address,
+	)
+	grouped = {address: tuple(group) for address, group in groupby(covering, key=_covering_address)}
+	return {
+		address: frozenset(_source_lines(group))
+		for address, group in grouped.items()
+		if _one_sequence_with_lines(group)
+	}
+
+
+class _NoLine(Struct):
+	"""A row that places its code at line 0, or in a file its unit doesn't list."""
+
+
+class _Sequence(Struct):
+	"""One sequence of a unit's line program."""
+
+	unit: int
+	"""The unit's offset in ``.debug_info``."""
+	index: int
+
+
+class _Covering(Struct):
+	"""A row that covers an address."""
+
+	address: Address
+	sequence: _Sequence
+	line: SourceLocation | _NoLine
+
+
+class _RowsAt(Struct):
+	"""The line table rows of one sequence that share an address."""
+
+	address: Address
+	rows: tuple[LineState, ...]
+
+
+def _covering_address(covering: _Covering) -> Address:
+	return covering.address
+
+
+def _one_sequence_with_lines(group: tuple[_Covering, ...]) -> bool:
+	return len({covering.sequence for covering in group}) == 1 and not any(
+		isinstance(covering.line, _NoLine) for covering in group
+	)
+
+
+def _source_lines(group: tuple[_Covering, ...]) -> Iterator[SourceLocation]:
+	return (covering.line for covering in group if isinstance(covering.line, SourceLocation))
+
+
+def _unit_covering(
+	dwarf: DWARFInfo, addresses: Sequence[Address], unit: CompileUnit
+) -> Iterator[_Covering]:
+	return chain.from_iterable(
+		starmap(
+			partial(_sequence_covering, file_names(dwarf, unit), addresses, unit.cu_offset),
+			enumerate(_linked_sequences(_unit_rows(dwarf, unit))),
+		)
+	)
+
+
+def _linked_sequences(rows: tuple[LineState, ...]) -> Iterator[tuple[LineState, ...]]:
+	"""The sequences of code the link kept: a discarded section's sequence starts at 0."""
+	return (sequence for sequence in _sequences(rows) if sequence and sequence[0].address != 0)
+
+
+def _sequence_covering(
+	names: dict[int, str],
+	addresses: Sequence[Address],
+	unit: int,
+	index: int,
+	rows: tuple[LineState, ...],
+) -> Iterator[_Covering]:
+	return chain.from_iterable(
+		starmap(
+			partial(_rows_covering, names, addresses, _Sequence(unit=unit, index=index)),
+			pairwise(_rows_at(rows)),
+		)
+	)
+
+
+def _rows_covering(
+	names: dict[int, str],
+	addresses: Sequence[Address],
+	sequence: _Sequence,
+	here: _RowsAt,
+	following: _RowsAt,
+) -> Iterator[_Covering]:
+	return flatmap(
+		partial(
+			_line_covering,
+			sequence,
+			addresses[
+				bisect_left(addresses, here.address) : bisect_left(addresses, following.address)
+			],
+		),
+		(_source_line(names, row) for row in here.rows),
+	)
+
+
+def _line_covering(
+	sequence: _Sequence, covered: Sequence[Address], line: SourceLocation | _NoLine
+) -> Iterator[_Covering]:
+	return (_Covering(address=address, sequence=sequence, line=line) for address in covered)
+
+
+def _source_line(names: dict[int, str], row: LineState) -> SourceLocation | _NoLine:
+	return (
+		SourceLocation(file=names[row.file], line=row.line, column=row.column)
+		if row.file in names and row.line != 0
+		else _NoLine()
+	)
+
+
+def _rows_at(rows: tuple[LineState, ...]) -> tuple[_RowsAt, ...]:
+	return tuple(
+		_RowsAt(address=Address(address), rows=tuple(group))
+		for address, group in groupby(rows, key=_row_address)
+	)
+
+
+def _row_address(row: LineState) -> int:
+	return row.address
+
+
+def _unit_rows(dwarf: DWARFInfo, unit: CompileUnit) -> tuple[LineState, ...]:
 	line_program = dwarf.line_program_for_CU(unit)
 	entries = line_program.get_entries() if line_program is not None else ()
-	rows = tuple(entry.state for entry in entries if entry.state is not None)
-	consecutive = flatmap(pairwise, _sequences(rows))
+	return tuple(entry.state for entry in entries if entry.state is not None)
+
+
+def _unit_line_spans(dwarf: DWARFInfo, unit: CompileUnit) -> Iterator[LineSpan]:
+	consecutive = flatmap(pairwise, _sequences(_unit_rows(dwarf, unit)))
 	names = file_names(dwarf, unit)
 	return (
 		LineSpan(

@@ -44,11 +44,13 @@ class Writes(Struct):
 	"""By address; an address no store wrote is absent."""
 	unknown_store: bool
 	"""An unknown store happened, so any escaped object may hold anything."""
+	unplaced: frozenset[Address]
+	"""Where each unknown store's instruction is."""
 	clobbered: frozenset[Span] = frozenset()
 	"""The unescaped objects an unknown store derived from them may have written, by span."""
 
 
-NO_WRITES: Final = Writes(values={}, unknown_store=False)
+NO_WRITES: Final = Writes(values={}, unknown_store=False, unplaced=frozenset())
 
 
 class State(Struct):
@@ -224,13 +226,40 @@ def frame_copies_lost(
 
 def _join_writes(current: Writes, incoming: Writes) -> Writes:
 	return Writes(
-		values={
+		{
 			address: join(current.values[address], incoming.values[address])
 			for address in current.values.keys() & incoming.values.keys()
 		},
-		unknown_store=current.unknown_store or incoming.unknown_store,
-		clobbered=current.clobbered | incoming.clobbered,
+		current.unknown_store or incoming.unknown_store,
+		united(current.unplaced, incoming.unplaced),
+		current.clobbered | incoming.clobbered,
 	)
+
+
+def united[T](current: frozenset[T], incoming: frozenset[T]) -> frozenset[T]:
+	"""Their union, sharing either set that already holds the other.
+
+	>>> held = frozenset({1, 2})
+	>>> united(held, frozenset({1})) is held and united(frozenset(), held) is held
+	True
+	>>> united(held, frozenset({3}))
+	frozenset({1, 2, 3})
+	"""
+	if incoming <= current:
+		return current
+	return incoming if current <= incoming else current | incoming
+
+
+def without_unplaced(state: State) -> State:
+	return (
+		replace(state, globals=writes_without_unplaced(state.globals))
+		if state.globals.unplaced
+		else state
+	)
+
+
+def writes_without_unplaced(writes: Writes) -> Writes:
+	return replace(writes, unplaced=frozenset()) if writes.unplaced else writes
 
 
 def set_register(state: State, register: int, value: ValueSet) -> State:
@@ -425,7 +454,7 @@ def image_write(
 	writes: Writes, starts: frozenset[Address], store: Store, pointer_size: int
 ) -> Writes:
 	return Writes(
-		values={
+		{
 			**writes.values,
 			**{
 				Address(address): join(writes.values[Address(address)], value)
@@ -441,8 +470,9 @@ def image_write(
 				).items()
 			},
 		},
-		unknown_store=writes.unknown_store,
-		clobbered=writes.clobbered,
+		writes.unknown_store,
+		writes.unplaced,
+		writes.clobbered,
 	)
 
 

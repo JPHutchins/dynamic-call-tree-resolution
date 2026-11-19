@@ -44,7 +44,7 @@ from dynamic_call_tree_resolution.vsa.interpret import (
 )
 from dynamic_call_tree_resolution.vsa.lattice import Known
 from dynamic_call_tree_resolution.vsa.memory import Context, accumulate_writes, context_for
-from dynamic_call_tree_resolution.vsa.state import State, Writes, top_seed
+from dynamic_call_tree_resolution.vsa.state import State, Writes, top_seed, writes_without_unplaced
 
 if TYPE_CHECKING:
 	from collections.abc import Iterable, Mapping
@@ -136,7 +136,9 @@ def global_fixpoint(rounds: Rounds, current: Round, round_number: int) -> Round:
 		},
 		writes=next_writes(
 			current.writes,
-			accumulate_writes(current.writes, [result.writes for result in results]),
+			accumulate_writes(
+				current.writes, [writes_without_unplaced(result.writes) for result in results]
+			),
 			round_number,
 		),
 		entry_words=next_entry_words(

@@ -16,7 +16,7 @@ import pytest
 from elftools.common.exceptions import ELFError
 from elftools.elf.elffile import ELFFile
 from elftools.elf.enums import ENUM_RELOC_TYPE_ARM, ENUM_RELOC_TYPE_i386, ENUM_RELOC_TYPE_x64
-from salix import Struct
+from salix import Struct, replace
 
 from dynamic_call_tree_resolution import (
 	Address,
@@ -38,12 +38,14 @@ from dynamic_call_tree_resolution.loader import (
 	I386Relocation,
 	X64Relocation,
 	defined_function_names,
+	line_locations,
 )
 from dynamic_call_tree_resolution.model import (
 	ArmCore,
 	ArmProfile,
 	InstructionSet,
 	MemberExtent,
+	SourceLocation,
 	aligned,
 	render_path,
 )
@@ -103,6 +105,42 @@ def test_a_dwarf_3_image_sizes_its_functions_as_dwarf_4_does(
 		function.name: function.size for function in load(fixture_elfs["dwarf3"]).functions.values()
 	} == {
 		function.name: function.size for function in load(fixture_elfs["dwarf4"]).functions.values()
+	}
+
+
+@pytest.mark.image
+def test_line_locations_needs_one_kept_sequence_and_a_line_in_every_row_covering_an_address(
+	tmp_path: Path,
+) -> None:
+	elf = build_cortex_m3((FIXTURES / "reproducers" / "line_rows.s",), tmp_path / "rows.elf")
+	program = load(elf)
+	(code,) = (
+		address & ~1 for address, function in program.functions.items() if function.name == "main"
+	)
+	(slot,) = (address for address, item in program.objects.items() if item.name == "slot")
+	assert line_locations(elf, (*(Address(code + offset) for offset in range(0, 22, 2)), slot)) == {
+		code: frozenset({SourceLocation(file="line_rows.c", line=3, column=0)}),
+		code + 2: frozenset(
+			{
+				SourceLocation(file="line_rows.c", line=4, column=0),
+				SourceLocation(file="line_rows.c", line=5, column=0),
+			}
+		),
+	}
+
+
+@pytest.mark.image
+def test_line_locations_places_a_compiled_return_at_its_source_line(tmp_path: Path) -> None:
+	elf = build_cortex_m3(
+		(FIXTURES / "reproducers" / "field_cast.c",), tmp_path / "image.elf", "-g", "-O2"
+	)
+	(pick,) = (
+		Address((address & ~1) + 2)
+		for address, function in load(elf).functions.items()
+		if function.name == "pick"
+	)
+	assert {replace(location, column=0) for location in line_locations(elf, (pick,))[pick]} == {
+		SourceLocation(file="field_cast.c", line=19, column=0)
 	}
 
 

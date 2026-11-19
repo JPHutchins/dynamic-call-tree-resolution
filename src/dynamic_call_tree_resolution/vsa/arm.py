@@ -139,7 +139,7 @@ def _apply_unconditional(
 		return top_written(
 			instruction,
 			escaping(
-				after_unknown_store(context, state),
+				after_unknown_store(context, state, Address(instruction.address)),
 				tuple(
 					operand.reg
 					for operand in _arm_operands(instruction)
