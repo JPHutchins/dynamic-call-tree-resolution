@@ -40,6 +40,8 @@ def test_a_load_after_the_prologue_push_reads_through_its_argument() -> None:
 		pytest.param("50f8043f1847", id="with writeback"),
 		pytest.param("4368002bfcd17047", id="in an entry block a branch returns to"),
 		pytest.param("dff743681847", id="after bytes the decoder skips as data"),
+		pytest.param("80ec030b43681847", id="after fstmiax"),
+		pytest.param("20ec000a43681847", id="after vlstm"),
 	],
 )
 def test_a_load_is_no_entry_load_once_the_word_it_reads_could_have_changed(code: str) -> None:

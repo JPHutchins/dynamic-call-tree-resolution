@@ -65,3 +65,7 @@ def build_program(
 
 def span(start: int, end: int) -> Span:
 	return Span(start=Address(start), end=Address(end))
+
+
+def a32(words: str) -> bytes:
+	return b"".join(bytes.fromhex(word)[::-1] for word in words.split())

@@ -16,6 +16,7 @@ from dynamic_call_tree_resolution.vsa.abi import (
 	ARM_ARGUMENT_REGISTERS,
 	ARM_DESCENDING_STORES,
 	ARM_MULTIPLE_STORES,
+	ARM_UNTRACKED_STORES,
 	arm_predicated,
 	is_data,
 	normalized,
@@ -92,17 +93,7 @@ _LOADS: Final = frozenset(
 		arm_const.ARM_INS_VPOP,
 	}
 )
-_REGISTER_LIST_STORES: Final = frozenset(
-	{
-		*ARM_MULTIPLE_STORES,
-		arm_const.ARM_INS_STMDA,
-		arm_const.ARM_INS_STMIB,
-		arm_const.ARM_INS_SRSDA,
-		arm_const.ARM_INS_SRSDB,
-		arm_const.ARM_INS_SRSIA,
-		arm_const.ARM_INS_SRSIB,
-	}
-)
+_REGISTER_LIST_STORES: Final = ARM_MULTIPLE_STORES | ARM_UNTRACKED_STORES
 
 
 def _leaves_memory_alone(instruction: CsInsn) -> bool:
