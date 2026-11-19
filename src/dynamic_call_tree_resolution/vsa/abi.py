@@ -422,6 +422,7 @@ ARM_UNTRACKED_STORES: Final = frozenset(
 		arm_const.ARM_INS_STREXD,
 		arm_const.ARM_INS_SWP,
 		arm_const.ARM_INS_SWPB,
+		arm_const.ARM_INS_VLSTM,
 		arm_const.ARM_INS_VST1,
 		arm_const.ARM_INS_VST2,
 		arm_const.ARM_INS_VST3,

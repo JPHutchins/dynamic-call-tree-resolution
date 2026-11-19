@@ -311,6 +311,13 @@ _M_PROFILE_WITH_FPU: Final = ArmCore(profile=ArmProfile.MICROCONTROLLER, floatin
 			0x1000,
 			id="an M-profile fstmdbx",
 		),
+		pytest.param(
+			bytes.fromhex("20ec000a 7047"),
+			(),
+			_M_PROFILE_WITH_FPU,
+			0x1000,
+			id="an M-profile vlstm",
+		),
 	],
 )
 def test_a_store_without_a_tracked_extent_is_one_the_analysis_cannot_place(
