@@ -49,7 +49,7 @@ from dynamic_call_tree_resolution.report import slot_counts
 from dynamic_call_tree_resolution.stack_analysis import INDIRECT_CALLEE, expand_indirect_calls
 from dynamic_call_tree_resolution.vsa import address_taken
 from dynamic_call_tree_resolution.vsa.lattice import Known, Top
-from tests.programs import build_program, span
+from tests.programs import a32, build_program, span
 from tests.sites import tracked_values
 from tests.toolchains import FIXTURES, build_cortex_m3
 
@@ -4178,10 +4178,6 @@ def test_thumb_pc_write_is_a_return_or_a_site(code: str, candidates: set[int] | 
 	assert site.target == _expected(candidates)
 
 
-def _a32(words: str) -> bytes:
-	return b"".join(bytes.fromhex(word)[::-1] for word in words.split())
-
-
 @pytest.mark.parametrize(
 	("arm_code", "sites"),
 	[
@@ -4192,7 +4188,7 @@ def _a32(words: str) -> bytes:
 def test_a32_code_decodes_only_inside_its_mapping_span(
 	arm_code: tuple[tuple[int, int], ...], sites: list[set[int]]
 ) -> None:
-	body = _a32("e59f3000 e12fff33") + _pointer(0x2000, 4)
+	body = a32("e59f3000 e12fff33") + _pointer(0x2000, 4)
 	program = build_program(
 		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("a", 0x2000, 4), ("b", 0x3000, 4)),
@@ -4208,7 +4204,7 @@ def test_a32_code_decodes_only_inside_its_mapping_span(
 
 def test_a32_and_thumb_functions_each_decode_in_their_own_set() -> None:
 	body = (
-		_a32("e59f3000 e12fff33")
+		a32("e59f3000 e12fff33")
 		+ _pointer(0x3001, 4)
 		+ bytes.fromhex("004b 9847")
 		+ _pointer(0x2000, 4)
@@ -4233,7 +4229,7 @@ def test_a32_and_thumb_functions_each_decode_in_their_own_set() -> None:
 
 
 def test_a32_pc_relative_load_with_an_index_is_unknown() -> None:
-	body = _a32("e79f3102 e12fff33") + _pointer(0x2000, 4)
+	body = a32("e79f3102 e12fff33") + _pointer(0x2000, 4)
 	program = build_program(
 		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("a", 0x2000, 4)),
@@ -4257,7 +4253,7 @@ def test_a32_pc_relative_load_with_an_index_is_unknown() -> None:
 def test_a32_sp_rebuilt_from_a_register_keeps_the_frame_only_when_it_is_an_sp_copy(
 	restore: str, candidates: set[int]
 ) -> None:
-	body = _a32(f"e3a03a02 e58d3000 {restore} e59d3000 e12fff33")
+	body = a32(f"e3a03a02 e58d3000 {restore} e59d3000 e12fff33")
 	program = build_program(
 		Machine.EM_ARM,
 		(("caller", 0x1000, len(body)), ("a", 0x2000, 4)),
@@ -4273,10 +4269,10 @@ def test_a32_sp_rebuilt_from_a_register_keeps_the_frame_only_when_it_is_an_sp_co
 	("caller", "body", "targets", "arm_code"),
 	[
 		pytest.param(
-			0x1000, _a32("e28f0008 e24f0010"), (0xFFC, 0x1010), ((0xFFC, 0x1014),), id="a32-to-a32"
+			0x1000, a32("e28f0008 e24f0010"), (0xFFC, 0x1010), ((0xFFC, 0x1014),), id="a32-to-a32"
 		),
 		pytest.param(
-			0x1000, _a32("e28f0008 e24f0010"), (0xFFD, 0x1011), ((0x1000, 0x1008),), id="a32-to-t32"
+			0x1000, a32("e28f0008 e24f0010"), (0xFFD, 0x1011), ((0x1000, 0x1008),), id="a32-to-t32"
 		),
 		pytest.param(
 			0x1001, bytes.fromhex("01a07047"), (0x1008,), ((0x1008, 0x100C),), id="t32-to-a32"
@@ -4478,7 +4474,7 @@ def test_a32_dispatch_reads_its_table_only_from_read_only_memory(
 	],
 )
 def test_a32_dispatch_past_the_case_limit_is_unbounded(compare: str, candidates: set[int]) -> None:
-	code = _a32(
+	code = a32(
 		f"e59f302c {compare} 8a000006 e793f100 e3021000 ea000004 e3031000 ea000002 e3051000"
 		" ea000000 e3061000 e12fff31 e12fff1e"
 	)

@@ -26,7 +26,7 @@ from dynamic_call_tree_resolution.vsa.state import (
 	join_escapes,
 	top_seed,
 )
-from tests.programs import build_program
+from tests.programs import a32, build_program
 
 if TYPE_CHECKING:
 	from capstone import CsInsn
@@ -278,10 +278,6 @@ def test_the_rounds_keep_unplaced_stores_out_of_the_program_writes() -> None:
 	)
 
 
-def _a32(words: str) -> bytes:
-	return b"".join(bytes.fromhex(word)[::-1] for word in words.split())
-
-
 _M_PROFILE_WITH_FPU: Final = ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=True)
 
 
@@ -289,17 +285,17 @@ _M_PROFILE_WITH_FPU: Final = ArmCore(profile=ArmProfile.MICROCONTROLLER, floatin
 	("code", "arm_code", "core", "unplaced"),
 	[
 		pytest.param(
-			_a32("f96d051f e12fff1e"),
+			a32("f96d051f e12fff1e"),
 			((0x1000, 0x1008),),
 			None,
 			0x1000,
 			id="an A32 srsdb sp!, #0x1f",
 		),
 		pytest.param(
-			_a32("e3020000 e1003091 e12fff1e"), ((0x1000, 0x100C),), None, 0x1004, id="an A32 swp"
+			a32("e3020000 e1003091 e12fff1e"), ((0x1000, 0x100C),), None, 0x1004, id="an A32 swp"
 		),
 		pytest.param(
-			_a32("e3020000 e1403091 e12fff1e"), ((0x1000, 0x100C),), None, 0x1004, id="an A32 swpb"
+			a32("e3020000 e1403091 e12fff1e"), ((0x1000, 0x100C),), None, 0x1004, id="an A32 swpb"
 		),
 		pytest.param(
 			bytes.fromhex("80ec030b 7047"),
