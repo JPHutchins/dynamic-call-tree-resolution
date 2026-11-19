@@ -252,10 +252,14 @@ def united[T](current: frozenset[T], incoming: frozenset[T]) -> frozenset[T]:
 
 def without_unplaced(state: State) -> State:
 	return (
-		replace(state, globals=replace(state.globals, unplaced=frozenset()))
+		replace(state, globals=writes_without_unplaced(state.globals))
 		if state.globals.unplaced
 		else state
 	)
+
+
+def writes_without_unplaced(writes: Writes) -> Writes:
+	return replace(writes, unplaced=frozenset()) if writes.unplaced else writes
 
 
 def set_register(state: State, register: int, value: ValueSet) -> State:

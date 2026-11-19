@@ -10,7 +10,7 @@ from capstone import arm_const
 from salix import replace
 
 from dynamic_call_tree_resolution.model import Address, Machine
-from dynamic_call_tree_resolution.vsa import interpret
+from dynamic_call_tree_resolution.vsa import analyze, interpret
 from dynamic_call_tree_resolution.vsa.cfg import control_flow_graphs
 from dynamic_call_tree_resolution.vsa.interpret import block_states, transfer
 from dynamic_call_tree_resolution.vsa.memory import context_for
@@ -263,4 +263,16 @@ def test_a_loop_records_its_unknown_store_without_another_pass_once_one_happened
 	assert (len(transferred), states.writes.unplaced) == (
 		5,
 		frozenset({Address(0x1000), Address(0x1002)}),
+	)
+
+
+def test_the_rounds_keep_unplaced_stores_out_of_the_program_writes() -> None:
+	code = bytes.fromhex("81ed0001 7047")
+	program = build_program(
+		Machine.EM_ARM, (("writer", 0x1000, len(code)),), sections={0x1000: code}, pointer_size=4
+	)
+	analysis = analyze(program)
+	assert (analysis.context.global_writes.unplaced, analysis.unplaced) == (
+		frozenset[Address](),
+		frozenset({Address(0x1000)}),
 	)

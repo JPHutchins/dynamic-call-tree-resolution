@@ -10,6 +10,8 @@ main:
 	ldr r1, =slot
 	str r0, [r1]
 	movs r0, #1
+	movs r0, #2
+	movs r0, #3
 	bx lr
 	.size main, .-main
 
@@ -94,6 +96,27 @@ slot:
 	.uleb128 1
 	.byte 3
 	.sleb128 1
+	.byte 1
+	.byte 3
+	.sleb128 -8
+	.byte 1
+	.byte 2
+	.uleb128 2
+	.byte 3
+	.sleb128 9
+	.byte 1
+	.byte 2
+	.uleb128 2
+	.byte 3
+	.sleb128 1
+	.byte 1
+	.byte 2
+	.uleb128 2
+	.byte 0, 1, 1
+	.byte 0, 5, 2
+	.4byte .Lcode + 10
+	.byte 3
+	.sleb128 19
 	.byte 1
 	.byte 2
 	.uleb128 2

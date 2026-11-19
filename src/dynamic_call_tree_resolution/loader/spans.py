@@ -58,7 +58,11 @@ def line_spans(path: Path, locations: frozenset[SourceLocation]) -> tuple[LineSp
 def line_locations(
 	path: Path, addresses: Collection[Address]
 ) -> Mapping[Address, frozenset[SourceLocation]]:
-	"""Where the line table places each address; an address with no row, or only line 0, is absent."""
+	"""Where the line table places each address.
+
+	An address is absent when no row covers it, when a row covering it has no source line, or when
+	rows of more than one sequence cover it.
+	"""
 	with path.open("rb") as stream:
 		elf = ELFFile(stream)
 		dwarf = elf.get_dwarf_info(relocate_dwarf_sections=False) if elf.has_dwarf_info() else None
@@ -68,19 +72,36 @@ def line_locations(
 def _line_locations(
 	dwarf: DWARFInfo, addresses: Sequence[Address]
 ) -> Mapping[Address, frozenset[SourceLocation]]:
-	spans = flatmap(partial(_unit_covering_spans, dwarf), dwarf.iter_CUs())
-	located = sorted(flatmap(partial(_located, addresses), spans))
+	covering = sorted(
+		flatmap(partial(_unit_covering, dwarf, addresses), dwarf.iter_CUs()),
+		key=_covering_address,
+	)
+	grouped = {address: tuple(group) for address, group in groupby(covering, key=_covering_address)}
 	return {
-		address: frozenset(each.location for each in group)
-		for address, group in groupby(located, key=_located_address)
+		address: frozenset(_source_lines(group))
+		for address, group in grouped.items()
+		if _one_sequence_with_lines(group)
 	}
 
 
-class _Located(Struct, order=True):
-	"""An address the line table places at a location."""
+class _NoLine(Struct):
+	"""A row that places its code at line 0, or in a file its unit doesn't list."""
+
+
+class _Sequence(Struct):
+	"""One sequence of a unit's line program."""
+
+	unit: int
+	"""The unit's offset in ``.debug_info``."""
+	index: int
+
+
+class _Covering(Struct):
+	"""A row that covers an address."""
 
 	address: Address
-	location: SourceLocation
+	sequence: _Sequence
+	line: SourceLocation | _NoLine
 
 
 class _RowsAt(Struct):
@@ -90,24 +111,80 @@ class _RowsAt(Struct):
 	rows: tuple[LineState, ...]
 
 
-def _located(addresses: Sequence[Address], span: LineSpan) -> Iterator[_Located]:
-	return (
-		_Located(address=address, location=span.location)
-		for address in addresses[
-			bisect_left(addresses, span.start) : bisect_left(addresses, span.end)
-		]
+def _covering_address(covering: _Covering) -> Address:
+	return covering.address
+
+
+def _one_sequence_with_lines(group: tuple[_Covering, ...]) -> bool:
+	return len({covering.sequence for covering in group}) == 1 and not any(
+		isinstance(covering.line, _NoLine) for covering in group
 	)
 
 
-def _located_address(located: _Located) -> Address:
-	return located.address
+def _source_lines(group: tuple[_Covering, ...]) -> Iterator[SourceLocation]:
+	return (covering.line for covering in group if isinstance(covering.line, SourceLocation))
 
 
-def _unit_covering_spans(dwarf: DWARFInfo, unit: CompileUnit) -> Iterator[LineSpan]:
-	names = file_names(dwarf, unit)
+def _unit_covering(
+	dwarf: DWARFInfo, addresses: Sequence[Address], unit: CompileUnit
+) -> Iterator[_Covering]:
+	return chain.from_iterable(
+		starmap(
+			partial(_sequence_covering, file_names(dwarf, unit), addresses, unit.cu_offset),
+			enumerate(_sequences(_unit_rows(dwarf, unit))),
+		)
+	)
+
+
+def _sequence_covering(
+	names: dict[int, str],
+	addresses: Sequence[Address],
+	unit: int,
+	index: int,
+	rows: tuple[LineState, ...],
+) -> Iterator[_Covering]:
+	return chain.from_iterable(
+		starmap(
+			partial(_rows_covering, names, addresses, _Sequence(unit=unit, index=index)),
+			pairwise(_rows_at(rows)),
+		)
+	)
+
+
+def _rows_covering(
+	names: dict[int, str],
+	addresses: Sequence[Address],
+	sequence: _Sequence,
+	here: _RowsAt,
+	following: _RowsAt,
+) -> Iterator[_Covering]:
 	return flatmap(
-		partial(_sequence_covering_spans, names),
-		(_rows_at(rows) for rows in _sequences(_unit_rows(dwarf, unit))),
+		partial(
+			_row_covering,
+			names,
+			sequence,
+			addresses[
+				bisect_left(addresses, here.address) : bisect_left(addresses, following.address)
+			],
+		),
+		here.rows,
+	)
+
+
+def _row_covering(
+	names: dict[int, str], sequence: _Sequence, covered: Sequence[Address], row: LineState
+) -> Iterator[_Covering]:
+	return (
+		_Covering(address=address, sequence=sequence, line=_source_line(names, row))
+		for address in covered
+	)
+
+
+def _source_line(names: dict[int, str], row: LineState) -> SourceLocation | _NoLine:
+	return (
+		SourceLocation(file=names[row.file], line=row.line, column=row.column)
+		if row.file in names and row.line != 0
+		else _NoLine()
 	)
 
 
@@ -120,24 +197,6 @@ def _rows_at(rows: tuple[LineState, ...]) -> tuple[_RowsAt, ...]:
 
 def _row_address(row: LineState) -> int:
 	return row.address
-
-
-def _sequence_covering_spans(
-	names: dict[int, str], rows_at: tuple[_RowsAt, ...]
-) -> Iterator[LineSpan]:
-	return chain.from_iterable(starmap(partial(_covering_spans, names), pairwise(rows_at)))
-
-
-def _covering_spans(names: dict[int, str], here: _RowsAt, following: _RowsAt) -> Iterator[LineSpan]:
-	return (
-		LineSpan(
-			start=here.address,
-			end=following.address,
-			location=SourceLocation(file=names[row.file], line=row.line, column=row.column),
-		)
-		for row in here.rows
-		if row.file in names and row.line != 0
-	)
 
 
 def _unit_rows(dwarf: DWARFInfo, unit: CompileUnit) -> tuple[LineState, ...]:

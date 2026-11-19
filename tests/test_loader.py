@@ -109,7 +109,7 @@ def test_a_dwarf_3_image_sizes_its_functions_as_dwarf_4_does(
 
 
 @pytest.mark.image
-def test_line_locations_places_an_address_at_every_row_that_covers_it_and_never_at_line_0(
+def test_line_locations_needs_one_sequence_and_a_line_in_every_row_that_covers_an_address(
 	tmp_path: Path,
 ) -> None:
 	elf = build_cortex_m3((FIXTURES / "reproducers" / "line_rows.s",), tmp_path / "rows.elf")
@@ -118,7 +118,7 @@ def test_line_locations_places_an_address_at_every_row_that_covers_it_and_never_
 		address & ~1 for address, function in program.functions.items() if function.name == "main"
 	)
 	(slot,) = (address for address, item in program.objects.items() if item.name == "slot")
-	assert line_locations(elf, (*(Address(code + offset) for offset in range(0, 14, 2)), slot)) == {
+	assert line_locations(elf, (*(Address(code + offset) for offset in range(0, 18, 2)), slot)) == {
 		code: frozenset({SourceLocation(file="line_rows.c", line=3, column=0)}),
 		code + 2: frozenset(
 			{
@@ -126,7 +126,7 @@ def test_line_locations_places_an_address_at_every_row_that_covers_it_and_never_
 				SourceLocation(file="line_rows.c", line=5, column=0),
 			}
 		),
-		code + 8: frozenset({SourceLocation(file="line_rows.c", line=8, column=0)}),
+		code + 12: frozenset({SourceLocation(file="line_rows.c", line=10, column=0)}),
 	}
 
 
