@@ -9,7 +9,7 @@ import pytest
 from capstone import arm_const
 from salix import replace
 
-from dynamic_call_tree_resolution.model import Address, Machine
+from dynamic_call_tree_resolution.model import Address, ArmCore, ArmProfile, Machine
 from dynamic_call_tree_resolution.vsa import analyze, interpret
 from dynamic_call_tree_resolution.vsa.cfg import control_flow_graphs
 from dynamic_call_tree_resolution.vsa.interpret import block_states, transfer
@@ -276,3 +276,65 @@ def test_the_rounds_keep_unplaced_stores_out_of_the_program_writes() -> None:
 		frozenset[Address](),
 		frozenset({Address(0x1000)}),
 	)
+
+
+def _a32(words: str) -> bytes:
+	return b"".join(bytes.fromhex(word)[::-1] for word in words.split())
+
+
+_M_PROFILE_WITH_FPU: Final = ArmCore(profile=ArmProfile.MICROCONTROLLER, floating_point=True)
+
+
+@pytest.mark.parametrize(
+	("code", "arm_code", "core", "unplaced"),
+	[
+		pytest.param(
+			_a32("f96d051f e12fff1e"),
+			((0x1000, 0x1008),),
+			None,
+			0x1000,
+			id="an A32 srsdb sp!, #0x1f",
+		),
+		pytest.param(
+			_a32("e3020000 e1003091 e12fff1e"), ((0x1000, 0x100C),), None, 0x1004, id="an A32 swp"
+		),
+		pytest.param(
+			_a32("e3020000 e1403091 e12fff1e"), ((0x1000, 0x100C),), None, 0x1004, id="an A32 swpb"
+		),
+		pytest.param(
+			bytes.fromhex("80ec030b 7047"),
+			(),
+			_M_PROFILE_WITH_FPU,
+			0x1000,
+			id="an M-profile fstmiax",
+		),
+		pytest.param(
+			bytes.fromhex("20ed030b 7047"),
+			(),
+			_M_PROFILE_WITH_FPU,
+			0x1000,
+			id="an M-profile fstmdbx",
+		),
+	],
+)
+def test_a_store_without_a_tracked_extent_is_one_the_analysis_cannot_place(
+	code: bytes, arm_code: tuple[tuple[int, int], ...], core: ArmCore | None, unplaced: int
+) -> None:
+	program = replace(
+		build_program(
+			Machine.EM_ARM,
+			(("writer", 0x1000, len(code)),),
+			objects=(("slot", 0x2000, bytes(4)),),
+			sections={0x1000: code},
+			writable=frozenset({0x2000}),
+			pointer_size=4,
+			arm_code=arm_code,
+		),
+		arm_core=core,
+	)
+	writes = interpret.block_states(
+		context_for(program, NO_WRITES),
+		control_flow_graphs(program)[Address(0x1000)].blocks,
+		top_seed(Machine.EM_ARM),
+	).writes
+	assert (writes.unknown_store, writes.unplaced) == (True, frozenset({Address(unplaced)}))
