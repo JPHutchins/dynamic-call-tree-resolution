@@ -56,6 +56,7 @@ LISTED_BASES: Final = frozenset(
 		arm_const.ARM_INS_STMIB,
 		arm_const.ARM_INS_VLDMIA,
 		arm_const.ARM_INS_VLDMDB,
+		arm_const.ARM_INS_VLSTM,
 		arm_const.ARM_INS_VSTMIA,
 		arm_const.ARM_INS_VSTMDB,
 	}
@@ -69,6 +70,7 @@ _DESCENDING: Final = frozenset(
 		arm_const.ARM_INS_STMDA,
 		arm_const.ARM_INS_STMDB,
 		arm_const.ARM_INS_VLDMDB,
+		arm_const.ARM_INS_VLSTM,
 		arm_const.ARM_INS_VSTMDB,
 	}
 )
